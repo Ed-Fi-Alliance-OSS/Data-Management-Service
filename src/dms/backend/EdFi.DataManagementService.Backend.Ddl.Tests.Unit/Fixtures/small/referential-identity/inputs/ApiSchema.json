@@ -1,0 +1,191 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "description": "Referential-identity fixture - Student, School (subclass), and StudentSchoolAssociation with references",
+    "abstractResources": {
+      "EducationOrganization": {
+        "identityJsonPaths": [
+          "$.educationOrganizationId"
+        ]
+      }
+    },
+    "caseInsensitiveEndpointNameMapping": {
+      "students": "students",
+      "schools": "schools",
+      "studentschoolassociations": "studentSchoolAssociations"
+    },
+    "educationOrganizationHierarchy": {
+      "EducationOrganization": {},
+      "School": {}
+    },
+    "educationOrganizationTypes": [
+      "School",
+      "EducationOrganization"
+    ],
+    "resourceNameMapping": {
+      "Student": "students",
+      "School": "schools",
+      "StudentSchoolAssociation": "studentSchoolAssociations"
+    },
+    "resourceSchemas": {
+      "students": {
+        "resourceName": "Student",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.studentUniqueId"
+        ],
+        "documentPathsMapping": {
+          "StudentUniqueId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.studentUniqueId"
+          },
+          "FirstName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.firstName"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "studentUniqueId": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "firstName": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "studentUniqueId",
+            "firstName"
+          ]
+        }
+      },
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": true,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "EducationOrganizationId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.educationOrganizationId"
+          },
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          }
+        },
+        "subclassType": "domainEntity",
+        "superclassIdentityJsonPath": "$.educationOrganizationId",
+        "superclassProjectName": "Ed-Fi",
+        "superclassResourceName": "EducationOrganization",
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "educationOrganizationId": {
+              "type": "integer"
+            },
+            "nameOfInstitution": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "schoolId",
+            "educationOrganizationId"
+          ]
+        }
+      },
+      "studentSchoolAssociations": {
+        "resourceName": "StudentSchoolAssociation",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.studentUniqueId",
+          "$.schoolReference.schoolId"
+        ],
+        "documentPathsMapping": {
+          "StudentUniqueId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.studentUniqueId"
+          },
+          "SchoolReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "School",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "studentUniqueId": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "schoolReference": {
+              "type": "object",
+              "properties": {
+                "schoolId": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "schoolId"
+              ]
+            }
+          },
+          "required": [
+            "studentUniqueId",
+            "schoolReference"
+          ]
+        }
+      }
+    }
+  }
+}

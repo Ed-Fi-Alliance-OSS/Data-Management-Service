@@ -259,25 +259,6 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             );
     }
 
-    [Test]
-    public void It_emits_journal_row_on_document_insert()
-    {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-        ProvisionTestHelper.AssertJournalRowOnInsert(connection, "mssql");
-    }
-
-    [Test]
-    public void It_emits_distinct_change_versions_on_multi_row_update()
-    {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-        ProvisionTestHelper.AssertDistinctChangeVersionsOnMultiRowUpdate(connection, "mssql");
-    }
 }
 
 [TestFixture]

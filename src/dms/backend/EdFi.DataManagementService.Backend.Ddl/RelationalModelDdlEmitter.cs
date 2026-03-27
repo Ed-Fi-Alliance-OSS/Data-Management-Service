@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -120,7 +121,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
-        EmitPeopleAuthViews(writer, authHierarchy);
+        EmitPeopleAuthViews(writer, authHierarchy, concreteResources);
 
         // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers);
@@ -1927,7 +1928,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// join structures are not easily generalizable (e.g., Staff joins against two association
     /// tables; Contact goes through Student). See <c>auth.md</c> ("People auth views") for design.
     /// </remarks>
-    private void EmitPeopleAuthViews(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
+    private void EmitPeopleAuthViews(
+        SqlWriter writer,
+        AuthEdOrgHierarchy? authHierarchy,
+        IReadOnlyList<ConcreteResourceModel> concreteResources)
     {
         // These views assume all five association tables (StudentSchoolAssociation,
         // StudentContactAssociation, StaffEducationOrganizationAssignmentAssociation,
@@ -1935,6 +1939,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // StudentEducationOrganizationResponsibilityAssociation) exist in the target database.
         // This is guaranteed for any full DS 5.2 deployment that has an auth hierarchy.
         if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        {
+            return;
+        }
+
+        var requiredResourceNames = new[]
+        {
+            "StudentSchoolAssociation",
+            "StudentContactAssociation",
+            "StaffEducationOrganizationAssignmentAssociation",
+            "StaffEducationOrganizationEmploymentAssociation",
+            "StudentEducationOrganizationResponsibilityAssociation"
+        };
+
+        if (!requiredResourceNames
+                .All(requiredResourceName => concreteResources.Any(r =>
+                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                )))
         {
             return;
         }

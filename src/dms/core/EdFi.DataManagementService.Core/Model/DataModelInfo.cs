@@ -28,5 +28,5 @@ internal record DataModelInfo(
     /// <summary>
     /// Indicates whether this is a core data model project
     /// </summary>
-    public bool IsCoreProject => ProjectName.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase);
+    public bool IsCoreProject => DataModelConstants.IsCoreProjectName(ProjectName);
 }

@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b';
         END IF;
     END IF;
 END $$;
@@ -455,22 +455,35 @@ CREATE TRIGGER "TR_Document_Journal"
 CREATE SCHEMA IF NOT EXISTS "edfi";
 CREATE SCHEMA IF NOT EXISTS "auth";
 
-CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
-(
-    "DocumentId" bigint NOT NULL,
-    "EducationOrganizationId" integer NOT NULL,
-    "LocalEducationAgencyId" integer NOT NULL,
-    CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId"),
-    CONSTRAINT "UX_LocalEducationAgency_NK" UNIQUE ("LocalEducationAgencyId")
-);
-
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
+    "NameOfInstitution" varchar(75) NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
-    CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
+    CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId"),
+    CONSTRAINT "UX_School_RefKey" UNIQUE ("DocumentId", "SchoolId")
+);
+
+CREATE TABLE IF NOT EXISTS "edfi"."Student"
+(
+    "DocumentId" bigint NOT NULL,
+    "FirstName" varchar(75) NOT NULL,
+    "StudentUniqueId" varchar(32) NOT NULL,
+    CONSTRAINT "PK_Student" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_Student_NK" UNIQUE ("StudentUniqueId")
+);
+
+CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
+(
+    "DocumentId" bigint NOT NULL,
+    "SchoolReference_DocumentId" bigint NOT NULL,
+    "SchoolReference_SchoolId" integer NOT NULL,
+    "StudentUniqueId" varchar(32) NOT NULL,
+    CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId"),
+    CONSTRAINT "UX_StudentSchoolAssociation_NK" UNIQUE ("StudentUniqueId", "SchoolReference_DocumentId"),
+    CONSTRAINT "CK_StudentSchoolAssociation_SchoolReference_AllNone" CHECK (("SchoolReference_DocumentId" IS NULL AND "SchoolReference_SchoolId" IS NULL) OR ("SchoolReference_DocumentId" IS NOT NULL AND "SchoolReference_SchoolId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizationId"
@@ -494,12 +507,12 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgency_Document'
-        AND conrelid = to_regclass('"edfi"."LocalEducationAgency"')
+        WHERE conname = 'FK_School_Document'
+        AND conrelid = to_regclass('"edfi"."School"')
     )
     THEN
-        ALTER TABLE "edfi"."LocalEducationAgency"
-        ADD CONSTRAINT "FK_LocalEducationAgency_Document"
+        ALTER TABLE "edfi"."School"
+        ADD CONSTRAINT "FK_School_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
@@ -511,16 +524,50 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_School_Document'
-        AND conrelid = to_regclass('"edfi"."School"')
+        WHERE conname = 'FK_Student_Document'
+        AND conrelid = to_regclass('"edfi"."Student"')
     )
     THEN
-        ALTER TABLE "edfi"."School"
-        ADD CONSTRAINT "FK_School_Document"
+        ALTER TABLE "edfi"."Student"
+        ADD CONSTRAINT "FK_Student_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSchoolAssociation_Document'
+        AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSchoolAssociation"
+        ADD CONSTRAINT "FK_StudentSchoolAssociation_Document"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "dms"."Document" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSchoolAssociation_SchoolReference_RefKey'
+        AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSchoolAssociation"
+        ADD CONSTRAINT "FK_StudentSchoolAssociation_SchoolReference_RefKey"
+        FOREIGN KEY ("SchoolReference_DocumentId", "SchoolReference_SchoolId")
+        REFERENCES "edfi"."School" ("DocumentId", "SchoolId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -543,112 +590,12 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSchoolAssociation_SchoolReference_Document_73243293fa" ON "edfi"."StudentSchoolAssociation" ("SchoolReference_DocumentId", "SchoolReference_SchoolId");
+
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
-SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
-FROM "edfi"."LocalEducationAgency"
-UNION ALL
 SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"
 FROM "edfi"."School"
 ;
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."LocalEducationAgencyId", 'Ed-Fi:LocalEducationAgency')
-        ON CONFLICT ("DocumentId")
-        DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AbstractIdentity" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"()
-RETURNS TRIGGER AS $$
-BEGIN
-    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-    WHERE "SourceEducationOrganizationId" = OLD."LocalEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."LocalEducationAgencyId";
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Delete" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Delete"
-    AFTER DELETE ON "edfi"."LocalEducationAgency"
-    FOR EACH ROW
-    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
-    VALUES (NEW."LocalEducationAgencyId", NEW."LocalEducationAgencyId");
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Insert" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Insert"
-    AFTER INSERT ON "edfi"."LocalEducationAgency"
-    FOR EACH ROW
-    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$$.localEducationAgencyId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 2);
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
-        RETURN OLD;
-    END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
-    IF TG_OP = 'UPDATE' AND (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_Stamp" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
@@ -704,9 +651,9 @@ RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 3);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 2);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
@@ -749,6 +696,98 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 3);
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_Student_ReferentialIdentity" ON "edfi"."Student";
+CREATE TRIGGER "TR_Student_ReferentialIdentity"
+BEFORE INSERT OR UPDATE ON "edfi"."Student"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_Student_Stamp" ON "edfi"."Student";
+CREATE TRIGGER "TR_Student_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Student"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_Student_Stamp"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."SchoolReference_SchoolId" IS DISTINCT FROM NEW."SchoolReference_SchoolId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 4;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$$.schoolReference.schoolId=' || NEW."SchoolReference_SchoolId"::text), NEW."DocumentId", 4);
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_ReferentialIdentity" ON "edfi"."StudentSchoolAssociation";
+CREATE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
+BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."SchoolReference_SchoolId" IS DISTINCT FROM NEW."SchoolReference_SchoolId") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_Stamp" ON "edfi"."StudentSchoolAssociation";
+CREATE TRIGGER "TR_StudentSchoolAssociation_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."StudentSchoolAssociation"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
+
 -- ==========================================================
 -- Phase 7: Seed Data (insert-if-missing + validation)
 -- ==========================================================
@@ -758,10 +797,13 @@ INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName",
 VALUES (1, 'Ed-Fi', 'EducationOrganization', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (2, 'Ed-Fi', 'LocalEducationAgency', '5.0.0')
+VALUES (2, 'Ed-Fi', 'School', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (3, 'Ed-Fi', 'School', '5.0.0')
+VALUES (3, 'Ed-Fi', 'Student', '5.0.0')
+ON CONFLICT ("ResourceKeyId") DO NOTHING;
+INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+VALUES (4, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 
 -- ResourceKey full-table validation (count + content)
@@ -772,8 +814,8 @@ DECLARE
     _mismatched_ids text;
 BEGIN
     SELECT COUNT(*) INTO _actual_count FROM "dms"."ResourceKey";
-    IF _actual_count <> 3 THEN
-        RAISE EXCEPTION 'dms.ResourceKey count mismatch: expected 3, found %', _actual_count;
+    IF _actual_count <> 4 THEN
+        RAISE EXCEPTION 'dms.ResourceKey count mismatch: expected 4, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
@@ -781,8 +823,9 @@ BEGIN
     WHERE NOT EXISTS (
         SELECT 1 FROM (VALUES
             (1::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
-            (2::smallint, 'Ed-Fi', 'LocalEducationAgency', '5.0.0'),
-            (3::smallint, 'Ed-Fi', 'School', '5.0.0')
+            (2::smallint, 'Ed-Fi', 'School', '5.0.0'),
+            (3::smallint, 'Ed-Fi', 'Student', '5.0.0'),
+            (4::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
         ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
         WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
         AND expected."ProjectName" = rk."ProjectName"
@@ -797,8 +840,9 @@ BEGIN
             WHERE NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     (1::smallint, 'Ed-Fi', 'EducationOrganization', '5.0.0'),
-                    (2::smallint, 'Ed-Fi', 'LocalEducationAgency', '5.0.0'),
-                    (3::smallint, 'Ed-Fi', 'School', '5.0.0')
+                    (2::smallint, 'Ed-Fi', 'School', '5.0.0'),
+                    (3::smallint, 'Ed-Fi', 'Student', '5.0.0'),
+                    (4::smallint, 'Ed-Fi', 'StudentSchoolAssociation', '5.0.0')
                 ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
                 WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
                 AND expected."ProjectName" = rk."ProjectName"
@@ -814,7 +858,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50', 3, '\x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252'::bytea)
+VALUES (1, '1.0.0', '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', 4, '\x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -831,18 +875,18 @@ BEGIN
         IF _stored_api_schema_format_version IS NULL OR btrim(_stored_api_schema_format_version) = '' THEN
             RAISE EXCEPTION 'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.';
         END IF;
-        IF _stored_count <> 3 THEN
-            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found %', _stored_count;
+        IF _stored_count <> 4 THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 4, found %', _stored_count;
         END IF;
-        IF _stored_hash <> '\x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252'::bytea THEN
-            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252'::bytea, 'hex');
+        IF _stored_hash <> '\x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99'::bytea THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99'::bytea, 'hex');
         END IF;
     END IF;
 END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50', 'ed-fi', 'Ed-Fi', '5.0.0', false)
+VALUES ('6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', 'ed-fi', 'Ed-Fi', '5.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -852,14 +896,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b';
     IF _actual_count <> 1 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 1, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50'
+    WHERE sc."EffectiveSchemaHash" = '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.0.0', false)
@@ -874,7 +918,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = 'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50'
+            WHERE sc."EffectiveSchemaHash" = '6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.0.0', false)

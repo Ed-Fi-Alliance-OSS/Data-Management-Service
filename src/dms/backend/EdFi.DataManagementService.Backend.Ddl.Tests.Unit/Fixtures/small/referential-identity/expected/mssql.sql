@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -440,24 +440,38 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'auth')
     EXEC('CREATE SCHEMA [auth]');
 
-IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
-CREATE TABLE [edfi].[LocalEducationAgency]
-(
-    [DocumentId] bigint NOT NULL,
-    [EducationOrganizationId] int NOT NULL,
-    [LocalEducationAgencyId] int NOT NULL,
-    CONSTRAINT [PK_LocalEducationAgency] PRIMARY KEY ([DocumentId]),
-    CONSTRAINT [UX_LocalEducationAgency_NK] UNIQUE ([LocalEducationAgencyId])
-);
-
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
+    [NameOfInstitution] nvarchar(75) NULL,
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
-    CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId])
+    CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId]),
+    CONSTRAINT [UX_School_RefKey] UNIQUE ([DocumentId], [SchoolId])
+);
+
+IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
+CREATE TABLE [edfi].[Student]
+(
+    [DocumentId] bigint NOT NULL,
+    [FirstName] nvarchar(75) NOT NULL,
+    [StudentUniqueId] nvarchar(32) NOT NULL,
+    CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId])
+);
+
+IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
+CREATE TABLE [edfi].[StudentSchoolAssociation]
+(
+    [DocumentId] bigint NOT NULL,
+    [SchoolReference_DocumentId] bigint NOT NULL,
+    [SchoolReference_SchoolId] int NOT NULL,
+    [StudentUniqueId] nvarchar(32) NOT NULL,
+    CONSTRAINT [PK_StudentSchoolAssociation] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_StudentSchoolAssociation_NK] UNIQUE ([StudentUniqueId], [SchoolReference_DocumentId]),
+    CONSTRAINT [CK_StudentSchoolAssociation_SchoolReference_AllNone] CHECK (([SchoolReference_DocumentId] IS NULL AND [SchoolReference_SchoolId] IS NULL) OR ([SchoolReference_DocumentId] IS NOT NULL AND [SchoolReference_SchoolId] IS NOT NULL))
 );
 
 IF OBJECT_ID(N'auth.EducationOrganizationIdToEducationOrganizationId', N'U') IS NULL
@@ -481,17 +495,6 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalEducationAgency_Document' AND parent_object_id = OBJECT_ID(N'edfi.LocalEducationAgency')
-)
-ALTER TABLE [edfi].[LocalEducationAgency]
-ADD CONSTRAINT [FK_LocalEducationAgency_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_School_Document' AND parent_object_id = OBJECT_ID(N'edfi.School')
 )
 ALTER TABLE [edfi].[School]
@@ -499,6 +502,39 @@ ADD CONSTRAINT [FK_School_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_Student_Document' AND parent_object_id = OBJECT_ID(N'edfi.Student')
+)
+ALTER TABLE [edfi].[Student]
+ADD CONSTRAINT [FK_Student_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolAssociation_Document' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
+)
+ALTER TABLE [edfi].[StudentSchoolAssociation]
+ADD CONSTRAINT [FK_StudentSchoolAssociation_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolAssociation_SchoolReference_RefKey' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
+)
+ALTER TABLE [edfi].[StudentSchoolAssociation]
+ADD CONSTRAINT [FK_StudentSchoolAssociation_SchoolReference_RefKey]
+FOREIGN KEY ([SchoolReference_DocumentId], [SchoolReference_SchoolId])
+REFERENCES [edfi].[School] ([DocumentId], [SchoolId])
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -520,135 +556,21 @@ IF NOT EXISTS (
 )
 CREATE INDEX [IX_EducationOrganizationIdToEducationOrganizationId_Target] ON [auth].[EducationOrganizationIdToEducationOrganizationId] ([TargetEducationOrganizationId]) INCLUDE ([SourceEducationOrganizationId]);
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_SchoolReference_DocumentId_SchoolReference_SchoolId'
+)
+CREATE INDEX [IX_StudentSchoolAssociation_SchoolReference_DocumentId_SchoolReference_SchoolId] ON [edfi].[StudentSchoolAssociation] ([SchoolReference_DocumentId], [SchoolReference_SchoolId]);
+
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
-SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
-FROM [edfi].[LocalEducationAgency]
-UNION ALL
 SELECT [DocumentId] AS [DocumentId], [SchoolId] AS [EducationOrganizationId], CAST(N'Ed-Fi:School' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[School]
 ;
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AbstractIdentity]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING inserted AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency');
-    END
-    ELSE IF (UPDATE([LocalEducationAgencyId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> d.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND d.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND d.[LocalEducationAgencyId] IS NULL));
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[LocalEducationAgencyId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency');
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AuthHierarchy_Delete]
-ON [edfi].[LocalEducationAgency]
-AFTER DELETE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    DELETE tuples
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-        INNER JOIN deleted old
-            ON tuples.[SourceEducationOrganizationId] = old.[LocalEducationAgencyId]
-            AND tuples.[TargetEducationOrganizationId] = old.[LocalEducationAgencyId];
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AuthHierarchy_Insert]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-    SELECT new.[LocalEducationAgencyId], new.[LocalEducationAgencyId]
-    FROM inserted new;
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_ReferentialIdentity]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 2
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([LocalEducationAgencyId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> d.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND d.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND d.[LocalEducationAgencyId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 2
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE, DELETE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
-    UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> del.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND del.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND del.[LocalEducationAgencyId] IS NULL));
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -705,6 +627,25 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]
+ON [edfi].[School]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF (UPDATE([EducationOrganizationId]) OR UPDATE([NameOfInstitution]) OR UPDATE([SchoolId]))
+    BEGIN
+        UPDATE r
+        SET r.[SchoolReference_SchoolId] = i.[SchoolId]
+        FROM [edfi].[StudentSchoolAssociation] r
+        INNER JOIN deleted d ON r.[SchoolReference_DocumentId] = d.[DocumentId]
+        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
+        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
+
+    END
+END;
+GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -714,9 +655,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 3;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 3
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 2
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
@@ -732,9 +673,9 @@ BEGIN
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 3
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 2
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
@@ -768,6 +709,112 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER TRIGGER [edfi].[TR_Student_ReferentialIdentity]
+ON [edfi].[Student]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted)
+    BEGIN
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 3;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
+        FROM inserted i;
+    END
+    ELSE IF (UPDATE([StudentUniqueId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[StudentUniqueId] <> d.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_Student_Stamp]
+ON [edfi].[Student]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_ReferentialIdentity]
+ON [edfi].[StudentSchoolAssociation]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted)
+    BEGIN
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 4;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 4
+        FROM inserted i;
+    END
+    ELSE IF (UPDATE([StudentUniqueId]) OR UPDATE([SchoolReference_SchoolId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[StudentUniqueId] <> d.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> d.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND d.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND d.[SchoolReference_SchoolId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 4;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 4
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Stamp]
+ON [edfi].[StudentSchoolAssociation]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StudentUniqueId]) OR UPDATE([SchoolReference_SchoolId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL));
+    END
+END;
+GO
+
 -- ==========================================================
 -- Phase 7: Seed Data (insert-if-missing + validation)
 -- ==========================================================
@@ -778,10 +825,13 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
     VALUES (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 2)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (2, N'Ed-Fi', N'LocalEducationAgency', N'5.0.0');
+    VALUES (2, N'Ed-Fi', N'School', N'5.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 3)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (3, N'Ed-Fi', N'School', N'5.0.0');
+    VALUES (3, N'Ed-Fi', N'Student', N'5.0.0');
+IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 4)
+    INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+    VALUES (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0');
 
 -- ResourceKey full-table validation (count + content)
 DECLARE @actual_count integer;
@@ -789,9 +839,9 @@ DECLARE @mismatched_count integer;
 DECLARE @rk_mismatched_ids nvarchar(max);
 
 SELECT @actual_count = COUNT(*) FROM [dms].[ResourceKey];
-IF @actual_count <> 3
+IF @actual_count <> 4
 BEGIN
-    DECLARE @rk_count_msg nvarchar(200) = CONCAT(N'dms.ResourceKey count mismatch: expected 3, found ', CAST(@actual_count AS nvarchar(10)));
+    DECLARE @rk_count_msg nvarchar(200) = CONCAT(N'dms.ResourceKey count mismatch: expected 4, found ', CAST(@actual_count AS nvarchar(10)));
     THROW 50000, @rk_count_msg, 1;
 END
 
@@ -800,8 +850,9 @@ FROM [dms].[ResourceKey] rk
 WHERE NOT EXISTS (
     SELECT 1 FROM (VALUES
         (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0'),
-        (2, N'Ed-Fi', N'LocalEducationAgency', N'5.0.0'),
-        (3, N'Ed-Fi', N'School', N'5.0.0')
+        (2, N'Ed-Fi', N'School', N'5.0.0'),
+        (3, N'Ed-Fi', N'Student', N'5.0.0'),
+        (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
     ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
     WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
     AND expected.[ProjectName] = rk.[ProjectName]
@@ -817,8 +868,9 @@ BEGIN
         WHERE NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0'),
-                (2, N'Ed-Fi', N'LocalEducationAgency', N'5.0.0'),
-                (3, N'Ed-Fi', N'School', N'5.0.0')
+                (2, N'Ed-Fi', N'School', N'5.0.0'),
+                (3, N'Ed-Fi', N'Student', N'5.0.0'),
+                (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
             ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
             WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
             AND expected.[ProjectName] = rk.[ProjectName]
@@ -834,7 +886,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50', 3, 0x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252);
+    VALUES (1, N'1.0.0', N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', 4, 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -850,29 +902,29 @@ BEGIN
     BEGIN
         THROW 50000, N'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.', 1;
     END
-    IF @es_stored_count <> 3
+    IF @es_stored_count <> 4
     BEGIN
-        DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found ', CAST(@es_stored_count AS nvarchar(10)));
+        DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 4, found ', CAST(@es_stored_count AS nvarchar(10)));
         THROW 50000, @es_count_msg, 1;
     END
-    IF @es_stored_hash <> 0x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252
+    IF @es_stored_hash <> 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99
     BEGIN
-        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0x13390DEE0A99E1FF56E7F39CB8F5B43BEDA834078EA87A4975FE84B5710F6252, 1));
+        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99, 1));
         THROW 50000, @es_hash_msg, 1;
     END
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -881,7 +933,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50'
+WHERE sc.[EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -897,7 +949,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50'
+        WHERE sc.[EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
