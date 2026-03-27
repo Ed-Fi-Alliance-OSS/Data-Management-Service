@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Validation;
 public class DocumentValidatorTests
 {
     [Test]
-    public void Validate_UsesCompiledSchemaCachePerSchemaLoad()
+    public void Validate_UsesCompiledSchemaCache()
     {
         var cache = new CountingCompiledSchemaCache();
         var validator = new DocumentValidator(cache);
