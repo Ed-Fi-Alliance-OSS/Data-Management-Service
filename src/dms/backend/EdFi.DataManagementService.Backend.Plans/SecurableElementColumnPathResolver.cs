@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal static class SecurableElementColumnPathResolver
 {
-    private static readonly DbColumnName s_documentIdColumn = new("DocumentId");
+    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
 
     /// <summary>
     /// Resolves all securable element column paths for a single concrete resource.
@@ -32,28 +32,82 @@ internal static class SecurableElementColumnPathResolver
         }
 
         var results = new List<IReadOnlyList<ColumnPathStep>>();
+        var unresolvedPaths = new List<string>();
 
         foreach (var edOrg in securableElements.EducationOrganization)
         {
+            // Array-nested paths (containing [*]) require child-table traversal
+            // which is not yet supported; skip them from fail-fast validation.
+            if (IsArrayNestedPath(edOrg.JsonPath))
+            {
+                continue;
+            }
+
             var path = ResolveEdOrgOrNamespacePath(subjectResource, edOrg.JsonPath);
             if (path is not null)
             {
                 results.Add([path]);
             }
+            else
+            {
+                unresolvedPaths.Add(edOrg.JsonPath);
+            }
         }
 
-        foreach (var ns in securableElements.Namespace)
+        foreach (string ns in securableElements.Namespace)
         {
+            if (IsArrayNestedPath(ns))
+            {
+                continue;
+            }
+
             var path = ResolveEdOrgOrNamespacePath(subjectResource, ns);
             if (path is not null)
             {
                 results.Add([path]);
             }
+            else
+            {
+                unresolvedPaths.Add(ns);
+            }
         }
 
-        ResolvePersonPaths(subjectResource, securableElements.Student, "Student", allResources, results);
-        ResolvePersonPaths(subjectResource, securableElements.Contact, "Contact", allResources, results);
-        ResolvePersonPaths(subjectResource, securableElements.Staff, "Staff", allResources, results);
+        var resourceLookup = BuildResourceLookup(allResources);
+
+        ResolvePersonPaths(
+            subjectResource,
+            securableElements.Student,
+            "Student",
+            resourceLookup,
+            results,
+            unresolvedPaths
+        );
+        ResolvePersonPaths(
+            subjectResource,
+            securableElements.Contact,
+            "Contact",
+            resourceLookup,
+            results,
+            unresolvedPaths
+        );
+        ResolvePersonPaths(
+            subjectResource,
+            securableElements.Staff,
+            "Staff",
+            resourceLookup,
+            results,
+            unresolvedPaths
+        );
+
+        if (unresolvedPaths.Count > 0)
+        {
+            var resource = subjectResource.RelationalModel.Resource;
+            throw new InvalidOperationException(
+                $"Failed to resolve securable element column paths for resource "
+                    + $"'{resource.ProjectName}.{resource.ResourceName}': "
+                    + $"unresolved paths: {string.Join(", ", unresolvedPaths)}"
+            );
+        }
 
         return results;
     }
@@ -123,11 +177,19 @@ internal static class SecurableElementColumnPathResolver
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
-        IReadOnlyList<ConcreteResourceModel> allResources,
-        List<IReadOnlyList<ColumnPathStep>> results
+        Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
+        List<IReadOnlyList<ColumnPathStep>> results,
+        List<string> unresolvedPaths
     )
     {
         if (personPaths.Count == 0)
+        {
+            return;
+        }
+
+        // Filter out array-nested paths; the resolver only handles root-table paths.
+        var rootLevelPaths = personPaths.Where(p => !IsArrayNestedPath(p)).ToList();
+        if (rootLevelPaths.Count == 0)
         {
             return;
         }
@@ -138,7 +200,7 @@ internal static class SecurableElementColumnPathResolver
         // Find all candidate paths and pick the shortest
         IReadOnlyList<ColumnPathStep>? shortestPath = null;
 
-        foreach (var securableElementPath in personPaths)
+        foreach (var securableElementPath in rootLevelPaths)
         {
             var referencePrefix = ExtractReferencePrefix(securableElementPath);
             if (referencePrefix is null)
@@ -157,8 +219,7 @@ internal static class SecurableElementColumnPathResolver
             if (IsPersonResource(binding.TargetResource, personResourceName))
             {
                 var fkColumn = ResolveToCanonicalColumn(rootTable, binding.FkColumn);
-                var targetResource = FindResource(allResources, binding.TargetResource);
-                if (targetResource is not null)
+                if (resourceLookup.TryGetValue(binding.TargetResource, out var targetResource))
                 {
                     var path = new List<ColumnPathStep>
                     {
@@ -166,7 +227,7 @@ internal static class SecurableElementColumnPathResolver
                             rootTable.Table,
                             fkColumn,
                             targetResource.RelationalModel.Root.Table,
-                            s_documentIdColumn
+                            _documentIdColumn
                         ),
                     };
                     if (shortestPath is null || path.Count < shortestPath.Count)
@@ -178,7 +239,13 @@ internal static class SecurableElementColumnPathResolver
             else
             {
                 // Transitive: BFS from the intermediate resource to the person resource
-                var chain = BfsToPersonResource(rootTable, binding, personResourceName, allResources);
+                var chain = BfsToPersonResource(
+                    subjectResource,
+                    rootTable,
+                    binding,
+                    personResourceName,
+                    resourceLookup
+                );
                 if (chain is not null && (shortestPath is null || chain.Count < shortestPath.Count))
                 {
                     shortestPath = chain;
@@ -190,23 +257,29 @@ internal static class SecurableElementColumnPathResolver
         {
             results.Add(shortestPath);
         }
+        else if (!IsPersonResource(subjectResource.RelationalModel.Resource, personResourceName))
+        {
+            // Only flag as unresolved when the subject resource is NOT the person resource
+            // itself. Person resources (e.g., Contact with $.contactUniqueId) don't need
+            // a join chain — their own identity column is the authorization anchor.
+            unresolvedPaths.AddRange(rootLevelPaths);
+        }
     }
 
     /// <summary>
     /// BFS from an intermediate resource to find the shortest path to a person resource.
     /// </summary>
     private static IReadOnlyList<ColumnPathStep>? BfsToPersonResource(
+        ConcreteResourceModel subjectResource,
         DbTableModel subjectRootTable,
         DocumentReferenceBinding firstHopBinding,
         string personResourceName,
-        IReadOnlyList<ConcreteResourceModel> allResources
+        Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup
     )
     {
-        var resourceLookup = BuildResourceLookup(allResources);
-
         // BFS state: (currentResourceName, path so far)
         var queue = new Queue<(QualifiedResourceName Resource, List<ColumnPathStep> Path)>();
-        var visited = new HashSet<QualifiedResourceName>();
+        var visited = new HashSet<QualifiedResourceName> { subjectResource.RelationalModel.Resource };
 
         // First hop from subject to intermediate
         var firstFkColumn = ResolveToCanonicalColumn(subjectRootTable, firstHopBinding.FkColumn);
@@ -219,7 +292,7 @@ internal static class SecurableElementColumnPathResolver
             subjectRootTable.Table,
             firstFkColumn,
             intermediateResource.RelationalModel.Root.Table,
-            s_documentIdColumn
+            _documentIdColumn
         );
 
         // Check if the intermediate IS the person resource
@@ -266,7 +339,7 @@ internal static class SecurableElementColumnPathResolver
                     currentRoot.Table,
                     fkColumn,
                     targetResource.RelationalModel.Root.Table,
-                    s_documentIdColumn
+                    _documentIdColumn
                 );
 
                 var newPath = new List<ColumnPathStep>(currentPath) { step };
@@ -290,7 +363,7 @@ internal static class SecurableElementColumnPathResolver
     /// </summary>
     private static string? ExtractReferencePrefix(string jsonPath)
     {
-        var lastDot = jsonPath.LastIndexOf('.');
+        int lastDot = jsonPath.LastIndexOf('.');
         if (lastDot <= 0)
         {
             return null;
@@ -328,30 +401,13 @@ internal static class SecurableElementColumnPathResolver
     }
 
     /// <summary>
-    /// Checks whether a qualified resource name corresponds to a person resource type.
+    /// Checks whether a qualified resource name corresponds to a core Ed-Fi person resource type.
+    /// Both <c>ProjectName</c> and <c>ResourceName</c> must match to avoid homograph collisions.
     /// </summary>
     private static bool IsPersonResource(QualifiedResourceName resource, string personResourceName)
     {
-        return string.Equals(resource.ResourceName, personResourceName, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Finds a concrete resource model by its qualified resource name.
-    /// </summary>
-    private static ConcreteResourceModel? FindResource(
-        IReadOnlyList<ConcreteResourceModel> allResources,
-        QualifiedResourceName resourceName
-    )
-    {
-        foreach (var resource in allResources)
-        {
-            if (resource.ResourceKey.Resource == resourceName)
-            {
-                return resource;
-            }
-        }
-
-        return null;
+        return string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.Ordinal)
+            && string.Equals(resource.ResourceName, personResourceName, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -386,5 +442,15 @@ internal static class SecurableElementColumnPathResolver
         }
 
         return column;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the JSON path contains an array wildcard (<c>[*]</c>),
+    /// indicating it traverses into a child table. The resolver currently only
+    /// supports root-table paths, so array-nested paths are skipped.
+    /// </summary>
+    private static bool IsArrayNestedPath(string jsonPath)
+    {
+        return jsonPath.Contains("[*]", StringComparison.Ordinal);
     }
 }

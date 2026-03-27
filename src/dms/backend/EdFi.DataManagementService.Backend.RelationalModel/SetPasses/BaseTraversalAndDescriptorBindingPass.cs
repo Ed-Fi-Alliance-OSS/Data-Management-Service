@@ -78,7 +78,8 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
             var resourceKeyEntry = context.GetResourceKeyEntry(resourceKey);
 
             var securableElements = SecurableElementsExtractor.ExtractSecurableElements(
-                resourceContext.ResourceSchema
+                resourceContext.ResourceSchema,
+                resourceKey
             );
 
             context.ConcreteResourcesInNameOrder.Add(
