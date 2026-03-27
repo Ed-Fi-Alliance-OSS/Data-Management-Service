@@ -101,40 +101,39 @@ public class Given_MssqlReferenceResolver
     }
 
     [Test]
-    public async Task It_surfaces_concrete_target_mismatches_as_incompatible_target_type()
+    public async Task It_fails_closed_when_a_concrete_target_mismatch_has_a_mismatched_verification_key()
     {
-        var result = await ResolveDocumentReferencesAsync(
-            _database.Fixture.CreateSchoolReference(
-                "$.localEducationAgencyReference",
-                _database.Fixture.LocalEducationAgencyReferentialId
-            )
-        );
-
-        result.SuccessfulDocumentReferencesByPath.Should().BeEmpty();
-        result
-            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
-            .Should()
-            .Equal(
-                ("$.localEducationAgencyReference", DocumentReferenceFailureReason.IncompatibleTargetType)
+        var act = async () =>
+            await ResolveDocumentReferencesAsync(
+                _database.Fixture.CreateSchoolReference(
+                    "$.localEducationAgencyReference",
+                    _database.Fixture.LocalEducationAgencyReferentialId
+                )
             );
-        result
-            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
-            .Result!.ResourceKeyId.Should()
-            .Be(_database.MappingSet.ResourceKeyIdByResource[_database.Fixture.LocalEducationAgencyResource]);
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception
+            .Which.Message.Should()
+            .Contain(_database.Fixture.LocalEducationAgencyReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
+        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("'<null>'");
     }
 
     [Test]
-    public async Task It_resolves_abstract_alias_references_and_fails_closed_for_incompatible_alias_targets()
+    public async Task It_resolves_abstract_alias_references_and_fails_closed_for_incompatible_alias_verification_mismatches()
     {
         var resolvedAliasResult = await ResolveDocumentReferencesAsync(
             _database.Fixture.CreateEducationOrganizationReference("$.educationOrganizationReference")
         );
-        var incompatibleAliasResult = await ResolveDocumentReferencesAsync(
-            _database.Fixture.CreateLocalEducationAgencyReference(
-                "$.localEducationAgencyReference",
-                _database.Fixture.EducationOrganizationAliasReferentialId
-            )
-        );
+        var incompatibleAliasAct = async () =>
+            await ResolveDocumentReferencesAsync(
+                _database.Fixture.CreateLocalEducationAgencyReference(
+                    "$.localEducationAgencyReference",
+                    _database.Fixture.EducationOrganizationAliasReferentialId
+                )
+            );
 
         var resolvedEducationOrganization = resolvedAliasResult.SuccessfulDocumentReferencesByPath[
             new JsonPath("$.educationOrganizationReference")
@@ -150,42 +149,38 @@ public class Given_MssqlReferenceResolver
             .Be(
                 _database.MappingSet.ResourceKeyIdByResource[_database.Fixture.EducationOrganizationResource]
             );
-        incompatibleAliasResult
-            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
-            .Should()
-            .Equal(
-                ("$.localEducationAgencyReference", DocumentReferenceFailureReason.IncompatibleTargetType)
-            );
+        var exception = await incompatibleAliasAct.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception
+            .Which.Message.Should()
+            .Contain(_database.Fixture.EducationOrganizationAliasReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
+        exception.Which.Message.Should().Contain("$$.localEducationAgencyId=255901");
+        exception.Which.Message.Should().Contain("'<null>'");
     }
 
     [Test]
-    public async Task It_surfaces_descriptor_membership_failures_when_the_lookup_is_not_a_descriptor()
+    public async Task It_fails_closed_when_a_descriptor_lookup_has_a_non_descriptor_verification_mismatch()
     {
-        var result = await ResolveDescriptorReferencesAsync(
-            _database.Fixture.CreateSchoolTypeDescriptorReference(
-                "$.schoolTypeDescriptor",
-                _database.Fixture.LocalEducationAgencyReferentialId,
-                _database.Fixture.SchoolTypeDescriptorUri
-            )
-        );
+        var act = async () =>
+            await ResolveDescriptorReferencesAsync(
+                _database.Fixture.CreateSchoolTypeDescriptorReference(
+                    "$.schoolTypeDescriptor",
+                    _database.Fixture.LocalEducationAgencyReferentialId,
+                    _database.Fixture.SchoolTypeDescriptorUri
+                )
+            );
 
-        result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
-        result
-            .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
-            .Should()
-            .Equal(("$.schoolTypeDescriptor", DescriptorReferenceFailureReason.DescriptorTypeMismatch));
-        result
-            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
-            .Result.Should()
-            .NotBeNull();
-        result
-            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
-            .Result!.IsDescriptor.Should()
-            .BeFalse();
-        result
-            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
-            .Result!.ResourceKeyId.Should()
-            .Be(_database.MappingSet.ResourceKeyIdByResource[_database.Fixture.LocalEducationAgencyResource]);
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception
+            .Which.Message.Should()
+            .Contain(_database.Fixture.LocalEducationAgencyReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
+        exception
+            .Which.Message.Should()
+            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("'<null>'");
     }
 
     [Test]
@@ -300,6 +295,50 @@ public class Given_MssqlReferenceResolver
             .Which.Message.Should()
             .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_wrong_type_document_referential_identity_row_is_cross_wired()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync(CreateWrongTypeSchoolSeedData());
+
+        var act = async () =>
+            await ResolveDocumentReferencesAsync(
+                _database.Fixture.CreateSchoolReference("$.schoolReference")
+            );
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolReference");
+        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("'<null>'");
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_wrong_type_descriptor_referential_identity_row_is_cross_wired()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync(CreateWrongTypeSchoolTypeDescriptorSeedData());
+
+        var act = async () =>
+            await ResolveDescriptorReferencesAsync(
+                _database.Fixture.CreateSchoolTypeDescriptorReference("$.schoolTypeDescriptor")
+            );
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception
+            .Which.Message.Should()
+            .Contain(_database.Fixture.SchoolTypeDescriptorReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
+        exception
+            .Which.Message.Should()
+            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception
+            .Which.Message.Should()
+            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english");
     }
 
     [Test]
@@ -519,6 +558,54 @@ public class Given_MssqlReferenceResolver
                     "Wrong",
                     "SchoolTypeDescriptor",
                     "uri://ed-fi.org/SchoolTypeDescriptor#Wrong"
+                ),
+            ],
+        };
+    }
+
+    private ReferenceResolverSeedData CreateWrongTypeSchoolSeedData()
+    {
+        var seedData = _database.Fixture.SeedData;
+        var localEducationAgencyResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.LocalEducationAgencyResource
+        ];
+
+        return seedData with
+        {
+            ReferentialIdentities =
+            [
+                .. seedData.ReferentialIdentities.Select(referentialIdentity =>
+                    referentialIdentity.ReferentialId == _database.Fixture.SchoolReferentialId
+                        ? referentialIdentity with
+                        {
+                            DocumentId = 202,
+                            ResourceKeyId = localEducationAgencyResourceKeyId,
+                        }
+                        : referentialIdentity
+                ),
+            ],
+        };
+    }
+
+    private ReferenceResolverSeedData CreateWrongTypeSchoolTypeDescriptorSeedData()
+    {
+        var seedData = _database.Fixture.SeedData;
+        var academicSubjectDescriptorResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.AcademicSubjectDescriptorResource
+        ];
+
+        return seedData with
+        {
+            ReferentialIdentities =
+            [
+                .. seedData.ReferentialIdentities.Select(referentialIdentity =>
+                    referentialIdentity.ReferentialId == _database.Fixture.SchoolTypeDescriptorReferentialId
+                        ? referentialIdentity with
+                        {
+                            DocumentId = 404,
+                            ResourceKeyId = academicSubjectDescriptorResourceKeyId,
+                        }
+                        : referentialIdentity
                 ),
             ],
         };

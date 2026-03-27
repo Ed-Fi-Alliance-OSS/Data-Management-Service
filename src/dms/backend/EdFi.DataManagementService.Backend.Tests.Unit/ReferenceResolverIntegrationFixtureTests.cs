@@ -102,7 +102,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     12,
                     12,
                     false,
-                    "$$.localEducationAgencyId=255901"
+                    "$$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     _fixture.SchoolTypeDescriptorReferentialId,

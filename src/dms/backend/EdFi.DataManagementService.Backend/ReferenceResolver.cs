@@ -172,6 +172,14 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
 
         foreach (var documentReferenceOccurrence in documentReferenceOccurrences)
         {
+            var lookupResult = documentReferenceOccurrence.Lookup.Result;
+            EnsureLookupIntegrity(
+                request.MappingSet,
+                documentReferenceOccurrence.Reference.Path,
+                documentReferenceOccurrence.Reference.ReferentialId,
+                lookupResult
+            );
+
             var documentReferenceFailure = ClassifyDocumentReferenceFailure(
                 request.MappingSet,
                 documentReferenceOccurrence
@@ -183,17 +191,17 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 continue;
             }
 
-            EnsureLookupIntegrity(
-                request.MappingSet,
-                documentReferenceOccurrence.Reference.Path,
-                GetRequiredLookupRequestEntry(documentReferenceOccurrence.Reference.ReferentialId),
-                documentReferenceOccurrence.Lookup.Result!
-            );
+            if (lookupResult is null)
+            {
+                throw new InvalidOperationException(
+                    $"Document reference at path '{documentReferenceOccurrence.Reference.Path.Value}' was classified as successful without a lookup result."
+                );
+            }
 
             AddSuccessfulDocumentReference(
                 successfulDocumentReferencesByPath,
                 documentReferenceOccurrence.Reference,
-                documentReferenceOccurrence.Lookup.Result!
+                lookupResult
             );
         }
 
@@ -203,6 +211,14 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
 
         foreach (var descriptorReferenceOccurrence in descriptorReferenceOccurrences)
         {
+            var lookupResult = descriptorReferenceOccurrence.Lookup.Result;
+            EnsureLookupIntegrity(
+                request.MappingSet,
+                descriptorReferenceOccurrence.Reference.Path,
+                descriptorReferenceOccurrence.Reference.ReferentialId,
+                lookupResult
+            );
+
             var descriptorReferenceFailure = ClassifyDescriptorReferenceFailure(
                 request.MappingSet,
                 descriptorReferenceOccurrence
@@ -214,13 +230,13 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 continue;
             }
 
-            var lookupResult = descriptorReferenceOccurrence.Lookup.Result!;
-            EnsureLookupIntegrity(
-                request.MappingSet,
-                descriptorReferenceOccurrence.Reference.Path,
-                GetRequiredLookupRequestEntry(descriptorReferenceOccurrence.Reference.ReferentialId),
-                lookupResult
-            );
+            if (lookupResult is null)
+            {
+                throw new InvalidOperationException(
+                    $"Descriptor reference at path '{descriptorReferenceOccurrence.Reference.Path.Value}' was classified as successful without a lookup result."
+                );
+            }
+
             var descriptorKey = CreateDescriptorReferenceKey(descriptorReferenceOccurrence.Reference);
 
             if (
@@ -374,6 +390,21 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         throw new InvalidOperationException(
             $"Reference resolver did not cache lookup metadata for referential id '{referentialId.Value}' before materializing the result set."
         );
+    }
+
+    private void EnsureLookupIntegrity(
+        MappingSet mappingSet,
+        JsonPath path,
+        ReferentialId referentialId,
+        ReferenceLookupResult? lookupResult
+    )
+    {
+        if (lookupResult is null)
+        {
+            return;
+        }
+
+        EnsureLookupIntegrity(mappingSet, path, GetRequiredLookupRequestEntry(referentialId), lookupResult);
     }
 
     private static void EnsureLookupIntegrity(

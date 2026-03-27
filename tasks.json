@@ -334,5 +334,27 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Resolver Integrity Ordering Regression",
+    "description": "Fix the ordering bug in `src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs` so lookup-integrity verification runs for every non-null resolved hit before document or descriptor type classification. Acceptance: a resolved row whose verification witness does not match the requested natural key is always treated as corruption, even when the resolved `ResourceKeyId` would otherwise produce `IncompatibleTargetType` or `DescriptorTypeMismatch`; `Missing` remains the only classification path that bypasses integrity checks; document and descriptor corruption cases fail through the dedicated corruption path instead of being downgraded to client validation failures; and new tests cover wrong-key concrete-target and wrong-key descriptor-target scenarios explicitly.",
+    "steps-to-verify": [
+      "Add unit tests showing a non-null lookup with a mismatched verification key throws the corruption exception before document or descriptor failure classification can return `IncompatibleTargetType` or `DescriptorTypeMismatch`.",
+      "Add or update integration tests on PostgreSQL and SQL Server with deliberately cross-wired `dms.ReferentialIdentity` data that would previously have been misclassified as a validation error.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reference Failure Dead Code Cleanup",
+    "description": "Remove or justify the now-unused `GetResourceNames()` helpers from `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs` and `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpdateResult.cs`. Acceptance: either the helpers are deleted because live handler mapping no longer consumes resource-name-only reference failures, or a current non-legacy caller is documented and tested; no production code retains redundant resource-name projection APIs that can drift from the path-aware failure contract; and any test coverage is updated to validate the remaining authoritative contract rather than preserving dead compatibility surface by default.",
+    "steps-to-verify": [
+      "Search the non-legacy codebase for production callers of `GetResourceNames()` and remove the helpers if no current callers remain outside legacy-only tests.",
+      "Update or delete unit tests that exist solely to preserve the dead helper surface, keeping coverage focused on the path-aware failure contract and current handler behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
