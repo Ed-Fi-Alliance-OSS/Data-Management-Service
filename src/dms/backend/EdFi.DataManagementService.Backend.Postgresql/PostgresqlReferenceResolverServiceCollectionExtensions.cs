@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
@@ -13,6 +14,9 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
     public static IServiceCollection AddPostgresqlReferenceResolver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<PostgresqlDataSourceCache>();
+        services.TryAddScoped<IPostgresqlDbConnectionProvider, PostgresqlRequestDbConnectionProvider>();
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
