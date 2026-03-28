@@ -379,6 +379,60 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_stamp_child_inserts_without_touching_identity_stamps()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:AddressTypeDescriptor",
+            "Home"
+        );
+        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:StateAbbreviationDescriptor",
+            "TX"
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await InsertContactAddressAsync(
+            _seedData.ContactDocumentId,
+            2,
+            addressTypeDescriptorDocumentId,
+            stateAbbreviationDescriptorDocumentId,
+            "Austin",
+            "78702",
+            "200 Congress Ave"
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_successful_no_op_child_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[ContactAddress]
+            SET [StreetNumberName] = [StreetNumberName]
+            WHERE [CollectionItemId] = @collectionItemId
+              AND [Contact_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@collectionItemId", _seedData.ContactAddressCollectionItemId),
+            new SqlParameter("@documentId", _seedData.ContactDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        after.Should().Be(before);
+    }
+
+    [Test]
     public async Task It_should_stamp_extension_scope_representation_changes_without_touching_identity_stamps()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
@@ -397,6 +451,51 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_successful_no_op_extension_scope_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [sample].[ContactExtensionAddress]
+            SET [Complex] = [Complex]
+            WHERE [BaseCollectionItemId] = @baseCollectionItemId
+              AND [Contact_DocumentId] = @documentId;
+            """,
+            new SqlParameter("@baseCollectionItemId", _seedData.ContactAddressCollectionItemId),
+            new SqlParameter("@documentId", _seedData.ContactDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        after.Should().Be(before);
+    }
+
+    [Test]
+    public async Task It_should_stamp_root_extension_inserts_without_touching_identity_stamps()
+    {
+        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("12121212-1212-1212-1212-121212121212"),
+            contactResourceKeyId
+        );
+        await InsertContactAsync(documentId, "10003", "Taylor", "Reed");
+
+        var before = await GetDocumentStampStateAsync(documentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await InsertContactExtensionAsync(documentId);
+
+        var after = await GetDocumentStampStateAsync(documentId);
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
@@ -446,6 +545,41 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
 
         after.Should().Be(before);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_identity_for_content_only_updates_on_identity_propagation_tables()
+    {
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolDocumentId = await InsertDocumentAsync(
+            Guid.Parse("23232323-2323-2323-2323-232323232323"),
+            schoolResourceKeyId
+        );
+        await ExecuteWithTriggersTemporarilyDisabledAsync(
+            "edfi",
+            "School",
+            async () => await InsertSchoolAsync(schoolDocumentId, 101, "North Ridge High")
+        );
+
+        var before = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [NameOfInstitution] = @nameOfInstitution
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@nameOfInstitution", "North Ridge High Updated"),
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(schoolDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -750,6 +884,20 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """,
             new SqlParameter("@projectName", projectName),
             new SqlParameter("@resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> GetDescriptorDocumentIdAsync(string discriminator, string codeValue)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [dms].[Descriptor]
+            WHERE [Discriminator] = @discriminator
+              AND [CodeValue] = @codeValue;
+            """,
+            new SqlParameter("@discriminator", discriminator),
+            new SqlParameter("@codeValue", codeValue)
         );
     }
 
