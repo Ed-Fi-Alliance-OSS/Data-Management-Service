@@ -643,14 +643,14 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Triggers
     }
 
     [Test]
-    public void It_should_emit_trigger_function()
+    public void It_should_emit_document_stamping_trigger_function()
     {
         _ddl.Should().Contain("CREATE OR REPLACE FUNCTION");
         _ddl.Should().Contain("RETURNS TRIGGER");
     }
 
     [Test]
-    public void It_should_emit_trigger_with_drop_then_create_pattern()
+    public void It_should_emit_document_stamping_trigger_with_delete_prevision_in_drop_then_create_pattern()
     {
         // Design requires DROP + CREATE pattern, not CREATE OR REPLACE TRIGGER (ddl-generation.md:260-262)
         _ddl.Should().Contain("DROP TRIGGER IF EXISTS");
@@ -688,13 +688,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
     }
 
     [Test]
-    public void It_should_emit_create_or_alter_trigger()
+    public void It_should_emit_document_stamping_create_or_alter_trigger()
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER");
     }
 
     [Test]
-    public void It_should_emit_after_insert_update()
+    public void It_should_emit_document_stamping_after_insert_update_delete_prevision()
     {
         _ddl.Should().Contain("AFTER INSERT, UPDATE");
     }
@@ -709,6 +709,211 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
 // ═══════════════════════════════════════════════════════════════════
 // Determinism Tests
 // ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PgsqlDocumentStampingFixture.Build();
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_reuse_document_defaults_for_root_inserts_and_restamp_content_on_updates()
+    {
+        var rootUpdateGuardIndex = _ddl.IndexOf("IF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
+        var rootContentStampIndex = _ddl.IndexOf(
+            "WHERE \"DocumentId\" = NEW.\"DocumentId\";",
+            StringComparison.Ordinal
+        );
+
+        rootUpdateGuardIndex.Should().BeGreaterOrEqualTo(0);
+        rootContentStampIndex.Should().BeGreaterThan(rootUpdateGuardIndex);
+        _ddl.Should()
+            .Contain(
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
+            );
+    }
+
+    [Test]
+    public void It_should_gate_identity_stamping_on_null_safe_root_identity_diffs()
+    {
+        _ddl.Should()
+            .Contain("IF TG_OP = 'UPDATE' AND (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN");
+        _ddl.Should().Contain("\"IdentityVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("\"IdentityLastModifiedAt\" = now()");
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
+    }
+
+    [Test]
+    public void It_should_short_circuit_no_op_updates_by_comparing_stored_root_columns()
+    {
+        _ddl.Should()
+            .Contain(
+                "IF TG_OP = 'UPDATE' AND NOT (OLD.\"DocumentId\" IS DISTINCT FROM NEW.\"DocumentId\" OR OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN"
+            );
+        _ddl.Should().Contain("RETURN NEW;");
+    }
+
+    [Test]
+    public void It_should_stamp_child_writes_using_the_root_document_locator()
+    {
+        _ddl.Should()
+            .NotContain(
+                """
+                IF TG_OP = 'UPDATE' THEN
+                    UPDATE "dms"."Document"
+                    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+                    WHERE "DocumentId" = NEW."School_DocumentId";
+                END IF;
+                """
+            );
+        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"School_DocumentId\";");
+    }
+
+    [Test]
+    public void It_should_short_circuit_no_op_updates_by_comparing_child_stored_columns()
+    {
+        _ddl.Should()
+            .Contain(
+                "IF TG_OP = 'UPDATE' AND NOT (OLD.\"CollectionItemId\" IS DISTINCT FROM NEW.\"CollectionItemId\" OR OLD.\"School_DocumentId\" IS DISTINCT FROM NEW.\"School_DocumentId\" OR OLD.\"StreetNumberName\" IS DISTINCT FROM NEW.\"StreetNumberName\") THEN"
+            );
+    }
+
+    [Test]
+    public void It_should_use_row_level_nextval_stamping_shape_for_distinct_multi_row_versions()
+    {
+        _ddl.Should().Contain("FOR EACH ROW");
+        _ddl.Should().Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = MssqlDocumentStampingFixture.Build();
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_use_a_deduped_affected_docs_workset_for_content_stamping()
+    {
+        _ddl.Should().Contain(";WITH affectedDocs AS (");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
+        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];");
+        _ddl.Should().Contain("LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]");
+        _ddl.Should().Contain("LEFT JOIN inserted i ON i.[CollectionItemId] = del.[CollectionItemId]");
+        _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[School_DocumentId];");
+    }
+
+    [Test]
+    public void It_should_use_next_value_for_directly_in_the_set_based_update()
+    {
+        _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().Contain("SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
+        _ddl.Should().NotContain("DECLARE @contentVersion");
+        _ddl.Should().NotContain("DECLARE @identityVersion");
+    }
+
+    [Test]
+    public void It_should_gate_identity_stamping_with_update_prefilter_and_null_safe_value_diff()
+    {
+        _ddl.Should().Contain("IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))");
+        _ddl.Should()
+            .Contain(
+                "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()"
+            );
+        _ddl.Should()
+            .Contain(
+                "(i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))"
+            );
+    }
+
+    [Test]
+    public void It_should_not_attempt_identity_gating_on_child_locator_columns()
+    {
+        _ddl.Should().NotContain("UPDATE([School_DocumentId])");
+    }
+
+    [Test]
+    public void It_should_filter_no_op_updates_by_comparing_stored_row_values()
+    {
+        _ddl.Should()
+            .Contain(
+                "WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))"
+            );
+        _ddl.Should()
+            .Contain(
+                "WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[StreetNumberName] <> del.[StreetNumberName] OR (i.[StreetNumberName] IS NULL AND del.[StreetNumberName] IS NOT NULL) OR (i.[StreetNumberName] IS NOT NULL AND del.[StreetNumberName] IS NULL))"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_IdentityPropagationFallback
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = MssqlIdentityPropagationFixture.Build();
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_identity_propagation_as_instead_of_update()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER TRIGGER [edfi].[TR_School_PropagateIdentity]");
+        _ddl.Should().Contain("ON [edfi].[School]");
+        _ddl.Should().Contain("INSTEAD OF UPDATE");
+        _ddl.Should().NotContain("AFTER UPDATE");
+    }
+
+    [Test]
+    public void It_should_propagate_referrer_identity_columns_before_the_base_update()
+    {
+        var referrerUpdateIndex = _ddl.IndexOf("UPDATE r", StringComparison.Ordinal);
+        var baseUpdateIndex = _ddl.IndexOf("UPDATE t", StringComparison.Ordinal);
+
+        _ddl.Should().Contain("FROM [edfi].[Enrollment] r");
+        _ddl.Should().Contain("INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]");
+        _ddl.Should()
+            .Contain(
+                "AND ((r.[School_SchoolId] = d.[SchoolId]) OR (r.[School_SchoolId] IS NULL AND d.[SchoolId] IS NULL));"
+            );
+        referrerUpdateIndex.Should().BeGreaterOrEqualTo(0);
+        baseUpdateIndex.Should().BeGreaterThan(referrerUpdateIndex);
+    }
+
+    [Test]
+    public void It_should_apply_the_intercepted_update_to_the_trigger_table_after_propagation()
+    {
+        _ddl.Should()
+            .Contain("SET t.[SchoolId] = i.[SchoolId], t.[NameOfInstitution] = i.[NameOfInstitution]");
+        _ddl.Should().Contain("FROM [edfi].[School] t");
+        _ddl.Should().Contain("INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];");
+    }
+}
 
 [TestFixture]
 public class Given_RelationalModelDdlEmitter_With_Pgsql_Emitting_Twice
@@ -1805,6 +2010,376 @@ internal static class TriggerFixture
             [],
             [],
             [trigger]
+        );
+    }
+}
+
+internal static class PgsqlDocumentStampingFixture
+{
+    internal static DerivedRelationalModelSet Build()
+    {
+        var dialect = SqlDialect.Pgsql;
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var childTableName = new DbTableName(schema, "SchoolAddress");
+        var collectionItemIdColumn = new DbColumnName("CollectionItemId");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var childDocumentIdColumn = new DbColumnName("School_DocumentId");
+        var streetNumberNameColumn = new DbColumnName("StreetNumberName");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var rootTable = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            new JsonPathExpression("$.addresses[*]", []),
+            new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(collectionItemIdColumn, ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    collectionItemIdColumn,
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    childDocumentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    streetNumberNameColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression("$.addresses[*].streetNumberName", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                tableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            new(
+                new DbTriggerName("TR_SchoolAddress_Stamp"),
+                childTableName,
+                [childDocumentIdColumn],
+                [],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
+        );
+    }
+}
+
+internal static class MssqlDocumentStampingFixture
+{
+    internal static DerivedRelationalModelSet Build()
+    {
+        var dialect = SqlDialect.Mssql;
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var childTableName = new DbTableName(schema, "SchoolAddress");
+        var collectionItemIdColumn = new DbColumnName("CollectionItemId");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var childDocumentIdColumn = new DbColumnName("School_DocumentId");
+        var streetNumberNameColumn = new DbColumnName("StreetNumberName");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var rootTable = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            new JsonPathExpression("$.addresses[*]", []),
+            new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(collectionItemIdColumn, ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    collectionItemIdColumn,
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    childDocumentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    streetNumberNameColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression("$.addresses[*].streetNumberName", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable, childTable],
+            [],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                tableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            new(
+                new DbTriggerName("TR_SchoolAddress_Stamp"),
+                childTableName,
+                [childDocumentIdColumn],
+                [],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
+        );
+    }
+}
+
+internal static class MssqlIdentityPropagationFixture
+{
+    internal static DerivedRelationalModelSet Build()
+    {
+        var dialect = SqlDialect.Mssql;
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var nameOfInstitutionColumn = new DbColumnName("NameOfInstitution");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var schoolTableName = new DbTableName(schema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    nameOfInstitutionColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression("$.nameOfInstitution", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_School_PropagateIdentity"),
+                schoolTableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.IdentityPropagationFallback([
+                    new PropagationReferrerTarget(
+                        new DbTableName(schema, "Enrollment"),
+                        new DbColumnName("School_DocumentId"),
+                        [new TriggerColumnMapping(schoolIdColumn, new DbColumnName("School_SchoolId"))]
+                    ),
+                ])
+            ),
+        ];
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable],
+            [],
+            []
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
         );
     }
 }
