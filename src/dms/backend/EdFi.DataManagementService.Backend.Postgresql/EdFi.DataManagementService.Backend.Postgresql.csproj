@@ -11,6 +11,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
         <PackageReference Include="Npgsql" />
         <PackageReference Include="SonarAnalyzer.CSharp">
@@ -20,7 +21,6 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
-        <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
     </ItemGroup>
     <ItemGroup>
