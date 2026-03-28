@@ -5,7 +5,7 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
-using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -17,34 +17,25 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
     private readonly ILogger<MssqlRelationalCommandExecutor> _logger;
 
     public MssqlRelationalCommandExecutor(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IRequestConnectionProvider requestConnectionProvider,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
-        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString), logger) { }
+        : this(requestConnectionProvider, connectionString => new SqlConnection(connectionString), logger) { }
 
     internal MssqlRelationalCommandExecutor(
-        IDmsInstanceSelection dmsInstanceSelection,
+        IRequestConnectionProvider requestConnectionProvider,
         Func<string, DbConnection> createConnection,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
     {
-        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
+        ArgumentNullException.ThrowIfNull(requestConnectionProvider);
         ArgumentNullException.ThrowIfNull(createConnection);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _openConnectionAsync = async cancellationToken =>
         {
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
-            var connectionString = selectedInstance.ConnectionString;
-
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                throw new InvalidOperationException(
-                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
-                );
-            }
-
-            var connection = createConnection(connectionString);
+            RequestConnection requestConnection = requestConnectionProvider.GetRequestConnection();
+            var connection = createConnection(requestConnection.ConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             return connection;

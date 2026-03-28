@@ -4,7 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Mssql;
-using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -21,7 +22,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<IRequestConnectionProvider>(_ => A.Fake<IRequestConnectionProvider>());
         services.AddMssqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);
