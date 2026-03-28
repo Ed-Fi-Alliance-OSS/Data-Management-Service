@@ -1194,12 +1194,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 break;
 
             case ScalarKind.DateTime:
-                // ISO 8601: YYYY-MM-DDTHH:mm:ss (CONVERT style 126, truncated to 19 chars).
-                // Truncation to whole seconds matches PG to_char() which also omits fractional
-                // seconds, ensuring cross-engine identity hash parity.
+                // ISO 8601 UTC contract: YYYY-MM-DDTHH:mm:ssZ. Truncation to whole seconds
+                // matches PG to_char(), and the explicit trailing Z matches the
+                // request/reference-resolution path's canonical DateTime identity contract.
                 writer.Append("CONVERT(nvarchar(19), i.");
                 writer.Append(quoted);
-                writer.Append(", 126)");
+                writer.Append(", 126) + N'Z'");
                 break;
 
             case ScalarKind.Time:
