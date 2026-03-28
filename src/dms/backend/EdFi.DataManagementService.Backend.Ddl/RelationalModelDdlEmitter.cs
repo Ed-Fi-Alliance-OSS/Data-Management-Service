@@ -1161,7 +1161,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
             writer.Append("N'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' + ");
+            writer.Append("=' + N'$' + ");
             EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
         }
     }
