@@ -1,0 +1,77 @@
+[
+  {
+    "category": "Layering",
+    "description": "Introduce a minimal read-only request-scoped database selection abstraction in `src/dms/core/EdFi.DataManagementService.Core.External/` for backend consumers, plus a Core adapter that bridges from `IDmsInstanceSelection`. Acceptance: the new external contract does not expose `SetSelectedDmsInstance`, does not return `DmsInstance`, exposes enough data for backends to obtain the selected instance ID and required connection string, and has unit coverage for unset-selection and missing-connection failure paths.",
+    "steps-to-verify": [
+      "Add unit tests for the Core adapter and any DI registration added in `DmsCoreServiceExtensions`.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Layering",
+    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend.Mssql/` to consume the new external request-connection abstraction instead of `EdFi.DataManagementService.Core.Configuration.IDmsInstanceSelection`. Acceptance: `MssqlRelationalCommandExecutor` no longer references `Core.Configuration` or `DmsInstance`; `EdFi.DataManagementService.Backend.Mssql.csproj` no longer references `EdFi.DataManagementService.Core`; existing unit tests and DI registration tests are updated to use the new abstraction; behavior when the selected instance is missing a connection string is unchanged.",
+    "steps-to-verify": [
+      "Update unit tests for `MssqlRelationalCommandExecutor` and `MssqlReferenceResolverServiceCollectionExtensions` to exercise the new abstraction.",
+      "Run: `rg -n \"Core\\.Configuration|DmsInstance\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql` and confirm there are no production-code hits.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Layering",
+    "description": "Add PostgreSQL request-connection infrastructure under `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/` so the new backend no longer imports `Old.Postgresql.NpgsqlDataSourceProvider`. Acceptance: `PostgresqlRelationalCommandExecutor` depends only on types from `Backend.Postgresql`, `Backend`, `Core.External`, and framework/Npgsql packages; the new request-scoped provider preserves current `NpgsqlDataSourceCache` behavior for per-connection-string reuse and builder settings (`NoResetOnClose`, default `ApplicationName`, `AutoPrepareMinUsages`, `MaxAutoPrepare`); unit tests cover cache reuse and per-scope access behavior.",
+    "steps-to-verify": [
+      "Add unit tests for the new PostgreSQL cache/provider types and update `PostgresqlRelationalCommandExecutor` tests to resolve through the new constructor surface.",
+      "Run: `rg -n \"Old\\.Postgresql|NpgsqlDataSourceProvider\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql` and confirm there are no production-code hits.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Composition",
+    "description": "Rewire PostgreSQL relational reference-resolver composition to use the new request-connection provider and remove the legacy project dependency from `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/EdFi.DataManagementService.Backend.Postgresql.csproj`. Acceptance: the PostgreSQL backend project no longer has a `ProjectReference` to `EdFi.DataManagementService.Old.Postgresql`; service-collection and frontend composition tests still resolve `PostgresqlRelationalCommandExecutor` when PostgreSQL datastore plus relational backend are enabled; targeted tests for the new backend no longer register the legacy `NpgsqlDataSourceProvider`.",
+    "steps-to-verify": [
+      "Update backend and frontend composition tests to use the new PostgreSQL connection registrations.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "DateTime Contracts",
+    "description": "Align PostgreSQL referential-identity DDL emission with Core's canonical UTC DateTime contract in `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`. Acceptance: `EmitPgsqlColumnToText` emits `to_char(NEW.<col> AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')` for `ScalarKind.DateTime`; the stale comment that claims parity with raw inserted literals is replaced with a comment that matches the current Core normalization behavior; `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/pgsql/identity-propagation.sql` is updated so `EntryTimestamp` identity text includes UTC normalization and a trailing `Z`.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter Given_DdlEmitter_With_IdentityPropagation_For_Pgsql`",
+      "Run: `rg -n \"AT TIME ZONE 'UTC'.*HH24:MI:SS\\\"Z\\\"\" ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/pgsql/identity-propagation.sql`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "DateTime Contracts",
+    "description": "Align SQL Server referential-identity DDL emission with Core's canonical UTC DateTime contract in `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`. Acceptance: `EmitMssqlColumnToNvarchar` emits `CONVERT(nvarchar(19), i.<col>, 126) + N'Z'` for `ScalarKind.DateTime`; the method comment states that the trigger format intentionally matches the request/reference-resolution path's canonical `yyyy-MM-ddTHH:mm:ssZ` contract; `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/mssql/identity-propagation.sql` is updated in both insert and update branches so `EntryTimestamp` identity text includes the trailing `Z`.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter Given_DdlEmitter_With_IdentityPropagation_For_Mssql`",
+      "Run: `rg -n \"CONVERT\\(nvarchar\\(19\\), i\\.[A-Za-z0-9_\\[\\]]+, 126\\) \\+ N'Z'\" ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/mssql/identity-propagation.sql`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Add a focused generated-DDL PostgreSQL parity test for DateTime identities. Acceptance: create a focused fixture directory under `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/` for a resource whose stable identity includes a `DateTime`; add a PostgreSQL generated-DDL integration test that provisions the fixture, inserts a row, reads `dms.\"ReferentialIdentity\"`, and asserts the stored `ReferentialId` matches `EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator` when the identity value is canonicalized to UTC `yyyy-MM-ddTHH:mm:ssZ` (for example `2025-03-05T08:30:45-05:00` -> `2025-03-05T13:30:45Z`).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DateTime`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter IdentityPropagation`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Add the matching SQL Server generated-DDL parity test for the same focused DateTime-identity fixture. Acceptance: reuse the focused fixture introduced for PostgreSQL, provision it through the SQL Server generated-DDL harness, insert a row for the DateTime-identity resource, read `[dms].[ReferentialIdentity]`, and assert the stored `ReferentialId` matches `ReferentialIdCalculator` for the canonical UTC `yyyy-MM-ddTHH:mm:ssZ` identity string; the test should fail on the pre-fix trigger format and pass only after the SQL Server emitter appends `Z`.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DateTime`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter IdentityPropagation`"
+    ],
+    "completed": false
+  }
+]
