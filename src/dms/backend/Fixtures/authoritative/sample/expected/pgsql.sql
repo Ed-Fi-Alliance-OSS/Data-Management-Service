@@ -52515,11 +52515,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CredentialFieldDescriptor_DescriptorId" IS DISTINCT FROM NEW."CredentialFieldDescriptor_DescriptorId" OR OLD."CteProgramServiceCteProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."CteProgramServiceCteProgramServiceDescriptor_DescriptorId" OR OLD."AverageCarLineWait" IS DISTINCT FROM NEW."AverageCarLineWait" OR OLD."BecameParent" IS DISTINCT FROM NEW."BecameParent" OR OLD."CoffeeSpend" IS DISTINCT FROM NEW."CoffeeSpend" OR OLD."CteProgramServiceCipCode" IS DISTINCT FROM NEW."CteProgramServiceCipCode" OR OLD."CteProgramServicePrimaryIndicator" IS DISTINCT FROM NEW."CteProgramServicePrimaryIndicator" OR OLD."CteProgramServiceServiceBeginDate" IS DISTINCT FROM NEW."CteProgramServiceServiceBeginDate" OR OLD."CteProgramServiceServiceEndDate" IS DISTINCT FROM NEW."CteProgramServiceServiceEndDate" OR OLD."Duration" IS DISTINCT FROM NEW."Duration" OR OLD."Gpa" IS DISTINCT FROM NEW."Gpa" OR OLD."GraduationDate" IS DISTINCT FROM NEW."GraduationDate" OR OLD."IsSportsFan" IS DISTINCT FROM NEW."IsSportsFan" OR OLD."LuckyNumber" IS DISTINCT FROM NEW."LuckyNumber" OR OLD."PreferredWakeUpTime" IS DISTINCT FROM NEW."PreferredWakeUpTime" OR OLD."RainCertainty" IS DISTINCT FROM NEW."RainCertainty" OR OLD."TeacherConferenceDayOfWeek" IS DISTINCT FROM NEW."TeacherConferenceDayOfWeek" OR OLD."TeacherConferenceEndTime" IS DISTINCT FROM NEW."TeacherConferenceEndTime" OR OLD."TeacherConferenceStartTime" IS DISTINCT FROM NEW."TeacherConferenceStartTime") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -52742,11 +52740,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CteProgramServiceCteProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."CteProgramServiceCteProgramServiceDescriptor_DescriptorId" OR OLD."CteProgramServiceCipCode" IS DISTINCT FROM NEW."CteProgramServiceCipCode" OR OLD."CteProgramServicePrimaryIndicator" IS DISTINCT FROM NEW."CteProgramServicePrimaryIndicator" OR OLD."CteProgramServiceServiceBeginDate" IS DISTINCT FROM NEW."CteProgramServiceServiceBeginDate" OR OLD."CteProgramServiceServiceEndDate" IS DISTINCT FROM NEW."CteProgramServiceServiceEndDate" OR OLD."IsExemplary" IS DISTINCT FROM NEW."IsExemplary") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -52794,11 +52790,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FirstPetOwnedDate" IS DISTINCT FROM NEW."FirstPetOwnedDate" OR OLD."PetPreferenceMaximumWeight" IS DISTINCT FROM NEW."PetPreferenceMaximumWeight" OR OLD."PetPreferenceMinimumWeight" IS DISTINCT FROM NEW."PetPreferenceMinimumWeight") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53070,11 +53064,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AnalysisCompleted" IS DISTINCT FROM NEW."AnalysisCompleted" OR OLD."AnalysisDate" IS DISTINCT FROM NEW."AnalysisDate") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53097,11 +53089,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."InterventionStudy_EducationOrganizationId" IS DISTINCT FROM NEW."InterventionStudy_EducationOrganizationId" OR OLD."InterventionStudy_InterventionStudyIdentificationCode" IS DISTINCT FROM NEW."InterventionStudy_InterventionStudyIdentificationCode" OR OLD."TelephoneTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TelephoneTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."BedtimeReader" IS DISTINCT FROM NEW."BedtimeReader" OR OLD."BedtimeReadingRate" IS DISTINCT FROM NEW."BedtimeReadingRate" OR OLD."BookBudget" IS DISTINCT FROM NEW."BookBudget" OR OLD."BooksBorrowed" IS DISTINCT FROM NEW."BooksBorrowed" OR OLD."LibraryDuration" IS DISTINCT FROM NEW."LibraryDuration" OR OLD."LibraryTime" IS DISTINCT FROM NEW."LibraryTime" OR OLD."LibraryVisits" IS DISTINCT FROM NEW."LibraryVisits" OR OLD."PriorContactRestrictions" IS DISTINCT FROM NEW."PriorContactRestrictions" OR OLD."ReadGreenEggsAndHamDate" IS DISTINCT FROM NEW."ReadGreenEggsAndHamDate" OR OLD."ReadingTimeSpent" IS DISTINCT FROM NEW."ReadingTimeSpent" OR OLD."StudentRead" IS DISTINCT FROM NEW."StudentRead" OR OLD."TelephoneDoNotPublishIndicator" IS DISTINCT FROM NEW."TelephoneDoNotPublishIndicator" OR OLD."TelephoneOrderOfPriority" IS DISTINCT FROM NEW."TelephoneOrderOfPriority" OR OLD."TelephoneTelephoneNumber" IS DISTINCT FROM NEW."TelephoneTelephoneNumber" OR OLD."TelephoneTextMessageCapabilityIndicator" IS DISTINCT FROM NEW."TelephoneTextMessageCapabilityIndicator") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53249,11 +53239,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FavoriteProgram_DocumentId" IS DISTINCT FROM NEW."FavoriteProgram_DocumentId" OR OLD."FavoriteProgram_EducationOrganizationId" IS DISTINCT FROM NEW."FavoriteProgram_EducationOrganizationId" OR OLD."FavoriteProgram_ProgramName" IS DISTINCT FROM NEW."FavoriteProgram_ProgramName" OR OLD."FavoriteProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."FavoriteProgram_ProgramTypeDescriptor_DescriptorId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53401,11 +53389,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."PetPreferenceMaximumWeight" IS DISTINCT FROM NEW."PetPreferenceMaximumWeight" OR OLD."PetPreferenceMinimumWeight" IS DISTINCT FROM NEW."PetPreferenceMinimumWeight") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53754,11 +53740,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."MembershipTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."MembershipTypeDescriptor_DescriptorId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -53781,11 +53765,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -55742,4 +55724,5 @@ BEGIN
         RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows (ProjectEndpointNames: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_names;
     END IF;
 END $$;
+
 

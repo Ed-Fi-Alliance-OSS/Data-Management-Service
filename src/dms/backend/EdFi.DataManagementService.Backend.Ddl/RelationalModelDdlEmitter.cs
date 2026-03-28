@@ -763,7 +763,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
-        var isRootDocumentStampingTrigger = keyColumn.Equals(DocumentIdColumn);
+        var isRootDocumentStampingTrigger = tableModel.IdentityMetadata.TableKind == DbTableKind.Root;
 
         // Skip successful no-op UPDATEs that do not change any stored row values.
         writer.Append("IF TG_OP = 'UPDATE' AND NOT (");
