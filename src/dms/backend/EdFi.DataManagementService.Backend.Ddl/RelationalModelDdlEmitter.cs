@@ -996,7 +996,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
     /// Uses <c>::text</c> for most types (already ISO-stable) but explicit <c>to_char()</c>
-    /// for <see cref="ScalarKind.DateTime"/> where <c>::text</c> omits the ISO 8601 T separator.
+    /// for <see cref="ScalarKind.DateTime"/> so trigger-maintained referential ids match
+    /// Core's canonical UTC <c>yyyy-MM-ddTHH:mm:ssZ</c> contract.
     /// </summary>
     private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
     {
@@ -1004,20 +1005,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (scalarType.Kind)
         {
             case ScalarKind.DateTime:
-                // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
-                // Use to_char for ISO 8601 with T separator.
-                //
-                // No AT TIME ZONE 'UTC' conversion: the PG column type is timestamptz, which
-                // stores UTC internally but displays in the session timezone. The trigger fires
-                // in the same session as the INSERT/UPDATE, so to_char always reproduces the
-                // original literal that was inserted — matching what Core's ReferentialIdCalculator
-                // hashes from the raw JSON string. Adding AT TIME ZONE 'UTC' here would break
-                // parity because the C# path does not normalize to UTC before hashing.
-                // The DMS application must use a consistent session timezone (UTC recommended).
-                // See also EmitMssqlColumnToNvarchar (datetime2 is timezone-naive, no issue).
+                // PG timestamp::text gives a session-local value with a space separator.
+                // Normalize to UTC and append Z so DDL-maintained referential ids match the
+                // request/reference-resolution path's canonical DateTime identity contract.
                 writer.Append("to_char(NEW.");
                 writer.Append(quoted);
-                writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
+                writer.Append(" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')");
                 break;
 
             default:

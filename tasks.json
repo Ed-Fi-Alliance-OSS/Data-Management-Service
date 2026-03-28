@@ -45,7 +45,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter Given_DdlEmitter_With_IdentityPropagation_For_Pgsql`",
       "Run: `rg -n \"AT TIME ZONE 'UTC'.*HH24:MI:SS\\\"Z\\\"\" ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/pgsql/identity-propagation.sql`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "DateTime Contracts",
