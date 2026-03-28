@@ -1,0 +1,56 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "timedSessions": {
+        "resourceName": "TimedSession",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "SessionCode": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.sessionCode"
+          },
+          "EntryTimestamp": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.entryTimestamp"
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [
+          "$.sessionCode",
+          "$.entryTimestamp"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "sessionCode": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "entryTimestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "sessionCode",
+            "entryTimestamp"
+          ]
+        }
+      }
+    }
+  }
+}

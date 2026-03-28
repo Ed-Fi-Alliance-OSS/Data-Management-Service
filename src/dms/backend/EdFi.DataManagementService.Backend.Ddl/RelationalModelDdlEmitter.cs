@@ -988,7 +988,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
             writer.Append("'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' || ");
+            writer.Append("=' || '$' || ");
             EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
         }
     }
