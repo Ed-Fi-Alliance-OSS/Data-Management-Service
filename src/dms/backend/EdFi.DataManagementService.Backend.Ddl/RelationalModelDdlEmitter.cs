@@ -124,8 +124,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
 
-        var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
-
         // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers, tableModelsByTableName);
 
