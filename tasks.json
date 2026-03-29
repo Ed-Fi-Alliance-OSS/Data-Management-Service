@@ -139,5 +139,35 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"WritePlanCompiler_DeleteByParentSql|WritePlanCompiler_CollectionMerge|RuntimeMappingSetCompiler\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Plan Contracts",
+    "description": "Close the remaining stable-collection-merge contract gap in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs`. Acceptance: `TableWritePlan` rejects any plan that combines `CollectionMergePlan` with non-null `UpdateSql`; `TableWritePlan` rejects any plan that attaches `CollectionMergePlan` to a table whose `DbTableModel.IdentityMetadata.TableKind` is not `DbTableKind.Collection` or `DbTableKind.ExtensionCollection`; normalized DTO decode rejects the same invalid hybrids before they can be materialized from plain data; and new tests prove valid compiler-emitted collection plans still construct and round-trip successfully while hand-built or mutated invalid hybrids fail with clear diagnostics.",
+    "steps-to-verify": [
+      "Add direct-constructor negative tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` covering `CollectionMergePlan` plus `UpdateSql`, and `CollectionMergePlan` attached to non-collection table kinds such as `RootExtension` or `CollectionExtensionScope`.",
+      "Add decode-path negative tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs` that mutate encoded plans to include `CollectionMergePlan` plus `UpdateSql`, and `CollectionMergePlan` on a non-collection `TableKind`, and assert decode fails through the same contract enforcement path.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Serialization",
+    "description": "Reduce drift risk in the test-only write-plan serialization stack introduced by DMS-1108. Acceptance: the write-plan contract shape for collection merge metadata is defined in one obvious place and reused consistently by `NormalizedPlanContractDtos`, `NormalizedPlanContractCodec`, `NormalizedPlanDtoJson`, and `MappingSetManifestJsonEmitter`; adding a future `TableWritePlan` collection field requires one shared contract update plus targeted formatter/emitter wiring instead of repeating field definitions across multiple ad hoc serializers; and existing deterministic JSON, manifest, and codec tests continue to pass without changing the emitted contract shape.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanDtoJson.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitter.cs` so collection-merge-field ownership is centralized and repeated field-plumbing logic is reduced without changing the serialized output.",
+      "Keep or add determinism assertions in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtosTests.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitterTests.cs` proving the refactor preserves canonical JSON and manifest output byte-for-byte.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"NormalizedPlanContractDtos|NormalizedPlanContractCodec|MappingSetManifestJsonEmitter\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Test Suite",
+    "description": "Collapse duplicated stable-collection fixture setup into a shared builder so future contract changes touch one collection test model instead of several near-identical copies. Acceptance: the common `SchoolAddress` collection table model, column bindings, semantic-identity metadata, and collection-key-preallocation metadata used by `ExternalPlanContractsTests` and `NormalizedPlanContractCodecTests` come from one shared helper; both suites still express their own scenario-specific mutations without re-declaring the full fixture; and the refactor does not reduce negative-test coverage for invalid collection merge plans or codec mutations.",
+    "steps-to-verify": [
+      "Extract a shared collection-plan fixture helper for the `SchoolAddress` collection model and bindings, then update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs` to consume it.",
+      "Keep the existing negative coverage for invalid binding indexes, missing preallocation metadata, and alternate collection-key binding scenarios by mutating the shared fixture in each test instead of re-assembling the base table model inline.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
   }
 ]
