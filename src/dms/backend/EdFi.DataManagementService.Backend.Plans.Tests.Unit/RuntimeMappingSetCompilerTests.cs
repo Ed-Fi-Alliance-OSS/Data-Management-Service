@@ -291,42 +291,19 @@ public class Given_RuntimeMappingSetCompiler
         [Test]
         public void It_should_compile_collection_merge_plans_for_true_collection_tables()
         {
-            AssertCollectionMergePlan(
-                "SchoolAddress",
-                [("$.city", "City")],
-                "CollectionItemId",
-                "Ordinal",
-                "City"
-            );
-            AssertCollectionMergePlan(
-                "SchoolAddressPeriod",
-                [("$.periodName", "PeriodName")],
-                "CollectionItemId",
-                "Ordinal",
-                "PeriodName"
-            );
-            AssertCollectionMergePlan(
-                "SchoolExtensionIntervention",
-                [("$.interventionCode", "InterventionCode")],
-                "CollectionItemId",
-                "Ordinal",
-                "InterventionCode"
-            );
-            AssertCollectionMergePlan(
-                "SchoolExtensionInterventionVisit",
-                [("$.visitCode", "VisitCode")],
-                "CollectionItemId",
-                "Ordinal",
-                "VisitCode"
-            );
-            AssertCollectionMergePlan(
-                "SchoolExtensionAddressSponsorReference",
-                [("$.programReference.programName", "Program_DocumentId")],
-                "CollectionItemId",
-                "Ordinal",
-                "Program_DocumentId",
-                "Program_ProgramName"
-            );
+            foreach (
+                var tableName in new[]
+                {
+                    "SchoolAddress",
+                    "SchoolAddressPeriod",
+                    "SchoolExtensionIntervention",
+                    "SchoolExtensionInterventionVisit",
+                    "SchoolExtensionAddressSponsorReference",
+                }
+            )
+            {
+                AssertUsesCollectionMergeContract(tableName);
+            }
         }
 
         [Test]
@@ -347,11 +324,7 @@ public class Given_RuntimeMappingSetCompiler
             collectionExtensionScopePlan.CollectionMergePlan.Should().BeNull();
         }
 
-        private void AssertCollectionMergePlan(
-            string tableName,
-            IReadOnlyList<(string RelativePath, string ColumnName)> expectedSemanticIdentityBindings,
-            params string[] expectedCompareColumnsInOrder
-        )
+        private void AssertUsesCollectionMergeContract(string tableName)
         {
             var tablePlan = GetTablePlan(tableName);
 
@@ -359,36 +332,6 @@ public class Given_RuntimeMappingSetCompiler
             tablePlan.DeleteByParentSql.Should().BeNull();
             tablePlan.CollectionMergePlan.Should().NotBeNull();
             tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
-
-            var collectionMergePlan = tablePlan.CollectionMergePlan!;
-
-            collectionMergePlan.UpdateByStableRowIdentitySql.Should().NotBeNullOrWhiteSpace();
-            collectionMergePlan.DeleteByStableRowIdentitySql.Should().NotBeNullOrWhiteSpace();
-            collectionMergePlan.CompareBindingIndexesInOrder.Should().NotBeEmpty();
-            collectionMergePlan
-                .SemanticIdentityBindings.Select(binding =>
-                    (
-                        binding.RelativePath.Canonical,
-                        tablePlan.ColumnBindings[binding.BindingIndex].Column.ColumnName.Value
-                    )
-                )
-                .Should()
-                .Equal(expectedSemanticIdentityBindings);
-
-            tablePlan
-                .ColumnBindings[collectionMergePlan.StableRowIdentityBindingIndex]
-                .Column.ColumnName.Value.Should()
-                .Be("CollectionItemId");
-            tablePlan
-                .ColumnBindings[collectionMergePlan.OrdinalBindingIndex]
-                .Column.ColumnName.Value.Should()
-                .Be("Ordinal");
-            collectionMergePlan
-                .CompareBindingIndexesInOrder.Select(bindingIndex =>
-                    tablePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value
-                )
-                .Should()
-                .Equal(expectedCompareColumnsInOrder);
         }
 
         private TableWritePlan GetTablePlan(string tableName)

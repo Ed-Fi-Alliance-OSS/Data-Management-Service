@@ -264,12 +264,11 @@ public class Given_WritePlanCompiler_DeleteByParentSql : WritePlanCompilerTestBa
             );
 
         tablePlan.UpdateSql.Should().NotBeNull();
-        tablePlan.CollectionMergePlan.Should().BeNull();
     }
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public void It_should_keep_one_to_one_contracts_for_explicit_root_and_extension_scope_tables(
+    public void It_should_keep_delete_by_parent_for_explicit_root_and_extension_scope_tables(
         SqlDialect dialect
     )
     {
@@ -282,63 +281,35 @@ public class Given_WritePlanCompiler_DeleteByParentSql : WritePlanCompilerTestBa
         var collectionExtensionScopePlan = GetTablePlan(writePlan, "SchoolExtensionAddress");
 
         rootPlan.DeleteByParentSql.Should().BeNull();
-        rootPlan.CollectionMergePlan.Should().BeNull();
 
         rootExtensionPlan.UpdateSql.Should().NotBeNull();
         rootExtensionPlan.DeleteByParentSql.Should().NotBeNull();
-        rootExtensionPlan.CollectionMergePlan.Should().BeNull();
 
         collectionExtensionScopePlan.UpdateSql.Should().NotBeNull();
         collectionExtensionScopePlan.DeleteByParentSql.Should().NotBeNull();
-        collectionExtensionScopePlan.CollectionMergePlan.Should().BeNull();
     }
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public void It_should_compile_collection_merge_plans_and_suppress_delete_by_parent_for_explicit_collection_tables(
-        SqlDialect dialect
-    )
+    public void It_should_suppress_delete_by_parent_for_explicit_collection_tables(SqlDialect dialect)
     {
         var writePlan = new WritePlanCompiler(dialect).Compile(
             CreateFocusedStableKeyFixtureResourceModel(dialect)
         );
 
-        AssertCollectionMergePlan(
-            GetTablePlan(writePlan, "SchoolAddress"),
-            [("$.city", "City")],
-            "CollectionItemId",
-            "Ordinal",
-            "City"
-        );
-        AssertCollectionMergePlan(
-            GetTablePlan(writePlan, "SchoolAddressPeriod"),
-            [("$.periodName", "PeriodName")],
-            "CollectionItemId",
-            "Ordinal",
-            "PeriodName"
-        );
-        AssertCollectionMergePlan(
-            GetTablePlan(writePlan, "SchoolExtensionIntervention"),
-            [("$.interventionCode", "InterventionCode")],
-            "CollectionItemId",
-            "Ordinal",
-            "InterventionCode"
-        );
-        AssertCollectionMergePlan(
-            GetTablePlan(writePlan, "SchoolExtensionInterventionVisit"),
-            [("$.visitCode", "VisitCode")],
-            "CollectionItemId",
-            "Ordinal",
-            "VisitCode"
-        );
-        AssertCollectionMergePlan(
-            GetTablePlan(writePlan, "SchoolExtensionAddressSponsorReference"),
-            [("$.programReference.programName", "Program_DocumentId")],
-            "CollectionItemId",
-            "Ordinal",
-            "Program_DocumentId",
-            "Program_ProgramName"
-        );
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolAddressPeriod",
+                "SchoolExtensionIntervention",
+                "SchoolExtensionInterventionVisit",
+                "SchoolExtensionAddressSponsorReference",
+            }
+        )
+        {
+            GetTablePlan(writePlan, tableName).DeleteByParentSql.Should().BeNull();
+        }
     }
 
     private static TableWritePlan GetTablePlan(ResourceWritePlan plan, string tableName)
@@ -346,42 +317,5 @@ public class Given_WritePlanCompiler_DeleteByParentSql : WritePlanCompilerTestBa
         return plan.TablePlansInDependencyOrder.Single(tablePlan =>
             string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
         );
-    }
-
-    private static void AssertCollectionMergePlan(
-        TableWritePlan tablePlan,
-        IReadOnlyList<(string RelativePath, string ColumnName)> expectedSemanticIdentityBindings,
-        params string[] expectedCompareColumnsInOrder
-    )
-    {
-        tablePlan.DeleteByParentSql.Should().BeNull();
-        tablePlan.CollectionMergePlan.Should().NotBeNull();
-
-        var collectionMergePlan = tablePlan.CollectionMergePlan!;
-
-        collectionMergePlan
-            .SemanticIdentityBindings.Select(binding =>
-                (
-                    binding.RelativePath.Canonical,
-                    tablePlan.ColumnBindings[binding.BindingIndex].Column.ColumnName.Value
-                )
-            )
-            .Should()
-            .Equal(expectedSemanticIdentityBindings);
-
-        tablePlan
-            .ColumnBindings[collectionMergePlan.StableRowIdentityBindingIndex]
-            .Column.ColumnName.Value.Should()
-            .Be("CollectionItemId");
-        tablePlan
-            .ColumnBindings[collectionMergePlan.OrdinalBindingIndex]
-            .Column.ColumnName.Value.Should()
-            .Be("Ordinal");
-        collectionMergePlan
-            .CompareBindingIndexesInOrder.Select(bindingIndex =>
-                tablePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value
-            )
-            .Should()
-            .Equal(expectedCompareColumnsInOrder);
     }
 }

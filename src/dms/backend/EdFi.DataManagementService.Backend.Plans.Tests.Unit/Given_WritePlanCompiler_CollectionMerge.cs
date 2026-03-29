@@ -72,6 +72,124 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_stable_row_identity_dml_for_root_extension_collection_tables(
+        SqlDialect dialect
+    )
+    {
+        var tablePlan = CompileFocusedStableKeyFixtureTablePlan(dialect, "SchoolExtensionIntervention");
+
+        AssertCollectionMergePlan(
+            tablePlan,
+            expectedSemanticIdentityBindings: [("$.interventionCode", "InterventionCode")],
+            expectedUpdateByStableRowIdentitySql: dialect switch
+            {
+                SqlDialect.Pgsql => """
+                UPDATE "sample"."SchoolExtensionIntervention"
+                SET
+                    "Ordinal" = @ordinal,
+                    "InterventionCode" = @interventionCode
+                WHERE
+                    ("CollectionItemId" = @collectionItemId)
+                ;
+
+                """,
+                SqlDialect.Mssql => """
+                UPDATE [sample].[SchoolExtensionIntervention]
+                SET
+                    [Ordinal] = @ordinal,
+                    [InterventionCode] = @interventionCode
+                WHERE
+                    ([CollectionItemId] = @collectionItemId)
+                ;
+
+                """,
+                _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+            },
+            expectedDeleteByStableRowIdentitySql: dialect switch
+            {
+                SqlDialect.Pgsql => """
+                DELETE FROM "sample"."SchoolExtensionIntervention"
+                WHERE
+                    ("CollectionItemId" = @collectionItemId)
+                ;
+
+                """,
+                SqlDialect.Mssql => """
+                DELETE FROM [sample].[SchoolExtensionIntervention]
+                WHERE
+                    ([CollectionItemId] = @collectionItemId)
+                ;
+
+                """,
+                _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+            },
+            "CollectionItemId",
+            "Ordinal",
+            "InterventionCode"
+        );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_compile_stable_row_identity_dml_for_nested_extension_collection_tables(
+        SqlDialect dialect
+    )
+    {
+        var tablePlan = CompileFocusedStableKeyFixtureTablePlan(dialect, "SchoolExtensionInterventionVisit");
+
+        AssertCollectionMergePlan(
+            tablePlan,
+            expectedSemanticIdentityBindings: [("$.visitCode", "VisitCode")],
+            expectedUpdateByStableRowIdentitySql: dialect switch
+            {
+                SqlDialect.Pgsql => """
+                UPDATE "sample"."SchoolExtensionInterventionVisit"
+                SET
+                    "Ordinal" = @ordinal,
+                    "VisitCode" = @visitCode
+                WHERE
+                    ("CollectionItemId" = @collectionItemId)
+                ;
+
+                """,
+                SqlDialect.Mssql => """
+                UPDATE [sample].[SchoolExtensionInterventionVisit]
+                SET
+                    [Ordinal] = @ordinal,
+                    [VisitCode] = @visitCode
+                WHERE
+                    ([CollectionItemId] = @collectionItemId)
+                ;
+
+                """,
+                _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+            },
+            expectedDeleteByStableRowIdentitySql: dialect switch
+            {
+                SqlDialect.Pgsql => """
+                DELETE FROM "sample"."SchoolExtensionInterventionVisit"
+                WHERE
+                    ("CollectionItemId" = @collectionItemId)
+                ;
+
+                """,
+                SqlDialect.Mssql => """
+                DELETE FROM [sample].[SchoolExtensionInterventionVisit]
+                WHERE
+                    ([CollectionItemId] = @collectionItemId)
+                ;
+
+                """,
+                _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+            },
+            "CollectionItemId",
+            "Ordinal",
+            "VisitCode"
+        );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
     public void It_should_compile_stable_row_identity_dml_for_nested_collection_tables(SqlDialect dialect)
     {
         var tablePlan = CompileFocusedStableKeyFixtureTablePlan(dialect, "SchoolAddressPeriod");

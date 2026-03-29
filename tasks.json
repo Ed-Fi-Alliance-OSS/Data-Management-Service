@@ -138,6 +138,6 @@
       "Trim `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs` so it validates runtime compile success and contract presence/absence at the right level without repeating the detailed merge-shape checks from `Given_WritePlanCompiler_CollectionMerge.cs`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"WritePlanCompiler_DeleteByParentSql|WritePlanCompiler_CollectionMerge|RuntimeMappingSetCompiler\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
