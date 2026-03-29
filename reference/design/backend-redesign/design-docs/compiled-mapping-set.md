@@ -346,13 +346,15 @@ For a write request targeting resource `R`:
    - Each `TableWritePlan` contains:
      - `BulkInsertBatching: BulkInsertBatchingInfo` (`MaxRowsPerBatch`, `ParametersPerRow`, `MaxParametersPerCommand`),
      - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` (stored/writable columns only, in parameter order; each binding includes its authoritative `ParameterName`),
-     - `KeyUnificationPlans: IReadOnlyList<KeyUnificationWritePlan>` (empty when no key unification applies).
+     - `KeyUnificationPlans: IReadOnlyList<KeyUnificationWritePlan>` (empty when no key unification applies),
+     - `CollectionMergePlan: CollectionMergePlan?` for persisted collection tables only; it points back into `ColumnBindings` via ordered semantic-identity bindings plus `StableRowIdentityBindingIndex`, `OrdinalBindingIndex`, and `CompareBindingIndexesInOrder`, and carries the stable-row `UPDATE` / `DELETE` SQL used during merge execution, and
+     - `CollectionKeyPreallocationPlan: CollectionKeyPreallocationPlan?` when the table must reserve new `CollectionItemId` values and bind them into a specific `ColumnBindings` slot before insert DML.
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`
      - `Scalar(relativeJsonPath, scalarType)`
      - `DocumentReference(binding)` resolved via the per-request `(binding, ordinalPath) → DocumentId` index
      - `DescriptorReference(...)` resolved via `ResolvedReferenceSet`
-     - `WriteValueSource.Precomputed` populated by executing `KeyUnificationWritePlan` (canonical storage columns + any synthetic `..._Present` presence flags)
+     - `WriteValueSource.Precomputed` populated by executing `KeyUnificationWritePlan` (canonical storage columns + any synthetic `..._Present` presence flags) or by `CollectionKeyPreallocationPlan` for reserved collection-row identities
 
    Key unification notes:
    - `TableWritePlan.ColumnBindings` excludes any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` (API-bound binding/path aliases are generated/read-only and are never written).
@@ -371,7 +373,7 @@ For a write request targeting resource `R`:
    - Guarded no-op comparison MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as execution, either directly or through a shared helper built from the same `TableWritePlan` / `CollectionMergePlan` metadata; do not introduce a compare-only profile merge path that can drift from execution behavior.
    - Compare table-by-table, including:
      - non-collection scope state using `ProfileAppliedWriteContext.StoredScopeStates` (`VisiblePresent`, `VisibleAbsent`, `Hidden`) when profile filtering applies,
-     - collection sibling ordering and membership after merge using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` plus the same deterministic post-merge sibling-order rule as the normal executor, and
+     - collection sibling ordering and membership after merge using `ProfileAppliedWriteContext.VisibleStoredCollectionRows`, `CollectionMergePlan.CompareBindingIndexesInOrder`, and the same deterministic post-merge sibling-order rule as the normal executor, and
      - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
    - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
 
@@ -392,8 +394,9 @@ For a write request targeting resource `R`:
      - determine the visible stored rows for each scope instance from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` (or treat all rows as visible when no profile filtering applies),
      - match incoming rows by the compiled semantic identity,
      - assume at most one incoming row per `(scope instance, compiled semantic identity)`; duplicate request candidates are upstream data-validation failures and must not be left to database unique-constraint handling,
-     - update matched rows in place by `CollectionItemId`, preserving bindings governed by `HiddenMemberPaths`,
-     - delete omitted visible rows by `CollectionItemId`, and
+     - reserve new `CollectionItemId` values in batch using `CollectionKeyPreallocationPlan` when unmatched inserts are needed,
+     - update matched rows in place via `CollectionMergePlan.UpdateByStableRowIdentitySql`, preserving bindings governed by `HiddenMemberPaths`,
+     - delete omitted visible rows via `CollectionMergePlan.DeleteByStableRowIdentitySql`, and
      - bulk insert only the newly created rows when the corresponding `ProfileAppliedWriteRequest.VisibleRequestCollectionItems` entry is creatable, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.
    - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
 

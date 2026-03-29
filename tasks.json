@@ -65,6 +65,6 @@
       "Review the updated docs for consistency with the final code-level contract names and fields.",
       "Run: `rg -n \"CollectionMergePlan|DeleteByParentSql|compare|binding index|stable row identity|update matched rows\" ./reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md ./reference/design/backend-redesign/design-docs/compiled-mapping-set.md ./reference/design/backend-redesign/design-docs/flattening-reconstitution.md ./reference/design/backend-redesign/design-docs/mpack-format-v1.md`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
