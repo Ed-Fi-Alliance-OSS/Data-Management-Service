@@ -326,6 +326,73 @@ public class Given_ExternalPlanContracts
     }
 
     [Test]
+    public void It_should_reject_collection_merge_plans_without_collection_key_preallocation_metadata()
+    {
+        var tableModel = CreateCollectionTableModel();
+
+        var act = () =>
+            new ExternalPlans.TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "INSERT SQL",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
+                ColumnBindings: CreateCollectionColumnBindings(tableModel),
+                KeyUnificationPlans: [],
+                CollectionMergePlan: CreateCollectionMergePlan(),
+                CollectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionKeyPreallocationPlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.TableWritePlan.CollectionKeyPreallocationPlan));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_plans_when_stable_row_identity_binding_index_does_not_match_collection_key_preallocation_binding_index()
+    {
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: 2
+                )
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.BindingIndex));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.BindingIndex));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_plans_when_stable_row_identity_binding_column_does_not_match_collection_key_preallocation_column_name()
+    {
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("OtherCollectionItemId"),
+                    BindingIndex: 1
+                )
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.ColumnName));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.ColumnName));
+        exception.Message.Should().Contain("OtherCollectionItemId");
+    }
+
+    [Test]
     public void It_should_reject_collection_merge_semantic_identity_binding_indexes_outside_column_bindings()
     {
         var act = () =>

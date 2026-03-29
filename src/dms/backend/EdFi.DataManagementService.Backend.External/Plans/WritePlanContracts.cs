@@ -114,7 +114,7 @@ public sealed record TableWritePlan
             nameof(KeyUnificationPlans)
         );
         ValidateCollectionContract(
-            this.ColumnBindings.Length,
+            this.ColumnBindings,
             this.DeleteByParentSql,
             this.CollectionMergePlan,
             this.CollectionKeyPreallocationPlan
@@ -182,12 +182,14 @@ public sealed record TableWritePlan
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
 
     private static void ValidateCollectionContract(
-        int bindingCount,
+        ImmutableArray<WriteColumnBinding> columnBindings,
         string? deleteByParentSql,
         CollectionMergePlan? collectionMergePlan,
         CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
     )
     {
+        var bindingCount = columnBindings.Length;
+
         if (collectionMergePlan is not null)
         {
             if (deleteByParentSql is not null)
@@ -242,6 +244,44 @@ public sealed record TableWritePlan
                     "Collection merge compare binding"
                 );
             }
+
+            if (collectionKeyPreallocationPlan is null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.CollectionKeyPreallocationPlan)} to be provided.",
+                    nameof(CollectionKeyPreallocationPlan)
+                );
+            }
+
+            ValidateBindingIndex(
+                collectionKeyPreallocationPlan.BindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}",
+                "Collection-key preallocation binding"
+            );
+
+            if (
+                collectionMergePlan.StableRowIdentityBindingIndex
+                != collectionKeyPreallocationPlan.BindingIndex
+            )
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)} must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}.",
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}"
+                );
+            }
+
+            var stableRowIdentityBinding = columnBindings[collectionMergePlan.StableRowIdentityBindingIndex];
+
+            if (!stableRowIdentityBinding.Column.ColumnName.Equals(collectionKeyPreallocationPlan.ColumnName))
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)} resolves to column '{stableRowIdentityBinding.Column.ColumnName.Value}', which must match {nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.ColumnName)} '{collectionKeyPreallocationPlan.ColumnName.Value}'.",
+                    $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.ColumnName)}"
+                );
+            }
+
+            return;
         }
 
         if (collectionKeyPreallocationPlan is null)

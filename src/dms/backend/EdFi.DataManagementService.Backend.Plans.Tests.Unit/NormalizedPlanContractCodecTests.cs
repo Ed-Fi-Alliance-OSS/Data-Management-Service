@@ -869,6 +869,80 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_collection_merge_plan_is_missing_collection_key_preallocation_metadata()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionKeyPreallocationPlan = null,
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(TableWritePlan.CollectionKeyPreallocationPlan));
+        exception.Message.Should().Contain(nameof(TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(TableWritePlan.CollectionKeyPreallocationPlan));
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_stable_row_identity_binding_index_does_not_match_collection_key_preallocation_binding_index()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+        var tablePlan = tablePlans[schoolAddressIndex];
+        var stableRowIdentityBindingIndex = tablePlan.CollectionMergePlan!.StableRowIdentityBindingIndex;
+
+        tablePlans[schoolAddressIndex] = tablePlan with
+        {
+            CollectionKeyPreallocationPlan = tablePlan.CollectionKeyPreallocationPlan! with
+            {
+                BindingIndex = stableRowIdentityBindingIndex is 0 ? 1 : 0,
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionKeyPreallocationPlan.BindingIndex));
+        exception.Message.Should().Contain(nameof(CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(CollectionKeyPreallocationPlan.BindingIndex));
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_stable_row_identity_binding_column_does_not_match_collection_key_preallocation_column_name()
+    {
+        var (model, encoded) = CreateEncodedWritePlanWithAlternateCollectionKeyBinding();
+        var tablePlan = encoded.TablePlansInDependencyOrder[0];
+        var columnBindings = tablePlan.ColumnBindings.ToArray();
+        var stableRowIdentityBindingIndex = tablePlan.CollectionMergePlan!.StableRowIdentityBindingIndex;
+
+        columnBindings[stableRowIdentityBindingIndex] = columnBindings[stableRowIdentityBindingIndex] with
+        {
+            ColumnName = "AlternateCollectionItemId",
+        };
+
+        var mutated = encoded with
+        {
+            TablePlansInDependencyOrder = [tablePlan with { ColumnBindings = [.. columnBindings] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionKeyPreallocationPlan.ColumnName));
+        exception.Message.Should().Contain(nameof(CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(CollectionKeyPreallocationPlan.ColumnName));
+        exception.Message.Should().Contain("AlternateCollectionItemId");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_reference_identity_fk_ordinal_is_out_of_range()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
@@ -2465,6 +2539,146 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         schoolAddressIndex.Should().BeGreaterOrEqualTo(0);
 
         return (model, encoded, schoolAddressIndex);
+    }
+
+    private static (
+        RelationalResourceModel Model,
+        ResourceWritePlanDto Encoded
+    ) CreateEncodedWritePlanWithAlternateCollectionKeyBinding()
+    {
+        var addressTypePath = new JsonPathExpression(
+            "$.addressType",
+            [new JsonPathSegment.Property("addressType")]
+        );
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
+            new JsonPathExpression(
+                "$.addresses[*]",
+                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AlternateCollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AddressType"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: false,
+                    SourceJsonPath: addressTypePath,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: tableModel,
+            TablesInDependencyOrder: [tableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        var writePlan = new ResourceWritePlan(
+            model,
+            [
+                new TableWritePlan(
+                    TableModel: tableModel,
+                    InsertSql: "INSERT SQL",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(100, 5, 2100),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: tableModel.Columns[0],
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: tableModel.Columns[1],
+                            Source: new WriteValueSource.Precomputed(),
+                            ParameterName: "collectionItemId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: tableModel.Columns[2],
+                            Source: new WriteValueSource.Precomputed(),
+                            ParameterName: "alternateCollectionItemId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: tableModel.Columns[3],
+                            Source: new WriteValueSource.Ordinal(),
+                            ParameterName: "ordinal"
+                        ),
+                        new WriteColumnBinding(
+                            Column: tableModel.Columns[4],
+                            Source: new WriteValueSource.Scalar(
+                                addressTypePath,
+                                new RelationalScalarType(ScalarKind.String, MaxLength: 32)
+                            ),
+                            ParameterName: "addressType"
+                        ),
+                    ],
+                    KeyUnificationPlans: [],
+                    CollectionMergePlan: new CollectionMergePlan(
+                        SemanticIdentityBindings:
+                        [
+                            new CollectionMergeSemanticIdentityBinding(
+                                RelativePath: addressTypePath,
+                                BindingIndex: 4
+                            ),
+                        ],
+                        StableRowIdentityBindingIndex: 1,
+                        UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
+                        DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
+                        OrdinalBindingIndex: 3,
+                        CompareBindingIndexesInOrder: [1, 3, 4]
+                    ),
+                    CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                        ColumnName: new DbColumnName("CollectionItemId"),
+                        BindingIndex: 1
+                    )
+                ),
+            ]
+        );
+
+        return (model, NormalizedPlanContractCodec.Encode(writePlan));
     }
 
     private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)
