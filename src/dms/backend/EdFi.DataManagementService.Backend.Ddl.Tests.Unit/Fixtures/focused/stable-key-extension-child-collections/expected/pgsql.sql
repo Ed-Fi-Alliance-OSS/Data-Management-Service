@@ -892,11 +892,9 @@ BEGIN
     IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CampusCode" IS DISTINCT FROM NEW."CampusCode") THEN
         RETURN NEW;
     END IF;
-    IF TG_OP = 'UPDATE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;

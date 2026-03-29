@@ -9,7 +9,7 @@
     },
     {
       "dialect": "pgsql",
-      "normalized_sql_sha256": "67b3b0b9605056a15f02c635e7542ede2685cdda24ff9d3d10b9f76c3e656fdd",
+      "normalized_sql_sha256": "8cf79777f852d701a1557d550c9a36582872de13caf2524bbdbc086ea82e87d3",
       "statement_count": 65
     }
   ]
