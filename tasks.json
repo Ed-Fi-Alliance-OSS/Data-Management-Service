@@ -168,6 +168,6 @@
       "Keep the existing negative coverage for invalid binding indexes, missing preallocation metadata, and alternate collection-key binding scenarios by mutating the shared fixture in each test instead of re-assembling the base table model inline.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

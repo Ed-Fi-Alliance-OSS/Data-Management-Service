@@ -135,132 +135,8 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_expose_binding_index_first_collection_merge_metadata_for_collection_write_tables()
     {
-        var addressTypePath = new JsonPathExpression(
-            "$.addressType",
-            [new JsonPathSegment.Property("addressType")]
-        );
-        var streetNumberPath = new JsonPathExpression(
-            "$.streetNumberName",
-            [new JsonPathSegment.Property("streetNumberName")]
-        );
-        var tableModel = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
-            new JsonPathExpression(
-                "$.addresses[*]",
-                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
-            ),
-            new TableKey(
-                "PK_SchoolAddress",
-                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("CollectionItemId"),
-                    ColumnKind.CollectionKey,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("Ordinal"),
-                    ColumnKind.Ordinal,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("AddressType"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
-                    IsNullable: false,
-                    SourceJsonPath: addressTypePath,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("StreetNumberName"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: true,
-                    SourceJsonPath: streetNumberPath,
-                    TargetResource: null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = CreateCollectionIdentityMetadata(DbTableKind.Collection),
-        };
-
-        var tablePlan = new ExternalPlans.TableWritePlan(
-            TableModel: tableModel,
-            InsertSql: "INSERT SQL",
-            UpdateSql: null,
-            DeleteByParentSql: null,
-            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
-            ColumnBindings:
-            [
-                new ExternalPlans.WriteColumnBinding(
-                    Column: tableModel.Columns[0],
-                    Source: new ExternalPlans.WriteValueSource.DocumentId(),
-                    ParameterName: "documentId"
-                ),
-                new ExternalPlans.WriteColumnBinding(
-                    Column: tableModel.Columns[1],
-                    Source: new ExternalPlans.WriteValueSource.Precomputed(),
-                    ParameterName: "collectionItemId"
-                ),
-                new ExternalPlans.WriteColumnBinding(
-                    Column: tableModel.Columns[2],
-                    Source: new ExternalPlans.WriteValueSource.Ordinal(),
-                    ParameterName: "ordinal"
-                ),
-                new ExternalPlans.WriteColumnBinding(
-                    Column: tableModel.Columns[3],
-                    Source: new ExternalPlans.WriteValueSource.Scalar(
-                        addressTypePath,
-                        new RelationalScalarType(ScalarKind.String, MaxLength: 32)
-                    ),
-                    ParameterName: "addressType"
-                ),
-                new ExternalPlans.WriteColumnBinding(
-                    Column: tableModel.Columns[4],
-                    Source: new ExternalPlans.WriteValueSource.Scalar(
-                        streetNumberPath,
-                        new RelationalScalarType(ScalarKind.String, MaxLength: 150)
-                    ),
-                    ParameterName: "streetNumberName"
-                ),
-            ],
-            KeyUnificationPlans: [],
-            CollectionMergePlan: new ExternalPlans.CollectionMergePlan(
-                SemanticIdentityBindings:
-                [
-                    new ExternalPlans.CollectionMergeSemanticIdentityBinding(
-                        RelativePath: addressTypePath,
-                        BindingIndex: 3
-                    ),
-                ],
-                StableRowIdentityBindingIndex: 1,
-                UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
-                DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
-                OrdinalBindingIndex: 2,
-                CompareBindingIndexesInOrder: [1, 2, 3, 4]
-            ),
-            CollectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
-                ColumnName: new DbColumnName("CollectionItemId"),
-                BindingIndex: 1
-            )
-        );
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+        var tablePlan = fixture.CreateTableWritePlan();
 
         tablePlan.DeleteByParentSql.Should().BeNull();
         tablePlan.CollectionMergePlan.Should().NotBeNull();
@@ -298,11 +174,7 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_table_plans_that_mix_delete_by_parent_and_collection_merge_metadata()
     {
-        var act = () =>
-            CreateCollectionTableWritePlan(
-                deleteByParentSql: "DELETE SQL",
-                collectionMergePlan: CreateCollectionMergePlan()
-            );
+        var act = () => CreateCollectionTableWritePlan(deleteByParentSql: "DELETE SQL");
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be("DeleteByParentSql");
@@ -356,19 +228,14 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_merge_plans_without_collection_key_preallocation_metadata()
     {
-        var tableModel = CreateCollectionTableModel();
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
 
         var act = () =>
-            new ExternalPlans.TableWritePlan(
-                TableModel: tableModel,
-                InsertSql: "INSERT SQL",
-                UpdateSql: null,
-                DeleteByParentSql: null,
-                BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
-                ColumnBindings: CreateCollectionColumnBindings(tableModel),
-                KeyUnificationPlans: [],
-                CollectionMergePlan: CreateCollectionMergePlan(),
-                CollectionKeyPreallocationPlan: null
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: null,
+                collectionMergePlan: fixture.CollectionMergePlan,
+                collectionKeyPreallocationPlan: null
             );
 
         var exception = act.Should().Throw<ArgumentException>().Which;
@@ -423,9 +290,16 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_merge_semantic_identity_binding_indexes_outside_column_bindings()
     {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+        var semanticIdentityBindings = fixture.CollectionMergePlan.SemanticIdentityBindings.ToArray();
+        semanticIdentityBindings[0] = semanticIdentityBindings[0] with { BindingIndex = 99 };
+
         var act = () =>
             CreateCollectionTableWritePlan(
-                collectionMergePlan: CreateCollectionMergePlan(semanticIdentityBindingIndex: 99)
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    SemanticIdentityBindings = [.. semanticIdentityBindings],
+                }
             );
 
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
@@ -438,9 +312,14 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_merge_stable_row_identity_binding_indexes_outside_column_bindings()
     {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
         var act = () =>
             CreateCollectionTableWritePlan(
-                collectionMergePlan: CreateCollectionMergePlan(stableRowIdentityBindingIndex: 99)
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    StableRowIdentityBindingIndex = 99,
+                }
             );
 
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
@@ -453,9 +332,14 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_merge_ordinal_binding_indexes_outside_column_bindings()
     {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
         var act = () =>
             CreateCollectionTableWritePlan(
-                collectionMergePlan: CreateCollectionMergePlan(ordinalBindingIndex: 99)
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    OrdinalBindingIndex = 99,
+                }
             );
 
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
@@ -466,9 +350,14 @@ public class Given_ExternalPlanContracts
     [Test]
     public void It_should_reject_collection_merge_compare_binding_indexes_outside_column_bindings()
     {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
         var act = () =>
             CreateCollectionTableWritePlan(
-                collectionMergePlan: CreateCollectionMergePlan(compareBindingIndexesInOrder: [1, 99])
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    CompareBindingIndexesInOrder = [1, 99],
+                }
             );
 
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
@@ -987,184 +876,14 @@ public class Given_ExternalPlanContracts
         DbTableKind tableKind = DbTableKind.Collection
     )
     {
-        var tableModel = CreateCollectionTableModel(tableKind);
+        var fixture = SchoolAddressCollectionPlanFixture.Create(tableKind);
 
-        return new ExternalPlans.TableWritePlan(
-            TableModel: tableModel,
-            InsertSql: "INSERT SQL",
-            UpdateSql: updateSql,
-            DeleteByParentSql: deleteByParentSql,
-            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
-            ColumnBindings: CreateCollectionColumnBindings(tableModel),
-            KeyUnificationPlans: [],
-            CollectionMergePlan: collectionMergePlan ?? CreateCollectionMergePlan(),
-            CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
-                ?? CreateCollectionKeyPreallocationPlan()
-        );
-    }
-
-    private static DbTableModel CreateCollectionTableModel(DbTableKind tableKind = DbTableKind.Collection)
-    {
-        var addressTypePath = new JsonPathExpression(
-            "$.addressType",
-            [new JsonPathSegment.Property("addressType")]
-        );
-        var streetNumberPath = new JsonPathExpression(
-            "$.streetNumberName",
-            [new JsonPathSegment.Property("streetNumberName")]
-        );
-
-        return new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
-            new JsonPathExpression(
-                "$.addresses[*]",
-                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
-            ),
-            new TableKey(
-                "PK_SchoolAddress",
-                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
-            ),
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("CollectionItemId"),
-                    ColumnKind.CollectionKey,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("Ordinal"),
-                    ColumnKind.Ordinal,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("AddressType"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
-                    IsNullable: false,
-                    SourceJsonPath: addressTypePath,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    new DbColumnName("StreetNumberName"),
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: true,
-                    SourceJsonPath: streetNumberPath,
-                    TargetResource: null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = CreateCollectionIdentityMetadata(tableKind),
-        };
-    }
-
-    private static ExternalPlans.WriteColumnBinding[] CreateCollectionColumnBindings(DbTableModel tableModel)
-    {
-        return
-        [
-            new ExternalPlans.WriteColumnBinding(
-                Column: tableModel.Columns[0],
-                Source: new ExternalPlans.WriteValueSource.DocumentId(),
-                ParameterName: "documentId"
-            ),
-            new ExternalPlans.WriteColumnBinding(
-                Column: tableModel.Columns[1],
-                Source: new ExternalPlans.WriteValueSource.Precomputed(),
-                ParameterName: "collectionItemId"
-            ),
-            new ExternalPlans.WriteColumnBinding(
-                Column: tableModel.Columns[2],
-                Source: new ExternalPlans.WriteValueSource.Ordinal(),
-                ParameterName: "ordinal"
-            ),
-            new ExternalPlans.WriteColumnBinding(
-                Column: tableModel.Columns[3],
-                Source: new ExternalPlans.WriteValueSource.Scalar(
-                    new JsonPathExpression("$.addressType", [new JsonPathSegment.Property("addressType")]),
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 32)
-                ),
-                ParameterName: "addressType"
-            ),
-            new ExternalPlans.WriteColumnBinding(
-                Column: tableModel.Columns[4],
-                Source: new ExternalPlans.WriteValueSource.Scalar(
-                    new JsonPathExpression(
-                        "$.streetNumberName",
-                        [new JsonPathSegment.Property("streetNumberName")]
-                    ),
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150)
-                ),
-                ParameterName: "streetNumberName"
-            ),
-        ];
-    }
-
-    private static ExternalPlans.CollectionMergePlan CreateCollectionMergePlan(
-        int semanticIdentityBindingIndex = 3,
-        int stableRowIdentityBindingIndex = 1,
-        int ordinalBindingIndex = 2,
-        int[]? compareBindingIndexesInOrder = null
-    )
-    {
-        return new ExternalPlans.CollectionMergePlan(
-            SemanticIdentityBindings:
-            [
-                new ExternalPlans.CollectionMergeSemanticIdentityBinding(
-                    RelativePath: new JsonPathExpression(
-                        "$.addressType",
-                        [new JsonPathSegment.Property("addressType")]
-                    ),
-                    BindingIndex: semanticIdentityBindingIndex
-                ),
-            ],
-            StableRowIdentityBindingIndex: stableRowIdentityBindingIndex,
-            UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
-            DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
-            OrdinalBindingIndex: ordinalBindingIndex,
-            CompareBindingIndexesInOrder: compareBindingIndexesInOrder ?? [1, 2, 3, 4]
-        );
-    }
-
-    private static ExternalPlans.CollectionKeyPreallocationPlan CreateCollectionKeyPreallocationPlan()
-    {
-        return new ExternalPlans.CollectionKeyPreallocationPlan(
-            ColumnName: new DbColumnName("CollectionItemId"),
-            BindingIndex: 1
-        );
-    }
-
-    private static DbTableIdentityMetadata CreateCollectionIdentityMetadata(DbTableKind tableKind)
-    {
-        return new DbTableIdentityMetadata(
-            TableKind: tableKind,
-            PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
-            RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
-            ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
-            SemanticIdentityBindings:
-            [
-                new CollectionSemanticIdentityBinding(
-                    RelativePath: new JsonPathExpression(
-                        "$.addressType",
-                        [new JsonPathSegment.Property("addressType")]
-                    ),
-                    ColumnName: new DbColumnName("AddressType")
-                ),
-            ]
+        return fixture.CreateTableWritePlan(
+            updateSql: updateSql,
+            deleteByParentSql: deleteByParentSql,
+            collectionMergePlan: collectionMergePlan ?? fixture.CollectionMergePlan,
+            collectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+                ?? fixture.CollectionKeyPreallocationPlan
         );
     }
 }
