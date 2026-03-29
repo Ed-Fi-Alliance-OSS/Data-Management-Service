@@ -1,77 +1,70 @@
 [
   {
-    "category": "Layering",
-    "description": "Introduce a minimal read-only request-scoped database selection abstraction in `src/dms/core/EdFi.DataManagementService.Core.External/` for backend consumers, plus a Core adapter that bridges from `IDmsInstanceSelection`. Acceptance: the new external contract does not expose `SetSelectedDmsInstance`, does not return `DmsInstance`, exposes enough data for backends to obtain the selected instance ID and required connection string, and has unit coverage for unset-selection and missing-connection failure paths.",
+    "category": "Plan Contracts",
+    "description": "Retrofit the external write-plan contract in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so true persisted multi-item collection scopes expose a dedicated `CollectionMergePlan` instead of encoding replace semantics through `DeleteByParentSql`. Acceptance: `TableWritePlan` keeps `InsertSql`/`UpdateSql`/`DeleteByParentSql` for root and non-root 1:1 scopes, adds an optional `CollectionMergePlan` for collection tables, and the collection payload is binding-index-first so runtime can resolve semantic identity, stable row identity, insert-id reservation, and compare/no-op ordering by pointing back into `TableWritePlan.ColumnBindings` without SQL parsing or column-name re-derivation.",
     "steps-to-verify": [
-      "Add unit tests for the Core adapter and any DI registration added in `DmsCoreServiceExtensions`.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+      "Add/update contract tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` that construct a collection table plan and assert the new collection payload preserves binding-index ordering and leaves non-collection 1:1 behavior unchanged.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ExternalPlanContracts`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Layering",
-    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend.Mssql/` to consume the new external request-connection abstraction instead of `EdFi.DataManagementService.Core.Configuration.IDmsInstanceSelection`. Acceptance: `MssqlRelationalCommandExecutor` no longer references `Core.Configuration` or `DmsInstance`; `EdFi.DataManagementService.Backend.Mssql.csproj` no longer references `EdFi.DataManagementService.Core`; existing unit tests and DI registration tests are updated to use the new abstraction; behavior when the selected instance is missing a connection string is unchanged.",
+    "category": "Write Plan Compilation",
+    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs` so collection-table compilation consumes `DbTableModel.IdentityMetadata` and emits the new collection-merge contract while preserving non-root 1:1 behavior. Acceptance: true collection and extension-collection tables compile `CollectionMergePlan` from explicit relational-model metadata rather than `Ordinal` heuristics; `DeleteByParentSql` is no longer emitted for those tables; `DbTableKind.CollectionExtensionScope`, root extensions, and other 1:1 scopes keep the existing `InsertSql`/`UpdateSql`/`DeleteByParentSql` contract; the compiler does not invent fallback semantic keys when upstream semantic identity is missing.",
     "steps-to-verify": [
-      "Update unit tests for `MssqlRelationalCommandExecutor` and `MssqlReferenceResolverServiceCollectionExtensions` to exercise the new abstraction.",
-      "Run: `rg -n \"Core\\.Configuration|DmsInstance\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql` and confirm there are no production-code hits.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+      "Replace or update the collection-focused assertions in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_DeleteByParentSql.cs` so they prove collections no longer compile delete-by-parent while collection-aligned 1:1 scopes still do.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter WritePlanCompiler_DeleteByParentSql`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_DeleteByParentSql.cs`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Layering",
-    "description": "Add PostgreSQL request-connection infrastructure under `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/` so the new backend no longer imports `Old.Postgresql.NpgsqlDataSourceProvider`. Acceptance: `PostgresqlRelationalCommandExecutor` depends only on types from `Backend.Postgresql`, `Backend`, `Core.External`, and framework/Npgsql packages; the new request-scoped provider preserves current `NpgsqlDataSourceCache` behavior for per-connection-string reuse and builder settings (`NoResetOnClose`, default `ApplicationName`, `AutoPrepareMinUsages`, `MaxAutoPrepare`); unit tests cover cache reuse and per-scope access behavior.",
+    "category": "Collection Merge SQL",
+    "description": "Compile the executor-facing collection SQL and deterministic compare metadata needed by DMS-984 from the stable-identity relational model. Acceptance: each compiled `CollectionMergePlan` includes canonical `SelectCurrentSiblingSetSql` and `DeleteByCollectionItemIdsSql`; semantic-identity bindings come directly from `IdentityMetadata.SemanticIdentityBindings`; the plan explicitly identifies the binding indexes used for stable row identity, ordinal recomputation, and no-op comparison so runtime can project hydrated current rows into write-plan compare order without SQL parsing.",
     "steps-to-verify": [
-      "Add unit tests for the new PostgreSQL cache/provider types and update `PostgresqlRelationalCommandExecutor` tests to resolve through the new constructor surface.",
-      "Run: `rg -n \"Old\\.Postgresql|NpgsqlDataSourceProvider\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql` and confirm there are no production-code hits.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+      "Add focused unit tests covering top-level collections, nested collections, and collection-aligned `_ext` child collections, including assertions for `SelectCurrentSiblingSetSql`, `DeleteByCollectionItemIdsSql`, semantic-identity ordering, and compare/no-op metadata.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter CollectionMerge`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Composition",
-    "description": "Rewire PostgreSQL relational reference-resolver composition to use the new request-connection provider and remove the legacy project dependency from `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/EdFi.DataManagementService.Backend.Postgresql.csproj`. Acceptance: the PostgreSQL backend project no longer has a `ProjectReference` to `EdFi.DataManagementService.Old.Postgresql`; service-collection and frontend composition tests still resolve `PostgresqlRelationalCommandExecutor` when PostgreSQL datastore plus relational backend are enabled; targeted tests for the new backend no longer register the legacy `NpgsqlDataSourceProvider`.",
+    "category": "Runtime Compilation",
+    "description": "Keep strict runtime mapping-set selection intact and add regression coverage around the collection-merge retrofit. Acceptance: `RuntimeMappingSetCompiler` continues to compile from `RelationalModelSetPasses.CreateStrict()`; runtime compilation fails deterministically when a persisted multi-item collection scope lacks non-empty semantic identity; positive runtime compilation tests assert the retrofitted collection merge payload is present for collection tables and absent for non-collection 1:1 scopes.",
     "steps-to-verify": [
-      "Update backend and frontend composition tests to use the new PostgreSQL connection registrations.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+      "Extend `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs` with positive assertions for compiled collection merge plans while preserving the existing negative missing-semantic-identity fixture coverage.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RuntimeMappingSetCompiler`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "DateTime Contracts",
-    "description": "Align PostgreSQL referential-identity DDL emission with Core's canonical UTC DateTime contract in `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`. Acceptance: `EmitPgsqlColumnToText` emits `to_char(NEW.<col> AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')` for `ScalarKind.DateTime`; the stale comment that claims parity with raw inserted literals is replaced with a comment that matches the current Core normalization behavior; `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/pgsql/identity-propagation.sql` is updated so `EntryTimestamp` identity text includes UTC normalization and a trailing `Z`.",
+    "category": "Serialization",
+    "description": "Update normalized DTOs/codecs and manifest plumbing for the revised write-plan contract in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs`, `NormalizedPlanContractCodec.cs`, `NormalizedPlanDtoJson.cs`, and `MappingSetManifestJsonEmitter.cs`. Acceptance: normalized plan DTOs represent the collection merge payload and its deterministic ordering metadata; round-trip codec tests preserve the new contract exactly; manifest output includes stable hashes and deterministic summaries for collection merge SQL and metadata without regressing non-collection write-plan determinism.",
     "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter Given_DdlEmitter_With_IdentityPropagation_For_Pgsql`",
-      "Run: `rg -n \"AT TIME ZONE 'UTC'.*HH24:MI:SS\\\"Z\\\"\" ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/pgsql/identity-propagation.sql`"
+      "Add/update round-trip and mutation tests in `NormalizedPlanContractCodecTests.cs`, `NormalizedPlanContractDtosTests.cs`, and `MappingSetManifestJsonEmitterTests.cs` so collection merge payloads survive encode/decode and manifest emission deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"NormalizedPlanContractCodec|NormalizedPlanContractDtos|MappingSetManifestJsonEmitter\"`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanDtoJson.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitter.cs`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "DateTime Contracts",
-    "description": "Align SQL Server referential-identity DDL emission with Core's canonical UTC DateTime contract in `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`. Acceptance: `EmitMssqlColumnToNvarchar` emits `CONVERT(nvarchar(19), i.<col>, 126) + N'Z'` for `ScalarKind.DateTime`; the method comment states that the trigger format intentionally matches the request/reference-resolution path's canonical `yyyy-MM-ddTHH:mm:ssZ` contract; `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/mssql/identity-propagation.sql` is updated in both insert and update branches so `EntryTimestamp` identity text includes the trailing `Z`.",
+    "category": "Golden Fixtures",
+    "description": "Refresh focused and authoritative runtime-plan fixture outputs to lock down the stable-identity collection merge contract. Acceptance: focused runtime fixtures show collection tables with `collection_merge_plan` metadata and no collection `delete_by_parent_sql`; authoritative `mappingset.manifest.json` goldens remain deterministic for both PostgreSQL and SQL Server after the contract change; fixture coverage includes nested collections and collection-aligned `_ext` scopes.",
     "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter Given_DdlEmitter_With_IdentityPropagation_For_Mssql`",
-      "Run: `rg -n \"CONVERT\\(nvarchar\\(19\\), i\\.[A-Za-z0-9_\\[\\]]+, 126\\) \\+ N'Z'\" ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/mssql/identity-propagation.sql`"
+      "Update the focused runtime golden tests first, then refresh the authoritative fixture expectations under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FocusedStableKeyRuntimePlan|CollectionsNestedExtensionRuntimePlan|AuthoritativeDs52RuntimePlanCompilationGoldenFixtureTests|MappingSetManifestGoldenFixtureTests\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Testing",
-    "description": "Add a focused generated-DDL PostgreSQL parity test for DateTime identities. Acceptance: create a focused fixture directory under `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/` for a resource whose stable identity includes a `DateTime`; add a PostgreSQL generated-DDL integration test that provisions the fixture, inserts a row, reads `dms.\"ReferentialIdentity\"`, and asserts the stored `ReferentialId` matches `EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator` when the identity value is canonicalized to UTC `yyyy-MM-ddTHH:mm:ssZ` (for example `2025-03-05T08:30:45-05:00` -> `2025-03-05T13:30:45Z`).",
+    "category": "Documentation",
+    "description": "Update the DMS-1108 story and the larger backend-redesign docs to match the implemented contract. Acceptance: `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`, `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`, and `reference/design/backend-redesign/design-docs/mpack-format-v1.md` describe the final binding-index-first `CollectionMergePlan`, the retention of `DeleteByParentSql` only for non-root 1:1 scopes, and the collection compare/no-op metadata required by DMS-984; doc examples and contract sketches no longer imply delete-all-children replace semantics for collection tables.",
     "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter DateTime`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter IdentityPropagation`"
+      "Review the updated docs for consistency with the final code-level contract names and fields.",
+      "Run: `rg -n \"CollectionMergePlan|DeleteByCollectionItemIdsSql|DeleteByParentSql|compare|binding index\" ./reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md ./reference/design/backend-redesign/design-docs/flattening-reconstitution.md ./reference/design/backend-redesign/design-docs/mpack-format-v1.md`"
     ],
-    "completed": true
-  },
-  {
-    "category": "Testing",
-    "description": "Add the matching SQL Server generated-DDL parity test for the same focused DateTime-identity fixture. Acceptance: reuse the focused fixture introduced for PostgreSQL, provision it through the SQL Server generated-DDL harness, insert a row for the DateTime-identity resource, read `[dms].[ReferentialIdentity]`, and assert the stored `ReferentialId` matches `ReferentialIdCalculator` for the canonical UTC `yyyy-MM-ddTHH:mm:ssZ` identity string; the test should fail on the pre-fix trigger format and pass only after the SQL Server emitter appends `Z`.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter DateTime`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter IdentityPropagation`"
-    ],
-    "completed": true
+    "completed": false
   }
 ]
