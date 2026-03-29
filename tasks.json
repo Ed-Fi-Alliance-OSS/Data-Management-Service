@@ -86,7 +86,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter PostgresqlRequestDbConnectionProvider`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlRequestDbConnectionProvider.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlRequestDbConnectionProviderTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Backend",

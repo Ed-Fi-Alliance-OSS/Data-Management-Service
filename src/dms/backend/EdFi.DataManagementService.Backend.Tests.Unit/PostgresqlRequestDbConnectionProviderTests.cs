@@ -31,11 +31,7 @@ public class Given_PostgresqlRequestDbConnectionProvider
             applicationLifetime,
             NullLogger<PostgresqlDataSourceCache>.Instance
         );
-        _provider = new PostgresqlRequestDbConnectionProvider(
-            _requestConnectionProvider,
-            _cache,
-            NullLogger<PostgresqlRequestDbConnectionProvider>.Instance
-        );
+        _provider = new PostgresqlRequestDbConnectionProvider(_requestConnectionProvider, _cache);
     }
 
     [TearDown]
@@ -55,6 +51,28 @@ public class Given_PostgresqlRequestDbConnectionProvider
         var dataSource2 = _provider.GetDataSource();
 
         dataSource1.Should().BeSameAs(dataSource2);
+        A.CallTo(() => _requestConnectionProvider.GetRequestConnection()).MustHaveHappenedTwiceExactly();
+    }
+
+    [Test]
+    public void It_does_not_cache_data_sources_by_instance_id_when_the_connection_string_changes()
+    {
+        A.CallTo(() => _requestConnectionProvider.GetRequestConnection())
+            .ReturnsNextFromSequence(
+                new RequestConnection(
+                    new DmsInstanceId(1),
+                    "Host=localhost;Database=test1;Username=user;Password=pass"
+                ),
+                new RequestConnection(
+                    new DmsInstanceId(1),
+                    "Host=localhost;Database=test2;Username=user;Password=pass"
+                )
+            );
+
+        var dataSource1 = _provider.GetDataSource();
+        var dataSource2 = _provider.GetDataSource();
+
+        dataSource1.Should().NotBeSameAs(dataSource2);
         A.CallTo(() => _requestConnectionProvider.GetRequestConnection()).MustHaveHappenedTwiceExactly();
     }
 
@@ -88,16 +106,8 @@ public class Given_PostgresqlRequestDbConnectionProvider
         A.CallTo(() => requestConnectionProvider2.GetRequestConnection())
             .Returns(new RequestConnection(new DmsInstanceId(2), connectionString));
 
-        var provider1 = new PostgresqlRequestDbConnectionProvider(
-            requestConnectionProvider1,
-            _cache,
-            NullLogger<PostgresqlRequestDbConnectionProvider>.Instance
-        );
-        var provider2 = new PostgresqlRequestDbConnectionProvider(
-            requestConnectionProvider2,
-            _cache,
-            NullLogger<PostgresqlRequestDbConnectionProvider>.Instance
-        );
+        var provider1 = new PostgresqlRequestDbConnectionProvider(requestConnectionProvider1, _cache);
+        var provider2 = new PostgresqlRequestDbConnectionProvider(requestConnectionProvider2, _cache);
 
         var dataSource1 = provider1.GetDataSource();
         var dataSource2 = provider2.GetDataSource();
@@ -126,16 +136,8 @@ public class Given_PostgresqlRequestDbConnectionProvider
                 )
             );
 
-        var provider1 = new PostgresqlRequestDbConnectionProvider(
-            requestConnectionProvider1,
-            _cache,
-            NullLogger<PostgresqlRequestDbConnectionProvider>.Instance
-        );
-        var provider2 = new PostgresqlRequestDbConnectionProvider(
-            requestConnectionProvider2,
-            _cache,
-            NullLogger<PostgresqlRequestDbConnectionProvider>.Instance
-        );
+        var provider1 = new PostgresqlRequestDbConnectionProvider(requestConnectionProvider1, _cache);
+        var provider2 = new PostgresqlRequestDbConnectionProvider(requestConnectionProvider2, _cache);
 
         var dataSource1 = provider1.GetDataSource();
         var dataSource2 = provider2.GetDataSource();
