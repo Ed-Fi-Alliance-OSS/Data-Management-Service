@@ -108,5 +108,36 @@
       "If any unrelated-looking file must remain, document the dependency in the story/PR notes and ensure the explanation names the exact file and why DMS-1108 cannot ship without it."
     ],
     "completed": true
+  },
+  {
+    "category": "Plan Contracts",
+    "description": "Move the stable collection-merge invariant checks from `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs` into the public contract in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs`. Acceptance: constructing `TableWritePlan` fails when `CollectionMergePlan` is present without `CollectionKeyPreallocationPlan`; constructing `TableWritePlan` fails when `CollectionMergePlan.StableRowIdentityBindingIndex` does not match `CollectionKeyPreallocationPlan.BindingIndex`; constructing `TableWritePlan` fails when the stable-row binding column name does not match `CollectionKeyPreallocationPlan.ColumnName`; valid collection plans compiled by `WritePlanCompiler` and decoded by `NormalizedPlanContractCodec` still construct successfully without needing a second compiler-only guard.",
+    "steps-to-verify": [
+      "Add direct-constructor negative tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` covering missing `CollectionKeyPreallocationPlan`, mismatched binding index, and mismatched stable-row column name for collection table plans.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs` so mutated DTO payloads that violate those invariants fail during decode through the same public contract enforcement path.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compilation",
+    "description": "Narrow collection matched-row update SQL in `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs` so stable-row updates do not write structural locator columns. Acceptance: `EmitCollectionUpdateByStableRowIdentitySql` excludes root-scope and immediate-parent locator bindings from the `SET` list while still allowing writable semantic-identity, FK, scalar, key-unification, and `Ordinal` bindings required by the merge contract; compiled collection update SQL for top-level collections no longer sets root locator columns such as `School_DocumentId`; compiled collection update SQL for nested and collection-aligned extension tables no longer sets `ParentCollectionItemId` or `BaseCollectionItemId`; compare/no-op metadata remains unchanged and continues to exclude locator columns.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_CollectionMerge.cs` to assert the revised `UPDATE` SQL omits structural locator columns for top-level, nested, and collection-aligned extension collection tables.",
+      "Keep or add assertions in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs` proving collection plans still compile successfully and still publish the same semantic-identity and compare-order metadata after the SQL narrowing.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"CollectionMerge|RuntimeMappingSetCompiler\"`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_CollectionMerge.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Test Suite",
+    "description": "Reduce overlapping stable-collection-merge assertions so each test fixture owns one clear concern. Acceptance: detailed collection-merge contract shape assertions live in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_CollectionMerge.cs`; `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_DeleteByParentSql.cs` keeps only coverage that collections suppress `DeleteByParentSql` while non-collection 1:1 scopes retain it; `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs` keeps only runtime-compilation smoke coverage for presence/absence of `CollectionMergePlan` rather than reasserting the full table-level semantic-identity contract; the remaining tests still cover top-level collections, nested collections, and collection-aligned extension collections without triplicate expectations.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_DeleteByParentSql.cs` to remove duplicated semantic-identity and compare-order assertions while preserving coverage that collection tables do not emit `DeleteByParentSql`.",
+      "Trim `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs` so it validates runtime compile success and contract presence/absence at the right level without repeating the detailed merge-shape checks from `Given_WritePlanCompiler_CollectionMerge.cs`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"WritePlanCompiler_DeleteByParentSql|WritePlanCompiler_CollectionMerge|RuntimeMappingSetCompiler\"`"
+    ],
+    "completed": false
   }
 ]
