@@ -64,7 +64,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 """,
                 _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
             },
-            "CollectionItemId",
             "Ordinal",
             "City"
         );
@@ -123,7 +122,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 """,
                 _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
             },
-            "CollectionItemId",
             "Ordinal",
             "InterventionCode"
         );
@@ -182,7 +180,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 """,
                 _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
             },
-            "CollectionItemId",
             "Ordinal",
             "VisitCode"
         );
@@ -239,7 +236,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 """,
                 _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
             },
-            "CollectionItemId",
             "Ordinal",
             "PeriodName"
         );
@@ -303,7 +299,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 """,
                 _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
             },
-            "CollectionItemId",
             "Ordinal",
             "Program_DocumentId",
             "Program_ProgramName"
@@ -349,6 +344,9 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
             .ColumnBindings[collectionMergePlan.OrdinalBindingIndex]
             .Column.ColumnName.Value.Should()
             .Be("Ordinal");
+        collectionMergePlan
+            .CompareBindingIndexesInOrder.Should()
+            .NotContain(collectionMergePlan.StableRowIdentityBindingIndex);
         collectionMergePlan
             .CompareBindingIndexesInOrder.Select(bindingIndex =>
                 tablePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value

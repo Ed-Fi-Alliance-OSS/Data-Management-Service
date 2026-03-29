@@ -63,7 +63,6 @@ internal static class SchoolAddressCollectionPlanFixture
                 OrdinalBindingIndex: ordinalBindingIndex,
                 CompareBindingIndexesInOrder:
                 [
-                    1,
                     ordinalBindingIndex,
                     semanticIdentityBindingIndex,
                     streetNumberBindingIndex,

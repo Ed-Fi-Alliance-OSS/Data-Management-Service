@@ -160,11 +160,14 @@ public class Given_ExternalPlanContracts
                 tablePlan.ColumnBindings[bindingIndex].ParameterName
             )
             .Should()
-            .Equal("collectionItemId", "ordinal", "addressType", "streetNumberName");
+            .Equal("ordinal", "addressType", "streetNumberName");
         tablePlan
             .ColumnBindings[tablePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
             .ParameterName.Should()
             .Be("collectionItemId");
+        tablePlan
+            .CollectionMergePlan.CompareBindingIndexesInOrder.Should()
+            .NotContain(tablePlan.CollectionMergePlan.StableRowIdentityBindingIndex);
         tablePlan
             .ColumnBindings[tablePlan.CollectionMergePlan.OrdinalBindingIndex]
             .ParameterName.Should()

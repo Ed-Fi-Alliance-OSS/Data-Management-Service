@@ -755,11 +755,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WritePlanTableCompilationContext tableCompilationContext
     )
     {
-        var locatorColumns = DeriveCollectionLocatorColumns(tableCompilationContext);
+        var nonComparableColumns = DeriveCollectionNonComparableColumns(tableCompilationContext);
 
         return tableCompilationContext
             .ColumnBindings.Select((binding, index) => (binding, index))
-            .Where(tuple => !locatorColumns.Contains(tuple.binding.Column.ColumnName))
+            .Where(tuple => !nonComparableColumns.Contains(tuple.binding.Column.ColumnName))
             .Select(static tuple => tuple.index)
             .ToArray();
     }
@@ -771,6 +771,20 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return tableCompilationContext
             .TableModel.IdentityMetadata.RootScopeLocatorColumns.Concat(
                 tableCompilationContext.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns
+            )
+            .ToHashSet();
+    }
+
+    /// <summary>
+    /// Identifies bindings that participate in merge bookkeeping but not collection equality/no-op comparison.
+    /// </summary>
+    private static HashSet<DbColumnName> DeriveCollectionNonComparableColumns(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        return tableCompilationContext
+            .TableModel.IdentityMetadata.PhysicalRowIdentityColumns.Concat(
+                DeriveCollectionLocatorColumns(tableCompilationContext)
             )
             .ToHashSet();
     }

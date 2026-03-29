@@ -161,7 +161,6 @@
                   "delete_by_stable_row_identity_sql_sha256": "a0e26b47dc8581c095a292c72c662571fe7ef5b91f4fe3ae5abc2f2d93b14ec7",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [
-                    0,
                     1,
                     3
                   ]
@@ -278,7 +277,6 @@
                   "delete_by_stable_row_identity_sql_sha256": "b904511221c2dcaa57051fb81689796e25306b820f51a20427b19f99fb1ec78e",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [
-                    0,
                     1,
                     4
                   ]
@@ -612,7 +610,6 @@
                   "delete_by_stable_row_identity_sql_sha256": "6e5fac8ded52a034ad92bc824c2978edf91e262c4e508d1c30c580ccf10f9e0a",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [
-                    0,
                     1,
                     3
                   ]
@@ -729,7 +726,6 @@
                   "delete_by_stable_row_identity_sql_sha256": "1c64617d4f4674472562716385058184695bc142283fc6814c3edd7bc796a044",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [
-                    0,
                     1,
                     4
                   ]
