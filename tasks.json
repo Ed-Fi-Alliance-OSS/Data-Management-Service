@@ -107,6 +107,6 @@
       "Verify the DMS-1108 branch no longer contains unrelated file changes with: `git diff --name-only $(git merge-base HEAD origin/main)..HEAD`.",
       "If any unrelated-looking file must remain, document the dependency in the story/PR notes and ensure the explanation names the exact file and why DMS-1108 cannot ship without it."
     ],
-    "completed": false
+    "completed": true
   }
 ]

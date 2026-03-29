@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -466,8 +467,9 @@ public class Given_PostgresqlReferenceResolver
 
         services.AddSingleton<IHostApplicationLifetime, TestHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
-        services.AddScoped<IRequestConnectionProvider, SelectedInstanceRequestConnectionProvider>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
         services.AddPostgresqlReferenceResolver();
 
         return services.BuildServiceProvider(
@@ -671,26 +673,5 @@ public class Given_PostgresqlReferenceResolver
     private static ReferentialId CreateBulkSchoolReferentialId(int ordinal)
     {
         return new ReferentialId(Guid.Parse($"90000000-0000-0000-0000-{ordinal:000000000000}"));
-    }
-}
-
-internal sealed class SelectedInstanceRequestConnectionProvider(IDmsInstanceSelection dmsInstanceSelection)
-    : IRequestConnectionProvider
-{
-    public RequestConnection GetRequestConnection()
-    {
-        DmsInstance selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
-
-        if (string.IsNullOrWhiteSpace(selectedInstance.ConnectionString))
-        {
-            throw new InvalidOperationException(
-                $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
-            );
-        }
-
-        return new RequestConnection(
-            new DmsInstanceId(selectedInstance.Id),
-            selectedInstance.ConnectionString
-        );
     }
 }

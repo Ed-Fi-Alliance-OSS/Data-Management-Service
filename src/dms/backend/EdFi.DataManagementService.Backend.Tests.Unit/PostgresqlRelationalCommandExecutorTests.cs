@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_PostgresqlRelationalCommandExecutor
 {
     [Test]
-    public async Task It_opens_a_connection_from_the_request_scoped_provider_and_executes_the_relational_command()
+    public async Task It_executes_the_relational_command_against_the_opened_request_connection()
     {
         var documentReferentialId = new ReferentialId(Guid.NewGuid());
         var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
@@ -47,10 +47,14 @@ public class Given_PostgresqlRelationalCommandExecutor
                 )
             )
         );
-        var connectionProvider = new RecordingPostgresqlDbConnectionProvider(connection);
-
+        var openConnectionCallCount = 0;
         var sut = new PostgresqlRelationalCommandExecutor(
-            connectionProvider,
+            cancellationToken =>
+            {
+                cancellationToken.Should().Be(CancellationToken.None);
+                openConnectionCallCount++;
+                return Task.FromResult<DbConnection>(connection);
+            },
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
 
@@ -65,8 +69,7 @@ public class Given_PostgresqlRelationalCommandExecutor
             ReferenceLookupResultReader.ReadAsync
         );
 
-        connectionProvider.OpenConnectionCallCount.Should().Be(1);
-        connectionProvider.LastCancellationToken.Should().Be(CancellationToken.None);
+        openConnectionCallCount.Should().Be(1);
         connection.CreateCommandCallCount.Should().Be(1);
         connection
             .Command.CommandText.Should()
@@ -98,10 +101,8 @@ public class Given_PostgresqlRelationalCommandExecutor
     public async Task It_applies_parameter_configuration_and_converts_null_values_to_dbnull()
     {
         var connection = new RecordingDbConnection(new RecordingDbCommand(CreateReader(CreateLookupTable())));
-        var connectionProvider = new RecordingPostgresqlDbConnectionProvider(connection);
-
         var sut = new PostgresqlRelationalCommandExecutor(
-            connectionProvider,
+            _ => Task.FromResult<DbConnection>(connection),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
 
@@ -129,7 +130,6 @@ public class Given_PostgresqlRelationalCommandExecutor
         connection.Command.Parameters[0].Value.Should().Be(DBNull.Value);
         connection.Command.Parameters[0].DbType.Should().Be(DbType.Guid);
         connection.Command.Parameters[0].Direction.Should().Be(ParameterDirection.InputOutput);
-        connectionProvider.OpenConnectionCallCount.Should().Be(1);
     }
 
     private static DbDataReader CreateReader(params DataTable[] resultSets) =>
@@ -184,25 +184,6 @@ public class Given_PostgresqlRelationalCommandExecutor
         }
 
         return table;
-    }
-}
-
-internal sealed class RecordingPostgresqlDbConnectionProvider(DbConnection connection)
-    : IPostgresqlDbConnectionProvider
-{
-    private readonly DbConnection _connection =
-        connection ?? throw new ArgumentNullException(nameof(connection));
-
-    public int OpenConnectionCallCount { get; private set; }
-
-    public CancellationToken? LastCancellationToken { get; private set; }
-
-    public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken)
-    {
-        OpenConnectionCallCount++;
-        LastCancellationToken = cancellationToken;
-
-        return Task.FromResult(_connection);
     }
 }
 

@@ -35,6 +35,7 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>
     <ItemGroup>

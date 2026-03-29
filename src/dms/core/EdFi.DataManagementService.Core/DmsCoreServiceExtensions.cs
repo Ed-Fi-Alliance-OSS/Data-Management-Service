@@ -102,7 +102,6 @@ public static class DmsCoreServiceExtensions
             .AddTransient<NamespaceBasedFiltersProvider>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
-            .AddScoped<IRequestConnectionProvider, DmsInstanceRequestConnectionProvider>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
             .AddSingleton<IDatabaseFingerprintReader, MissingDatabaseFingerprintReader>()

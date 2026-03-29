@@ -5,7 +5,7 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -17,25 +17,34 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
     private readonly ILogger<MssqlRelationalCommandExecutor> _logger;
 
     public MssqlRelationalCommandExecutor(
-        IRequestConnectionProvider requestConnectionProvider,
+        IDmsInstanceSelection dmsInstanceSelection,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
-        : this(requestConnectionProvider, connectionString => new SqlConnection(connectionString), logger) { }
+        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString), logger) { }
 
     internal MssqlRelationalCommandExecutor(
-        IRequestConnectionProvider requestConnectionProvider,
+        IDmsInstanceSelection dmsInstanceSelection,
         Func<string, DbConnection> createConnection,
         ILogger<MssqlRelationalCommandExecutor> logger
     )
     {
-        ArgumentNullException.ThrowIfNull(requestConnectionProvider);
+        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
         ArgumentNullException.ThrowIfNull(createConnection);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _openConnectionAsync = async cancellationToken =>
         {
-            RequestConnection requestConnection = requestConnectionProvider.GetRequestConnection();
-            var connection = createConnection(requestConnection.ConnectionString);
+            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var connectionString = selectedInstance.ConnectionString;
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+                );
+            }
+
+            var connection = createConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             return connection;

@@ -6,7 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Mssql;
-using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -24,7 +24,14 @@ public class Given_MssqlRelationalCommandExecutor
         const string connectionString =
             "Server=localhost;Database=test;User Id=sa;Password=TestPassword1!;TrustServerCertificate=true";
 
-        var requestConnectionProvider = A.Fake<IRequestConnectionProvider>();
+        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        var dmsInstance = new DmsInstance(
+            Id: 7,
+            InstanceType: "Test",
+            InstanceName: "Test Instance",
+            ConnectionString: connectionString,
+            RouteContext: []
+        );
         var documentReferentialId = new ReferentialId(Guid.NewGuid());
         var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
         var connection = new RecordingDbConnection(
@@ -52,11 +59,10 @@ public class Given_MssqlRelationalCommandExecutor
             )
         );
 
-        A.CallTo(() => requestConnectionProvider.GetRequestConnection())
-            .Returns(new RequestConnection(new DmsInstanceId(7), connectionString));
+        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).Returns(dmsInstance);
 
         var sut = new MssqlRelationalCommandExecutor(
-            requestConnectionProvider,
+            dmsInstanceSelection,
             selectedConnectionString =>
             {
                 selectedConnectionString.Should().Be(connectionString);
@@ -76,7 +82,7 @@ public class Given_MssqlRelationalCommandExecutor
             ReferenceLookupResultReader.ReadAsync
         );
 
-        A.CallTo(() => requestConnectionProvider.GetRequestConnection()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.CreateCommandCallCount.Should().Be(1);
@@ -139,35 +145,6 @@ public class Given_MssqlRelationalCommandExecutor
         connection.Command.Parameters[0].Value.Should().Be(DBNull.Value);
         connection.Command.Parameters[0].DbType.Should().Be(DbType.Guid);
         connection.Command.Parameters[0].Direction.Should().Be(ParameterDirection.InputOutput);
-    }
-
-    [Test]
-    public async Task It_preserves_the_missing_connection_string_failure_from_the_request_connection_provider()
-    {
-        var requestConnectionProvider = A.Fake<IRequestConnectionProvider>();
-        A.CallTo(() => requestConnectionProvider.GetRequestConnection())
-            .Throws(
-                new InvalidOperationException(
-                    "Selected DMS instance '7' does not have a valid connection string."
-                )
-            );
-
-        var sut = new MssqlRelationalCommandExecutor(
-            requestConnectionProvider,
-            _ => throw new AssertionException("Connection factory should not be called."),
-            NullLogger<MssqlRelationalCommandExecutor>.Instance
-        );
-
-        Func<Task> act = () =>
-            sut.ExecuteReaderAsync(
-                new RelationalCommand("select 1", []),
-                static (_, _) => Task.FromResult("done")
-            );
-
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("Selected DMS instance '7' does not have a valid connection string.");
-        A.CallTo(() => requestConnectionProvider.GetRequestConnection()).MustHaveHappenedOnceExactly();
     }
 
     private static DbDataReader CreateReader(params DataTable[] resultSets) =>

@@ -988,7 +988,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
             writer.Append("'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' || '$' || ");
+            writer.Append("=' || ");
             EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
         }
     }
@@ -996,8 +996,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
     /// Uses <c>::text</c> for most types (already ISO-stable) but explicit <c>to_char()</c>
-    /// for <see cref="ScalarKind.DateTime"/> so trigger-maintained referential ids match
-    /// Core's canonical UTC <c>yyyy-MM-ddTHH:mm:ssZ</c> contract.
+    /// for <see cref="ScalarKind.DateTime"/> where <c>::text</c> omits the ISO 8601 T separator.
     /// </summary>
     private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
     {
@@ -1005,12 +1004,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (scalarType.Kind)
         {
             case ScalarKind.DateTime:
-                // PG timestamp::text gives a session-local value with a space separator.
-                // Normalize to UTC and append Z so DDL-maintained referential ids match the
-                // request/reference-resolution path's canonical DateTime identity contract.
+                // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
+                // Use to_char for ISO 8601 with T separator.
+                //
+                // No AT TIME ZONE 'UTC' conversion: the PG column type is timestamptz, which
+                // stores UTC internally but displays in the session timezone. The trigger fires
+                // in the same session as the INSERT/UPDATE, so to_char always reproduces the
+                // original literal that was inserted — matching what Core's ReferentialIdCalculator
+                // hashes from the raw JSON string. Adding AT TIME ZONE 'UTC' here would break
+                // parity because the C# path does not normalize to UTC before hashing.
+                // The DMS application must use a consistent session timezone (UTC recommended).
+                // See also EmitMssqlColumnToNvarchar (datetime2 is timezone-naive, no issue).
                 writer.Append("to_char(NEW.");
                 writer.Append(quoted);
-                writer.Append(" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')");
+                writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
                 break;
 
             default:
@@ -1161,7 +1168,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             }
             writer.Append("N'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
-            writer.Append("=' + N'$' + ");
+            writer.Append("=' + ");
             EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
         }
     }
@@ -1194,12 +1201,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 break;
 
             case ScalarKind.DateTime:
-                // ISO 8601 UTC contract: YYYY-MM-DDTHH:mm:ssZ. Truncation to whole seconds
-                // matches PG to_char(), and the explicit trailing Z matches the
-                // request/reference-resolution path's canonical DateTime identity contract.
+                // ISO 8601: YYYY-MM-DDTHH:mm:ss (CONVERT style 126, truncated to 19 chars).
+                // Truncation to whole seconds matches PG to_char() which also omits fractional
+                // seconds, ensuring cross-engine identity hash parity.
                 writer.Append("CONVERT(nvarchar(19), i.");
                 writer.Append(quoted);
-                writer.Append(", 126) + N'Z'");
+                writer.Append(", 126)");
                 break;
 
             case ScalarKind.Time:
