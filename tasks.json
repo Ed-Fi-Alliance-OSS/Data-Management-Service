@@ -17,7 +17,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter WritePlanCompiler_DeleteByParentSql`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_DeleteByParentSql.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Collection Merge SQL",
