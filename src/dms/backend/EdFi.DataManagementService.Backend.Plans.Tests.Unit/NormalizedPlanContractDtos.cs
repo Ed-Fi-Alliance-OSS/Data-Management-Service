@@ -4,6 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Text.Json;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
+using ExternalPlans = EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -115,6 +119,13 @@ internal sealed record CollectionKeyPreallocationPlanDto(string ColumnName, int 
 
 internal sealed record CollectionMergePlanDto
 {
+    private const string CanonicalSemanticIdentityBindingsPropertyName = "semantic_identity_bindings";
+    private const string CanonicalUpdateSqlPropertyName = "update_by_stable_row_identity_sql";
+    private const string CanonicalDeleteSqlPropertyName = "delete_by_stable_row_identity_sql";
+    private const string ManifestSemanticIdentityBindingsPropertyName = "semantic_identity_bindings_in_order";
+    private const string ManifestUpdateSqlPropertyName = "update_by_stable_row_identity_sql_sha256";
+    private const string ManifestDeleteSqlPropertyName = "delete_by_stable_row_identity_sql_sha256";
+
     public CollectionMergePlanDto(
         IEnumerable<CollectionMergeSemanticIdentityBindingDto> SemanticIdentityBindings,
         int StableRowIdentityBindingIndex,
@@ -148,6 +159,202 @@ internal sealed record CollectionMergePlanDto
     public int OrdinalBindingIndex { get; init; }
 
     public ImmutableArray<int> CompareBindingIndexesInOrder { get; init; }
+
+    public static CollectionMergePlanDto? Encode(ExternalPlans.CollectionMergePlan? collectionMergePlan)
+    {
+        if (collectionMergePlan is null)
+        {
+            return null;
+        }
+
+        return new CollectionMergePlanDto(
+            SemanticIdentityBindings: collectionMergePlan.SemanticIdentityBindings.Select(
+                binding => new CollectionMergeSemanticIdentityBindingDto(
+                    RelativePath: binding.RelativePath.Canonical,
+                    BindingIndex: binding.BindingIndex
+                )
+            ),
+            StableRowIdentityBindingIndex: collectionMergePlan.StableRowIdentityBindingIndex,
+            UpdateByStableRowIdentitySql: collectionMergePlan.UpdateByStableRowIdentitySql,
+            DeleteByStableRowIdentitySql: collectionMergePlan.DeleteByStableRowIdentitySql,
+            OrdinalBindingIndex: collectionMergePlan.OrdinalBindingIndex,
+            CompareBindingIndexesInOrder: collectionMergePlan.CompareBindingIndexesInOrder
+        );
+    }
+
+    public ExternalPlans.CollectionMergePlan Decode(
+        int bindingCount,
+        string argumentName,
+        string parameterName
+    )
+    {
+        if (this.SemanticIdentityBindings.Length == 0)
+        {
+            throw new ArgumentException(
+                $"{argumentName}.{nameof(SemanticIdentityBindings)} must be non-empty.",
+                parameterName
+            );
+        }
+
+        var semanticIdentityBindings = new ExternalPlans.CollectionMergeSemanticIdentityBinding[
+            this.SemanticIdentityBindings.Length
+        ];
+
+        for (
+            var semanticBindingIndex = 0;
+            semanticBindingIndex < this.SemanticIdentityBindings.Length;
+            semanticBindingIndex++
+        )
+        {
+            var semanticBindingDto = this.SemanticIdentityBindings[semanticBindingIndex];
+            var semanticBindingArgument =
+                $"{argumentName}.{nameof(SemanticIdentityBindings)}[{semanticBindingIndex}]";
+
+            semanticIdentityBindings[semanticBindingIndex] =
+                new ExternalPlans.CollectionMergeSemanticIdentityBinding(
+                    RelativePath: CompileJsonPath(
+                        semanticBindingDto.RelativePath,
+                        $"{semanticBindingArgument}.{nameof(CollectionMergeSemanticIdentityBindingDto.RelativePath)}"
+                    ),
+                    BindingIndex: ValidateBindingIndex(
+                        semanticBindingDto.BindingIndex,
+                        bindingCount,
+                        $"{semanticBindingArgument}.{nameof(CollectionMergeSemanticIdentityBindingDto.BindingIndex)}",
+                        "collection semantic-identity binding index"
+                    )
+                );
+        }
+
+        var compareBindingIndexes = new int[this.CompareBindingIndexesInOrder.Length];
+
+        for (var compareIndex = 0; compareIndex < this.CompareBindingIndexesInOrder.Length; compareIndex++)
+        {
+            compareBindingIndexes[compareIndex] = ValidateBindingIndex(
+                this.CompareBindingIndexesInOrder[compareIndex],
+                bindingCount,
+                $"{argumentName}.{nameof(CompareBindingIndexesInOrder)}[{compareIndex}]",
+                "collection compare binding index"
+            );
+        }
+
+        return new ExternalPlans.CollectionMergePlan(
+            SemanticIdentityBindings: semanticIdentityBindings,
+            StableRowIdentityBindingIndex: ValidateBindingIndex(
+                this.StableRowIdentityBindingIndex,
+                bindingCount,
+                $"{argumentName}.{nameof(StableRowIdentityBindingIndex)}",
+                "collection stable-row-identity binding index"
+            ),
+            UpdateByStableRowIdentitySql: this.UpdateByStableRowIdentitySql,
+            DeleteByStableRowIdentitySql: this.DeleteByStableRowIdentitySql,
+            OrdinalBindingIndex: ValidateBindingIndex(
+                this.OrdinalBindingIndex,
+                bindingCount,
+                $"{argumentName}.{nameof(OrdinalBindingIndex)}",
+                "collection ordinal binding index"
+            ),
+            CompareBindingIndexesInOrder: compareBindingIndexes
+        );
+    }
+
+    public void WriteCanonicalJson(Utf8JsonWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        WriteJson(
+            writer,
+            CanonicalSemanticIdentityBindingsPropertyName,
+            CanonicalUpdateSqlPropertyName,
+            CanonicalDeleteSqlPropertyName,
+            PlanJsonCanonicalization.NormalizeMultilineText
+        );
+    }
+
+    public void WriteManifestSummaryJson(Utf8JsonWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        WriteJson(
+            writer,
+            ManifestSemanticIdentityBindingsPropertyName,
+            ManifestUpdateSqlPropertyName,
+            ManifestDeleteSqlPropertyName,
+            PlanManifestConventions.ComputeNormalizedSha256
+        );
+    }
+
+    private void WriteJson(
+        Utf8JsonWriter writer,
+        string semanticIdentityBindingsPropertyName,
+        string updateSqlPropertyName,
+        string deleteSqlPropertyName,
+        Func<string, string> writeSql
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName(semanticIdentityBindingsPropertyName);
+        writer.WriteStartArray();
+
+        foreach (var semanticIdentityBinding in this.SemanticIdentityBindings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("relative_path", semanticIdentityBinding.RelativePath);
+            writer.WriteNumber("binding_index", semanticIdentityBinding.BindingIndex);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteNumber("stable_row_identity_binding_index", this.StableRowIdentityBindingIndex);
+        writer.WriteString(updateSqlPropertyName, writeSql(this.UpdateByStableRowIdentitySql));
+        writer.WriteString(deleteSqlPropertyName, writeSql(this.DeleteByStableRowIdentitySql));
+        writer.WriteNumber("ordinal_binding_index", this.OrdinalBindingIndex);
+        writer.WritePropertyName("compare_binding_indexes_in_order");
+        writer.WriteStartArray();
+
+        foreach (var bindingIndex in this.CompareBindingIndexesInOrder)
+        {
+            writer.WriteNumberValue(bindingIndex);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static JsonPathExpression CompileJsonPath(string value, string argumentName)
+    {
+        try
+        {
+            return JsonPathExpressionCompiler.Compile(RequireNonEmpty(value, argumentName));
+        }
+        catch (ArgumentException exception) when (exception.ParamName == "jsonPath")
+        {
+            throw new ArgumentException($"Invalid canonical JSONPath '{value}'.", argumentName, exception);
+        }
+    }
+
+    private static int ValidateBindingIndex(int bindingIndex, int count, string argumentName, string context)
+    {
+        if ((uint)bindingIndex >= (uint)count)
+        {
+            throw new ArgumentOutOfRangeException(
+                argumentName,
+                bindingIndex,
+                $"Binding index '{bindingIndex}' for {context} is out of range (count: {count})."
+            );
+        }
+
+        return bindingIndex;
+    }
+
+    private static string RequireNonEmpty(string value, string argumentName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", argumentName);
+        }
+
+        return value;
+    }
 }
 
 internal sealed record CollectionMergeSemanticIdentityBindingDto(string RelativePath, int BindingIndex);

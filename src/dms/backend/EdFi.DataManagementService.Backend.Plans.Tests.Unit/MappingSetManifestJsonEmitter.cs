@@ -171,7 +171,7 @@ internal static class MappingSetManifestJsonEmitter
         }
         else
         {
-            WriteCollectionMergePlanSummary(writer, tablePlan.CollectionMergePlan);
+            CollectionMergePlanDto.Encode(tablePlan.CollectionMergePlan)!.WriteManifestSummaryJson(writer);
         }
 
         writer.WritePropertyName("bulk_insert_batching");
@@ -226,49 +226,6 @@ internal static class MappingSetManifestJsonEmitter
 
             writer.WriteEndArray();
             writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
-    private static void WriteCollectionMergePlanSummary(
-        Utf8JsonWriter writer,
-        CollectionMergePlan collectionMergePlan
-    )
-    {
-        writer.WriteStartObject();
-        writer.WritePropertyName("semantic_identity_bindings_in_order");
-        writer.WriteStartArray();
-
-        foreach (var semanticIdentityBinding in collectionMergePlan.SemanticIdentityBindings)
-        {
-            writer.WriteStartObject();
-            writer.WriteString("relative_path", semanticIdentityBinding.RelativePath.Canonical);
-            writer.WriteNumber("binding_index", semanticIdentityBinding.BindingIndex);
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-        writer.WriteNumber(
-            "stable_row_identity_binding_index",
-            collectionMergePlan.StableRowIdentityBindingIndex
-        );
-        writer.WriteString(
-            "update_by_stable_row_identity_sql_sha256",
-            PlanManifestConventions.ComputeNormalizedSha256(collectionMergePlan.UpdateByStableRowIdentitySql)
-        );
-        writer.WriteString(
-            "delete_by_stable_row_identity_sql_sha256",
-            PlanManifestConventions.ComputeNormalizedSha256(collectionMergePlan.DeleteByStableRowIdentitySql)
-        );
-        writer.WriteNumber("ordinal_binding_index", collectionMergePlan.OrdinalBindingIndex);
-        writer.WritePropertyName("compare_binding_indexes_in_order");
-        writer.WriteStartArray();
-
-        foreach (var bindingIndex in collectionMergePlan.CompareBindingIndexesInOrder)
-        {
-            writer.WriteNumberValue(bindingIndex);
         }
 
         writer.WriteEndArray();

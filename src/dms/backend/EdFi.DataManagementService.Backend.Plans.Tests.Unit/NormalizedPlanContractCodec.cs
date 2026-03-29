@@ -49,7 +49,7 @@ internal static class NormalizedPlanContractCodec
                             )
                         )
                     ),
-                    CollectionMergePlan: EncodeCollectionMergePlan(tablePlan.CollectionMergePlan),
+                    CollectionMergePlan: CollectionMergePlanDto.Encode(tablePlan.CollectionMergePlan),
                     CollectionKeyPreallocationPlan: tablePlan.CollectionKeyPreallocationPlan is null
                         ? null
                         : new CollectionKeyPreallocationPlanDto(
@@ -250,30 +250,6 @@ internal static class NormalizedPlanContractCodec
         return new ExternalPlans.ResourceWritePlan(model, decodedTablePlans);
     }
 
-    private static CollectionMergePlanDto? EncodeCollectionMergePlan(
-        ExternalPlans.CollectionMergePlan? collectionMergePlan
-    )
-    {
-        if (collectionMergePlan is null)
-        {
-            return null;
-        }
-
-        return new CollectionMergePlanDto(
-            SemanticIdentityBindings: collectionMergePlan.SemanticIdentityBindings.Select(
-                binding => new CollectionMergeSemanticIdentityBindingDto(
-                    RelativePath: binding.RelativePath.Canonical,
-                    BindingIndex: binding.BindingIndex
-                )
-            ),
-            StableRowIdentityBindingIndex: collectionMergePlan.StableRowIdentityBindingIndex,
-            UpdateByStableRowIdentitySql: collectionMergePlan.UpdateByStableRowIdentitySql,
-            DeleteByStableRowIdentitySql: collectionMergePlan.DeleteByStableRowIdentitySql,
-            OrdinalBindingIndex: collectionMergePlan.OrdinalBindingIndex,
-            CompareBindingIndexesInOrder: collectionMergePlan.CompareBindingIndexesInOrder
-        );
-    }
-
     private static ExternalPlans.CollectionMergePlan? DecodeCollectionMergePlan(
         TableWritePlanDto tablePlanDto,
         int bindingCount,
@@ -293,76 +269,8 @@ internal static class NormalizedPlanContractCodec
             );
         }
 
-        var planDto = tablePlanDto.CollectionMergePlan;
         var planArgument = $"{tablePlanArgument}.{nameof(TableWritePlanDto.CollectionMergePlan)}";
-
-        if (planDto.SemanticIdentityBindings.Length == 0)
-        {
-            throw new ArgumentException(
-                $"{planArgument}.{nameof(CollectionMergePlanDto.SemanticIdentityBindings)} must be non-empty.",
-                nameof(tablePlanDto)
-            );
-        }
-
-        var semanticIdentityBindings = new ExternalPlans.CollectionMergeSemanticIdentityBinding[
-            planDto.SemanticIdentityBindings.Length
-        ];
-
-        for (
-            var semanticBindingIndex = 0;
-            semanticBindingIndex < planDto.SemanticIdentityBindings.Length;
-            semanticBindingIndex++
-        )
-        {
-            var semanticBindingDto = planDto.SemanticIdentityBindings[semanticBindingIndex];
-            var semanticBindingArgument =
-                $"{planArgument}.{nameof(CollectionMergePlanDto.SemanticIdentityBindings)}[{semanticBindingIndex}]";
-
-            semanticIdentityBindings[semanticBindingIndex] =
-                new ExternalPlans.CollectionMergeSemanticIdentityBinding(
-                    RelativePath: CompileJsonPath(
-                        semanticBindingDto.RelativePath,
-                        $"{semanticBindingArgument}.{nameof(CollectionMergeSemanticIdentityBindingDto.RelativePath)}"
-                    ),
-                    BindingIndex: ValidateBindingIndex(
-                        semanticBindingDto.BindingIndex,
-                        bindingCount,
-                        $"{semanticBindingArgument}.{nameof(CollectionMergeSemanticIdentityBindingDto.BindingIndex)}",
-                        "collection semantic-identity binding index"
-                    )
-                );
-        }
-
-        var compareBindingIndexes = new int[planDto.CompareBindingIndexesInOrder.Length];
-
-        for (var compareIndex = 0; compareIndex < planDto.CompareBindingIndexesInOrder.Length; compareIndex++)
-        {
-            compareBindingIndexes[compareIndex] = ValidateBindingIndex(
-                planDto.CompareBindingIndexesInOrder[compareIndex],
-                bindingCount,
-                $"{planArgument}.{nameof(CollectionMergePlanDto.CompareBindingIndexesInOrder)}[{compareIndex}]",
-                "collection compare binding index"
-            );
-        }
-
-        return new ExternalPlans.CollectionMergePlan(
-            SemanticIdentityBindings: semanticIdentityBindings,
-            StableRowIdentityBindingIndex: ValidateBindingIndex(
-                planDto.StableRowIdentityBindingIndex,
-                bindingCount,
-                $"{planArgument}.{nameof(CollectionMergePlanDto.StableRowIdentityBindingIndex)}",
-                "collection stable-row-identity binding index"
-            ),
-            UpdateByStableRowIdentitySql: planDto.UpdateByStableRowIdentitySql,
-            DeleteByStableRowIdentitySql: planDto.DeleteByStableRowIdentitySql,
-            OrdinalBindingIndex: ValidateBindingIndex(
-                planDto.OrdinalBindingIndex,
-                bindingCount,
-                $"{planArgument}.{nameof(CollectionMergePlanDto.OrdinalBindingIndex)}",
-                "collection ordinal binding index"
-            ),
-            CompareBindingIndexesInOrder: compareBindingIndexes
-        );
+        return tablePlanDto.CollectionMergePlan.Decode(bindingCount, planArgument, nameof(tablePlanDto));
     }
 
     private static ExternalPlans.CollectionKeyPreallocationPlan? DecodeCollectionKeyPreallocationPlan(

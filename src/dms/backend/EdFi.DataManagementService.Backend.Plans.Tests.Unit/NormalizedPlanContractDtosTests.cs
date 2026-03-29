@@ -346,6 +346,7 @@ public class Given_NormalizedPlanContractDtos
         );
 
         var json = NormalizedPlanDtoJson.EmitCanonicalJson(collectionWritePlan);
+        var repeatedJson = NormalizedPlanDtoJson.EmitCanonicalJson(collectionWritePlan);
 
         json.Should().Contain("\"collection_merge_plan\": {");
         json.Should().Contain("\"semantic_identity_bindings\": [");
@@ -363,6 +364,11 @@ public class Given_NormalizedPlanContractDtos
         json.Should().Contain("\"collection_key_preallocation_plan\": {");
         json.Should().Contain("\"column_name\": \"CollectionItemId\"");
         json.Should().Contain("\"binding_index\": 0");
+        repeatedJson.Should().Be(json);
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(repeatedJson)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(collectionWritePlan));
     }
 
     [Test]

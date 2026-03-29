@@ -158,7 +158,7 @@
       "Keep or add determinism assertions in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtosTests.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitterTests.cs` proving the refactor preserves canonical JSON and manifest output byte-for-byte.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"NormalizedPlanContractDtos|NormalizedPlanContractCodec|MappingSetManifestJsonEmitter\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Suite",
