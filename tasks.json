@@ -37,7 +37,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"RuntimeMappingSetCompiler|FocusedStableKeyRuntimePlanFixtureTests\"`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/FocusedStableKeyRuntimePlanFixtureTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimePlanFixtureModelSetBuilder.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Serialization",
