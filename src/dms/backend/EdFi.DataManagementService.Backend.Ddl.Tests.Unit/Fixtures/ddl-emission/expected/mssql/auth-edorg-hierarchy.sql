@@ -139,11 +139,15 @@ BEGIN
     SET NOCOUNT ON;
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING inserted AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency');
+        UPDATE t
+        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+        FROM [edfi].[EducationOrganizationIdentity] t
+        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+        FROM inserted s
+        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+        WHERE existing.[DocumentId] IS NULL;
     END
     ELSE IF (UPDATE([EducationOrganizationId]))
     BEGIN
@@ -152,11 +156,15 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency');
+        UPDATE t
+        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+        FROM [edfi].[EducationOrganizationIdentity] t
+        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+        WHERE existing.[DocumentId] IS NULL;
     END
 END;
 GO
@@ -378,11 +386,15 @@ BEGIN
     SET NOCOUNT ON;
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING inserted AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency');
+        UPDATE t
+        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+        FROM [edfi].[EducationOrganizationIdentity] t
+        INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId];
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+        FROM inserted s
+        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+        WHERE existing.[DocumentId] IS NULL;
     END
     ELSE IF (UPDATE([EducationOrganizationId]))
     BEGIN
@@ -391,11 +403,15 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[EducationOrganizationId] <> d.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND d.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND d.[EducationOrganizationId] IS NULL));
-        MERGE [edfi].[EducationOrganizationIdentity] AS t
-        USING (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
-        WHEN MATCHED THEN UPDATE SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
-        WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
-        VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency');
+        UPDATE t
+        SET t.[EducationOrganizationId] = s.[EducationOrganizationId]
+        FROM [edfi].[EducationOrganizationIdentity] t
+        INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId];
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+        FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
+        LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
+        WHERE existing.[DocumentId] IS NULL;
     END
 END;
 GO
