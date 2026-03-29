@@ -703,17 +703,128 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_collection_merge_plan_is_combined_with_delete_by_parent_sql()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            DeleteByParentSql = "DELETE FROM schoolAddress WHERE DocumentId = @documentId;",
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("tablePlanDto");
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.DeleteByParentSql));
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_semantic_identity_bindings_are_empty()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = tablePlans[schoolAddressIndex].CollectionMergePlan! with
+            {
+                SemanticIdentityBindings = [],
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("tablePlanDto");
+        exception.Message.Should().Contain(nameof(CollectionMergePlanDto.SemanticIdentityBindings));
+        exception.Message.Should().Contain("must be non-empty");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_semantic_identity_binding_index_is_out_of_range()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+        var semanticIdentityBindings = tablePlans[schoolAddressIndex]
+            .CollectionMergePlan!.SemanticIdentityBindings.ToArray();
+
+        semanticIdentityBindings[0] = semanticIdentityBindings[0] with { BindingIndex = 999 };
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = tablePlans[schoolAddressIndex].CollectionMergePlan! with
+            {
+                SemanticIdentityBindings = [.. semanticIdentityBindings],
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionMergePlanDto.SemanticIdentityBindings));
+        exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_stable_row_identity_binding_index_is_out_of_range()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = tablePlans[schoolAddressIndex].CollectionMergePlan! with
+            {
+                StableRowIdentityBindingIndex = 999,
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionMergePlanDto.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_ordinal_binding_index_is_out_of_range()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = tablePlans[schoolAddressIndex].CollectionMergePlan! with
+            {
+                OrdinalBindingIndex = 999,
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionMergePlanDto.OrdinalBindingIndex));
+        exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_collection_merge_compare_binding_index_is_out_of_range()
     {
-        var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
-        var encoded = NormalizedPlanContractCodec.Encode(
-            new WritePlanCompiler(SqlDialect.Pgsql).Compile(model)
-        );
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
         var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
-        var schoolAddressIndex = Array.FindIndex(
-            tablePlans,
-            static tablePlan => string.Equals(tablePlan.Table.Name, "SchoolAddress", StringComparison.Ordinal)
-        );
 
         tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
         {
@@ -729,6 +840,31 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
         exception.ParamName.Should().Contain(nameof(CollectionMergePlanDto.CompareBindingIndexesInOrder));
+        exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_key_preallocation_binding_index_is_out_of_range()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionKeyPreallocationPlan = tablePlans[
+                schoolAddressIndex
+            ].CollectionKeyPreallocationPlan! with
+            {
+                BindingIndex = 999,
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionKeyPreallocationPlanDto.BindingIndex));
         exception.Message.Should().Contain("out of range");
     }
 
@@ -2309,6 +2445,26 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     )
     {
         return model with { DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()] };
+    }
+
+    private static (
+        RelationalResourceModel Model,
+        ResourceWritePlanDto Encoded,
+        int SchoolAddressIndex
+    ) CreateFocusedStableKeyEncodedWritePlan()
+    {
+        var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
+        var encoded = NormalizedPlanContractCodec.Encode(
+            new WritePlanCompiler(SqlDialect.Pgsql).Compile(model)
+        );
+        var schoolAddressIndex = Array.FindIndex(
+            encoded.TablePlansInDependencyOrder.ToArray(),
+            static tablePlan => string.Equals(tablePlan.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+
+        schoolAddressIndex.Should().BeGreaterOrEqualTo(0);
+
+        return (model, encoded, schoolAddressIndex);
     }
 
     private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)

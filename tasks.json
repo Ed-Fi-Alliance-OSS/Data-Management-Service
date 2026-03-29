@@ -76,7 +76,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Backend",

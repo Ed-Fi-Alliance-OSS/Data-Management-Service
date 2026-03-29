@@ -113,6 +113,12 @@ public sealed record TableWritePlan
             KeyUnificationPlans,
             nameof(KeyUnificationPlans)
         );
+        ValidateCollectionContract(
+            this.ColumnBindings.Length,
+            this.DeleteByParentSql,
+            this.CollectionMergePlan,
+            this.CollectionKeyPreallocationPlan
+        );
     }
 
     /// <summary>
@@ -174,6 +180,105 @@ public sealed record TableWritePlan
     /// <see cref="WriteValueSource.Precomputed" /> bindings deterministically.
     /// </summary>
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
+
+    private static void ValidateCollectionContract(
+        int bindingCount,
+        string? deleteByParentSql,
+        CollectionMergePlan? collectionMergePlan,
+        CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
+    )
+    {
+        if (collectionMergePlan is not null)
+        {
+            if (deleteByParentSql is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.DeleteByParentSql)} to be null.",
+                    nameof(DeleteByParentSql)
+                );
+            }
+
+            for (
+                var semanticIdentityBindingIndex = 0;
+                semanticIdentityBindingIndex < collectionMergePlan.SemanticIdentityBindings.Length;
+                semanticIdentityBindingIndex++
+            )
+            {
+                var semanticIdentityBinding = collectionMergePlan.SemanticIdentityBindings[
+                    semanticIdentityBindingIndex
+                ];
+
+                ValidateBindingIndex(
+                    semanticIdentityBinding.BindingIndex,
+                    bindingCount,
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.SemanticIdentityBindings)}[{semanticIdentityBindingIndex}].{nameof(semanticIdentityBinding.BindingIndex)}",
+                    "Collection merge semantic-identity binding"
+                );
+            }
+
+            ValidateBindingIndex(
+                collectionMergePlan.StableRowIdentityBindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.StableRowIdentityBindingIndex)}",
+                "Collection merge stable-row-identity binding"
+            );
+            ValidateBindingIndex(
+                collectionMergePlan.OrdinalBindingIndex,
+                bindingCount,
+                $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.OrdinalBindingIndex)}",
+                "Collection merge ordinal binding"
+            );
+
+            for (
+                var compareBindingIndex = 0;
+                compareBindingIndex < collectionMergePlan.CompareBindingIndexesInOrder.Length;
+                compareBindingIndex++
+            )
+            {
+                ValidateBindingIndex(
+                    collectionMergePlan.CompareBindingIndexesInOrder[compareBindingIndex],
+                    bindingCount,
+                    $"{nameof(TableWritePlan.CollectionMergePlan)}.{nameof(collectionMergePlan.CompareBindingIndexesInOrder)}[{compareBindingIndex}]",
+                    "Collection merge compare binding"
+                );
+            }
+        }
+
+        if (collectionKeyPreallocationPlan is null)
+        {
+            return;
+        }
+
+        ValidateBindingIndex(
+            collectionKeyPreallocationPlan.BindingIndex,
+            bindingCount,
+            $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}",
+            "Collection-key preallocation binding"
+        );
+    }
+
+    private static void ValidateBindingIndex(
+        int bindingIndex,
+        int bindingCount,
+        string parameterName,
+        string description
+    )
+    {
+        if (bindingIndex >= 0 && bindingIndex < bindingCount)
+        {
+            return;
+        }
+
+        var validRangeDescription =
+            bindingCount == 0
+                ? $"{nameof(ColumnBindings)} is empty."
+                : $"Expected a value between 0 and {bindingCount - 1}.";
+
+        throw new ArgumentOutOfRangeException(
+            parameterName,
+            $"{description} must reference a valid {nameof(ColumnBindings)} entry. {validRangeDescription}"
+        );
+    }
 }
 
 /// <summary>
@@ -217,6 +322,15 @@ public sealed record CollectionMergePlan
             SemanticIdentityBindings,
             nameof(SemanticIdentityBindings)
         );
+
+        if (this.SemanticIdentityBindings.IsDefaultOrEmpty)
+        {
+            throw new ArgumentException(
+                $"{nameof(SemanticIdentityBindings)} must be non-empty.",
+                nameof(SemanticIdentityBindings)
+            );
+        }
+
         this.StableRowIdentityBindingIndex = StableRowIdentityBindingIndex;
         this.UpdateByStableRowIdentitySql = PlanContractArgumentValidator.RequireNotNull(
             UpdateByStableRowIdentitySql,

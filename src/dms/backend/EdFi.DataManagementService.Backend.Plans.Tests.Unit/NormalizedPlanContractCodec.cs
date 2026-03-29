@@ -399,8 +399,8 @@ internal static class NormalizedPlanContractCodec
         if (planDto.BindingIndex < 0 || planDto.BindingIndex >= bindingCount)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(tablePlanDto),
-                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)} must be between 0 and {bindingCount - 1}."
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)}",
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)} is out of range. Expected a value between 0 and {bindingCount - 1}."
             );
         }
 
