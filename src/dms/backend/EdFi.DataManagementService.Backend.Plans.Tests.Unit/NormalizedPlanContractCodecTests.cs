@@ -724,6 +724,53 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_collection_table_plan_is_missing_collection_merge_plan()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = null,
+            CollectionKeyPreallocationPlan = null,
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("tablePlanDto");
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_table_plan_tries_to_fall_back_to_delete_by_parent_without_collection_merge_plan()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = null,
+            CollectionKeyPreallocationPlan = null,
+            DeleteByParentSql = "DELETE FROM schoolAddress WHERE DocumentId = @documentId;",
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("tablePlanDto");
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(TableWritePlanDto.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
     public void It_should_fail_fast_when_collection_merge_plan_is_combined_with_update_sql()
     {
         var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();

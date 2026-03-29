@@ -172,6 +172,46 @@ public class Given_ExternalPlanContracts
     }
 
     [Test]
+    public void It_should_reject_collection_table_plans_without_collection_merge_metadata()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: null,
+                collectionMergePlan: null,
+                collectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_that_try_to_fall_back_to_delete_by_parent_without_collection_merge_metadata()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: "DELETE SQL",
+                collectionMergePlan: null,
+                collectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
     public void It_should_reject_collection_table_plans_that_mix_delete_by_parent_and_collection_merge_metadata()
     {
         var act = () => CreateCollectionTableWritePlan(deleteByParentSql: "DELETE SQL");

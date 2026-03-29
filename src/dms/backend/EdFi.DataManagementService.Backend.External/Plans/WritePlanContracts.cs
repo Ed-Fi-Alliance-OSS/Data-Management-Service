@@ -193,6 +193,21 @@ public sealed record TableWritePlan
     )
     {
         var bindingCount = columnBindings.Length;
+        var tableKind = tableModel.IdentityMetadata.TableKind;
+        var tableKindParameterName =
+            $"{nameof(TableModel)}.{nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)}";
+
+        if (IsCollectionMergeTableKind(tableKind) && collectionMergePlan is null)
+        {
+            var detail = deleteByParentSql is null
+                ? $"Neither {nameof(TableWritePlan.CollectionMergePlan)} nor {nameof(TableWritePlan.DeleteByParentSql)} was provided."
+                : $"{nameof(TableWritePlan.DeleteByParentSql)} cannot replace {nameof(TableWritePlan.CollectionMergePlan)} for persisted collection tables.";
+
+            throw new ArgumentException(
+                $"{tableKindParameterName} '{tableKind}' requires {nameof(TableWritePlan.CollectionMergePlan)}. {detail}",
+                nameof(TableWritePlan.CollectionMergePlan)
+            );
+        }
 
         if (collectionMergePlan is not null)
         {
@@ -212,13 +227,10 @@ public sealed record TableWritePlan
                 );
             }
 
-            var tableKindParameterName =
-                $"{nameof(TableModel)}.{nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)}";
-
-            if (!IsCollectionMergeTableKind(tableModel.IdentityMetadata.TableKind))
+            if (!IsCollectionMergeTableKind(tableKind))
             {
                 throw new ArgumentException(
-                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {tableKindParameterName} to be {nameof(DbTableKind.Collection)} or {nameof(DbTableKind.ExtensionCollection)}. Actual value: {tableModel.IdentityMetadata.TableKind}.",
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {tableKindParameterName} to be {nameof(DbTableKind.Collection)} or {nameof(DbTableKind.ExtensionCollection)}. Actual value: {tableKind}.",
                     tableKindParameterName
                 );
             }

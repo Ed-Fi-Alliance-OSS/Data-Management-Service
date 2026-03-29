@@ -218,6 +218,8 @@ internal static class NormalizedPlanContractCodec
                 tablePlanArgument
             );
 
+            ValidateCollectionTablePlanShape(tablePlanDto, tableModel, tablePlanArgument);
+
             var decodedCollectionMergePlan = DecodeCollectionMergePlan(
                 tablePlanDto,
                 decodedColumnBindings.Length,
@@ -248,6 +250,32 @@ internal static class NormalizedPlanContractCodec
         }
 
         return new ExternalPlans.ResourceWritePlan(model, decodedTablePlans);
+    }
+
+    private static void ValidateCollectionTablePlanShape(
+        TableWritePlanDto tablePlanDto,
+        DbTableModel tableModel,
+        string tablePlanArgument
+    )
+    {
+        var tableKind = tableModel.IdentityMetadata.TableKind;
+
+        if (
+            tableKind is not DbTableKind.Collection and not DbTableKind.ExtensionCollection
+            || tablePlanDto.CollectionMergePlan is not null
+        )
+        {
+            return;
+        }
+
+        var detail = tablePlanDto.DeleteByParentSql is null
+            ? $"Neither {nameof(TableWritePlanDto.CollectionMergePlan)} nor {nameof(TableWritePlanDto.DeleteByParentSql)} was provided."
+            : $"{nameof(TableWritePlanDto.DeleteByParentSql)} cannot replace {nameof(TableWritePlanDto.CollectionMergePlan)} for persisted collection tables.";
+
+        throw new ArgumentException(
+            $"{tablePlanArgument} targets {nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)} '{tableKind}', which requires {nameof(TableWritePlanDto.CollectionMergePlan)}. {detail}",
+            nameof(tablePlanDto)
+        );
     }
 
     private static ExternalPlans.CollectionMergePlan? DecodeCollectionMergePlan(
