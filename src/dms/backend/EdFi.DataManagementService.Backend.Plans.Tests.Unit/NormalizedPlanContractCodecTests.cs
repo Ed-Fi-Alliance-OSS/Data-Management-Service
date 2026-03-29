@@ -1764,7 +1764,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                         ),
                     ]
                 ),
-            ]
+            ],
+            CollectionMergePlan: null
         );
 
         return new ResourceWritePlan(model, [tablePlan]);

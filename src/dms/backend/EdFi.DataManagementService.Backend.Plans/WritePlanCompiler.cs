@@ -229,6 +229,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: tableCompilationContext.ColumnBindings,
             KeyUnificationPlans: keyUnificationPlans,
+            CollectionMergePlan: null,
             CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
         );
     }

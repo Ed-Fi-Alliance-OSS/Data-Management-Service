@@ -229,6 +229,7 @@ internal static class NormalizedPlanContractCodec
                 ),
                 ColumnBindings: decodedColumnBindings,
                 KeyUnificationPlans: decodedKeyUnificationPlans,
+                CollectionMergePlan: null,
                 CollectionKeyPreallocationPlan: DecodeCollectionKeyPreallocationPlan(
                     tablePlanDto,
                     tableModel,

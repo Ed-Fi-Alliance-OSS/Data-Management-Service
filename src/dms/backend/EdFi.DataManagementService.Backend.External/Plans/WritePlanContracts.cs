@@ -65,9 +65,8 @@ public sealed record TableWritePlan
     /// </param>
     /// <param name="DeleteByParentSql">
     /// Optional <c>DELETE</c> SQL used for scope replacement by parent key (non-root tables).
-    /// For child/collection tables (key contains <c>Ordinal</c>), executors run this before bulk insert (replace
-    /// semantics). For non-root 1:1 tables (no <c>Ordinal</c>), executors run this when the scoped object is absent from
-    /// the payload.
+    /// For non-root 1:1 tables (no <c>Ordinal</c>), executors run this when the scoped object is absent from the
+    /// payload.
     /// </param>
     /// <param name="BulkInsertBatching">Deterministic bulk-insert batching metadata for this table.</param>
     /// <param name="ColumnBindings">
@@ -81,6 +80,9 @@ public sealed record TableWritePlan
     /// Per-table key-unification precompute plans that populate key-unification-specific
     /// <see cref="WriteValueSource.Precomputed" /> bindings.
     /// </param>
+    /// <param name="CollectionMergePlan">
+    /// Optional binding-index-first merge metadata for persisted collection tables.
+    /// </param>
     public TableWritePlan(
         DbTableModel TableModel,
         string InsertSql,
@@ -89,6 +91,7 @@ public sealed record TableWritePlan
         BulkInsertBatchingInfo BulkInsertBatching,
         IEnumerable<WriteColumnBinding> ColumnBindings,
         IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans,
+        CollectionMergePlan? CollectionMergePlan = null,
         CollectionKeyPreallocationPlan? CollectionKeyPreallocationPlan = null
     )
     {
@@ -104,6 +107,7 @@ public sealed record TableWritePlan
             ColumnBindings,
             nameof(ColumnBindings)
         );
+        this.CollectionMergePlan = CollectionMergePlan;
         this.CollectionKeyPreallocationPlan = CollectionKeyPreallocationPlan;
         this.KeyUnificationPlans = PlanContractArgumentValidator.RequireImmutableArray(
             KeyUnificationPlans,
@@ -138,12 +142,17 @@ public sealed record TableWritePlan
     /// Optional canonical parameterized <c>DELETE</c> SQL used for scope replacement by parent key (non-root tables).
     /// </summary>
     /// <remarks>
-    /// - For child/collection tables (key contains <c>Ordinal</c>), executors execute this before bulk insert to replace
-    ///   all rows for the parent scope.
     /// - For non-root 1:1 tables (no <c>Ordinal</c>), executors execute this only when the scoped object is absent from
     ///   the payload.
+    /// - Persisted collection tables use <see cref="CollectionMergePlan" /> metadata instead of parent-scope replace
+    ///   semantics.
     /// </remarks>
     public string? DeleteByParentSql { get; init; }
+
+    /// <summary>
+    /// Optional binding-index-first merge metadata for persisted collection tables.
+    /// </summary>
+    public CollectionMergePlan? CollectionMergePlan { get; init; }
 
     /// <summary>
     /// Deterministic batching metadata derived from dialect limits and per-row parameter width.
@@ -166,6 +175,78 @@ public sealed record TableWritePlan
     /// </summary>
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
 }
+
+/// <summary>
+/// Binding-index-first merge metadata for one persisted collection table.
+/// </summary>
+public sealed record CollectionMergePlan
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CollectionMergePlan" /> record.
+    /// </summary>
+    /// <param name="SemanticIdentityBindings">
+    /// Ordered semantic-identity bindings that point back into <see cref="TableWritePlan.ColumnBindings" />.
+    /// </param>
+    /// <param name="StableRowIdentityBindingIndex">
+    /// Binding index for the stable row identity (for example <c>CollectionItemId</c>).
+    /// </param>
+    /// <param name="OrdinalBindingIndex">
+    /// Binding index for the authoritative persisted ordering column.
+    /// </param>
+    /// <param name="CompareBindingIndexesInOrder">
+    /// Binding indexes used to project current rows into deterministic compare/no-op order.
+    /// </param>
+    public CollectionMergePlan(
+        IEnumerable<CollectionMergeSemanticIdentityBinding> SemanticIdentityBindings,
+        int StableRowIdentityBindingIndex,
+        int OrdinalBindingIndex,
+        IEnumerable<int> CompareBindingIndexesInOrder
+    )
+    {
+        this.SemanticIdentityBindings = PlanContractArgumentValidator.RequireImmutableArray(
+            SemanticIdentityBindings,
+            nameof(SemanticIdentityBindings)
+        );
+        this.StableRowIdentityBindingIndex = StableRowIdentityBindingIndex;
+        this.OrdinalBindingIndex = OrdinalBindingIndex;
+        this.CompareBindingIndexesInOrder = PlanContractArgumentValidator.RequireImmutableArray(
+            CompareBindingIndexesInOrder,
+            nameof(CompareBindingIndexesInOrder)
+        );
+    }
+
+    /// <summary>
+    /// Ordered semantic-identity bindings that point back into <see cref="TableWritePlan.ColumnBindings" />.
+    /// </summary>
+    public ImmutableArray<CollectionMergeSemanticIdentityBinding> SemanticIdentityBindings { get; init; }
+
+    /// <summary>
+    /// Binding index for the stable row identity (for example <c>CollectionItemId</c>).
+    /// </summary>
+    public int StableRowIdentityBindingIndex { get; init; }
+
+    /// <summary>
+    /// Binding index for the authoritative persisted ordering column.
+    /// </summary>
+    public int OrdinalBindingIndex { get; init; }
+
+    /// <summary>
+    /// Binding indexes used to project current rows into deterministic compare/no-op order.
+    /// </summary>
+    public ImmutableArray<int> CompareBindingIndexesInOrder { get; init; }
+}
+
+/// <summary>
+/// Maps one semantic-identity member path to the authoritative write-column binding that carries its value.
+/// </summary>
+/// <param name="RelativePath">Canonical scope-relative path for the semantic-identity member.</param>
+/// <param name="BindingIndex">
+/// Binding index in <see cref="TableWritePlan.ColumnBindings" /> for the semantic-identity value.
+/// </param>
+public sealed record CollectionMergeSemanticIdentityBinding(
+    JsonPathExpression RelativePath,
+    int BindingIndex
+);
 
 /// <summary>
 /// Deterministic batching metadata used to chunk bulk insert commands.

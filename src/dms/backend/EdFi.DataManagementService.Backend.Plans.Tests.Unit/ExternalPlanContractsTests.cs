@@ -129,11 +129,20 @@ public class Given_ExternalPlanContracts
                     MaxParametersPerCommand: 2100
                 )
             );
+        writePlan.TablePlansInDependencyOrder[0].CollectionMergePlan.Should().BeNull();
     }
 
     [Test]
-    public void It_should_expose_collection_key_preallocation_plan_for_collection_write_tables()
+    public void It_should_expose_binding_index_first_collection_merge_metadata_for_collection_write_tables()
     {
+        var addressTypePath = new JsonPathExpression(
+            "$.addressType",
+            [new JsonPathSegment.Property("addressType")]
+        );
+        var streetNumberPath = new JsonPathExpression(
+            "$.streetNumberName",
+            [new JsonPathSegment.Property("streetNumberName")]
+        );
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
             new JsonPathExpression(
@@ -146,11 +155,43 @@ public class Given_ExternalPlanContracts
             ),
             [
                 new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
                     new DbColumnName("CollectionItemId"),
                     ColumnKind.CollectionKey,
                     new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
                     SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AddressType"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: false,
+                    SourceJsonPath: addressTypePath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("StreetNumberName"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    IsNullable: true,
+                    SourceJsonPath: streetNumberPath,
                     TargetResource: null
                 ),
             ],
@@ -161,32 +202,152 @@ public class Given_ExternalPlanContracts
             TableModel: tableModel,
             InsertSql: "INSERT SQL",
             UpdateSql: null,
-            DeleteByParentSql: "DELETE SQL",
-            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 1, 2100),
+            DeleteByParentSql: null,
+            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
             ColumnBindings:
             [
                 new ExternalPlans.WriteColumnBinding(
                     Column: tableModel.Columns[0],
+                    Source: new ExternalPlans.WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[1],
                     Source: new ExternalPlans.WriteValueSource.Precomputed(),
                     ParameterName: "collectionItemId"
                 ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new ExternalPlans.WriteValueSource.Ordinal(),
+                    ParameterName: "ordinal"
+                ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new ExternalPlans.WriteValueSource.Scalar(
+                        addressTypePath,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 32)
+                    ),
+                    ParameterName: "addressType"
+                ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[4],
+                    Source: new ExternalPlans.WriteValueSource.Scalar(
+                        streetNumberPath,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 150)
+                    ),
+                    ParameterName: "streetNumberName"
+                ),
             ],
             KeyUnificationPlans: [],
+            CollectionMergePlan: new ExternalPlans.CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new ExternalPlans.CollectionMergeSemanticIdentityBinding(
+                        RelativePath: addressTypePath,
+                        BindingIndex: 3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 1,
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [1, 2, 3, 4]
+            ),
             CollectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
                 ColumnName: new DbColumnName("CollectionItemId"),
-                BindingIndex: 0
+                BindingIndex: 1
             )
         );
 
+        tablePlan.DeleteByParentSql.Should().BeNull();
+        tablePlan.CollectionMergePlan.Should().NotBeNull();
         tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
         tablePlan
             .CollectionKeyPreallocationPlan.Should()
             .Be(
                 new ExternalPlans.CollectionKeyPreallocationPlan(
                     ColumnName: new DbColumnName("CollectionItemId"),
-                    BindingIndex: 0
+                    BindingIndex: 1
                 )
             );
+        tablePlan
+            .CollectionMergePlan!.SemanticIdentityBindings.Select(static binding => binding.BindingIndex)
+            .Should()
+            .Equal(3);
+        tablePlan
+            .CollectionMergePlan.CompareBindingIndexesInOrder.Select(bindingIndex =>
+                tablePlan.ColumnBindings[bindingIndex].ParameterName
+            )
+            .Should()
+            .Equal("collectionItemId", "ordinal", "addressType", "streetNumberName");
+        tablePlan
+            .ColumnBindings[tablePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+            .ParameterName.Should()
+            .Be("collectionItemId");
+        tablePlan
+            .ColumnBindings[tablePlan.CollectionMergePlan.OrdinalBindingIndex]
+            .ParameterName.Should()
+            .Be("ordinal");
+    }
+
+    [Test]
+    public void It_should_keep_delete_by_parent_contract_for_non_collection_non_root_tables()
+    {
+        var termPath = new JsonPathExpression("$.term", [new JsonPathSegment.Property("term")]);
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolSession"),
+            new JsonPathExpression("$.session", [new JsonPathSegment.Property("session")]),
+            new TableKey(
+                "PK_SchoolSession",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Term"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    IsNullable: false,
+                    SourceJsonPath: termPath,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var tablePlan = new ExternalPlans.TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT SQL",
+            UpdateSql: "UPDATE SQL",
+            DeleteByParentSql: "DELETE SQL",
+            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 2, 2100),
+            ColumnBindings:
+            [
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new ExternalPlans.WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new ExternalPlans.WriteValueSource.Scalar(
+                        termPath,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    ParameterName: "term"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: null
+        );
+
+        tablePlan.DeleteByParentSql.Should().Be("DELETE SQL");
+        tablePlan.CollectionMergePlan.Should().BeNull();
     }
 
     [Test]
