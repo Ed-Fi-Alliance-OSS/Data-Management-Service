@@ -112,6 +112,17 @@ internal static class NormalizedPlanDtoJson
                 );
             }
 
+            writer.WritePropertyName("collection_merge_plan");
+
+            if (tablePlan.CollectionMergePlan is null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                WriteCollectionMergePlan(writer, tablePlan.CollectionMergePlan);
+            }
+
             writer.WritePropertyName("bulk_insert_batching");
             writer.WriteStartObject();
             writer.WriteNumber("max_rows_per_batch", tablePlan.BulkInsertBatching.MaxRowsPerBatch);
@@ -169,6 +180,49 @@ internal static class NormalizedPlanDtoJson
 
             writer.WriteEndObject();
         }
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteCollectionMergePlan(
+        Utf8JsonWriter writer,
+        CollectionMergePlanDto collectionMergePlan
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("semantic_identity_bindings");
+        writer.WriteStartArray();
+
+        foreach (var semanticIdentityBinding in collectionMergePlan.SemanticIdentityBindings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("relative_path", semanticIdentityBinding.RelativePath);
+            writer.WriteNumber("binding_index", semanticIdentityBinding.BindingIndex);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteNumber(
+            "stable_row_identity_binding_index",
+            collectionMergePlan.StableRowIdentityBindingIndex
+        );
+        writer.WriteString(
+            "update_by_stable_row_identity_sql",
+            PlanJsonCanonicalization.NormalizeMultilineText(collectionMergePlan.UpdateByStableRowIdentitySql)
+        );
+        writer.WriteString(
+            "delete_by_stable_row_identity_sql",
+            PlanJsonCanonicalization.NormalizeMultilineText(collectionMergePlan.DeleteByStableRowIdentitySql)
+        );
+        writer.WriteNumber("ordinal_binding_index", collectionMergePlan.OrdinalBindingIndex);
+        writer.WritePropertyName("compare_binding_indexes_in_order");
+        writer.WriteStartArray();
+
+        foreach (var bindingIndex in collectionMergePlan.CompareBindingIndexesInOrder)
+        {
+            writer.WriteNumberValue(bindingIndex);
+        }
+
         writer.WriteEndArray();
         writer.WriteEndObject();
     }

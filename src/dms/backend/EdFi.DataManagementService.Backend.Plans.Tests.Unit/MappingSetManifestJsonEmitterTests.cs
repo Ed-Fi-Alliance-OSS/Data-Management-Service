@@ -313,15 +313,14 @@ public class Given_MappingSetManifestJsonEmitter
     [Test]
     public void It_should_emit_write_plan_table_inventory_in_dependency_order_with_required_metadata()
     {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAddressCollection");
+        var mappingSets = BuildPermutedMappingSets(reverseMappingSetOrder: false);
         var summariesByDialect = ReadWriteTablePlanSummariesByDialect(
             _manifest,
             "Ed-Fi",
             "StudentAddressCollection"
         );
-        var expectedTableNamesByDialect = ReadCompiledTableNamesByDialect(
-            BuildPermutedMappingSets(reverseMappingSetOrder: false),
-            new QualifiedResourceName("Ed-Fi", "StudentAddressCollection")
-        );
+        var expectedSummariesByDialect = ReadCompiledWriteTablePlanSummariesByDialect(mappingSets, resource);
 
         summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
 
@@ -329,9 +328,8 @@ public class Given_MappingSetManifestJsonEmitter
         {
             var tableSummaries = summariesByDialect[dialect];
             tableSummaries
-                .Select(summary => summary.TableName)
                 .Should()
-                .Equal(expectedTableNamesByDialect[dialect]);
+                .BeEquivalentTo(expectedSummariesByDialect[dialect], options => options.WithStrictOrdering());
 
             tableSummaries
                 .Select(summary => summary.InsertSqlSha256)
@@ -355,15 +353,16 @@ public class Given_MappingSetManifestJsonEmitter
                 .OnlyContain(static maxParams => maxParams > 0);
 
             tableSummaries[0].DeleteByParentSqlSha256.Should().BeNull();
-
-            if (tableSummaries.Count > 1)
-            {
-                tableSummaries
-                    .Skip(1)
-                    .Select(summary => summary.DeleteByParentSqlSha256)
-                    .Should()
-                    .OnlyContain(static hash => !string.IsNullOrWhiteSpace(hash));
-            }
+            tableSummaries[0].CollectionMergePlan.Should().BeNull();
+            tableSummaries
+                .Where(summary => summary.CollectionMergePlan is not null)
+                .Select(summary => summary.DeleteByParentSqlSha256)
+                .Should()
+                .OnlyContain(static hash => string.IsNullOrWhiteSpace(hash));
+            tableSummaries
+                .Count(summary => summary.CollectionMergePlan is not null)
+                .Should()
+                .BeGreaterThan(0);
         }
     }
 
@@ -439,12 +438,15 @@ public class Given_MappingSetManifestJsonEmitter
         return $"{resource.ProjectName}.{resource.ResourceName}";
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadCompiledTableNamesByDialect(
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<WriteTablePlanSummary>
+    > ReadCompiledWriteTablePlanSummariesByDialect(
         IReadOnlyList<MappingSet> mappingSets,
         QualifiedResourceName resource
     )
     {
-        Dictionary<string, IReadOnlyList<string>> tableNamesByDialect = [];
+        Dictionary<string, IReadOnlyList<WriteTablePlanSummary>> summariesByDialect = [];
 
         foreach (var mappingSet in mappingSets)
         {
@@ -457,12 +459,12 @@ public class Given_MappingSetManifestJsonEmitter
                 );
             }
 
-            tableNamesByDialect[dialect] = writePlan
-                .TablePlansInDependencyOrder.Select(tablePlan => tablePlan.TableModel.Table.Name)
+            summariesByDialect[dialect] = writePlan
+                .TablePlansInDependencyOrder.Select(ReadCompiledWriteTablePlanSummary)
                 .ToArray();
         }
 
-        return tableNamesByDialect;
+        return summariesByDialect;
     }
 
     private static IReadOnlyDictionary<
@@ -852,6 +854,7 @@ public class Given_MappingSetManifestJsonEmitter
         var columnBindings = RequireArray(tablePlan["column_bindings_in_order"], "column_bindings_in_order");
         var keyUnificationPlans = RequireArray(tablePlan["key_unification_plans"], "key_unification_plans");
         var collectionKeyPreallocationPlan = tablePlan["collection_key_preallocation_plan"];
+        var collectionMergePlan = ReadCollectionMergePlanSummary(tablePlan);
 
         if (collectionKeyPreallocationPlan is not null)
         {
@@ -896,12 +899,119 @@ public class Given_MappingSetManifestJsonEmitter
             InsertSqlSha256: RequireString(tablePlan, "insert_sql_sha256"),
             UpdateSqlSha256: ReadOptionalString(tablePlan, "update_sql_sha256"),
             DeleteByParentSqlSha256: ReadOptionalString(tablePlan, "delete_by_parent_sql_sha256"),
+            CollectionMergePlan: collectionMergePlan,
             BulkInsertBatching: new BulkInsertBatchingSummary(
                 MaxRowsPerBatch: RequireInt(batching, "max_rows_per_batch"),
                 ParametersPerRow: RequireInt(batching, "parameters_per_row"),
                 MaxParametersPerCommand: RequireInt(batching, "max_parameters_per_command")
             ),
             ColumnBindingCount: columnBindings.Count
+        );
+    }
+
+    private static CollectionMergePlanSummary? ReadCollectionMergePlanSummary(JsonObject tablePlan)
+    {
+        if (!tablePlan.ContainsKey("collection_merge_plan"))
+        {
+            throw new InvalidOperationException(
+                "Manifest property 'collection_merge_plan' is required on write table plans."
+            );
+        }
+
+        var collectionMergePlanNode = tablePlan["collection_merge_plan"];
+
+        if (collectionMergePlanNode is null)
+        {
+            return null;
+        }
+
+        var collectionMergePlan = RequireObject(collectionMergePlanNode, "collection_merge_plan");
+        var semanticIdentityBindings = RequireArray(
+            collectionMergePlan["semantic_identity_bindings_in_order"],
+            "semantic_identity_bindings_in_order"
+        );
+        var compareBindingIndexes = RequireArray(
+            collectionMergePlan["compare_binding_indexes_in_order"],
+            "compare_binding_indexes_in_order"
+        );
+
+        return new CollectionMergePlanSummary(
+            SemanticIdentityBindingsInOrder: semanticIdentityBindings
+                .Select(bindingNode =>
+                {
+                    var binding = RequireObject(bindingNode, "semantic_identity_bindings_in_order entry");
+
+                    return new CollectionMergeSemanticIdentityBindingSummary(
+                        RelativePath: RequireString(binding, "relative_path"),
+                        BindingIndex: RequireInt(binding, "binding_index")
+                    );
+                })
+                .ToArray(),
+            StableRowIdentityBindingIndex: RequireInt(
+                collectionMergePlan,
+                "stable_row_identity_binding_index"
+            ),
+            UpdateByStableRowIdentitySqlSha256: RequireString(
+                collectionMergePlan,
+                "update_by_stable_row_identity_sql_sha256"
+            ),
+            DeleteByStableRowIdentitySqlSha256: RequireString(
+                collectionMergePlan,
+                "delete_by_stable_row_identity_sql_sha256"
+            ),
+            OrdinalBindingIndex: RequireInt(collectionMergePlan, "ordinal_binding_index"),
+            CompareBindingIndexesInOrder: compareBindingIndexes
+                .Select(bindingIndexNode =>
+                    RequireIntValue(bindingIndexNode, "compare_binding_indexes_in_order entry")
+                )
+                .ToArray()
+        );
+    }
+
+    private static WriteTablePlanSummary ReadCompiledWriteTablePlanSummary(TableWritePlan tablePlan)
+    {
+        return new WriteTablePlanSummary(
+            Schema: tablePlan.TableModel.Table.Schema.Value,
+            TableName: tablePlan.TableModel.Table.Name,
+            InsertSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(tablePlan.InsertSql),
+            UpdateSqlSha256: tablePlan.UpdateSql is null
+                ? null
+                : PlanManifestConventions.ComputeNormalizedSha256(tablePlan.UpdateSql),
+            DeleteByParentSqlSha256: tablePlan.DeleteByParentSql is null
+                ? null
+                : PlanManifestConventions.ComputeNormalizedSha256(tablePlan.DeleteByParentSql),
+            CollectionMergePlan: tablePlan.CollectionMergePlan is null
+                ? null
+                : new CollectionMergePlanSummary(
+                    SemanticIdentityBindingsInOrder: tablePlan
+                        .CollectionMergePlan.SemanticIdentityBindings.Select(
+                            binding => new CollectionMergeSemanticIdentityBindingSummary(
+                                RelativePath: binding.RelativePath.Canonical,
+                                BindingIndex: binding.BindingIndex
+                            )
+                        )
+                        .ToArray(),
+                    StableRowIdentityBindingIndex: tablePlan
+                        .CollectionMergePlan
+                        .StableRowIdentityBindingIndex,
+                    UpdateByStableRowIdentitySqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
+                        tablePlan.CollectionMergePlan.UpdateByStableRowIdentitySql
+                    ),
+                    DeleteByStableRowIdentitySqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
+                        tablePlan.CollectionMergePlan.DeleteByStableRowIdentitySql
+                    ),
+                    OrdinalBindingIndex: tablePlan.CollectionMergePlan.OrdinalBindingIndex,
+                    CompareBindingIndexesInOrder:
+                    [
+                        .. tablePlan.CollectionMergePlan.CompareBindingIndexesInOrder,
+                    ]
+                ),
+            BulkInsertBatching: new BulkInsertBatchingSummary(
+                MaxRowsPerBatch: tablePlan.BulkInsertBatching.MaxRowsPerBatch,
+                ParametersPerRow: tablePlan.BulkInsertBatching.ParametersPerRow,
+                MaxParametersPerCommand: tablePlan.BulkInsertBatching.MaxParametersPerCommand
+            ),
+            ColumnBindingCount: tablePlan.ColumnBindings.Length
         );
     }
 
@@ -1356,6 +1466,18 @@ public class Given_MappingSetManifestJsonEmitter
         };
     }
 
+    private static int RequireIntValue(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
+    }
+
     private static bool RequireBool(JsonObject node, string propertyName)
     {
         return node[propertyName] switch
@@ -1433,8 +1555,23 @@ public class Given_MappingSetManifestJsonEmitter
         string InsertSqlSha256,
         string? UpdateSqlSha256,
         string? DeleteByParentSqlSha256,
+        CollectionMergePlanSummary? CollectionMergePlan,
         BulkInsertBatchingSummary BulkInsertBatching,
         int ColumnBindingCount
+    );
+
+    private sealed record CollectionMergePlanSummary(
+        IReadOnlyList<CollectionMergeSemanticIdentityBindingSummary> SemanticIdentityBindingsInOrder,
+        int StableRowIdentityBindingIndex,
+        string UpdateByStableRowIdentitySqlSha256,
+        string DeleteByStableRowIdentitySqlSha256,
+        int OrdinalBindingIndex,
+        IReadOnlyList<int> CompareBindingIndexesInOrder
+    );
+
+    private sealed record CollectionMergeSemanticIdentityBindingSummary(
+        string RelativePath,
+        int BindingIndex
     );
 
     private sealed record KeysetTableSummary(string TempTableName, string DocumentIdColumnName);

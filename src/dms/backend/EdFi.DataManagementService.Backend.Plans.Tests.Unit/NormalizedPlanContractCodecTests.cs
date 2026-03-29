@@ -139,6 +139,92 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_collection_merge_plan_through_normalized_dto()
+    {
+        var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
+        var sourcePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var encoded = NormalizedPlanContractCodec.Encode(sourcePlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, model);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        var sourceTablePlan = sourcePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.TableModel.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+        var encodedTablePlan = encoded.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+        var decodedTablePlan = decoded.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.TableModel.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+
+        encodedTablePlan.CollectionMergePlan.Should().NotBeNull();
+        encodedTablePlan.DeleteByParentSql.Should().BeNull();
+
+        var sourceCollectionMergePlan = sourceTablePlan.CollectionMergePlan!;
+        var encodedCollectionMergePlan = encodedTablePlan.CollectionMergePlan!;
+
+        encodedCollectionMergePlan
+            .SemanticIdentityBindings.Select(binding => (binding.RelativePath, binding.BindingIndex))
+            .Should()
+            .Equal(
+                sourceCollectionMergePlan.SemanticIdentityBindings.Select(binding =>
+                    (binding.RelativePath.Canonical, binding.BindingIndex)
+                )
+            );
+        encodedCollectionMergePlan
+            .StableRowIdentityBindingIndex.Should()
+            .Be(sourceCollectionMergePlan.StableRowIdentityBindingIndex);
+        encodedCollectionMergePlan
+            .UpdateByStableRowIdentitySql.Should()
+            .Be(sourceCollectionMergePlan.UpdateByStableRowIdentitySql);
+        encodedCollectionMergePlan
+            .DeleteByStableRowIdentitySql.Should()
+            .Be(sourceCollectionMergePlan.DeleteByStableRowIdentitySql);
+        encodedCollectionMergePlan
+            .OrdinalBindingIndex.Should()
+            .Be(sourceCollectionMergePlan.OrdinalBindingIndex);
+        encodedCollectionMergePlan
+            .CompareBindingIndexesInOrder.Should()
+            .Equal(sourceCollectionMergePlan.CompareBindingIndexesInOrder);
+
+        decodedTablePlan.CollectionMergePlan.Should().NotBeNull();
+        decodedTablePlan.DeleteByParentSql.Should().BeNull();
+
+        var decodedCollectionMergePlan = decodedTablePlan.CollectionMergePlan!;
+
+        decodedCollectionMergePlan
+            .SemanticIdentityBindings.Select(binding =>
+                (binding.RelativePath.Canonical, binding.BindingIndex)
+            )
+            .Should()
+            .Equal(
+                sourceCollectionMergePlan.SemanticIdentityBindings.Select(binding =>
+                    (binding.RelativePath.Canonical, binding.BindingIndex)
+                )
+            );
+        decodedCollectionMergePlan
+            .StableRowIdentityBindingIndex.Should()
+            .Be(sourceCollectionMergePlan.StableRowIdentityBindingIndex);
+        decodedCollectionMergePlan
+            .UpdateByStableRowIdentitySql.Should()
+            .Be(sourceCollectionMergePlan.UpdateByStableRowIdentitySql);
+        decodedCollectionMergePlan
+            .DeleteByStableRowIdentitySql.Should()
+            .Be(sourceCollectionMergePlan.DeleteByStableRowIdentitySql);
+        decodedCollectionMergePlan
+            .OrdinalBindingIndex.Should()
+            .Be(sourceCollectionMergePlan.OrdinalBindingIndex);
+        decodedCollectionMergePlan
+            .CompareBindingIndexesInOrder.Should()
+            .Equal(sourceCollectionMergePlan.CompareBindingIndexesInOrder);
+    }
+
+    [Test]
     public void It_should_roundtrip_resource_read_plan_through_normalized_dto_without_losing_projection_metadata()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
@@ -614,6 +700,36 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
         exception.ParamName.Should().Be("bindingIndex");
         exception.Message.Should().Contain("DocumentReferenceBindings");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_collection_merge_compare_binding_index_is_out_of_range()
+    {
+        var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
+        var encoded = NormalizedPlanContractCodec.Encode(
+            new WritePlanCompiler(SqlDialect.Pgsql).Compile(model)
+        );
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+        var schoolAddressIndex = Array.FindIndex(
+            tablePlans,
+            static tablePlan => string.Equals(tablePlan.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            CollectionMergePlan = tablePlans[schoolAddressIndex].CollectionMergePlan! with
+            {
+                CompareBindingIndexesInOrder = [999],
+            },
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(CollectionMergePlanDto.CompareBindingIndexesInOrder));
+        exception.Message.Should().Contain("out of range");
     }
 
     [Test]

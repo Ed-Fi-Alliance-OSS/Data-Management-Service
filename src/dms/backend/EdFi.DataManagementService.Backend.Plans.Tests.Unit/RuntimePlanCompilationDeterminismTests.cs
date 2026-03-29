@@ -208,6 +208,7 @@ public class Given_RuntimePlanCompilation_Determinism
             _ = RequireString(tablePlan, "insert_sql_sha256");
             _ = ReadOptionalString(tablePlan, "update_sql_sha256");
             _ = ReadOptionalString(tablePlan, "delete_by_parent_sql_sha256");
+            ValidateCollectionMergePlan(tablePlan);
 
             var batching = RequireObject(tablePlan["bulk_insert_batching"], "bulk_insert_batching");
             _ = RequireInt(batching, "max_rows_per_batch");
@@ -252,6 +253,54 @@ public class Given_RuntimePlanCompilation_Determinism
                     _ = RequireBool(member, "presence_is_synthetic");
                 }
             }
+        }
+    }
+
+    private static void ValidateCollectionMergePlan(JsonObject tablePlan)
+    {
+        if (!tablePlan.ContainsKey("collection_merge_plan"))
+        {
+            throw new InvalidOperationException(
+                "Manifest property 'collection_merge_plan' is required on write table plans."
+            );
+        }
+
+        var collectionMergePlanNode = tablePlan["collection_merge_plan"];
+
+        if (collectionMergePlanNode is null)
+        {
+            return;
+        }
+
+        var collectionMergePlan = RequireObject(collectionMergePlanNode, "collection_merge_plan");
+        var semanticIdentityBindings = RequireArray(
+            collectionMergePlan["semantic_identity_bindings_in_order"],
+            "semantic_identity_bindings_in_order"
+        );
+
+        foreach (var semanticBindingNode in semanticIdentityBindings)
+        {
+            var semanticBinding = RequireObject(
+                semanticBindingNode,
+                "semantic_identity_bindings_in_order entry"
+            );
+            _ = RequireString(semanticBinding, "relative_path");
+            _ = RequireInt(semanticBinding, "binding_index");
+        }
+
+        _ = RequireInt(collectionMergePlan, "stable_row_identity_binding_index");
+        _ = RequireString(collectionMergePlan, "update_by_stable_row_identity_sql_sha256");
+        _ = RequireString(collectionMergePlan, "delete_by_stable_row_identity_sql_sha256");
+        _ = RequireInt(collectionMergePlan, "ordinal_binding_index");
+
+        var compareBindingIndexes = RequireArray(
+            collectionMergePlan["compare_binding_indexes_in_order"],
+            "compare_binding_indexes_in_order"
+        );
+
+        foreach (var bindingIndexNode in compareBindingIndexes)
+        {
+            _ = RequireIntValue(bindingIndexNode, "compare_binding_indexes_in_order entry");
         }
     }
 
@@ -449,6 +498,18 @@ public class Given_RuntimePlanCompilation_Determinism
         }
 
         return value;
+    }
+
+    private static int RequireIntValue(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
     }
 
     private static string? ReadOptionalString(JsonObject node, string propertyName)

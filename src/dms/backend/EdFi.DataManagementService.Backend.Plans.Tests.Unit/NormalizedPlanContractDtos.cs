@@ -59,6 +59,7 @@ internal sealed record TableWritePlanDto
         BulkInsertBatchingInfoDto BulkInsertBatching,
         IEnumerable<WriteColumnBindingDto> ColumnBindings,
         IEnumerable<KeyUnificationWritePlanDto> KeyUnificationPlans,
+        CollectionMergePlanDto? CollectionMergePlan = null,
         CollectionKeyPreallocationPlanDto? CollectionKeyPreallocationPlan = null
     )
     {
@@ -75,6 +76,7 @@ internal sealed record TableWritePlanDto
         this.BulkInsertBatching = BulkInsertBatching;
         this.ColumnBindings = [.. ColumnBindings];
         this.KeyUnificationPlans = [.. KeyUnificationPlans];
+        this.CollectionMergePlan = CollectionMergePlan;
         this.CollectionKeyPreallocationPlan = CollectionKeyPreallocationPlan;
     }
 
@@ -92,6 +94,8 @@ internal sealed record TableWritePlanDto
 
     public ImmutableArray<KeyUnificationWritePlanDto> KeyUnificationPlans { get; init; }
 
+    public CollectionMergePlanDto? CollectionMergePlan { get; init; }
+
     public CollectionKeyPreallocationPlanDto? CollectionKeyPreallocationPlan { get; init; }
 }
 
@@ -108,6 +112,45 @@ internal sealed record WriteColumnBindingDto(
 );
 
 internal sealed record CollectionKeyPreallocationPlanDto(string ColumnName, int BindingIndex);
+
+internal sealed record CollectionMergePlanDto
+{
+    public CollectionMergePlanDto(
+        IEnumerable<CollectionMergeSemanticIdentityBindingDto> SemanticIdentityBindings,
+        int StableRowIdentityBindingIndex,
+        string UpdateByStableRowIdentitySql,
+        string DeleteByStableRowIdentitySql,
+        int OrdinalBindingIndex,
+        IEnumerable<int> CompareBindingIndexesInOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(SemanticIdentityBindings);
+        ArgumentNullException.ThrowIfNull(UpdateByStableRowIdentitySql);
+        ArgumentNullException.ThrowIfNull(DeleteByStableRowIdentitySql);
+        ArgumentNullException.ThrowIfNull(CompareBindingIndexesInOrder);
+
+        this.SemanticIdentityBindings = [.. SemanticIdentityBindings];
+        this.StableRowIdentityBindingIndex = StableRowIdentityBindingIndex;
+        this.UpdateByStableRowIdentitySql = UpdateByStableRowIdentitySql;
+        this.DeleteByStableRowIdentitySql = DeleteByStableRowIdentitySql;
+        this.OrdinalBindingIndex = OrdinalBindingIndex;
+        this.CompareBindingIndexesInOrder = [.. CompareBindingIndexesInOrder];
+    }
+
+    public ImmutableArray<CollectionMergeSemanticIdentityBindingDto> SemanticIdentityBindings { get; init; }
+
+    public int StableRowIdentityBindingIndex { get; init; }
+
+    public string UpdateByStableRowIdentitySql { get; init; }
+
+    public string DeleteByStableRowIdentitySql { get; init; }
+
+    public int OrdinalBindingIndex { get; init; }
+
+    public ImmutableArray<int> CompareBindingIndexesInOrder { get; init; }
+}
+
+internal sealed record CollectionMergeSemanticIdentityBindingDto(string RelativePath, int BindingIndex);
 
 internal abstract record WriteValueSourceDto
 {
