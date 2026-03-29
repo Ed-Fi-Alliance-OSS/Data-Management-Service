@@ -190,6 +190,14 @@ public sealed record CollectionMergePlan
     /// <param name="StableRowIdentityBindingIndex">
     /// Binding index for the stable row identity (for example <c>CollectionItemId</c>).
     /// </param>
+    /// <param name="UpdateByStableRowIdentitySql">
+    /// Canonical parameterized <c>UPDATE</c> SQL that updates one matched collection row in place using the stable row
+    /// identity binding as the <c>WHERE</c> predicate.
+    /// </param>
+    /// <param name="DeleteByStableRowIdentitySql">
+    /// Canonical parameterized <c>DELETE</c> SQL that removes one omitted collection row using the stable row identity
+    /// binding as the <c>WHERE</c> predicate.
+    /// </param>
     /// <param name="OrdinalBindingIndex">
     /// Binding index for the authoritative persisted ordering column.
     /// </param>
@@ -199,6 +207,8 @@ public sealed record CollectionMergePlan
     public CollectionMergePlan(
         IEnumerable<CollectionMergeSemanticIdentityBinding> SemanticIdentityBindings,
         int StableRowIdentityBindingIndex,
+        string UpdateByStableRowIdentitySql,
+        string DeleteByStableRowIdentitySql,
         int OrdinalBindingIndex,
         IEnumerable<int> CompareBindingIndexesInOrder
     )
@@ -208,6 +218,14 @@ public sealed record CollectionMergePlan
             nameof(SemanticIdentityBindings)
         );
         this.StableRowIdentityBindingIndex = StableRowIdentityBindingIndex;
+        this.UpdateByStableRowIdentitySql = PlanContractArgumentValidator.RequireNotNull(
+            UpdateByStableRowIdentitySql,
+            nameof(UpdateByStableRowIdentitySql)
+        );
+        this.DeleteByStableRowIdentitySql = PlanContractArgumentValidator.RequireNotNull(
+            DeleteByStableRowIdentitySql,
+            nameof(DeleteByStableRowIdentitySql)
+        );
         this.OrdinalBindingIndex = OrdinalBindingIndex;
         this.CompareBindingIndexesInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             CompareBindingIndexesInOrder,
@@ -224,6 +242,18 @@ public sealed record CollectionMergePlan
     /// Binding index for the stable row identity (for example <c>CollectionItemId</c>).
     /// </summary>
     public int StableRowIdentityBindingIndex { get; init; }
+
+    /// <summary>
+    /// Canonical parameterized <c>UPDATE</c> SQL for matched collection rows keyed by stable row identity.
+    /// Parameter names align to <see cref="TableWritePlan.ColumnBindings" />.
+    /// </summary>
+    public string UpdateByStableRowIdentitySql { get; init; }
+
+    /// <summary>
+    /// Canonical parameterized <c>DELETE</c> SQL for omitted collection rows keyed by stable row identity.
+    /// Parameter names align to <see cref="TableWritePlan.ColumnBindings" />.
+    /// </summary>
+    public string DeleteByStableRowIdentitySql { get; init; }
 
     /// <summary>
     /// Binding index for the authoritative persisted ordering column.

@@ -216,6 +216,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
         var updateSql = TryEmitUpdateSql(tableCompilationContext);
         var collectionMergePlan = TryCompileCollectionMergePlan(tableCompilationContext);
+        ValidateCollectionMergePreallocationAlignment(
+            tableCompilationContext,
+            collectionMergePlan,
+            collectionKeyPreallocationPlan
+        );
         var deleteByParentSql = collectionMergePlan is null
             ? TryEmitDeleteByParentSql(rootScopeTableModel, tableCompilationContext)
             : null;
@@ -237,7 +242,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
-    private static CollectionMergePlan? TryCompileCollectionMergePlan(
+    private CollectionMergePlan? TryCompileCollectionMergePlan(
         WritePlanTableCompilationContext tableCompilationContext
     )
     {
@@ -273,6 +278,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             tableModel.IdentityMetadata.PhysicalRowIdentityColumns[0],
             "stable-row-identity"
         );
+        var updateByStableRowIdentitySql = EmitCollectionUpdateByStableRowIdentitySql(
+            tableCompilationContext,
+            stableRowIdentityBindingIndex
+        );
+        var deleteByStableRowIdentitySql = EmitCollectionDeleteByStableRowIdentitySql(
+            tableCompilationContext,
+            stableRowIdentityBindingIndex
+        );
 
         var ordinalBindings = tableCompilationContext
             .ColumnBindings.Select((binding, index) => (binding, index))
@@ -293,6 +306,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return new CollectionMergePlan(
             SemanticIdentityBindings: semanticIdentityBindings,
             StableRowIdentityBindingIndex: stableRowIdentityBindingIndex,
+            UpdateByStableRowIdentitySql: updateByStableRowIdentitySql,
+            DeleteByStableRowIdentitySql: deleteByStableRowIdentitySql,
             OrdinalBindingIndex: ordinalBindings[0].index,
             CompareBindingIndexesInOrder: compareBindingIndexesInOrder
         );
@@ -331,6 +346,84 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return new CollectionKeyPreallocationPlan(
             ColumnName: binding.Column.ColumnName,
             BindingIndex: bindingIndex
+        );
+    }
+
+    private static void ValidateCollectionMergePreallocationAlignment(
+        WritePlanTableCompilationContext tableCompilationContext,
+        CollectionMergePlan? collectionMergePlan,
+        CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
+    )
+    {
+        if (collectionMergePlan is null)
+        {
+            return;
+        }
+
+        if (collectionKeyPreallocationPlan is null)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': collection-key preallocation metadata is required."
+            );
+        }
+
+        if (collectionKeyPreallocationPlan.BindingIndex != collectionMergePlan.StableRowIdentityBindingIndex)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': stable-row-identity binding index '{collectionMergePlan.StableRowIdentityBindingIndex}' must match collection-key preallocation binding index '{collectionKeyPreallocationPlan.BindingIndex}'."
+            );
+        }
+
+        var stableRowIdentityBinding = tableCompilationContext.ColumnBindings[
+            collectionMergePlan.StableRowIdentityBindingIndex
+        ];
+
+        if (!stableRowIdentityBinding.Column.ColumnName.Equals(collectionKeyPreallocationPlan.ColumnName))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': stable-row-identity column '{stableRowIdentityBinding.Column.ColumnName.Value}' must match collection-key preallocation column '{collectionKeyPreallocationPlan.ColumnName.Value}'."
+            );
+        }
+    }
+
+    private string EmitCollectionUpdateByStableRowIdentitySql(
+        WritePlanTableCompilationContext tableCompilationContext,
+        int stableRowIdentityBindingIndex
+    )
+    {
+        var bindingsToUpdateInOrder = tableCompilationContext
+            .ColumnBindings.Where((_, index) => index != stableRowIdentityBindingIndex)
+            .ToArray();
+
+        if (bindingsToUpdateInOrder.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': no writable bindings remain after excluding the stable-row-identity binding."
+            );
+        }
+
+        var stableRowIdentityBinding = tableCompilationContext.ColumnBindings[stableRowIdentityBindingIndex];
+
+        return _updateSqlEmitter.Emit(
+            tableCompilationContext.TableModel.Table,
+            bindingsToUpdateInOrder.Select(static binding => binding.Column.ColumnName).ToArray(),
+            bindingsToUpdateInOrder.Select(static binding => binding.ParameterName).ToArray(),
+            [stableRowIdentityBinding.Column.ColumnName],
+            [stableRowIdentityBinding.ParameterName]
+        );
+    }
+
+    private string EmitCollectionDeleteByStableRowIdentitySql(
+        WritePlanTableCompilationContext tableCompilationContext,
+        int stableRowIdentityBindingIndex
+    )
+    {
+        var stableRowIdentityBinding = tableCompilationContext.ColumnBindings[stableRowIdentityBindingIndex];
+
+        return _deleteSqlEmitter.Emit(
+            tableCompilationContext.TableModel.Table,
+            [stableRowIdentityBinding.Column.ColumnName],
+            [stableRowIdentityBinding.ParameterName]
         );
     }
 

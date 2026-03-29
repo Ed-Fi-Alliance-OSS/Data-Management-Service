@@ -248,6 +248,8 @@ public class Given_ExternalPlanContracts
                     ),
                 ],
                 StableRowIdentityBindingIndex: 1,
+                UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
+                DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
                 OrdinalBindingIndex: 2,
                 CompareBindingIndexesInOrder: [1, 2, 3, 4]
             ),
@@ -272,6 +274,8 @@ public class Given_ExternalPlanContracts
             .CollectionMergePlan!.SemanticIdentityBindings.Select(static binding => binding.BindingIndex)
             .Should()
             .Equal(3);
+        tablePlan.CollectionMergePlan.UpdateByStableRowIdentitySql.Should().Be("UPDATE COLLECTION SQL");
+        tablePlan.CollectionMergePlan.DeleteByStableRowIdentitySql.Should().Be("DELETE COLLECTION SQL");
         tablePlan
             .CollectionMergePlan.CompareBindingIndexesInOrder.Select(bindingIndex =>
                 tablePlan.ColumnBindings[bindingIndex].ParameterName
