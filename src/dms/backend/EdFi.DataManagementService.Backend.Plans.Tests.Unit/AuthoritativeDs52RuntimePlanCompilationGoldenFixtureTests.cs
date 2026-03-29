@@ -45,7 +45,7 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
     }
 
     [Test]
-    public void It_should_emit_delete_by_parent_hashes_for_non_root_table_plans()
+    public void It_should_emit_collection_merge_metadata_for_collection_tables_and_delete_by_parent_hashes_for_non_collection_children()
     {
         var childTablePlans = ParseMappingSets(_manifest)
             .SelectMany(ReadResources)
@@ -56,10 +56,37 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
 
         childTablePlans.Should().NotBeEmpty();
 
+        var collectionChildTablePlans = 0;
+        var nonCollectionChildTablePlans = 0;
+
         foreach (var childTablePlan in childTablePlans)
         {
-            ReadRequiredString(childTablePlan, "delete_by_parent_sql_sha256");
+            var collectionMergePlan = ReadOptionalObject(
+                childTablePlan["collection_merge_plan"],
+                "collection_merge_plan"
+            );
+
+            if (collectionMergePlan is not null)
+            {
+                collectionChildTablePlans++;
+                ReadOptionalString(childTablePlan, "delete_by_parent_sql_sha256").Should().BeNull();
+                ReadRequiredString(collectionMergePlan, "update_by_stable_row_identity_sql_sha256");
+                ReadRequiredString(collectionMergePlan, "delete_by_stable_row_identity_sql_sha256");
+                ReadRequiredArray(
+                    collectionMergePlan["compare_binding_indexes_in_order"],
+                    "compare_binding_indexes_in_order"
+                )
+                    .Count.Should()
+                    .BeGreaterThan(0);
+            }
+            else
+            {
+                nonCollectionChildTablePlans++;
+                ReadRequiredString(childTablePlan, "delete_by_parent_sql_sha256");
+            }
         }
+
+        collectionChildTablePlans.Should().BeGreaterThan(0);
     }
 
     [Test]
@@ -343,6 +370,18 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         };
     }
 
+    private static JsonObject? ReadOptionalObject(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => jsonObject,
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an object or null."
+            ),
+        };
+    }
+
     private static JsonArray ReadRequiredArray(JsonNode? node, string propertyName)
     {
         return node switch
@@ -380,6 +419,18 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
             null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
             _ => throw new InvalidOperationException(
                 $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
+    }
+
+    private static string? ReadOptionalString(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a string or null."
             ),
         };
     }

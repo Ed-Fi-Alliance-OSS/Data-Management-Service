@@ -56,7 +56,7 @@
       "Update the focused runtime golden tests first, then refresh the authoritative fixture expectations under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FocusedStableKeyRuntimePlan|CollectionsNestedExtensionRuntimePlan|AuthoritativeDs52RuntimePlanCompilationGoldenFixtureTests|AuthoritativeDs52SampleExtensionRuntimePlanCompilationGoldenFixtureTests|KeyUnificationPresenceGatingRuntimePlanCompilationGoldenFixtureTests|MappingSetManifestGoldenFixtureTests|PlanContractsManifestGoldenFixtureTests|RuntimePlanCompilationDeterminismTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",
