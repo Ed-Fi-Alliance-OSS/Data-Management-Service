@@ -1456,7 +1456,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer,
             identityProjectionColumns,
             isInsert =>
-                EmitMssqlAbstractIdentityMerge(
+                EmitMssqlAbstractIdentityUpsert(
                     writer,
                     targetTableName,
                     mappings,
@@ -1506,11 +1506,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits a MERGE statement for abstract identity maintenance.
+    /// Emits an UPDATE + INSERT upsert for abstract identity maintenance.
+    /// SQL Server rejects MERGE when the target table has an INSTEAD OF UPDATE
+    /// trigger, which can happen once identity propagation fallback triggers are
+    /// derived for abstract identity tables.
     /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
     /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
-    private void EmitMssqlAbstractIdentityMerge(
+    private void EmitMssqlAbstractIdentityUpsert(
         SqlWriter writer,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
@@ -1521,30 +1524,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var targetTable = Quote(targetTableName);
         var documentIdCol = Quote(DocumentIdColumn);
 
-        // Build the USING source: either 'inserted' directly, or 'inserted' filtered via changedDocs.
-        writer.Append("MERGE ");
-        writer.Append(targetTable);
-        writer.AppendLine(" AS t");
-        if (isInsert)
-        {
-            writer.Append("USING inserted AS s ON t.");
-        }
-        else
-        {
-            writer.Append("USING (SELECT i.* FROM inserted i INNER JOIN ");
-            writer.Append("@changedDocs");
-            writer.Append(" cd ON cd.");
-            writer.Append(documentIdCol);
-            writer.Append(" = i.");
-            writer.Append(documentIdCol);
-            writer.Append(") AS s ON t.");
-        }
-        writer.Append(documentIdCol);
-        writer.Append(" = s.");
-        writer.AppendLine(documentIdCol);
-
-        // WHEN MATCHED THEN UPDATE
-        writer.Append("WHEN MATCHED THEN UPDATE SET ");
+        // UPDATE existing rows first.
+        writer.AppendLine("UPDATE t");
+        writer.Append("SET ");
         for (int i = 0; i < mappings.Count; i++)
         {
             if (i > 0)
@@ -1557,9 +1539,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(mappings[i].SourceColumn));
         }
         writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(targetTable);
+        writer.AppendLine(" t");
 
-        // WHEN NOT MATCHED THEN INSERT
-        writer.Append("WHEN NOT MATCHED THEN INSERT (");
+        if (isInsert)
+        {
+            writer.Append("INNER JOIN inserted s ON t.");
+        }
+        else
+        {
+            writer.Append("INNER JOIN (SELECT i.* FROM inserted i INNER JOIN ");
+            writer.Append("@changedDocs");
+            writer.Append(" cd ON cd.");
+            writer.Append(documentIdCol);
+            writer.Append(" = i.");
+            writer.Append(documentIdCol);
+            writer.Append(") AS s ON t.");
+        }
+        writer.Append(documentIdCol);
+        writer.Append(" = s.");
+        writer.Append(documentIdCol);
+        writer.AppendLine(";");
+
+        // INSERT only the rows that do not already exist in the target table.
+        writer.Append("INSERT INTO ");
+        writer.Append(targetTable);
+        writer.Append(" (");
         writer.Append(documentIdCol);
         foreach (var mapping in mappings)
         {
@@ -1569,8 +1575,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(", ");
         writer.Append(Quote(DiscriminatorColumn));
         writer.AppendLine(")");
-
-        writer.Append("VALUES (s.");
+        writer.Append("SELECT s.");
         writer.Append(documentIdCol);
         foreach (var mapping in mappings)
         {
@@ -1579,7 +1584,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.Append(", N'");
         writer.Append(SqlDialectBase.EscapeSingleQuote(discriminatorValue));
-        writer.AppendLine("');");
+        writer.AppendLine("'");
+
+        if (isInsert)
+        {
+            writer.AppendLine("FROM inserted s");
+        }
+        else
+        {
+            writer.Append("FROM (SELECT i.* FROM inserted i INNER JOIN ");
+            writer.Append("@changedDocs");
+            writer.Append(" cd ON cd.");
+            writer.Append(documentIdCol);
+            writer.Append(" = i.");
+            writer.Append(documentIdCol);
+            writer.AppendLine(") AS s");
+        }
+
+        writer.Append("LEFT JOIN ");
+        writer.Append(targetTable);
+        writer.Append(" existing ON existing.");
+        writer.Append(documentIdCol);
+        writer.Append(" = s.");
+        writer.Append(documentIdCol);
+        writer.AppendLine();
+        writer.Append("WHERE existing.");
+        writer.Append(documentIdCol);
+        writer.AppendLine(" IS NULL;");
     }
 
     /// <summary>
