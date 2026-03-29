@@ -21,9 +21,9 @@
   },
   {
     "category": "Collection Merge SQL",
-    "description": "Compile the executor-facing collection SQL and deterministic compare metadata needed by DMS-984 from the stable-identity relational model. Acceptance: each compiled `CollectionMergePlan` includes canonical `SelectCurrentSiblingSetSql` and `DeleteByCollectionItemIdsSql`; semantic-identity bindings come directly from `IdentityMetadata.SemanticIdentityBindings`; the plan explicitly identifies the binding indexes used for stable row identity, ordinal recomputation, and no-op comparison so runtime can project hydrated current rows into write-plan compare order without SQL parsing.",
+    "description": "Compile the executor-facing collection delete and compare metadata needed by DMS-984 from the stable-identity relational model without taking ownership of the current-state loader owned by DMS-1105. Acceptance: each compiled `CollectionMergePlan` includes canonical collection-delete SQL keyed by stable row identity plus deterministic metadata sufficient for runtime to consume hydrated current rows by ordinal, project them into write-plan compare order without SQL parsing, identify semantic-identity bindings directly from `IdentityMetadata.SemanticIdentityBindings`, and determine the binding indexes used for stable row identity, ordinal recomputation, and no-op comparison.",
     "steps-to-verify": [
-      "Add focused unit tests covering top-level collections, nested collections, and collection-aligned `_ext` child collections, including assertions for `SelectCurrentSiblingSetSql`, `DeleteByCollectionItemIdsSql`, semantic-identity ordering, and compare/no-op metadata.",
+      "Add focused unit tests covering top-level collections, nested collections, and collection-aligned `_ext` child collections, including assertions for collection-delete SQL, semantic-identity ordering, and compare/no-op metadata used to consume hydrated current rows.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter CollectionMerge`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`"
     ],
@@ -54,7 +54,7 @@
     "description": "Refresh focused and authoritative runtime-plan fixture outputs to lock down the stable-identity collection merge contract. Acceptance: focused runtime fixtures show collection tables with `collection_merge_plan` metadata and no collection `delete_by_parent_sql`; authoritative `mappingset.manifest.json` goldens remain deterministic for both PostgreSQL and SQL Server after the contract change; fixture coverage includes nested collections and collection-aligned `_ext` scopes.",
     "steps-to-verify": [
       "Update the focused runtime golden tests first, then refresh the authoritative fixture expectations under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FocusedStableKeyRuntimePlan|CollectionsNestedExtensionRuntimePlan|AuthoritativeDs52RuntimePlanCompilationGoldenFixtureTests|MappingSetManifestGoldenFixtureTests\"`"
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FocusedStableKeyRuntimePlan|CollectionsNestedExtensionRuntimePlan|AuthoritativeDs52RuntimePlanCompilationGoldenFixtureTests|AuthoritativeDs52SampleExtensionRuntimePlanCompilationGoldenFixtureTests|KeyUnificationPresenceGatingRuntimePlanCompilationGoldenFixtureTests|MappingSetManifestGoldenFixtureTests|PlanContractsManifestGoldenFixtureTests\"`"
     ],
     "completed": false
   },
