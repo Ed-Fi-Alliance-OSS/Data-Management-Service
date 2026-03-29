@@ -66,5 +66,47 @@
       "Run: `rg -n \"CollectionMergePlan|DeleteByParentSql|compare|binding index|stable row identity|update matched rows\" ./reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md ./reference/design/backend-redesign/design-docs/compiled-mapping-set.md ./reference/design/backend-redesign/design-docs/flattening-reconstitution.md ./reference/design/backend-redesign/design-docs/mpack-format-v1.md`"
     ],
     "completed": true
+  },
+  {
+    "category": "Plan Contracts",
+    "description": "Harden the public write-plan contract in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so it enforces the stable-collection-merge invariants introduced by DMS-1108 instead of relying only on `WritePlanCompiler` and DTO decode paths. Acceptance: `TableWritePlan` rejects invalid combinations where a persisted collection table exposes both `DeleteByParentSql` and `CollectionMergePlan`; `CollectionMergePlan` rejects empty `SemanticIdentityBindings`; and constructor-level validation ensures stable-row-identity, ordinal, compare-order, and collection-key-preallocation metadata point at valid `ColumnBindings` indexes for the owning table plan.",
+    "steps-to-verify": [
+      "Add negative tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` that attempt to construct invalid `TableWritePlan` and `CollectionMergePlan` instances directly and assert the contract throws with clear diagnostics.",
+      "Keep `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs` aligned so round-trip decode validation and direct-constructor validation enforce the same invariants.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Backend",
+    "description": "Remove the redundant request-scoped data-source dictionary from `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlRequestDbConnectionProvider.cs` and delegate all reuse decisions to the singleton `PostgresqlDataSourceCache`. Acceptance: `PostgresqlRequestDbConnectionProvider` no longer keeps mutable per-scope `NpgsqlDataSource` state keyed by `DmsInstanceId`; repeated requests for the same connection string still reuse the same `NpgsqlDataSource` through the shared cache; and the provider remains safe if multiple consumers resolve it within the same request scope.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlRequestDbConnectionProviderTests.cs` so it proves repeated provider calls and multiple provider instances still reuse a shared `NpgsqlDataSource` without relying on an internal scoped dictionary.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter PostgresqlRequestDbConnectionProvider`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlRequestDbConnectionProvider.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlRequestDbConnectionProviderTests.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Backend",
+    "description": "Remove the dead application-lifetime registration from `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDataSourceCache.cs`, or replace it with real shutdown cleanup if the cache is intended to react to `ApplicationStopping`. Acceptance: the cache no longer registers an empty `ApplicationStopping` callback; disposal behavior is owned by one clear mechanism; and unit coverage proves disposal is still idempotent and still disposes all cached `NpgsqlDataSource` instances.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlDataSourceCacheTests.cs` to keep coverage for builder settings, disposal of cached data sources, and repeated `Dispose()` calls after the lifetime-registration cleanup.",
+      "If application-lifetime shutdown disposal is retained, add an explicit test proving the callback triggers real cache cleanup rather than an empty registration.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter PostgresqlDataSourceCache`",
+      "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDataSourceCache.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlDataSourceCacheTests.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Change Scope",
+    "description": "Reduce the DMS-1108 branch/PR surface so the stable collection merge story is isolated from unrelated request-connection abstraction and DateTime referential-identity DDL parity work. Acceptance: the final DMS-1108 change set contains only files needed for stable collection merge plans, their serialization/tests, and the associated design-doc updates; unrelated changes in `src/dms/core/EdFi.DataManagementService.Core.External/Backend/IRequestConnectionProvider.cs`, `src/dms/core/EdFi.DataManagementService.Core/Configuration/DmsInstanceRequestConnectionProvider.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlRequestDbConnectionProvider.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDataSourceCache.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs` are removed from this branch/PR or explicitly justified as hard dependencies in the story and PR description.",
+    "steps-to-verify": [
+      "Review the branch diff against `origin/main` and confirm the remaining DMS-1108 files map directly to the story in `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`.",
+      "Verify the DMS-1108 branch no longer contains unrelated file changes with: `git diff --name-only $(git merge-base HEAD origin/main)..HEAD`.",
+      "If any unrelated-looking file must remain, document the dependency in the story/PR notes and ensure the explanation names the exact file and why DMS-1108 cannot ship without it."
+    ],
+    "completed": false
   }
 ]
