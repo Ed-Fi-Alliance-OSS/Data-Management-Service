@@ -179,7 +179,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompiler|RuntimeMappingSetCompiler|FocusedStableKeyRuntimePlanFixtureTests\"`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Collection Merge SQL",

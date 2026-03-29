@@ -188,14 +188,6 @@ internal sealed record CollectionMergePlanDto
         string parameterName
     )
     {
-        if (this.SemanticIdentityBindings.Length == 0)
-        {
-            throw new ArgumentException(
-                $"{argumentName}.{nameof(SemanticIdentityBindings)} must be non-empty.",
-                parameterName
-            );
-        }
-
         var semanticIdentityBindings = new ExternalPlans.CollectionMergeSemanticIdentityBinding[
             this.SemanticIdentityBindings.Length
         ];

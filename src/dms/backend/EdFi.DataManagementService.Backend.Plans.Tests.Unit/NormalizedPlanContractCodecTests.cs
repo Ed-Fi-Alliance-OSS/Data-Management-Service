@@ -765,7 +765,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_fail_fast_when_collection_merge_semantic_identity_bindings_are_empty()
+    public void It_should_decode_collection_merge_plans_with_empty_semantic_identity_bindings_for_permissive_shared_artifacts()
     {
         var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
         var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
@@ -780,12 +780,12 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
 
-        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+        var decoded = NormalizedPlanContractCodec.Decode(mutated, model);
 
-        var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be("tablePlanDto");
-        exception.Message.Should().Contain(nameof(CollectionMergePlanDto.SemanticIdentityBindings));
-        exception.Message.Should().Contain("must be non-empty");
+        decoded
+            .TablePlansInDependencyOrder[schoolAddressIndex]
+            .CollectionMergePlan!.SemanticIdentityBindings.Should()
+            .BeEmpty();
     }
 
     [Test]

@@ -208,21 +208,18 @@ public class Given_ExternalPlanContracts
     }
 
     [Test]
-    public void It_should_reject_collection_merge_plans_without_semantic_identity_bindings()
+    public void It_should_allow_collection_merge_plans_without_semantic_identity_bindings_for_permissive_shared_artifacts()
     {
-        var act = () =>
-            new ExternalPlans.CollectionMergePlan(
-                SemanticIdentityBindings: [],
-                StableRowIdentityBindingIndex: 1,
-                UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
-                DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
-                OrdinalBindingIndex: 2,
-                CompareBindingIndexesInOrder: [1, 2, 3, 4]
-            );
+        var collectionMergePlan = new ExternalPlans.CollectionMergePlan(
+            SemanticIdentityBindings: [],
+            StableRowIdentityBindingIndex: 1,
+            UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
+            DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
+            OrdinalBindingIndex: 2,
+            CompareBindingIndexesInOrder: [1, 2, 3, 4]
+        );
 
-        var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be("SemanticIdentityBindings");
-        exception.Message.Should().Contain("must be non-empty");
+        collectionMergePlan.SemanticIdentityBindings.Should().BeEmpty();
     }
 
     [Test]

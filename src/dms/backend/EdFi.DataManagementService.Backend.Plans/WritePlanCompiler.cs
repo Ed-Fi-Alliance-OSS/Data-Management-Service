@@ -248,6 +248,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return null;
         }
 
+        // Shared/default compilation preserves upstream semantic-identity metadata as-is.
+        // Strict runtime compilation rejects empty identities before this compiler runs.
         var semanticIdentityBindings = tableModel
             .IdentityMetadata.SemanticIdentityBindings.Select(
                 binding => new CollectionMergeSemanticIdentityBinding(

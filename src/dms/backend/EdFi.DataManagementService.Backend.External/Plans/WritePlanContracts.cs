@@ -359,6 +359,8 @@ public sealed record CollectionMergePlan
     /// </summary>
     /// <param name="SemanticIdentityBindings">
     /// Ordered semantic-identity bindings that point back into <see cref="TableWritePlan.ColumnBindings" />.
+    /// Shared/default compilation may leave this empty for permissive artifacts; strict runtime compilation rejects
+    /// that upstream before executable plans are exposed.
     /// </param>
     /// <param name="StableRowIdentityBindingIndex">
     /// Binding index for the stable row identity (for example <c>CollectionItemId</c>).
@@ -390,15 +392,6 @@ public sealed record CollectionMergePlan
             SemanticIdentityBindings,
             nameof(SemanticIdentityBindings)
         );
-
-        if (this.SemanticIdentityBindings.IsDefaultOrEmpty)
-        {
-            throw new ArgumentException(
-                $"{nameof(SemanticIdentityBindings)} must be non-empty.",
-                nameof(SemanticIdentityBindings)
-            );
-        }
-
         this.StableRowIdentityBindingIndex = StableRowIdentityBindingIndex;
         this.UpdateByStableRowIdentitySql = PlanContractArgumentValidator.RequireNotNull(
             UpdateByStableRowIdentitySql,
