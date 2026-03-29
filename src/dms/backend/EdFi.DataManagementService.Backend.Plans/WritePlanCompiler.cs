@@ -349,8 +349,13 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         int stableRowIdentityBindingIndex
     )
     {
+        var locatorColumns = DeriveCollectionLocatorColumns(tableCompilationContext);
         var bindingsToUpdateInOrder = tableCompilationContext
-            .ColumnBindings.Where((_, index) => index != stableRowIdentityBindingIndex)
+            .ColumnBindings.Where(
+                (binding, index) =>
+                    index != stableRowIdentityBindingIndex
+                    && !locatorColumns.Contains(binding.Column.ColumnName)
+            )
             .ToArray();
 
         if (bindingsToUpdateInOrder.Length == 0)
@@ -748,17 +753,24 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WritePlanTableCompilationContext tableCompilationContext
     )
     {
-        var locatorColumns = tableCompilationContext
-            .TableModel.IdentityMetadata.RootScopeLocatorColumns.Concat(
-                tableCompilationContext.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns
-            )
-            .ToHashSet();
+        var locatorColumns = DeriveCollectionLocatorColumns(tableCompilationContext);
 
         return tableCompilationContext
             .ColumnBindings.Select((binding, index) => (binding, index))
             .Where(tuple => !locatorColumns.Contains(tuple.binding.Column.ColumnName))
             .Select(static tuple => tuple.index)
             .ToArray();
+    }
+
+    private static HashSet<DbColumnName> DeriveCollectionLocatorColumns(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        return tableCompilationContext
+            .TableModel.IdentityMetadata.RootScopeLocatorColumns.Concat(
+                tableCompilationContext.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns
+            )
+            .ToHashSet();
     }
 
     private static int ResolveRequiredBindingIndex(

@@ -442,7 +442,7 @@
                     }
                   ],
                   "stable_row_identity_binding_index": 0,
-                  "update_by_stable_row_identity_sql_sha256": "46914cd90015c927e600c82bd2fa1017f920926b5a19b66c2d11d2bba65d5f79",
+                  "update_by_stable_row_identity_sql_sha256": "9fa3ea0df6c3f8e20fc2ef226d975cee6bd4be5b3091ef034314712392dac4a3",
                   "delete_by_stable_row_identity_sql_sha256": "337cfe1aaae2871a8844e47c58aa6ec3be1fa88ed8735afa6756c0c41d1ec6b3",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [
@@ -998,7 +998,7 @@
                     }
                   ],
                   "stable_row_identity_binding_index": 0,
-                  "update_by_stable_row_identity_sql_sha256": "7809ec847a9be2e6bf509561c95f71d26efb2578f89c72c352493fc050594eb9",
+                  "update_by_stable_row_identity_sql_sha256": "30ab5f2a2bcc8100c9c586c85c290f76a1be566cf93bc29b17d361dc08b2976d",
                   "delete_by_stable_row_identity_sql_sha256": "ab83d6f6a923105000bb4ce4f09c201849ae957a5d7ec718b51812e6b6ba3d42",
                   "ordinal_binding_index": 1,
                   "compare_binding_indexes_in_order": [

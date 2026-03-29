@@ -128,7 +128,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"CollectionMerge|RuntimeMappingSetCompiler\"`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_CollectionMerge.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RuntimeMappingSetCompilerTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Suite",

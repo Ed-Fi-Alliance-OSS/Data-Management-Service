@@ -291,16 +291,41 @@ public class Given_RuntimeMappingSetCompiler
         [Test]
         public void It_should_compile_collection_merge_plans_for_true_collection_tables()
         {
-            AssertCollectionMergePlan("SchoolAddress", [("$.city", "City")]);
-            AssertCollectionMergePlan("SchoolAddressPeriod", [("$.periodName", "PeriodName")]);
+            AssertCollectionMergePlan(
+                "SchoolAddress",
+                [("$.city", "City")],
+                "CollectionItemId",
+                "Ordinal",
+                "City"
+            );
+            AssertCollectionMergePlan(
+                "SchoolAddressPeriod",
+                [("$.periodName", "PeriodName")],
+                "CollectionItemId",
+                "Ordinal",
+                "PeriodName"
+            );
             AssertCollectionMergePlan(
                 "SchoolExtensionIntervention",
-                [("$.interventionCode", "InterventionCode")]
+                [("$.interventionCode", "InterventionCode")],
+                "CollectionItemId",
+                "Ordinal",
+                "InterventionCode"
             );
-            AssertCollectionMergePlan("SchoolExtensionInterventionVisit", [("$.visitCode", "VisitCode")]);
+            AssertCollectionMergePlan(
+                "SchoolExtensionInterventionVisit",
+                [("$.visitCode", "VisitCode")],
+                "CollectionItemId",
+                "Ordinal",
+                "VisitCode"
+            );
             AssertCollectionMergePlan(
                 "SchoolExtensionAddressSponsorReference",
-                [("$.programReference.programName", "Program_DocumentId")]
+                [("$.programReference.programName", "Program_DocumentId")],
+                "CollectionItemId",
+                "Ordinal",
+                "Program_DocumentId",
+                "Program_ProgramName"
             );
         }
 
@@ -324,7 +349,8 @@ public class Given_RuntimeMappingSetCompiler
 
         private void AssertCollectionMergePlan(
             string tableName,
-            IReadOnlyList<(string RelativePath, string ColumnName)> expectedSemanticIdentityBindings
+            IReadOnlyList<(string RelativePath, string ColumnName)> expectedSemanticIdentityBindings,
+            params string[] expectedCompareColumnsInOrder
         )
         {
             var tablePlan = GetTablePlan(tableName);
@@ -357,6 +383,12 @@ public class Given_RuntimeMappingSetCompiler
                 .ColumnBindings[collectionMergePlan.OrdinalBindingIndex]
                 .Column.ColumnName.Value.Should()
                 .Be("Ordinal");
+            collectionMergePlan
+                .CompareBindingIndexesInOrder.Select(bindingIndex =>
+                    tablePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value
+                )
+                .Should()
+                .Equal(expectedCompareColumnsInOrder);
         }
 
         private TableWritePlan GetTablePlan(string tableName)

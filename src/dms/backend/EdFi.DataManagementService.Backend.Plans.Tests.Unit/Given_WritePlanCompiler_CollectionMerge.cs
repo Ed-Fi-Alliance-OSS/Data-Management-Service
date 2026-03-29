@@ -28,7 +28,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 UPDATE "edfi"."SchoolAddress"
                 SET
                     "Ordinal" = @ordinal,
-                    "School_DocumentId" = @school_DocumentId,
                     "City" = @city
                 WHERE
                     ("CollectionItemId" = @collectionItemId)
@@ -39,7 +38,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 UPDATE [edfi].[SchoolAddress]
                 SET
                     [Ordinal] = @ordinal,
-                    [School_DocumentId] = @school_DocumentId,
                     [City] = @city
                 WHERE
                     ([CollectionItemId] = @collectionItemId)
@@ -87,8 +85,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 UPDATE "edfi"."SchoolAddressPeriod"
                 SET
                     "Ordinal" = @ordinal,
-                    "ParentCollectionItemId" = @parentCollectionItemId,
-                    "School_DocumentId" = @school_DocumentId,
                     "PeriodName" = @periodName
                 WHERE
                     ("CollectionItemId" = @collectionItemId)
@@ -99,8 +95,6 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 UPDATE [edfi].[SchoolAddressPeriod]
                 SET
                     [Ordinal] = @ordinal,
-                    [ParentCollectionItemId] = @parentCollectionItemId,
-                    [School_DocumentId] = @school_DocumentId,
                     [PeriodName] = @periodName
                 WHERE
                     ([CollectionItemId] = @collectionItemId)
@@ -152,9 +146,7 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 SqlDialect.Pgsql => """
                 UPDATE "sample"."SchoolExtensionAddressSponsorReference"
                 SET
-                    "BaseCollectionItemId" = @baseCollectionItemId,
                     "Ordinal" = @ordinal,
-                    "School_DocumentId" = @school_DocumentId,
                     "Program_DocumentId" = @program_DocumentId,
                     "Program_ProgramName" = @program_ProgramName
                 WHERE
@@ -165,9 +157,7 @@ public class Given_WritePlanCompiler_CollectionMerge : WritePlanCompilerTestBase
                 SqlDialect.Mssql => """
                 UPDATE [sample].[SchoolExtensionAddressSponsorReference]
                 SET
-                    [BaseCollectionItemId] = @baseCollectionItemId,
                     [Ordinal] = @ordinal,
-                    [School_DocumentId] = @school_DocumentId,
                     [Program_DocumentId] = @program_DocumentId,
                     [Program_ProgramName] = @program_ProgramName
                 WHERE
