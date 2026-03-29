@@ -4,9 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Postgresql;
-using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
@@ -16,17 +14,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_PostgresqlDataSourceCache
 {
-    private IHostApplicationLifetime _applicationLifetime = null!;
     private PostgresqlDataSourceCache _cache = null!;
 
     [SetUp]
     public void Setup()
     {
-        _applicationLifetime = A.Fake<IHostApplicationLifetime>();
-        _cache = new PostgresqlDataSourceCache(
-            _applicationLifetime,
-            NullLogger<PostgresqlDataSourceCache>.Instance
-        );
+        _cache = new PostgresqlDataSourceCache(NullLogger<PostgresqlDataSourceCache>.Instance);
     }
 
     [TearDown]
@@ -120,10 +113,7 @@ public class Given_PostgresqlDataSourceCache
     [Test]
     public void It_allows_multiple_dispose_calls()
     {
-        var cache = new PostgresqlDataSourceCache(
-            _applicationLifetime,
-            NullLogger<PostgresqlDataSourceCache>.Instance
-        );
+        var cache = new PostgresqlDataSourceCache(NullLogger<PostgresqlDataSourceCache>.Instance);
         cache.Dispose();
 
         var act = () => cache.Dispose();

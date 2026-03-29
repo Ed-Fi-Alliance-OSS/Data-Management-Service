@@ -97,7 +97,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter PostgresqlDataSourceCache`",
       "Run: `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDataSourceCache.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/PostgresqlDataSourceCacheTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Change Scope",

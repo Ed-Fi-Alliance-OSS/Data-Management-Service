@@ -4,22 +4,16 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
-internal sealed class PostgresqlDataSourceCache(
-    IHostApplicationLifetime applicationLifetime,
-    ILogger<PostgresqlDataSourceCache> logger
-) : IDisposable
+internal sealed class PostgresqlDataSourceCache(ILogger<PostgresqlDataSourceCache> logger) : IDisposable
 {
     private readonly ConcurrentDictionary<string, NpgsqlDataSource> _cache = new();
     private readonly ILogger<PostgresqlDataSourceCache> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly CancellationTokenRegistration _registration =
-        applicationLifetime.ApplicationStopping.Register(() => { });
     private bool _disposed;
 
     public NpgsqlDataSource GetOrCreate(string connectionString)
@@ -81,6 +75,5 @@ internal sealed class PostgresqlDataSourceCache(
         }
 
         _cache.Clear();
-        _registration.Dispose();
     }
 }

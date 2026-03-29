@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -24,13 +23,8 @@ public class Given_PostgresqlRequestDbConnectionProvider
     [SetUp]
     public void Setup()
     {
-        var applicationLifetime = A.Fake<IHostApplicationLifetime>();
-
         _requestConnectionProvider = A.Fake<IRequestConnectionProvider>();
-        _cache = new PostgresqlDataSourceCache(
-            applicationLifetime,
-            NullLogger<PostgresqlDataSourceCache>.Instance
-        );
+        _cache = new PostgresqlDataSourceCache(NullLogger<PostgresqlDataSourceCache>.Instance);
         _provider = new PostgresqlRequestDbConnectionProvider(_requestConnectionProvider, _cache);
     }
 

@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -23,7 +22,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddSingleton<IHostApplicationLifetime>(_ => A.Fake<IHostApplicationLifetime>());
         services.AddScoped<IRequestConnectionProvider>(_ => A.Fake<IRequestConnectionProvider>());
         services.AddPostgresqlReferenceResolver();
 
