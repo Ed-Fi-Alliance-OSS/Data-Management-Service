@@ -114,7 +114,9 @@ public sealed record TableWritePlan
             nameof(KeyUnificationPlans)
         );
         ValidateCollectionContract(
+            this.TableModel,
             this.ColumnBindings,
+            this.UpdateSql,
             this.DeleteByParentSql,
             this.CollectionMergePlan,
             this.CollectionKeyPreallocationPlan
@@ -182,7 +184,9 @@ public sealed record TableWritePlan
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
 
     private static void ValidateCollectionContract(
+        DbTableModel tableModel,
         ImmutableArray<WriteColumnBinding> columnBindings,
+        string? updateSql,
         string? deleteByParentSql,
         CollectionMergePlan? collectionMergePlan,
         CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
@@ -192,11 +196,30 @@ public sealed record TableWritePlan
 
         if (collectionMergePlan is not null)
         {
+            if (updateSql is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.UpdateSql)} to be null.",
+                    nameof(UpdateSql)
+                );
+            }
+
             if (deleteByParentSql is not null)
             {
                 throw new ArgumentException(
                     $"{nameof(TableWritePlan.CollectionMergePlan)} requires {nameof(TableWritePlan.DeleteByParentSql)} to be null.",
                     nameof(DeleteByParentSql)
+                );
+            }
+
+            var tableKindParameterName =
+                $"{nameof(TableModel)}.{nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)}";
+
+            if (!IsCollectionMergeTableKind(tableModel.IdentityMetadata.TableKind))
+            {
+                throw new ArgumentException(
+                    $"{nameof(TableWritePlan.CollectionMergePlan)} requires {tableKindParameterName} to be {nameof(DbTableKind.Collection)} or {nameof(DbTableKind.ExtensionCollection)}. Actual value: {tableModel.IdentityMetadata.TableKind}.",
+                    tableKindParameterName
                 );
             }
 
@@ -295,6 +318,11 @@ public sealed record TableWritePlan
             $"{nameof(TableWritePlan.CollectionKeyPreallocationPlan)}.{nameof(collectionKeyPreallocationPlan.BindingIndex)}",
             "Collection-key preallocation binding"
         );
+    }
+
+    private static bool IsCollectionMergeTableKind(DbTableKind tableKind)
+    {
+        return tableKind is DbTableKind.Collection or DbTableKind.ExtensionCollection;
     }
 
     private static void ValidateBindingIndex(

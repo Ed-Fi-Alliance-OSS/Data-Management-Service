@@ -148,7 +148,7 @@
       "Add decode-path negative tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs` that mutate encoded plans to include `CollectionMergePlan` plus `UpdateSql`, and `CollectionMergePlan` on a non-collection `TableKind`, and assert decode fails through the same contract enforcement path.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"ExternalPlanContracts|NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Serialization",

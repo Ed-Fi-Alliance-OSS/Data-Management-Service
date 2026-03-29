@@ -196,7 +196,10 @@ public class Given_ExternalPlanContracts
                 ),
             ],
             []
-        );
+        )
+        {
+            IdentityMetadata = CreateCollectionIdentityMetadata(DbTableKind.Collection),
+        };
 
         var tablePlan = new ExternalPlans.TableWritePlan(
             TableModel: tableModel,
@@ -305,6 +308,31 @@ public class Given_ExternalPlanContracts
         exception.ParamName.Should().Be("DeleteByParentSql");
         exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
         exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_that_mix_update_sql_and_collection_merge_metadata()
+    {
+        var act = () => CreateCollectionTableWritePlan(updateSql: "UPDATE SQL");
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.UpdateSql));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.UpdateSql));
+    }
+
+    [TestCase(DbTableKind.RootExtension)]
+    [TestCase(DbTableKind.CollectionExtensionScope)]
+    public void It_should_reject_collection_merge_plans_for_non_collection_table_kinds(DbTableKind tableKind)
+    {
+        var act = () => CreateCollectionTableWritePlan(tableKind: tableKind);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("TableModel.IdentityMetadata.TableKind");
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(DbTableKind.Collection));
+        exception.Message.Should().Contain(nameof(DbTableKind.ExtensionCollection));
+        exception.Message.Should().Contain(tableKind.ToString());
     }
 
     [Test]
@@ -952,17 +980,19 @@ public class Given_ExternalPlanContracts
     }
 
     private static ExternalPlans.TableWritePlan CreateCollectionTableWritePlan(
+        string? updateSql = null,
         string? deleteByParentSql = null,
         ExternalPlans.CollectionMergePlan? collectionMergePlan = null,
-        ExternalPlans.CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan = null
+        ExternalPlans.CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan = null,
+        DbTableKind tableKind = DbTableKind.Collection
     )
     {
-        var tableModel = CreateCollectionTableModel();
+        var tableModel = CreateCollectionTableModel(tableKind);
 
         return new ExternalPlans.TableWritePlan(
             TableModel: tableModel,
             InsertSql: "INSERT SQL",
-            UpdateSql: null,
+            UpdateSql: updateSql,
             DeleteByParentSql: deleteByParentSql,
             BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 5, 2100),
             ColumnBindings: CreateCollectionColumnBindings(tableModel),
@@ -973,7 +1003,7 @@ public class Given_ExternalPlanContracts
         );
     }
 
-    private static DbTableModel CreateCollectionTableModel()
+    private static DbTableModel CreateCollectionTableModel(DbTableKind tableKind = DbTableKind.Collection)
     {
         var addressTypePath = new JsonPathExpression(
             "$.addressType",
@@ -1037,7 +1067,10 @@ public class Given_ExternalPlanContracts
                 ),
             ],
             []
-        );
+        )
+        {
+            IdentityMetadata = CreateCollectionIdentityMetadata(tableKind),
+        };
     }
 
     private static ExternalPlans.WriteColumnBinding[] CreateCollectionColumnBindings(DbTableModel tableModel)
@@ -1112,6 +1145,26 @@ public class Given_ExternalPlanContracts
         return new ExternalPlans.CollectionKeyPreallocationPlan(
             ColumnName: new DbColumnName("CollectionItemId"),
             BindingIndex: 1
+        );
+    }
+
+    private static DbTableIdentityMetadata CreateCollectionIdentityMetadata(DbTableKind tableKind)
+    {
+        return new DbTableIdentityMetadata(
+            TableKind: tableKind,
+            PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+            RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            SemanticIdentityBindings:
+            [
+                new CollectionSemanticIdentityBinding(
+                    RelativePath: new JsonPathExpression(
+                        "$.addressType",
+                        [new JsonPathSegment.Property("addressType")]
+                    ),
+                    ColumnName: new DbColumnName("AddressType")
+                ),
+            ]
         );
     }
 }

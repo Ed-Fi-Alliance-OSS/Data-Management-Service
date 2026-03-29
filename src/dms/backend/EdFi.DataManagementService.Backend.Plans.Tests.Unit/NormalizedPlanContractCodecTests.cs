@@ -724,6 +724,47 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_collection_merge_plan_is_combined_with_update_sql()
+    {
+        var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
+        var tablePlans = encoded.TablePlansInDependencyOrder.ToArray();
+
+        tablePlans[schoolAddressIndex] = tablePlans[schoolAddressIndex] with
+        {
+            UpdateSql =
+                "UPDATE [edfi].[SchoolAddress] SET [AddressType] = @addressType WHERE [CollectionItemId] = @collectionItemId;",
+        };
+
+        var mutated = encoded with { TablePlansInDependencyOrder = [.. tablePlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(TableWritePlan.UpdateSql));
+        exception.Message.Should().Contain(nameof(TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(TableWritePlan.UpdateSql));
+    }
+
+    [TestCase(DbTableKind.RootExtension)]
+    [TestCase(DbTableKind.CollectionExtensionScope)]
+    public void It_should_fail_fast_when_collection_merge_plan_targets_a_non_collection_table_kind(
+        DbTableKind tableKind
+    )
+    {
+        var (model, encoded, _) = CreateFocusedStableKeyEncodedWritePlan();
+        var mutatedModel = CreateModelWithOverriddenTableKind(model, "SchoolAddress", tableKind);
+
+        var act = () => NormalizedPlanContractCodec.Decode(encoded, mutatedModel);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("TableModel.IdentityMetadata.TableKind");
+        exception.Message.Should().Contain(nameof(TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(DbTableKind.Collection));
+        exception.Message.Should().Contain(nameof(DbTableKind.ExtensionCollection));
+        exception.Message.Should().Contain(tableKind.ToString());
+    }
+
+    [Test]
     public void It_should_fail_fast_when_collection_merge_semantic_identity_bindings_are_empty()
     {
         var (model, encoded, schoolAddressIndex) = CreateFocusedStableKeyEncodedWritePlan();
@@ -2521,6 +2562,34 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         return model with { DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()] };
     }
 
+    private static RelationalResourceModel CreateModelWithOverriddenTableKind(
+        RelationalResourceModel model,
+        string tableName,
+        DbTableKind tableKind
+    )
+    {
+        var tableIndex = Array.FindIndex(
+            model.TablesInDependencyOrder.ToArray(),
+            table => string.Equals(table.Table.Name, tableName, StringComparison.Ordinal)
+        );
+
+        tableIndex.Should().BeGreaterOrEqualTo(0);
+
+        var tablesInDependencyOrder = model.TablesInDependencyOrder.ToArray();
+        tablesInDependencyOrder[tableIndex] = tablesInDependencyOrder[tableIndex] with
+        {
+            IdentityMetadata = tablesInDependencyOrder[tableIndex].IdentityMetadata with
+            {
+                TableKind = tableKind,
+            },
+        };
+
+        return model with
+        {
+            TablesInDependencyOrder = [.. tablesInDependencyOrder],
+        };
+    }
+
     private static (
         RelationalResourceModel Model,
         ResourceWritePlanDto Encoded,
@@ -2603,7 +2672,13 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 ),
             ],
             []
-        );
+        )
+        {
+            IdentityMetadata = CreateCollectionTableIdentityMetadata(
+                DbTableKind.Collection,
+                new DbColumnName("CollectionItemId")
+            ),
+        };
 
         var model = new RelationalResourceModel(
             Resource: new QualifiedResourceName("Ed-Fi", "School"),
@@ -2679,6 +2754,26 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         );
 
         return (model, NormalizedPlanContractCodec.Encode(writePlan));
+    }
+
+    private static DbTableIdentityMetadata CreateCollectionTableIdentityMetadata(
+        DbTableKind tableKind,
+        DbColumnName collectionKeyColumnName
+    )
+    {
+        return new DbTableIdentityMetadata(
+            TableKind: tableKind,
+            PhysicalRowIdentityColumns: [collectionKeyColumnName],
+            RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+            SemanticIdentityBindings:
+            [
+                new CollectionSemanticIdentityBinding(
+                    RelativePath: Path("$.addressType"),
+                    ColumnName: new DbColumnName("AddressType")
+                ),
+            ]
+        );
     }
 
     private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)
