@@ -987,7 +987,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" || '#' || ");
             }
-            writer.Append("'$");
+            writer.Append("'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
             EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
@@ -1167,7 +1167,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" + N'#' + ");
             }
-            writer.Append("N'$");
+            writer.Append("N'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
             EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);

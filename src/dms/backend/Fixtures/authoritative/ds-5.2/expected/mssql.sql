@@ -31153,7 +31153,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 4;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
         FROM inserted i;
     END
     ELSE IF (UPDATE([School_SchoolId]) OR UPDATE([WeekIdentifier]))
@@ -31166,7 +31166,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 4;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31206,7 +31206,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 7;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([RatingTitle]) OR UPDATE([SchoolYear_SchoolYear]))
@@ -31219,7 +31219,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 7;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31259,7 +31259,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 14;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$$.namespace=' + i.[Namespace]), i.[DocumentId], 14
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 14
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentIdentifier]) OR UPDATE([Namespace]))
@@ -31272,7 +31272,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 14;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$$.namespace=' + i.[Namespace]), i.[DocumentId], 14
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 14
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31326,7 +31326,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 15;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
         FROM inserted i;
     END
     ELSE IF (UPDATE([AdministrationIdentifier]) OR UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([AssigningEducationOrganization_EducationOrganizationId]))
@@ -31339,7 +31339,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 15;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31393,7 +31393,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 16;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentAdministration_AdministrationIdentifier]) OR UPDATE([AssessmentAdministration_AssessmentIdentifier]) OR UPDATE([AssessmentAdministration_AssigningEducationOrganizationId]) OR UPDATE([AssessmentAdministration_Namespace]) OR UPDATE([ParticipatingEducationOrganization_EducationOrganizationId]))
@@ -31406,7 +31406,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 16;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31502,7 +31502,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 17;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentBatteryPartName]) OR UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]))
@@ -31515,7 +31515,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 17;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31583,7 +31583,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 20;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
         FROM inserted i;
     END
     ELSE IF (UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([IdentificationCode]))
@@ -31596,7 +31596,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 20;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31748,7 +31748,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 25;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([ScoreRangeId]))
@@ -31761,7 +31761,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 25;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31829,7 +31829,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 29;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -31842,7 +31842,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 29;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31896,7 +31896,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 32;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
         FROM inserted i;
     END
     ELSE IF (UPDATE([BellScheduleName]) OR UPDATE([School_SchoolId]))
@@ -31909,7 +31909,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 32;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -31991,7 +31991,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 35;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$$.calendarCode=' + i.[CalendarCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$.calendarCode=' + i.[CalendarCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
         FROM inserted i;
     END
     ELSE IF (UPDATE([CalendarCode]) OR UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]))
@@ -32004,7 +32004,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 35;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$$.calendarCode=' + i.[CalendarCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$.calendarCode=' + i.[CalendarCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32044,7 +32044,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 36;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
         FROM inserted i;
     END
     ELSE IF (UPDATE([Calendar_CalendarCode]) OR UPDATE([Calendar_SchoolId]) OR UPDATE([Calendar_SchoolYear]) OR UPDATE([Date]))
@@ -32057,7 +32057,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 36;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32125,7 +32125,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 40;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
         FROM inserted i;
     END
     ELSE IF (UPDATE([AccountIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([FiscalYear_Unified]))
@@ -32138,7 +32138,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 40;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32192,7 +32192,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 44;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
         FROM inserted i;
     END
     ELSE IF (UPDATE([ClassPeriodName]) OR UPDATE([School_SchoolId]))
@@ -32205,7 +32205,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 44;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32259,7 +32259,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 46;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
         FROM inserted i;
     END
     ELSE IF (UPDATE([CohortIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
@@ -32272,7 +32272,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 46;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32382,12 +32382,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 50;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([CommunityOrganizationId]))
@@ -32400,12 +32400,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 50;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32723,12 +32723,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 51;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([CommunityProviderId]))
@@ -32741,12 +32741,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 51;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32898,7 +32898,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 52;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
         FROM inserted i;
     END
     ELSE IF (UPDATE([CommunityProvider_CommunityProviderId]) OR UPDATE([LicenseIdentifier]) OR UPDATE([LicensingOrganization]))
@@ -32911,7 +32911,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 52;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -32951,7 +32951,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 54;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.objective=' + i.[Objective] + N'#' + N'$$.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 54
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 54
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Objective]) OR UPDATE([ObjectiveGradeLevelDescriptor_DescriptorId]))
@@ -32964,7 +32964,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 54;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.objective=' + i.[Objective] + N'#' + N'$$.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 54
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 54
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33004,7 +33004,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 55;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
         FROM inserted i;
     END
     ELSE IF (UPDATE([ContactUniqueId]))
@@ -33017,7 +33017,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 55;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33183,7 +33183,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 61;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$$.courseCode=' + i.[CourseCode] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$.courseCode=' + i.[CourseCode] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
         FROM inserted i;
     END
     ELSE IF (UPDATE([CourseCode]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
@@ -33196,7 +33196,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 61;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$$.courseCode=' + i.[CourseCode] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$.courseCode=' + i.[CourseCode] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33320,7 +33320,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 67;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
         FROM inserted i;
     END
     ELSE IF (UPDATE([LocalCourseCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]))
@@ -33333,7 +33333,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 67;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33415,7 +33415,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 69;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$$.courseAttemptResultDescriptor=' + CAST(i.[CourseAttemptResultDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$$.studentAcademicRecordReference.termDescriptor=' + CAST(i.[StudentAcademicRecord_TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 69
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + CAST(i.[CourseAttemptResultDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + CAST(i.[StudentAcademicRecord_TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 69
         FROM inserted i;
     END
     ELSE IF (UPDATE([CourseAttemptResultDescriptor_DescriptorId]) OR UPDATE([CourseCourse_CourseCode]) OR UPDATE([CourseCourse_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_SchoolYear]) OR UPDATE([StudentAcademicRecord_StudentUniqueId]) OR UPDATE([StudentAcademicRecord_TermDescriptor_DescriptorId]))
@@ -33428,7 +33428,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 69;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$$.courseAttemptResultDescriptor=' + CAST(i.[CourseAttemptResultDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$$.studentAcademicRecordReference.termDescriptor=' + CAST(i.[StudentAcademicRecord_TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 69
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + CAST(i.[CourseAttemptResultDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + CAST(i.[StudentAcademicRecord_TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 69
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33566,7 +33566,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 70;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$$.stateOfIssueStateAbbreviationDescriptor=' + CAST(i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 70
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + CAST(i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 70
         FROM inserted i;
     END
     ELSE IF (UPDATE([CredentialIdentifier]) OR UPDATE([StateOfIssueStateAbbreviationDescriptor_DescriptorId]))
@@ -33579,7 +33579,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 70;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$$.stateOfIssueStateAbbreviationDescriptor=' + CAST(i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 70
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + CAST(i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 70
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33661,7 +33661,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 75;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
         FROM inserted i;
     END
     ELSE IF (UPDATE([CrisisEventName]))
@@ -33674,7 +33674,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 75;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33714,7 +33714,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 79;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$$.mappedValue=' + i.[MappedValue] + N'#' + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.value=' + i.[Value]), i.[DocumentId], 79
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$.mappedValue=' + i.[MappedValue] + N'#' + N'$.namespace=' + i.[Namespace] + N'#' + N'$.value=' + i.[Value]), i.[DocumentId], 79
         FROM inserted i;
     END
     ELSE IF (UPDATE([MappedNamespace]) OR UPDATE([MappedValue]) OR UPDATE([Namespace]) OR UPDATE([Value]))
@@ -33727,7 +33727,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 79;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$$.mappedValue=' + i.[MappedValue] + N'#' + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.value=' + i.[Value]), i.[DocumentId], 79
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$.mappedValue=' + i.[MappedValue] + N'#' + N'$.namespace=' + i.[Namespace] + N'#' + N'$.value=' + i.[Value]), i.[DocumentId], 79
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33781,7 +33781,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 86;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
         FROM inserted i;
     END
     ELSE IF (UPDATE([DisciplineActionIdentifier]) OR UPDATE([DisciplineDate]) OR UPDATE([Student_StudentUniqueId]))
@@ -33794,7 +33794,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 86;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33876,7 +33876,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 89;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
         FROM inserted i;
     END
     ELSE IF (UPDATE([IncidentIdentifier]) OR UPDATE([School_SchoolId]))
@@ -33889,7 +33889,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 89;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -33971,7 +33971,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 94;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
         FROM inserted i;
     END
     ELSE IF (UPDATE([ContentIdentifier]))
@@ -33984,7 +33984,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 94;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -34505,7 +34505,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 99;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionInterventionPrescription_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]))
@@ -34518,7 +34518,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 99;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -34614,12 +34614,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 100;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganizationNetworkId]))
@@ -34632,12 +34632,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 100;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -34705,7 +34705,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 101;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganizationNetwork_EducationOrganizationNetworkId]) OR UPDATE([MemberEducationOrganization_EducationOrganizationId]))
@@ -34718,7 +34718,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 101;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -34842,7 +34842,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 102;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([PeerEducationOrganization_EducationOrganizationId]))
@@ -34855,7 +34855,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 102;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35061,12 +35061,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 104;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationServiceCenterId]))
@@ -35079,12 +35079,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 104;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35236,7 +35236,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 114;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$$.programEvaluationElementReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 114
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 114
         FROM inserted i;
     END
     ELSE IF (UPDATE([EvaluationRubricRating]) OR UPDATE([ProgramEvaluationElement_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationElementTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramName]) OR UPDATE([ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))
@@ -35249,7 +35249,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 114;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$$.programEvaluationElementReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 114
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 114
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35289,7 +35289,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 117;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([FeederSchool_SchoolId]) OR UPDATE([School_SchoolId]))
@@ -35302,7 +35302,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 117;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35342,7 +35342,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 119;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -35355,7 +35355,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 119;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35409,7 +35409,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 120;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -35422,7 +35422,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 120;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35476,7 +35476,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 122;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$$.gradeTypeDescriptor=' + CAST(i.[GradeTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + CAST(i.[GradeTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
@@ -35489,7 +35489,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 122;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$$.gradeTypeDescriptor=' + CAST(i.[GradeTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + CAST(i.[GradeTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35562,7 +35562,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 126;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$$.namespace=' + i.[Namespace]), i.[DocumentId], 126
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 126
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradebookEntryIdentifier]) OR UPDATE([Namespace]))
@@ -35575,7 +35575,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 126;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$$.namespace=' + i.[Namespace]), i.[DocumentId], 126
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 126
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35629,7 +35629,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 128;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$$.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodName]) OR UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]))
@@ -35642,7 +35642,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 128;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$$.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35682,7 +35682,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 130;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GraduationPlanTypeDescriptor_DescriptorId]) OR UPDATE([GraduationSchoolYear_GraduationSchoolYear]))
@@ -35695,7 +35695,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 130;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35819,7 +35819,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 147;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionIdentificationCode]))
@@ -35832,7 +35832,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 147;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -35984,7 +35984,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 150;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionIdentificationCode]))
@@ -35997,7 +35997,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 150;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36149,7 +36149,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 151;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionStudyIdentificationCode]))
@@ -36162,7 +36162,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 151;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36328,7 +36328,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 155;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
         FROM inserted i;
     END
     ELSE IF (UPDATE([LearningStandardId]))
@@ -36341,7 +36341,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 155;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36409,7 +36409,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 157;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
         FROM inserted i;
     END
     ELSE IF (UPDATE([Namespace]) OR UPDATE([SourceLearningStandard_LearningStandardId]) OR UPDATE([TargetLearningStandard_LearningStandardId]))
@@ -36422,7 +36422,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 157;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36490,7 +36490,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 164;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
         FROM inserted i;
     END
     ELSE IF (UPDATE([AccountIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([FiscalYear_Unified]))
@@ -36503,7 +36503,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 164;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36557,7 +36557,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 165;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
         FROM inserted i;
     END
     ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
@@ -36570,7 +36570,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 165;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36610,7 +36610,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 166;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
         FROM inserted i;
     END
     ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
@@ -36623,7 +36623,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 166;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36663,7 +36663,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 167;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
         FROM inserted i;
     END
     ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]) OR UPDATE([Staff_StaffUniqueId]))
@@ -36676,7 +36676,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 167;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -36972,12 +36972,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 168;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([LocalEducationAgencyId]))
@@ -36990,12 +36990,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 168;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37175,7 +37175,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 170;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
         FROM inserted i;
     END
     ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
@@ -37188,7 +37188,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 170;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37228,7 +37228,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 171;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
         FROM inserted i;
     END
     ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]) OR UPDATE([Staff_StaffUniqueId]))
@@ -37241,7 +37241,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 171;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37300,7 +37300,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 173;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
         FROM inserted i;
     END
     ELSE IF (UPDATE([ClassroomIdentificationCode]) OR UPDATE([School_SchoolId]))
@@ -37313,7 +37313,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 173;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37353,7 +37353,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 184;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -37366,7 +37366,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 184;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37420,7 +37420,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 185;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([IdentificationCode]))
@@ -37433,7 +37433,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 185;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37529,7 +37529,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 186;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([RequisitionNumber]))
@@ -37542,7 +37542,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 186;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37610,7 +37610,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 188;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -37623,7 +37623,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 188;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -37843,12 +37843,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 189;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([OrganizationDepartmentId]))
@@ -37861,12 +37861,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 189;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38018,7 +38018,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 195;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$$.personId=' + i.[PersonId] + N'#' + N'$$.sourceSystemDescriptor=' + CAST(i.[SourceSystemDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 195
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + CAST(i.[SourceSystemDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 195
         FROM inserted i;
     END
     ELSE IF (UPDATE([PersonId]) OR UPDATE([SourceSystemDescriptor_DescriptorId]))
@@ -38031,7 +38031,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 195;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$$.personId=' + i.[PersonId] + N'#' + N'$$.sourceSystemDescriptor=' + CAST(i.[SourceSystemDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 195
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + CAST(i.[SourceSystemDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 195
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38071,7 +38071,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 199;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.postSecondaryEventCategoryDescriptor=' + CAST(i.[PostSecondaryEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + CAST(i.[PostSecondaryEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
         FROM inserted i;
     END
     ELSE IF (UPDATE([EventDate]) OR UPDATE([PostSecondaryEventCategoryDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -38084,7 +38084,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 199;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.postSecondaryEventCategoryDescriptor=' + CAST(i.[PostSecondaryEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + CAST(i.[PostSecondaryEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38180,12 +38180,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 201;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([PostSecondaryInstitutionId]))
@@ -38198,12 +38198,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 201;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38369,7 +38369,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 208;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programName=' + i.[ProgramName] + N'#' + N'$$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 208
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 208
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramName]) OR UPDATE([ProgramTypeDescriptor_DescriptorId]))
@@ -38382,7 +38382,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 208;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programName=' + i.[ProgramName] + N'#' + N'$$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 208
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 208
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38436,7 +38436,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 211;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -38449,7 +38449,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 211;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38503,7 +38503,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 212;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$$.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 212
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 212
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]))
@@ -38516,7 +38516,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 212;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$$.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 212
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 212
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38556,7 +38556,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 213;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 213
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 213
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationElementTitle]) OR UPDATE([ProgramEducationOrganizationId_Unified]) OR UPDATE([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramEvaluationTitle_Unified]) OR UPDATE([ProgramEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramName_Unified]) OR UPDATE([ProgramTypeDescriptor_Unified_DescriptorId]))
@@ -38569,7 +38569,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 213;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 213
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 213
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38637,7 +38637,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 214;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 214
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 214
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationObjectiveTitle]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))
@@ -38650,7 +38650,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 214;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 214
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 214
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38732,7 +38732,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 221;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -38745,7 +38745,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 221;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38799,7 +38799,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 234;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([Student_StudentUniqueId]))
@@ -38812,7 +38812,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 234;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -38894,7 +38894,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 240;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
         FROM inserted i;
     END
     ELSE IF (UPDATE([RestraintEventIdentifier]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Student_StudentUniqueId]))
@@ -38907,7 +38907,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 240;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39141,12 +39141,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 244;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolId]))
@@ -39159,12 +39159,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 244;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39344,7 +39344,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 250;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolYear]))
@@ -39357,7 +39357,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 250;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39451,7 +39451,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 251;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SessionReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SessionReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
         FROM inserted i;
     END
     ELSE IF (UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_SchoolYear]) OR UPDATE([CourseOffering_SessionName]) OR UPDATE([SectionIdentifier]))
@@ -39464,7 +39464,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 251;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SessionReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SessionReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39504,7 +39504,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 253;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
         FROM inserted i;
     END
     ELSE IF (UPDATE([CalendarDate_CalendarCode]) OR UPDATE([CalendarDate_Date]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]))
@@ -39517,7 +39517,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 253;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39660,7 +39660,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 259;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
         FROM inserted i;
     END
     ELSE IF (UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([SessionName]))
@@ -39673,7 +39673,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 259;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39741,7 +39741,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 261;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
         FROM inserted i;
     END
     ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
@@ -39754,7 +39754,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 261;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$$.code=' + i.[Code] + N'#' + N'$$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39808,7 +39808,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 266;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
         FROM inserted i;
     END
     ELSE IF (UPDATE([StaffUniqueId]))
@@ -39821,7 +39821,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 266;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39861,7 +39861,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 267;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$$.absenceEventCategoryDescriptor=' + CAST(i.[AbsenceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + CAST(i.[AbsenceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
         FROM inserted i;
     END
     ELSE IF (UPDATE([AbsenceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Staff_StaffUniqueId]))
@@ -39874,7 +39874,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 267;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$$.absenceEventCategoryDescriptor=' + CAST(i.[AbsenceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + CAST(i.[AbsenceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -39956,7 +39956,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 269;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([Cohort_CohortIdentifier]) OR UPDATE([Cohort_EducationOrganizationId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -39969,7 +39969,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 269;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40023,7 +40023,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 270;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
         FROM inserted i;
     END
     ELSE IF (UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40036,7 +40036,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 270;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40090,7 +40090,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 271;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffClassificationDescriptor=' + CAST(i.[StaffClassificationDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + CAST(i.[StaffClassificationDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StaffClassificationDescriptor_DescriptorId]) OR UPDATE([StaffUniqueId_Unified]))
@@ -40103,7 +40103,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 271;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffClassificationDescriptor=' + CAST(i.[StaffClassificationDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + CAST(i.[StaffClassificationDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40143,7 +40143,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 272;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$$.contactTitle=' + i.[ContactTitle] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$.contactTitle=' + i.[ContactTitle] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
         FROM inserted i;
     END
     ELSE IF (UPDATE([ContactTitle]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40156,7 +40156,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 272;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$$.contactTitle=' + i.[ContactTitle] + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$.contactTitle=' + i.[ContactTitle] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40224,7 +40224,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 273;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.employmentStatusDescriptor=' + CAST(i.[EmploymentStatusDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + CAST(i.[EmploymentStatusDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EmploymentStatusDescriptor_DescriptorId]) OR UPDATE([HireDate]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40237,7 +40237,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 273;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.employmentStatusDescriptor=' + CAST(i.[EmploymentStatusDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + CAST(i.[EmploymentStatusDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40361,7 +40361,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 275;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.staffLeaveEventCategoryDescriptor=' + CAST(i.[StaffLeaveEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + CAST(i.[StaffLeaveEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([StaffLeaveEventCategoryDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40374,7 +40374,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 275;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.staffLeaveEventCategoryDescriptor=' + CAST(i.[StaffLeaveEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + CAST(i.[StaffLeaveEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40442,7 +40442,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 277;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40455,7 +40455,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 277;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40523,7 +40523,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 278;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$$.programAssignmentDescriptor=' + CAST(i.[ProgramAssignmentDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + CAST(i.[ProgramAssignmentDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramAssignmentDescriptor_DescriptorId]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40536,7 +40536,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 278;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$$.programAssignmentDescriptor=' + CAST(i.[ProgramAssignmentDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + CAST(i.[ProgramAssignmentDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40604,7 +40604,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 279;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Staff_StaffUniqueId]))
@@ -40617,7 +40617,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 279;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40755,12 +40755,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 281;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i;
     END
     ELSE IF (UPDATE([StateEducationAgencyId]))
@@ -40773,12 +40773,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 281;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -40958,7 +40958,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 282;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
         FROM inserted i;
     END
     ELSE IF (UPDATE([StudentUniqueId]))
@@ -40971,7 +40971,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 282;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41011,7 +41011,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 283;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$$.termDescriptor=' + CAST(i.[TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 283
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + CAST(i.[TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 283
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([Student_StudentUniqueId]) OR UPDATE([TermDescriptor_DescriptorId]))
@@ -41024,7 +41024,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 283;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$$.termDescriptor=' + CAST(i.[TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 283
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + CAST(i.[TermDescriptor_DescriptorId] AS nvarchar(max))), i.[DocumentId], 283
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41134,7 +41134,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 284;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
         FROM inserted i;
     END
     ELSE IF (UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([StudentAssessmentIdentifier]) OR UPDATE([Student_StudentUniqueId]))
@@ -41147,7 +41147,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 284;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41201,7 +41201,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 285;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$$.educationOrganizationAssociationTypeDescriptor=' + CAST(i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + CAST(i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganizationAssociationTypeDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StudentAssessment_AssessmentIdentifier]) OR UPDATE([StudentAssessment_Namespace]) OR UPDATE([StudentAssessment_StudentAssessmentIdentifier]) OR UPDATE([StudentAssessment_StudentUniqueId]))
@@ -41214,7 +41214,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 285;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$$.educationOrganizationAssociationTypeDescriptor=' + CAST(i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + CAST(i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41282,7 +41282,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 286;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentAdministration_AdministrationIdentifier]) OR UPDATE([AssessmentAdministration_AssessmentIdentifier]) OR UPDATE([AssessmentAdministration_AssigningEducationOrganizationId]) OR UPDATE([AssessmentAdministration_Namespace]) OR UPDATE([StudentEducationOrganizationAssociation_EducationOrganizationId]) OR UPDATE([StudentUniqueId_Unified]))
@@ -41295,7 +41295,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 286;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41363,7 +41363,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 287;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
         FROM inserted i;
     END
     ELSE IF (UPDATE([AssessmentBatteryPart_AssessmentBatteryPartName]) OR UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([StudentAssessmentRegistration_AdministrationIdentifier]) OR UPDATE([StudentAssessmentRegistration_AssigningEducationOrganizationId]) OR UPDATE([StudentAssessmentRegistration_EducationOrganizationId]) OR UPDATE([StudentAssessmentRegistration_StudentUniqueId]))
@@ -41376,7 +41376,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 287;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41516,12 +41516,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 288;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41534,12 +41534,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 288;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41607,7 +41607,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 290;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([Cohort_CohortIdentifier]) OR UPDATE([Cohort_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41620,7 +41620,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 290;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41674,7 +41674,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 291;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([ObjectiveCompetencyObjective_EducationOrganizationId]) OR UPDATE([ObjectiveCompetencyObjective_Objective]) OR UPDATE([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41687,7 +41687,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 291;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + CAST(i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + CAST(i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41755,7 +41755,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 292;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
         FROM inserted i;
     END
     ELSE IF (UPDATE([Contact_ContactUniqueId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41768,7 +41768,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 292;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41808,7 +41808,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 293;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$$.behaviorDescriptor=' + CAST(i.[BehaviorDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + CAST(i.[BehaviorDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
         FROM inserted i;
     END
     ELSE IF (UPDATE([BehaviorDescriptor_DescriptorId]) OR UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41821,7 +41821,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 293;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$$.behaviorDescriptor=' + CAST(i.[BehaviorDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + CAST(i.[BehaviorDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41889,7 +41889,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 294;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
         FROM inserted i;
     END
     ELSE IF (UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41902,7 +41902,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 294;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -41956,7 +41956,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 295;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
@@ -41969,7 +41969,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 295;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42023,7 +42023,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 296;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42036,7 +42036,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 296;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42342,7 +42342,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 297;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.responsibilityDescriptor=' + CAST(i.[ResponsibilityDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + CAST(i.[ResponsibilityDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ResponsibilityDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42355,7 +42355,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 297;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.responsibilityDescriptor=' + CAST(i.[ResponsibilityDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + CAST(i.[ResponsibilityDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42395,7 +42395,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 298;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradebookEntry_GradebookEntryIdentifier]) OR UPDATE([GradebookEntry_Namespace]) OR UPDATE([Student_StudentUniqueId]))
@@ -42408,7 +42408,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 298;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42448,7 +42448,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 299;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42461,7 +42461,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 299;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42587,12 +42587,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 300;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42605,12 +42605,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 300;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42692,7 +42692,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 302;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
         FROM inserted i;
     END
     ELSE IF (UPDATE([Intervention_EducationOrganizationId]) OR UPDATE([Intervention_InterventionIdentificationCode]) OR UPDATE([Student_StudentUniqueId]))
@@ -42705,7 +42705,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 302;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42759,7 +42759,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 303;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Intervention_EducationOrganizationId]) OR UPDATE([Intervention_InterventionIdentificationCode]) OR UPDATE([Student_StudentUniqueId]))
@@ -42772,7 +42772,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 303;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42842,12 +42842,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 304;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42860,12 +42860,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 304;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -42977,12 +42977,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 305;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -42995,12 +42995,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 305;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43098,12 +43098,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 306;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43116,12 +43116,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 306;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43247,12 +43247,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 307;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43265,12 +43265,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 307;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43338,7 +43338,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 308;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EventDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43351,7 +43351,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 308;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43391,7 +43391,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 309;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
         FROM inserted i;
     END
     ELSE IF (UPDATE([EvaluationDate]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43404,7 +43404,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 309;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + CAST(i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43505,7 +43505,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 310;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
         FROM inserted i;
     END
     ELSE IF (UPDATE([EntryDate]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Student_StudentUniqueId]))
@@ -43518,7 +43518,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 310;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43586,7 +43586,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 311;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]) OR UPDATE([Student_StudentUniqueId]))
@@ -43599,7 +43599,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 311;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43669,12 +43669,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 312;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43687,12 +43687,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 312;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43790,12 +43790,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 313;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -43808,12 +43808,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 313;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43886,7 +43886,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 314;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]))
@@ -43899,7 +43899,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 314;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -43953,7 +43953,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 315;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]))
@@ -43966,7 +43966,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 315;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + CAST(i.[AttendanceEventCategoryDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44050,12 +44050,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 316;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -44068,12 +44068,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 316;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44197,7 +44197,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 317;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
         FROM inserted i;
     END
     ELSE IF (UPDATE([ConsentToEvaluationReceivedDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -44210,7 +44210,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 317;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44280,12 +44280,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 318;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -44298,12 +44298,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 318;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44371,7 +44371,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 319;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
         FROM inserted i;
     END
     ELSE IF (UPDATE([Student_StudentUniqueId]) OR UPDATE([TransportationEducationOrganization_EducationOrganizationId]))
@@ -44384,7 +44384,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 319;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44466,7 +44466,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 322;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
         FROM inserted i;
     END
     ELSE IF (UPDATE([Namespace]) OR UPDATE([SurveyIdentifier]))
@@ -44479,7 +44479,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 322;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$$.namespace=' + i.[Namespace] + N'#' + N'$$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44519,7 +44519,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 324;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
         FROM inserted i;
     END
     ELSE IF (UPDATE([Course_CourseCode]) OR UPDATE([Course_EducationOrganizationId]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
@@ -44532,7 +44532,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 324;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44572,7 +44572,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 326;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[Program_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[Program_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
         FROM inserted i;
     END
     ELSE IF (UPDATE([Program_EducationOrganizationId]) OR UPDATE([Program_ProgramName]) OR UPDATE([Program_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
@@ -44585,7 +44585,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 326;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$$.programReference.programTypeDescriptor=' + CAST(i.[Program_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + CAST(i.[Program_ProgramTypeDescriptor_DescriptorId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44625,7 +44625,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 327;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$$.questionCode=' + i.[QuestionCode] + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$.questionCode=' + i.[QuestionCode] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
         FROM inserted i;
     END
     ELSE IF (UPDATE([QuestionCode]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]))
@@ -44638,7 +44638,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 327;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$$.questionCode=' + i.[QuestionCode] + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$.questionCode=' + i.[QuestionCode] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44692,7 +44692,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 328;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
         FROM inserted i;
     END
     ELSE IF (UPDATE([Namespace_Unified]) OR UPDATE([SurveyQuestion_QuestionCode]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
@@ -44705,7 +44705,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 328;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44787,7 +44787,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 329;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
         FROM inserted i;
     END
     ELSE IF (UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]) OR UPDATE([SurveyResponseIdentifier]))
@@ -44800,7 +44800,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 329;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44840,7 +44840,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 330;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([SurveyResponse_Namespace]) OR UPDATE([SurveyResponse_SurveyIdentifier]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
@@ -44853,7 +44853,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 330;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44893,7 +44893,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 331;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
         FROM inserted i;
     END
     ELSE IF (UPDATE([Staff_StaffUniqueId]) OR UPDATE([SurveyResponse_Namespace]) OR UPDATE([SurveyResponse_SurveyIdentifier]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
@@ -44906,7 +44906,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 331;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -44960,7 +44960,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 332;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
         FROM inserted i;
     END
     ELSE IF (UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]) OR UPDATE([SurveySectionTitle]))
@@ -44973,7 +44973,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 332;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -45013,7 +45013,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 333;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
         FROM inserted i;
     END
     ELSE IF (UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
@@ -45026,7 +45026,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 333;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -45066,7 +45066,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 334;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
         FROM inserted i;
     END
     ELSE IF (UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySection_SurveySectionTitle]))
@@ -45079,7 +45079,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 334;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -45119,7 +45119,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 335;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveySectionResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySectionResponse_SurveySectionTitle]))
@@ -45132,7 +45132,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 335;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -45172,7 +45172,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 336;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
         FROM inserted i;
     END
     ELSE IF (UPDATE([Staff_StaffUniqueId]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveySectionResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySectionResponse_SurveySectionTitle]))
@@ -45185,7 +45185,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 336;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveySectionReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveySectionReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;

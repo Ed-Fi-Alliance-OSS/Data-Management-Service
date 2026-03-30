@@ -475,7 +475,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiNamingStressItem' AS nvarchar(max)) + N'$$.namingStressItemId=' + CAST(i.[NamingStressItemId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiNamingStressItem' AS nvarchar(max)) + N'$.namingStressItemId=' + CAST(i.[NamingStressItemId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i;
     END
     ELSE IF (UPDATE([NamingStressItemId]))
@@ -488,7 +488,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiNamingStressItem' AS nvarchar(max)) + N'$$.namingStressItemId=' + CAST(i.[NamingStressItemId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiNamingStressItem' AS nvarchar(max)) + N'$.namingStressItemId=' + CAST(i.[NamingStressItemId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;

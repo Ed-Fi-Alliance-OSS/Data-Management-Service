@@ -294,7 +294,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             r => new ViewEntry(
                 r.GetString(r.GetOrdinal("schema_name")),
                 r.GetString(r.GetOrdinal("view_name")),
-                r.GetString(r.GetOrdinal("definition"))))
+                r.GetString(r.GetOrdinal("definition")).Trim()))
         .OrderBy(x => x.SchemaName, StringComparer.Ordinal)
         .ThenBy(x => x.ViewName, StringComparer.Ordinal)
         .ToList();
@@ -309,7 +309,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
                 r.GetString(r.GetOrdinal("trigger_name")),
                 r.GetString(r.GetOrdinal("event_manipulation")),
                 r.GetString(r.GetOrdinal("action_timing")),
-                r.GetString(r.GetOrdinal("definition")),
+                r.GetString(r.GetOrdinal("definition")).Trim(),
                 ReadNullableString(r, "function_name")))
         .OrderBy(x => x.SchemaName, StringComparer.Ordinal)
         .ThenBy(x => x.TableName, StringComparer.Ordinal)
@@ -398,7 +398,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
                 r.GetString(r.GetOrdinal("function_name")),
                 r.GetString(r.GetOrdinal("specific_name")),
                 r.GetString(r.GetOrdinal("return_type")),
-                r.GetString(r.GetOrdinal("definition"))));
+                r.GetString(r.GetOrdinal("definition")).Trim()));
 
     private List<RawFunctionParameter> ReadFunctionParameters(
         DbConnection connection, string filterFragment, Action<DbCommand> addFilterParams
