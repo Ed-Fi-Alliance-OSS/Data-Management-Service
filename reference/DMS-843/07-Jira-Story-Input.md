@@ -41,6 +41,61 @@ This epic is explicitly deferred and is not required for the initial DMS-843 del
 
 ## Story Candidates
 
+## CQ-STORY-00: Snapshot Infrastructure Provisioning and Configuration
+
+### Description
+
+This story resolves the snapshot technology decision and delivers the operational infrastructure required by `Use-Snapshot = true` before CQ-STORY-07 is implemented.
+
+The story owns:
+
+- confirming the snapshot technology per supported engine (SQL Server and PostgreSQL) based on the evaluation table in `06-Validation-Rollout-and-Operations.md`, Optional Snapshot Source
+- defining the `SnapshotConnectionString` (or equivalent) configuration schema, including the per-instance binding model and how DMS discovers which configured derivative to use for `Use-Snapshot = true`
+- lifecycle validation logic: the rules DMS must apply at `Use-Snapshot = true` request time to confirm the snapshot source is available, structurally correct, and still fresh enough for the requested pass
+- engine-specific DDL or operational scripts for creating, refreshing, and retiring snapshot bindings (SQL Server `CREATE DATABASE ... AS SNAPSHOT OF`; PostgreSQL clone provisioning / PIT-restore flow)
+- the required-artifact validation checklist DMS runs against the snapshot derivative before allowing the pass to begin
+
+This story does not own the application-level `Use-Snapshot` request dispatch (CQ-STORY-07). It provides the infrastructure that CQ-STORY-07 depends on.
+
+### Acceptance Criteria
+
+- The snapshot technology choice for each supported engine is documented and accepted by the team, resolving the decision-record table in `06-Validation-Rollout-and-Operations.md`.
+- `SnapshotConnectionString` (or equivalent) configuration model is defined: per-instance binding, absence semantics, and how DMS resolves it at startup and at request time.
+- DMS validates at `Use-Snapshot = true` request time that the configured snapshot source responds and exposes all required Change Query artifacts (`dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, `dms.ResourceKey`, and all authorization companion tables); missing artifacts produce explicit failure, not silent degradation.
+- Snapshot lifecycle enforcement is defined: what constitutes a stale or retired derivative, and what DMS does when lifecycle validity cannot be preserved for the pass.
+- For SQL Server: `CREATE DATABASE ... AS SNAPSHOT OF` DDL, naming convention, and retirement DDL are documented or scripted.
+- For PostgreSQL: the clone or PIT-restore provisioning flow, connection-string configuration, and freeze-on-creation contract are documented or scripted.
+- DMS never automatically falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable.
+- The configuration schema and lifecycle validation logic are reviewed by at least one ops-aware team member before CQ-STORY-07 begins.
+
+### Tasks
+
+- Confirm the snapshot technology selection for SQL Server and PostgreSQL against the decision-record table in `06-Validation-Rollout-and-Operations.md`.
+- Design and document the `SnapshotConnectionString` (or equivalent) application configuration schema, including the per-instance binding model.
+- Implement or document SQL Server snapshot DDL: `CREATE DATABASE ... AS SNAPSHOT OF`, named connection binding, and `DROP DATABASE` retirement.
+- Implement or document PostgreSQL snapshot provisioning: the preferred clone / PIT-restore flow, connection-string handoff to DMS, and read-only-instance validation.
+- Implement the required-artifact validation logic DMS runs before allowing a `Use-Snapshot = true` pass to begin.
+- Implement the lifecycle staleness check DMS applies when a pass is in progress (detect retired or refreshed derivatives and fail the request explicitly).
+- Document the operational runbook or configuration reference that implementers can follow in CQ-STORY-07.
+
+### Dependencies
+
+- none
+
+### Design References
+
+- `01-Feature-Summary-and-Decisions.md` (Decision 15)
+- `02-API-Contract-and-Synchronization.md` (`Use-Snapshot` semantics and snapshot derivative contract)
+- `06-Validation-Rollout-and-Operations.md` (Optional Snapshot Source, Snapshot technology decision record)
+
+### Likely Implementation Areas
+
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Configuration/AppSettings.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Mssql`
+- operational DDL scripts or runbook in `eng/docker-compose/` or equivalent
+
 ## CQ-STORY-01: Add redesign-aligned live-row schema and deterministic backfill
 
 ### Description
@@ -457,6 +512,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 
 ### Dependencies
 
+- `CQ-STORY-00`
 - `CQ-STORY-01`
 - `CQ-STORY-03`
 - `CQ-STORY-04`
@@ -543,15 +599,17 @@ Recommended technical order:
 
 1. `CQ-STORY-01`
 2. `CQ-STORY-05`
-3. `CQ-STORY-02`
-4. `CQ-STORY-03`
-5. `CQ-STORY-04`
-6. `CQ-STORY-06`
-7. `CQ-STORY-07`
-8. `CQ-STORY-08`
+3. `CQ-STORY-00` (can run in parallel with CQ-STORY-01 through CQ-STORY-06; must complete before CQ-STORY-07 begins)
+4. `CQ-STORY-02`
+5. `CQ-STORY-03`
+6. `CQ-STORY-04`
+7. `CQ-STORY-06`
+8. `CQ-STORY-07` (requires CQ-STORY-00)
+9. `CQ-STORY-08`
 
 ## Story Slicing Notes
 
+- `CQ-STORY-00` is infrastructure-only and has no dependency on any other story; it can proceed in parallel with CQ-STORY-01 through CQ-STORY-06 but must be accepted before CQ-STORY-07 begins implementing `Use-Snapshot` execution.
 - `CQ-STORY-01` and `CQ-STORY-05` can proceed mostly in parallel because one is schema-focused and the other is route and validation focused.
 - `CQ-STORY-02` stays separate from `CQ-STORY-01` so the live journal can be reviewed and implemented as its own redesign-aligned artifact rather than as an afterthought inside generic backfill work.
 - `CQ-STORY-03` should not be merged into `CQ-STORY-01` because the tombstone behavior depends on delete-path application logic and tracked-change authorization capture, not just DDL.

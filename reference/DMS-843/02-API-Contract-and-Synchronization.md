@@ -35,7 +35,7 @@ Example response:
 
 Semantics:
 
-- instance-scoped to the resolved DMS instance identified by route prefix and instance-resolution rules
+- instance-scoped to the resolved DMS instance identified by route prefix and instance-resolution rules; change-version values are scoped per resolved DMS instance and watermarks from one instance must not be used as bounds against a different instance
 - authenticated like other DMS endpoints
 - not filtered by per-resource authorization rules
 - readable profile headers do not apply to this endpoint; any profile media type is ignored and the response remains ordinary `application/json`
@@ -245,6 +245,7 @@ Required rule:
 - remain valid on `/keyChanges`
 - in changed-resource mode, all three apply to the final authorized one-row-per-resource result set after any internal candidate verification or elimination required by the execution strategy
 - on `/keyChanges`, all three apply after authorization filtering, over the final one-row-per-key-change-event result set
+- when `totalCount=true` is requested, the server returns the result count as the `X-Total-Count` HTTP response header, preserving ODS/API header contract parity; `totalCount` is not returned as a body field
 
 ## Window Semantics
 

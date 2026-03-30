@@ -316,11 +316,12 @@ When an identity-changing update triggers downstream propagation to dependent do
 Required rules for cascade propagation locking:
 
 - before reading the pre-change state of any dependent document `D` in the propagation transaction, acquire a row-level write lock on `D` using the same engine-appropriate mechanism as the primary write
-- acquire locks in a globally consistent order (for example, ascending `DocumentId`) to prevent deadlocks when concurrent propagating transactions visit the same set of dependent rows
-- PostgreSQL: `SELECT ... FOR UPDATE` on each dependent row in `DocumentId ASC` order
-- MSSQL: `SELECT ... WITH (UPDLOCK, ROWLOCK)` on each dependent row in `DocumentId ASC` order
+- acquire **all** row-level write locks for the transaction — including the primary target row and every dependent row — in a single globally consistent ascending `DocumentId` order pass before reading any pre-change state; the "primary first" rule from the basic write-path locking contract applies only when there are no downstream cascade dependents; in a cascade propagation transaction the primary target participates in the same ascending-`DocumentId` ordering as the dependents
+- PostgreSQL: build the full set of `DocumentId` values to be locked (primary + all dependents), sort them ascending, and issue `SELECT ... FOR UPDATE` in that order
+- MSSQL: build the full set of `DocumentId` values to be locked (primary + all dependents), sort them ascending, and issue `SELECT ... WITH (UPDLOCK, ROWLOCK)` in that order
+- this ordering is deadlock-safe across concurrent cascading transactions because the Ed-Fi reference model is a directed acyclic graph (DAG) that guarantees no circular cascade chains; the only remaining deadlock vector is two concurrent transactions that touch overlapping dependent rows in different orderings, which the global ascending-`DocumentId` sort eliminates
 - relying solely on FK cascade write-intent locks is not sufficient; those locks do not prevent a concurrent `DELETE` from reading stale identity values on the about-to-be-cascaded row before the propagating transaction updates it
-- hold all dependent-row locks until the full transaction commits or rolls back
+- hold all locks until the full transaction commits or rolls back
 
 ## Downstream Identity-Propagation Execution
 

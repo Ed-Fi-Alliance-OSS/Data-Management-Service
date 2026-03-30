@@ -138,6 +138,7 @@ Required unit coverage:
 - old-key and new-key extraction from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix alias derivation for simple, composite, and repeated-leaf identities
 - fail-fast validation for duplicate or otherwise unresolvable identity-path alias sets
+- fail-fast schema-compilation rejection when an extension-contributed identity path introduces an alias collision against existing base-resource identity-path aliases (i.e., the shortest-unique-suffix algorithm cannot produce distinct field names across the merged base-plus-extension identity-path set)
 - fail-fast authorization-metadata validation at initial claim-set load and on claim-set cache refresh for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid supported `contractVersion`, `basisDocumentIds`, and optional `relationshipInputs` mapping
 - tombstone DTO or response mapping
 - key-change DTO or response mapping
