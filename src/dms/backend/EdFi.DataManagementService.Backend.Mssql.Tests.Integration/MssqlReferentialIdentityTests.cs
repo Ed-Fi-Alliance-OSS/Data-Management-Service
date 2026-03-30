@@ -350,6 +350,98 @@ public class MssqlReferentialIdentityTests
     }
 
     [Test]
+    public async Task Update_to_duplicate_natural_key_is_rejected()
+    {
+        // Arrange — two students with different keys
+        var documentIdA = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdA, "STU-A");
+
+        var documentIdB = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdB, "STU-B");
+
+        var expectedReferentialIdA = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-A")
+        );
+        var expectedReferentialIdB = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-B")
+        );
+
+        // Act — update B's key to match A's; UX_Student_NK fires before AFTER trigger
+        var act = () => _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Student]
+            SET [StudentUniqueId] = @newId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@newId", "STU-A"),
+            new SqlParameter("@documentId", documentIdB)
+        );
+
+        // Assert — UX_Student_NK violation (constraint fires before AFTER trigger reaches RI)
+        var ex = (await act.Should().ThrowAsync<SqlException>()).Which;
+        ex.Number.Should().Be(2627);
+        ex.Message.Should().Contain("UX_Student_NK");
+
+        // Assert — rollback preserved both original RI rows
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(2);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdA
+            && (long)r["DocumentId"]! == documentIdA);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdB
+            && (long)r["DocumentId"]! == documentIdB);
+    }
+
+    [Test]
+    public async Task Bulk_insert_with_duplicate_natural_key_is_rejected()
+    {
+        // Arrange — one existing student
+        var documentIdA = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdA, "STU-EXISTING");
+
+        var expectedReferentialIdA = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-EXISTING")
+        );
+
+        var documentIdB = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        var documentIdC = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+
+        // Act — multi-row INSERT; C's key collides with A's
+        var act = () => _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName])
+            VALUES (@documentIdB, @studentUniqueIdB, @firstNameB),
+                   (@documentIdC, @studentUniqueIdC, @firstNameC);
+            """,
+            new SqlParameter("@documentIdB", documentIdB),
+            new SqlParameter("@studentUniqueIdB", "STU-BULK-1"),
+            new SqlParameter("@firstNameB", "BulkB"),
+            new SqlParameter("@documentIdC", documentIdC),
+            new SqlParameter("@studentUniqueIdC", "STU-EXISTING"),
+            new SqlParameter("@firstNameC", "BulkC")
+        );
+
+        // Assert — UX_Student_NK violation (constraint fires before AFTER trigger reaches RI)
+        var ex = (await act.Should().ThrowAsync<SqlException>()).Which;
+        ex.Number.Should().Be(2627);
+        ex.Message.Should().Contain("UX_Student_NK");
+
+        // Assert — rollback of the Student insert: only A's original RI row exists; B and C have no RI rows
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdA
+            && (long)r["DocumentId"]! == documentIdA);
+    }
+
+    [Test]
     public async Task Delete_concrete_removes_referential_identity_row()
     {
         // Arrange

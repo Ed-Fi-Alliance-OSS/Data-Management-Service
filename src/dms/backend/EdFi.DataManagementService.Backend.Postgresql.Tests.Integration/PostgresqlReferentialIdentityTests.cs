@@ -341,6 +341,98 @@ public class PostgresqlReferentialIdentityTests
     }
 
     [Test]
+    public async Task Update_to_duplicate_natural_key_is_rejected()
+    {
+        // Arrange — two students with different keys
+        var documentIdA = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdA, "STU-A");
+
+        var documentIdB = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdB, "STU-B");
+
+        var expectedReferentialIdA = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-A")
+        );
+        var expectedReferentialIdB = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-B")
+        );
+
+        // Act — update B's key to match A's; BEFORE trigger's INSERT collides with A's RI
+        var act = () => _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "StudentUniqueId" = @newId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("newId", "STU-A"),
+            new NpgsqlParameter("documentId", documentIdB)
+        );
+
+        // Assert — PK_ReferentialIdentity violation (BEFORE trigger fires before UX_Student_NK)
+        var ex = (await act.Should().ThrowAsync<PostgresException>()).Which;
+        ex.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+        ex.ConstraintName.Should().Be("PK_ReferentialIdentity");
+
+        // Assert — rollback preserved both original RI rows
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(2);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdA
+            && (long)r["DocumentId"]! == documentIdA);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdB
+            && (long)r["DocumentId"]! == documentIdB);
+    }
+
+    [Test]
+    public async Task Bulk_insert_with_duplicate_natural_key_is_rejected()
+    {
+        // Arrange — one existing student
+        var documentIdA = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(documentIdA, "STU-EXISTING");
+
+        var expectedReferentialIdA = ComputeReferentialId(
+            "Ed-Fi",
+            "Student",
+            ("$.studentUniqueId", "STU-EXISTING")
+        );
+
+        var documentIdB = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        var documentIdC = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+
+        // Act — multi-row INSERT; C's key collides with A's; BEFORE trigger fires per row
+        var act = () => _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Student" ("DocumentId", "StudentUniqueId", "FirstName")
+            VALUES (@documentIdB, @studentUniqueIdB, @firstNameB),
+                   (@documentIdC, @studentUniqueIdC, @firstNameC);
+            """,
+            new NpgsqlParameter("documentIdB", documentIdB),
+            new NpgsqlParameter("studentUniqueIdB", "STU-BULK-1"),
+            new NpgsqlParameter("firstNameB", "BulkB"),
+            new NpgsqlParameter("documentIdC", documentIdC),
+            new NpgsqlParameter("studentUniqueIdC", "STU-EXISTING"),
+            new NpgsqlParameter("firstNameC", "BulkC")
+        );
+
+        // Assert — PK_ReferentialIdentity violation (BEFORE trigger fires before UX_Student_NK)
+        var ex = (await act.Should().ThrowAsync<PostgresException>()).Which;
+        ex.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+        ex.ConstraintName.Should().Be("PK_ReferentialIdentity");
+
+        // Assert — rollback of the Student insert: only A's original RI row exists; B and C have no RI rows
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(1);
+        referentialIds.Should().Contain(r =>
+            (Guid)r["ReferentialId"]! == expectedReferentialIdA
+            && (long)r["DocumentId"]! == documentIdA);
+    }
+
+    [Test]
     public async Task Delete_concrete_removes_referential_identity_row()
     {
         // Arrange

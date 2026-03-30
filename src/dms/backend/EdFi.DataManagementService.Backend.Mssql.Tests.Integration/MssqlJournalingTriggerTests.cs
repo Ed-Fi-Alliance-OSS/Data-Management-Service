@@ -43,7 +43,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Journaling_Trigger
     {
         await _database.ExecuteNonQueryAsync(
             """
-            DELETE FROM [dms].[DocumentChangeEvent];
+            DELETE FROM [dms].[Document];
             """
         );
     }
