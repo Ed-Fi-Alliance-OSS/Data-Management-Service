@@ -22,7 +22,7 @@ public enum ScopeKind
 /// <summary>
 /// Immutable descriptor for one compiled scope in a resource's scope catalog.
 /// Built by backend from TableWritePlan / DbTableModel metadata.
-/// Core consumes this narrowed adapter for address derivation and canonical vocabulary.
+/// Core and backend consume this narrowed adapter for address derivation and canonical vocabulary.
 /// </summary>
 /// <remarks>
 /// <para><strong>ProfileDefinition compatibility assessment (DMS-1111):</strong></para>

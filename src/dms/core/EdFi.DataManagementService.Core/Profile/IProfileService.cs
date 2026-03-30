@@ -11,6 +11,12 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// <summary>
 /// Result of profile resolution
 /// </summary>
+/// <remarks>
+/// This remains the current middleware-facing bridge surface for profile usage
+/// checks until C5 adopts category-2 <see cref="ProfileFailure" /> emission.
+/// Any future adaptation from typed failures should stay inside the profile
+/// service boundary; DMS-1104 owns public mapping beyond this envelope.
+/// </remarks>
 public record ProfileResolutionResult(
     bool IsSuccess,
     ProfileContext? ProfileContext,
@@ -32,6 +38,13 @@ public record ProfileResolutionResult(
 /// <param name="Title">Short error title</param>
 /// <param name="Detail">Detailed error description</param>
 /// <param name="Errors">Specific error messages</param>
+/// <remarks>
+/// This is the existing profile-resolution error envelope used by current
+/// middleware. Do not expand it into a general typed-failure mapper; when C5
+/// adopts category-2 <see cref="ProfileFailureCategory.InvalidProfileUsage" />
+/// failures, keep translation to this envelope in a narrow internal bridge
+/// until DMS-1104 centralizes client-visible mapping.
+/// </remarks>
 public record ProfileResolutionError(
     int StatusCode,
     string ErrorType,

@@ -476,6 +476,10 @@ internal class CachedProfileService(
         IReadOnlyList<string> availableProfiles
     )
     {
+        // Legacy C5 bridge point: direct ProfileResolutionError construction
+        // remains here until category-2 typed failures are introduced. Keep any
+        // future ProfileFailure -> ProfileResolutionError adaptation local to
+        // these helpers; DMS-1104 owns broader client-visible mapping.
         string errorMessage =
             availableProfiles.Count > 0
                 ? $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {string.Join(", ", availableProfiles)}"
