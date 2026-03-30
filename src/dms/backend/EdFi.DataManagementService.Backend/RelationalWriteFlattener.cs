@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteFlattener
+public interface IRelationalWriteFlattener
 {
     FlattenedWriteSet Flatten(FlatteningInput flatteningInput);
 }

@@ -150,9 +150,17 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<ReferenceResolver>();
             scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
+                .Should()
+                .BeOfType<RelationalWriteFlattener>();
+            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
                 .Should()
                 .BeOfType<RelationalWriteTargetContextResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteTerminalStage>();
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
@@ -224,9 +232,17 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<ReferenceResolver>();
             scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
+                .Should()
+                .BeOfType<RelationalWriteFlattener>();
+            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
                 .Should()
                 .BeOfType<RelationalWriteTargetContextResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteTerminalStage>();
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()

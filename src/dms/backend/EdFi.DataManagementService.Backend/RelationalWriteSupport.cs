@@ -80,6 +80,22 @@ internal static class RelationalWriteSupport
     public static string FormatResource(QualifiedResourceName resource) =>
         $"{resource.ProjectName}.{resource.ResourceName}";
 
+    public static string BuildWriteExecutionNotImplementedMessage(
+        RelationalWriteOperationKind operationKind,
+        QualifiedResourceName resource
+    )
+    {
+        var operationLabel = operationKind switch
+        {
+            RelationalWriteOperationKind.Post => "POST",
+            RelationalWriteOperationKind.Put => "PUT",
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+        return $"Relational {operationLabel} terminal write stage is not implemented for resource '{FormatResource(resource)}'. "
+            + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending.";
+    }
+
     public static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
 }

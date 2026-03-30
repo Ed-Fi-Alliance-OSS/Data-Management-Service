@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -36,12 +37,18 @@ public class Given_RelationalDocumentStoreRepository
     private RelationalDocumentStoreRepository _sut = null!;
     private IRelationalWriteTargetContextResolver _targetContextResolver = null!;
     private IReferenceResolver _referenceResolver = null!;
+    private IRelationalWriteFlattener _writeFlattener = null!;
+    private IRelationalWriteTerminalStage _terminalStage = null!;
+    private FlatteningInput _capturedFlatteningInput = null!;
+    private RelationalWriteTerminalStageRequest _capturedTerminalStageRequest = null!;
 
     [SetUp]
     public void Setup()
     {
         _targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
         _referenceResolver = A.Fake<IReferenceResolver>();
+        _writeFlattener = A.Fake<IRelationalWriteFlattener>();
+        _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
         A.CallTo(() =>
                 _targetContextResolver.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -71,11 +78,29 @@ public class Given_RelationalDocumentStoreRepository
             );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(CreateResolvedReferenceSet()));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._))
+            .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
+            .ReturnsLazily(call => CreateFlattenedWriteSet(call.GetArgument<FlatteningInput>(0)!.WritePlan));
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
+            )
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteTerminalStageResult>(
+                    new RelationalWriteTerminalStageResult.Upsert(
+                        new UpsertResult.UnknownFailure("Unexpected terminal-stage test fallback.")
+                    )
+                )
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _targetContextResolver,
-            _referenceResolver
+            _referenceResolver,
+            _writeFlattener,
+            _terminalStage
         );
     }
 
@@ -129,7 +154,7 @@ public class Given_RelationalDocumentStoreRepository
     }
 
     [Test]
-    public async Task It_returns_a_deterministic_unknown_failure_when_post_reaches_an_unsupported_relational_gap()
+    public async Task It_routes_post_requests_through_flattening_and_the_terminal_stage()
     {
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
@@ -139,23 +164,43 @@ public class Given_RelationalDocumentStoreRepository
             _schoolCategoryDescriptorResourceInfo,
             "$.schoolCategoryDescriptor"
         );
+        var resolvedReferences = CreateResolvedReferenceSet();
+        var requestBody = CreateRequestBody();
+        var traceId = new TraceId("post-trace");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var flattenedWriteSet = CreateFlattenedWriteSet(CreateRootPlan());
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .Returns(Task.FromResult(resolvedReferences));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._))
+            .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
+            .Returns(flattenedWriteSet);
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTerminalStageResult>(
+                    new RelationalWriteTerminalStageResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid)
+                    )
+                )
+            );
+
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo)
             .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
-        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.TraceId).Returns(traceId);
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.UnknownFailure(
-                    "Relational POST write execution is not implemented for resource 'Ed-Fi.School'. "
-                        + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
-                )
-            );
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
         A.CallTo(() =>
                 _targetContextResolver.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -180,10 +225,26 @@ public class Given_RelationalDocumentStoreRepository
                 )
             )
             .MustHaveHappenedOnceExactly();
+
+        _capturedFlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
+        _capturedFlatteningInput
+            .WritePlan.Model.Resource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "School"));
+        _capturedFlatteningInput.SelectedBody.Should().BeSameAs(requestBody);
+        _capturedFlatteningInput.ResolvedReferences.Should().BeSameAs(resolvedReferences);
+        var createNewTargetContext = _capturedFlatteningInput
+            .TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>()
+            .Subject;
+        createNewTargetContext.DocumentUuid.Should().Be(documentUuid);
+        _capturedTerminalStageRequest.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
+        _capturedTerminalStageRequest.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
+        _capturedTerminalStageRequest.TraceId.Should().Be(traceId);
+        _capturedTerminalStageRequest.DiagnosticIdentifier.Should().BeNull();
     }
 
     [Test]
-    public async Task It_returns_a_deterministic_unknown_failure_when_put_reaches_an_unsupported_relational_gap()
+    public async Task It_routes_put_requests_through_flattening_and_the_terminal_stage()
     {
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
@@ -193,23 +254,57 @@ public class Given_RelationalDocumentStoreRepository
             _schoolCategoryDescriptorResourceInfo,
             "$.schoolCategoryDescriptor"
         );
+        var resolvedReferences = CreateResolvedReferenceSet();
+        var traceId = new TraceId("put-trace");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var existingDocumentId = 123L;
+        var requestBody = CreateRequestBody("Roosevelt High");
+        var flattenedWriteSet = CreateFlattenedWriteSet(CreateRootPlan());
+
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+                )
+            );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .Returns(Task.FromResult(resolvedReferences));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._))
+            .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
+            .Returns(flattenedWriteSet);
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTerminalStageResult>(
+                    new RelationalWriteTerminalStageResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid)
+                    )
+                )
+            );
+
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo)
             .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
-        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.TraceId).Returns(traceId);
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpdateResult.UnknownFailure(
-                    "Relational PUT write execution is not implemented for resource 'Ed-Fi.School'. "
-                        + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
-                )
-            );
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
         A.CallTo(() =>
                 _targetContextResolver.ResolveForPutAsync(
                     A<MappingSet>._,
@@ -233,6 +328,19 @@ public class Given_RelationalDocumentStoreRepository
                 )
             )
             .MustHaveHappenedOnceExactly();
+
+        _capturedFlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        _capturedFlatteningInput.SelectedBody.Should().BeSameAs(requestBody);
+        _capturedFlatteningInput.ResolvedReferences.Should().BeSameAs(resolvedReferences);
+        var existingDocumentTargetContext = _capturedFlatteningInput
+            .TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.ExistingDocument>()
+            .Subject;
+        existingDocumentTargetContext.DocumentId.Should().Be(existingDocumentId);
+        existingDocumentTargetContext.DocumentUuid.Should().Be(documentUuid);
+        _capturedTerminalStageRequest.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
+        _capturedTerminalStageRequest.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
+        _capturedTerminalStageRequest.TraceId.Should().Be(traceId);
     }
 
     [Test]
@@ -259,12 +367,18 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
         result
             .Should()
             .BeEquivalentTo(new UpsertResult.UpsertFailureReference([invalidDocumentReference], []));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -292,6 +406,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.DocumentInfo)
             .Returns(CreateDocumentInfo(descriptorReferences: [descriptorReference]));
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -324,6 +439,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
         A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
@@ -357,12 +473,18 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => updateRequest.DocumentInfo)
             .Returns(CreateDocumentInfo(descriptorReferences: [descriptorReference]));
         A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         result
             .Should()
             .BeEquivalentTo(new UpdateResult.UpdateFailureReference([], [invalidDescriptorReference]));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -373,6 +495,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -395,6 +518,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
@@ -417,6 +541,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -438,6 +563,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(null);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
 
         Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
 
@@ -476,6 +602,11 @@ public class Given_RelationalDocumentStoreRepository
             DescriptorReferences: descriptorReferences ?? [],
             SuperclassIdentity: null
         );
+    }
+
+    private static JsonNode CreateRequestBody(string name = "Lincoln High")
+    {
+        return JsonNode.Parse($$"""{"name":"{{name}}"}""")!;
     }
 
     private static DocumentReference CreateDocumentReference(BaseResourceInfo targetResource, string path)
@@ -728,6 +859,30 @@ public class Given_RelationalDocumentStoreRepository
                 ),
             ],
             KeyUnificationPlans: []
+        );
+    }
+
+    private static FlattenedWriteSet CreateFlattenedWriteSet(ResourceWritePlan writePlan)
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        return CreateFlattenedWriteSet(
+            writePlan.TablePlansInDependencyOrder.Single(plan =>
+                plan.TableModel.IdentityMetadata.TableKind == DbTableKind.Root
+            )
+        );
+    }
+
+    private static FlattenedWriteSet CreateFlattenedWriteSet(TableWritePlan tableWritePlan)
+    {
+        return new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                tableWritePlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
         );
     }
 }

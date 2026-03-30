@@ -14,7 +14,9 @@ namespace EdFi.DataManagementService.Backend;
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteTargetContextResolver targetContextResolver,
-    IReferenceResolver referenceResolver
+    IReferenceResolver referenceResolver,
+    IRelationalWriteFlattener writeFlattener,
+    IRelationalWriteTerminalStage terminalStage
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -23,6 +25,10 @@ public sealed class RelationalDocumentStoreRepository(
         targetContextResolver ?? throw new ArgumentNullException(nameof(targetContextResolver));
     private readonly IReferenceResolver _referenceResolver =
         referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
+    private readonly IRelationalWriteFlattener _writeFlattener =
+        writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
+    private readonly IRelationalWriteTerminalStage _terminalStage =
+        terminalStage ?? throw new ArgumentNullException(nameof(terminalStage));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -34,6 +40,8 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         return ExecuteWriteGuardRails<UpsertResult>(
+            requestBody: upsertRequest.EdfiDoc,
+            traceId: upsertRequest.TraceId,
             upsertRequest.MappingSet,
             upsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
@@ -46,14 +54,25 @@ public sealed class RelationalDocumentStoreRepository(
                     invalidDescriptorReferences
                 ),
             async (mappingSet, resource) =>
-                _ = await _targetContextResolver
+                await _targetContextResolver
                     .ResolveForPostAsync(
                         mappingSet,
                         resource,
                         upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.DocumentUuid
                     )
-                    .ConfigureAwait(false)
+                    .ConfigureAwait(false),
+            static terminalStageResult =>
+                terminalStageResult switch
+                {
+                    RelationalWriteTerminalStageResult.Upsert(var result) => result,
+                    RelationalWriteTerminalStageResult.Update => throw new InvalidOperationException(
+                        "Relational terminal stage returned an update result for a POST request."
+                    ),
+                    _ => throw new InvalidOperationException(
+                        $"Relational terminal stage returned unsupported result type '{terminalStageResult.GetType().Name}' for a POST request."
+                    ),
+                }
         );
     }
 
@@ -83,6 +102,8 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         return ExecuteWriteGuardRails<UpdateResult>(
+            requestBody: updateRequest.EdfiDoc,
+            traceId: updateRequest.TraceId,
             updateRequest.MappingSet,
             updateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
@@ -95,9 +116,20 @@ public sealed class RelationalDocumentStoreRepository(
                     invalidDescriptorReferences
                 ),
             async (mappingSet, resource) =>
-                _ = await _targetContextResolver
+                await _targetContextResolver
                     .ResolveForPutAsync(mappingSet, resource, updateRequest.DocumentUuid)
-                    .ConfigureAwait(false)
+                    .ConfigureAwait(false),
+            static terminalStageResult =>
+                terminalStageResult switch
+                {
+                    RelationalWriteTerminalStageResult.Update(var result) => result,
+                    RelationalWriteTerminalStageResult.Upsert => throw new InvalidOperationException(
+                        "Relational terminal stage returned an upsert result for a PUT request."
+                    ),
+                    _ => throw new InvalidOperationException(
+                        $"Relational terminal stage returned unsupported result type '{terminalStageResult.GetType().Name}' for a PUT request."
+                    ),
+                }
         );
     }
 
@@ -134,6 +166,8 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
+        System.Text.Json.Nodes.JsonNode requestBody,
+        TraceId traceId,
         MappingSet? mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
@@ -141,23 +175,26 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
         Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
-        Func<MappingSet, QualifiedResourceName, Task> resolveTargetContextAsync
+        Func<MappingSet, QualifiedResourceName, Task<RelationalWriteTargetContext>> resolveTargetContextAsync,
+        Func<RelationalWriteTerminalStageResult, TResult> terminalResultProjector
     )
     {
+        ArgumentNullException.ThrowIfNull(requestBody);
         ArgumentNullException.ThrowIfNull(resourceInfo);
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
+        ArgumentNullException.ThrowIfNull(terminalResultProjector);
         ArgumentNullException.ThrowIfNull(mappingSet);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
 
         try
         {
-            _ = RelationalWriteSupport.GetWritePlanOrThrow(mappingSet, resource);
-            await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
+            var writePlan = RelationalWriteSupport.GetWritePlanOrThrow(mappingSet, resource);
+            var targetContext = await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
 
             var resolvedReferences = await _referenceResolver
                 .ResolveAsync(
@@ -177,30 +214,28 @@ public sealed class RelationalDocumentStoreRepository(
                     [.. resolvedReferences.InvalidDescriptorReferences]
                 );
             }
+
+            var flatteningInput = new FlatteningInput(
+                operationKind,
+                targetContext,
+                writePlan,
+                requestBody,
+                resolvedReferences
+            );
+            var flattenedWriteSet = _writeFlattener.Flatten(flatteningInput);
+            var terminalStageResult = await _terminalStage
+                .ExecuteAsync(
+                    new RelationalWriteTerminalStageRequest(flatteningInput, flattenedWriteSet, traceId)
+                )
+                .ConfigureAwait(false);
+
+            return terminalResultProjector(terminalStageResult);
         }
         catch (Exception ex)
             when (ex is NotSupportedException or InvalidOperationException or KeyNotFoundException)
         {
             return failureFactory(ex.Message);
         }
-
-        return failureFactory(BuildUnsupportedWriteExecutionMessage(operationKind, resource));
-    }
-
-    private static string BuildUnsupportedWriteExecutionMessage(
-        RelationalWriteOperationKind operationKind,
-        QualifiedResourceName resource
-    )
-    {
-        var operationLabel = operationKind switch
-        {
-            RelationalWriteOperationKind.Post => "POST",
-            RelationalWriteOperationKind.Put => "PUT",
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-
-        return $"Relational {operationLabel} write execution is not implemented for resource '{FormatResource(resource)}'. "
-            + "Write-plan selection succeeded, but the relational write orchestration path is still pending.";
     }
 
     private static string FormatResource(QualifiedResourceName resource) =>
