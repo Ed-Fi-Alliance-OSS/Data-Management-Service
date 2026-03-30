@@ -249,6 +249,42 @@ public class Given_SecurableElementColumnPathResolver
             results[0][0].TargetTable.Should().BeNull();
             results[0][0].TargetColumnName.Should().BeNull();
         }
+
+        [Test]
+        public void It_should_resolve_namespace_from_direct_scalar_column()
+        {
+            // A resource whose namespace column is a direct scalar (not part of a reference
+            // identity binding). This exercises the fallback path in ResolveEdOrgOrNamespacePath
+            // that matches against SourceJsonPath on root-table columns.
+            var rootTable = CreateRootTable(
+                Table("AcademicWeek"),
+                [
+                    new DbColumnModel(
+                        Col("Namespace"),
+                        ColumnKind.Scalar,
+                        null,
+                        false,
+                        Path("$.namespace"),
+                        null
+                    ),
+                ]
+            );
+
+            // No DocumentReferenceBinding for the namespace path
+            var model = CreateModel("Ed-Fi", "AcademicWeek", rootTable);
+
+            var securableElements = new ResourceSecurableElements([], ["$.namespace"], [], [], []);
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "AcademicWeek", model, securableElements);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().HaveCount(1);
+            results[0].Should().HaveCount(1);
+            results[0][0].SourceTable.Should().Be(Table("AcademicWeek"));
+            results[0][0].SourceColumnName.Should().Be(Col("Namespace"));
+            results[0][0].TargetTable.Should().BeNull();
+            results[0][0].TargetColumnName.Should().BeNull();
+        }
     }
 
     [TestFixture]
