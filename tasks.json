@@ -6,7 +6,7 @@
       "Add frontend/unit composition tests for PostgreSQL with the flag off, PostgreSQL with the flag on, and MSSQL with the flag on.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter WebApplicationBuilderExtensionsTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Contracts",
