@@ -300,7 +300,10 @@ public class Given_RuntimePlanCompilation_Determinism
 
         foreach (var bindingIndexNode in compareBindingIndexes)
         {
-            _ = RequireIntValue(bindingIndexNode, "compare_binding_indexes_in_order entry");
+            _ = ManifestJsonNodeValueReader.RequireIntValue(
+                bindingIndexNode,
+                "compare_binding_indexes_in_order entry"
+            );
         }
     }
 
@@ -498,18 +501,6 @@ public class Given_RuntimePlanCompilation_Determinism
         }
 
         return value;
-    }
-
-    private static int RequireIntValue(JsonNode? node, string propertyName)
-    {
-        return node switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<int>(),
-            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
-            _ => throw new InvalidOperationException(
-                $"Manifest property '{propertyName}' must be an integer."
-            ),
-        };
     }
 
     private static string? ReadOptionalString(JsonObject node, string propertyName)

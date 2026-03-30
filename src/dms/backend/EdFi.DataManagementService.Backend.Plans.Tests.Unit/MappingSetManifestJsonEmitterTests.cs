@@ -962,7 +962,10 @@ public class Given_MappingSetManifestJsonEmitter
             OrdinalBindingIndex: RequireInt(collectionMergePlan, "ordinal_binding_index"),
             CompareBindingIndexesInOrder: compareBindingIndexes
                 .Select(bindingIndexNode =>
-                    RequireIntValue(bindingIndexNode, "compare_binding_indexes_in_order entry")
+                    ManifestJsonNodeValueReader.RequireIntValue(
+                        bindingIndexNode,
+                        "compare_binding_indexes_in_order entry"
+                    )
                 )
                 .ToArray()
         );
@@ -1462,18 +1465,6 @@ public class Given_MappingSetManifestJsonEmitter
             null => null,
             _ => throw new InvalidOperationException(
                 $"Manifest property '{propertyName}' must be an integer or null."
-            ),
-        };
-    }
-
-    private static int RequireIntValue(JsonNode? node, string propertyName)
-    {
-        return node switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<int>(),
-            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
-            _ => throw new InvalidOperationException(
-                $"Manifest property '{propertyName}' must be an integer."
             ),
         };
     }

@@ -298,7 +298,7 @@ internal static class NormalizedPlanContractCodec
         }
 
         var planArgument = $"{tablePlanArgument}.{nameof(TableWritePlanDto.CollectionMergePlan)}";
-        return tablePlanDto.CollectionMergePlan.Decode(bindingCount, planArgument, nameof(tablePlanDto));
+        return tablePlanDto.CollectionMergePlan.Decode(bindingCount, planArgument);
     }
 
     private static ExternalPlans.CollectionKeyPreallocationPlan? DecodeCollectionKeyPreallocationPlan(

@@ -182,11 +182,7 @@ internal sealed record CollectionMergePlanDto
         );
     }
 
-    public ExternalPlans.CollectionMergePlan Decode(
-        int bindingCount,
-        string argumentName,
-        string parameterName
-    )
+    public ExternalPlans.CollectionMergePlan Decode(int bindingCount, string argumentName)
     {
         var semanticIdentityBindings = new ExternalPlans.CollectionMergeSemanticIdentityBinding[
             this.SemanticIdentityBindings.Length
