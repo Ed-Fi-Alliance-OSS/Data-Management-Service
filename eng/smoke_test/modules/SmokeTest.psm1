@@ -90,7 +90,7 @@ function Get-SmokeTestCredentials {
         [string]
         $ClaimSetName = "EdFiSandbox",
 
-        [int[]]
+        [long[]]
         $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000)
     )
 
