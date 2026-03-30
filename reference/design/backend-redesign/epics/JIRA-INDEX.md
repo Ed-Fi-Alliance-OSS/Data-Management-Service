@@ -87,7 +87,8 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1112` — Typed Profile Error Classification (C8) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
   - `DMS-1106` — Integrate the Core/Backend Profile Write Contract — `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
   - `DMS-1105` — Load and Reconstitute the Current Stored Document for Profile Projection — `reference/design/backend-redesign/epics/07-relational-write-path/01c-current-document-for-profile-projection.md`
-  - `DMS-983` — Flatten `WritableRequestBody` into Relational Row Buffers and Collection Candidates — `reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md`
+  - `DMS-983` — Flatten Validated Write Bodies into Relational Row Buffers and Collection Candidates (Thin Slice) — `reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md`
+  - `DMS-1123` — Integrate `ProfileAppliedWriteRequest.WritableRequestBody` into the Flattener — `reference/design/backend-redesign/epics/07-relational-write-path/02b-profile-applied-request-flattening.md`
   - `DMS-984` — Persist Row Buffers with Stable-Identity Merge Semantics (Batching, Limits, Transactions) — `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`
   - `DMS-985` — Populate Propagated Reference Identity Columns (No Edge Table) — `reference/design/backend-redesign/epics/07-relational-write-path/04-propagated-reference-identity-columns.md`
   - `DMS-986` — Map DB Constraint Errors to DMS Write Error Shapes — `reference/design/backend-redesign/epics/07-relational-write-path/05-write-error-mapping.md`
