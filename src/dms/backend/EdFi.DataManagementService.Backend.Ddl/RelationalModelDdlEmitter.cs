@@ -1645,9 +1645,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var updatableColumns = GetWritableStoredNonKeyColumns(tableModel, trigger.Name.Value);
 
-        // Identity propagation must happen before the owning row update so the subsequent
-        // base-table UPDATE can satisfy ON UPDATE NO ACTION reference FKs without transient
-        // violations.
+        // Identity propagation happens before the owning row update. The ON UPDATE NO ACTION
+        // FKs are emitted as DocumentId-only on MSSQL (identity columns excluded), so neither
+        // the child nor the parent UPDATE violates the FK constraint.
         writer.Append("IF (");
         EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
         writer.AppendLine(")");
