@@ -11,6 +11,8 @@ Persist flattened row buffers to the database in a single transaction:
 
 Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is the canonical dependency map, and this story is on the `E15-S04b` / `DMS-1108` critical path. Runtime merge execution here consumes the retrofitted stable-identity collection merge-plan contract from `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`; it must not be implemented against the older delete-by-parent / `Ordinal`-based collection plan shape. Under the DMS-983 split, this story also waits on `DMS-1123` / `02b-profile-applied-request-flattening.md` so profiled `WritableRequestBody` selection stays out of the persist/no-op executor itself.
 
+This story also absorbs the request-scoped relational command-boundary follow-on left intentionally out of `DMS-983`: persistence orchestration introduces the executor-owned relational connection/transaction boundary required for `DMS-984`, so the runtime path no longer depends on the DMS-983 resolver seam that opens an independent connection per command.
+
 - For `PUT`, and for `POST` when upsert resolves to an existing document, compare the current persisted rowset to the post-merge rowset the executor would actually write and skip DML when they are identical.
 - Guarded no-op comparison must reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either directly or through a shared helper built from the same executor-facing merge metadata; do not introduce a compare-only profile merge implementation.
 - Insert/update `dms.Document` and resource root rows when a change exists, but reject profiled creates when Core marks the root resource instance non-creatable.
@@ -55,6 +57,7 @@ The runtime executor story and downstream test-migration stories should reuse th
 ## Acceptance Criteria
 
 - POST/PUT runs in a single transaction and either commits all changed rows or rolls back fully on failure.
+- Runtime persistence owns a request-scoped relational connection/transaction boundary suitable for executor-driven writes, rather than depending on the DMS-983 one-command-one-connection resolver seam.
 - `PUT` and POST-as-update short-circuit as successful no-ops when the comparable stored/writable rowset is unchanged, including the `ProfileUnchangedWriteGuardedNoOp` scenario.
 - No-op detection piggybacks on the existing current-state load and does not require a dedicated “did anything change?” roundtrip.
 - Guarded no-op comparison reuses the same merge-ordering and post-merge rowset-synthesis logic as execution, either by invoking the same helper or a shared helper built from the same executor-facing metadata; runtime does not maintain a separate profile-specific compare-only merge path.
@@ -83,14 +86,15 @@ Authorization is out of scope for this story, but the transaction and batching s
 
 ## Tasks
 
-1. Implement rowset comparison for existing-document update flows by reusing the same stable-identity merge and post-merge ordering logic as the real executor, or a shared helper built from the same executor-facing merge metadata.
-2. Implement a guarded no-op fast path that revalidates the observed `ContentVersion` before short-circuiting and returns a stale-compare outcome to the outer concurrency layer when freshness is lost.
-3. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates and the rule that existing visible roots remain on the update path.
-4. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
-5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
-6. Implement deterministic post-merge `Ordinal` recomputation aligned to the no-op comparison path.
-7. Implement bulk insert batching with dialect-specific limits and strategies.
-8. Add integration tests that cover the shared profile scenario baseline above:
+1. Introduce the request-scoped relational connection/transaction boundary required by the persist executor so the runtime path no longer assumes the DMS-983 resolver's one-command-one-connection seam when coordinating prerequisite lookups and DML.
+2. Implement rowset comparison for existing-document update flows by reusing the same stable-identity merge and post-merge ordering logic as the real executor, or a shared helper built from the same executor-facing merge metadata.
+3. Implement a guarded no-op fast path that revalidates the observed `ContentVersion` before short-circuiting and returns a stale-compare outcome to the outer concurrency layer when freshness is lost.
+4. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates and the rule that existing visible roots remain on the update path.
+5. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
+6. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
+7. Implement deterministic post-merge `Ordinal` recomputation aligned to the no-op comparison path.
+8. Implement bulk insert batching with dialect-specific limits and strategies.
+9. Add integration tests that cover the shared profile scenario baseline above:
    - `NoProfileWriteBehavior`, including one changed resource with nested collections and one `FullSurfaceCollectionReorder` case that proves matched rows keep stable identity while `Ordinal` changes,
    - `ProfileVisibleRowUpdateWithHiddenRowPreservation`, including no-previously-visible, interleaved update-plus-insert, nested collection, root-level extension child-collection, and collection-aligned extension child-collection ordering variants,
    - `ProfileVisibleRowDeleteWithHiddenRowPreservation`, including a delete-all-visible-while-hidden-rows-remain case,

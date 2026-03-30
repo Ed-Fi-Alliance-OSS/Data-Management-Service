@@ -1,7 +1,7 @@
 [
   {
     "category": "Composition",
-    "description": "Add an exclusive `UseRelationalBackend` repository swap in the host composition root. Acceptance: when `UseRelationalBackend=false`, DI still registers only the legacy `PostgresqlDocumentStoreRepository`; when `UseRelationalBackend=true`, DI registers only a new `RelationalDocumentStoreRepository` as `IDocumentStoreRepository`, adds PostgreSQL relational write-prerequisite services for PostgreSQL deployments, and adds the matching SQL Server relational write-prerequisite services for MSSQL deployments. No operation delegates back to the legacy repository when the flag is on.",
+    "description": "Add an exclusive `UseRelationalBackend` repository swap in the host composition root. Acceptance: when `UseRelationalBackend=false`, DI still registers only the legacy `PostgresqlDocumentStoreRepository`; when `UseRelationalBackend=true`, DI registers only a new `RelationalDocumentStoreRepository` as `IDocumentStoreRepository`, adds the full relational runtime prerequisites for PostgreSQL deployments, and adds the matching full relational runtime prerequisites for MSSQL deployments, including runtime mapping-set compilation or provider services plus the dialect-specific relational command and reference-resolution services required by the new repository. No operation delegates back to the legacy repository when the flag is on.",
     "steps-to-verify": [
       "Add frontend/unit composition tests for PostgreSQL with the flag off, PostgreSQL with the flag on, and MSSQL with the flag on.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter WebApplicationBuilderExtensionsTests`"
@@ -19,7 +19,7 @@
   },
   {
     "category": "Repository",
-    "description": "Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository. Acceptance: POST and PUT for non-descriptor resources enter the relational seam; GET and DELETE fail fast with `UnknownFailure` and precise not-implemented messages; descriptor POST and PUT also fail fast with precise not-implemented messages; missing `MappingSet`, missing non-descriptor `ResourceWritePlan`, and unsupported relational gaps return deterministic `UnknownFailure` messages; no legacy fallback path is used anywhere.",
+    "description": "Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository. Acceptance: POST and PUT for non-descriptor resources enter the relational seam; GET and DELETE fail fast with `UnknownFailure` and precise not-implemented messages; descriptor POST and PUT also fail fast with precise not-implemented messages; missing non-descriptor `ResourceWritePlan` and unsupported relational gaps return deterministic `UnknownFailure` messages; missing `MappingSet` remains owned by the existing middleware-level 503 behavior instead of being remapped inside the repository; no legacy fallback path is used anywhere.",
     "steps-to-verify": [
       "Add backend/unit tests for unsupported operations, descriptor writes, and missing-plan guard rails.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
@@ -29,9 +29,9 @@
   },
   {
     "category": "Write Orchestration",
-    "description": "Add target-context selection ahead of flattening. Acceptance: POST performs real relational upsert existence detection using the request `ReferentialId` and passes `create-new` versus `existing` target context to the terminal stage, including existing `DocumentId` and `DocumentUuid` when found; PUT passes an update-by-id target context keyed by the requested `DocumentUuid` without attempting legacy ETag, immutable-identity, no-op, or not-found behavior in this story.",
+    "description": "Add target-context selection ahead of flattening. Acceptance: POST performs real relational upsert existence detection using the request `ReferentialId` and passes `create-new` versus `existing` target context to the terminal stage, including existing `DocumentId` and `DocumentUuid` when found; PUT resolves the requested `DocumentUuid` to existing-document context before flattening and passes an update target context that includes the real existing `DocumentId` and `DocumentUuid` when found, while still deferring legacy ETag, immutable-identity, no-op, and not-found behavior in this story.",
     "steps-to-verify": [
-      "Add backend/unit tests for POST create-new detection, POST existing-document detection, and the PUT target-context shape.",
+      "Add backend/unit tests for POST create-new detection, POST existing-document detection, PUT existing-document context resolution, and the resulting PUT target-context shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
