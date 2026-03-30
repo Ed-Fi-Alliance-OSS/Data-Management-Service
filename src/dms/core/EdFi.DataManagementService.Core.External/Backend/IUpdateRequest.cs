@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 using DocumentInfo = EdFi.DataManagementService.Core.External.Model.DocumentInfo;
 
@@ -23,6 +24,12 @@ public interface IUpdateRequest
     /// The DocumentInfo of the document to update
     /// </summary>
     DocumentInfo DocumentInfo { get; }
+
+    /// <summary>
+    /// The resolved runtime mapping set for the active request.
+    /// Null when relational backend resolution is disabled or short-circuited earlier in the pipeline.
+    /// </summary>
+    MappingSet? MappingSet { get; }
 
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode

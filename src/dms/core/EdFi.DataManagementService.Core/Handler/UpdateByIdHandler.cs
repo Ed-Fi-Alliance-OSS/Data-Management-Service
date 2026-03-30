@@ -55,6 +55,7 @@ internal class UpdateByIdHandler(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
+                        MappingSet: requestInfo.MappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         DocumentSecurityElements: requestInfo.DocumentSecurityElements,

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
@@ -22,6 +23,12 @@ public interface IUpsertRequest
     /// The DocumentInfo of the document to upsert
     /// </summary>
     DocumentInfo DocumentInfo { get; }
+
+    /// <summary>
+    /// The resolved runtime mapping set for the active request.
+    /// Null when relational backend resolution is disabled or short-circuited earlier in the pipeline.
+    /// </summary>
+    MappingSet? MappingSet { get; }
 
     /// <summary>
     /// The EdfiDoc of the document to upsert, as a JsonNode

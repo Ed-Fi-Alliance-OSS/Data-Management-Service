@@ -1,0 +1,424 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture]
+public class Given_RelationalDocumentStoreRepository
+{
+    private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
+    private static readonly ResourceInfo _descriptorResourceInfo = CreateResourceInfo(
+        "SchoolTypeDescriptor",
+        isDescriptor: true
+    );
+
+    private RelationalDocumentStoreRepository _sut = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _sut = new RelationalDocumentStoreRepository(NullLogger<RelationalDocumentStoreRepository>.Instance);
+    }
+
+    [Test]
+    public async Task It_returns_a_precise_unknown_failure_for_get_requests()
+    {
+        var getRequest = A.Fake<IGetRequest>();
+        A.CallTo(() => getRequest.ResourceName).Returns(_schoolResourceInfo.ResourceName);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new GetResult.UnknownFailure("Relational GET by id is not implemented for resource 'School'.")
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_precise_unknown_failure_for_delete_requests()
+    {
+        var deleteRequest = A.Fake<IDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_schoolResourceInfo);
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new DeleteResult.UnknownFailure(
+                    "Relational DELETE is not implemented for resource 'Ed-Fi.School'."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_precise_unknown_failure_for_query_requests()
+    {
+        var queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.UnknownFailure(
+                    "Relational query handling is not implemented for resource 'Ed-Fi.School'."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_deterministic_unknown_failure_when_post_reaches_an_unsupported_relational_gap()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UnknownFailure(
+                    "Relational POST write execution is not implemented for resource 'Ed-Fi.School'. "
+                        + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_deterministic_unknown_failure_when_put_reaches_an_unsupported_relational_gap()
+    {
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UnknownFailure(
+                    "Relational PUT write execution is not implemented for resource 'Ed-Fi.School'. "
+                        + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_write_path_guard_rail_for_post_requests()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UnknownFailure(
+                    "Write plan for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
+                        + "storage kind 'SharedDescriptorTable' uses the descriptor write path instead of compiled relational-table write plans. "
+                        + "Next story: E07-S06 (06-descriptor-writes.md)."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_descriptor_write_path_guard_rail_for_put_requests()
+    {
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UnknownFailure(
+                    "Write plan for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
+                        + "storage kind 'SharedDescriptorTable' uses the descriptor write path instead of compiled relational-table write plans. "
+                        + "Next story: E07-S06 (06-descriptor-writes.md)."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.UnknownFailure(
+                    "Write plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+                        + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table write plan, "
+                        + "but no entry was found. This indicates an internal compilation/selection bug."
+                )
+            );
+    }
+
+    [Test]
+    public void It_does_not_remap_missing_mapping_sets_inside_the_repository()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(null);
+
+        Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
+
+        act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
+    }
+
+    private static ResourceInfo CreateResourceInfo(string resourceName, bool isDescriptor = false)
+    {
+        return new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: new ResourceName(resourceName),
+            IsDescriptor: isDescriptor,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: false,
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                false,
+                default,
+                default
+            ),
+            AuthorizationSecurableInfo: []
+        );
+    }
+
+    private static MappingSet CreateSupportedMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootPlan.TableModel,
+            ResourceStorageKind.RelationalTables
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [resourceKey.Resource] = new ResourceWritePlan(resourceModel, [rootPlan]),
+            },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            }
+        );
+    }
+
+    private static MappingSet CreateDescriptorOnlyMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootPlan().TableModel;
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.SharedDescriptorTable
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            }
+        );
+    }
+
+    private static MappingSet CreateMissingWritePlanMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootPlan().TableModel;
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            }
+        );
+    }
+
+    private static ResourceKeyEntry CreateResourceKeyEntry(ResourceInfo resourceInfo)
+    {
+        return new ResourceKeyEntry(
+            ResourceKeyId: 1,
+            Resource: new QualifiedResourceName(
+                resourceInfo.ProjectName.Value,
+                resourceInfo.ResourceName.Value
+            ),
+            ResourceVersion: resourceInfo.ResourceVersion.Value,
+            IsAbstractResource: false
+        );
+    }
+
+    private static DerivedRelationalModelSet CreateDerivedModelSet(
+        RelationalResourceModel resourceModel,
+        ResourceKeyEntry resourceKey
+    )
+    {
+        return new DerivedRelationalModelSet(
+            EffectiveSchema: new EffectiveSchemaInfo(
+                ApiSchemaFormatVersion: "1.0",
+                RelationalMappingVersion: "v1",
+                EffectiveSchemaHash: "schema-hash",
+                ResourceKeyCount: 1,
+                ResourceKeySeedHash: [1, 2, 3],
+                SchemaComponentsInEndpointOrder:
+                [
+                    new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
+                ],
+                ResourceKeysInIdOrder: [resourceKey]
+            ),
+            Dialect: SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
+            ],
+            ConcreteResourcesInNameOrder:
+            [
+                new ConcreteResourceModel(resourceKey, resourceModel.StorageKind, resourceModel),
+            ],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+    }
+
+    private static RelationalResourceModel CreateRelationalResourceModel(
+        ResourceKeyEntry resourceKey,
+        DbTableModel rootTable,
+        ResourceStorageKind storageKind
+    )
+    {
+        return new RelationalResourceModel(
+            Resource: resourceKey.Resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: storageKind,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static TableWritePlan CreateRootPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Name"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.name", []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@DocumentId, @Name)",
+            UpdateSql: "update edfi.\"School\" set \"Name\" = @Name where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.name", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                    ),
+                    "Name"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+}
