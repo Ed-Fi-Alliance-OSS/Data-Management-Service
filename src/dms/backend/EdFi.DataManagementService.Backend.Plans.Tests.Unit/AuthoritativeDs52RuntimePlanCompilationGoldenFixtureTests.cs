@@ -45,7 +45,7 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
     }
 
     [Test]
-    public void It_should_emit_collection_merge_metadata_for_collection_tables_and_delete_by_parent_hashes_for_non_collection_children()
+    public void It_should_emit_collection_merge_metadata_for_collection_child_tables_and_no_non_collection_children_in_the_ds52_fixture()
     {
         var childTablePlans = ParseMappingSets(_manifest)
             .SelectMany(ReadResources)
@@ -87,6 +87,7 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         }
 
         collectionChildTablePlans.Should().BeGreaterThan(0);
+        nonCollectionChildTablePlans.Should().Be(0);
     }
 
     [Test]
