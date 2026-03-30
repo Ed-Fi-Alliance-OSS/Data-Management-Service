@@ -377,6 +377,8 @@ Within the delete transaction, the implementation must:
 
 This ordering is mandatory because the tombstone must preserve natural-key and tracked-change authorization data before the live row and companion rows disappear.
 
+**Cascade-deleted dependent documents do not produce tombstones.** When a parent resource is deleted and FK cascades remove dependent `dms.Document` rows, those dependent removals are not recorded as individual tombstones in `dms.DocumentDeleteTracking`. This matches ODS behavior: ODS enforces referential integrity and does not cascade-delete child resources without an explicit API call, so cascade-removed rows never appear on the ODS `/deletes` surface either. Implementers must not introduce tombstone-on-cascade logic as a perceived completeness improvement; doing so would diverge from the ODS contract and produce spurious delete events for resources that were never directly deleted via the API.
+
 ## Design Invariants
 
 The architecture must preserve these invariants:

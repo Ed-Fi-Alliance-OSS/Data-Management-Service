@@ -123,6 +123,7 @@ Delete query semantics:
 - the public `/deletes` surface suppresses a tombstone when the same **natural-key identity** (not the same `DocumentUuid`) is re-added and visible as a current live row within the same requested window on the same selected source; a delete-then-reinsert operation creates a new `DocumentUuid` but the same natural key, so suppression must compare natural-key identity derived from `ResourceSchema.IdentityJsonPaths`, not document instance identity
 - delete rows are authorization-filtered according to the tracked-change contract defined in `05-Authorization-and-Delete-Semantics.md`, including the accepted DMS-specific ownership exception
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
+- `/deletes` responses include RFC 5988 `Link` headers (`first`, `prev`, `next`, `last`) consistent with ODS collection GET pagination behavior, alongside the `Total-Count` header when `totalCount=true` is requested
 
 ## 4. Key change query
 
@@ -169,6 +170,7 @@ Key change semantics:
 - `limit`, `offset`, and `totalCount` on `/keyChanges` apply to that final authorized event stream rather than to a collapsed per-resource result set
 - key-change rows are authorization-filtered
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
+- `/keyChanges` responses include RFC 5988 `Link` headers (`first`, `prev`, `next`, `last`) consistent with ODS collection GET pagination behavior, alongside the `Total-Count` header when `totalCount=true` is requested
 
 ## Key payload field naming and ordering
 
@@ -222,6 +224,7 @@ The field-name contract is evaluated per routed resource, so different resources
 - when absent and `maxChangeVersion` is also absent, the collection GET route remains an ordinary non-Change-Query request
 - when absent and `maxChangeVersion` is also absent on `/deletes` or `/keyChanges`, the route returns all retained tracked rows for the routed resource
 - must be a non-negative signed 64-bit integer
+- when `minChangeVersion` exceeds the current synchronization ceiling returned by `availableChangeVersions`, all three surfaces return `200 OK` with an empty result set and `totalCount = 0` when requested; this matches ODS behavior
 
 ## `keyValues`, `oldKeyValues`, and `newKeyValues` — Extension Resource Identity
 
@@ -245,7 +248,7 @@ Required rule:
 - remain valid on `/keyChanges`
 - in changed-resource mode, all three apply to the final authorized one-row-per-resource result set after any internal candidate verification or elimination required by the execution strategy
 - on `/keyChanges`, all three apply after authorization filtering, over the final one-row-per-key-change-event result set
-- when `totalCount=true` is requested, the server returns the result count as the `X-Total-Count` HTTP response header, preserving ODS/API header contract parity; `totalCount` is not returned as a body field
+- when `totalCount=true` is requested, the server returns the result count as the `Total-Count` HTTP response header, preserving ODS/API header contract parity; `totalCount` is not returned as a body field
 
 ## Window Semantics
 
@@ -295,20 +298,18 @@ The normative non-snapshot client flow is:
 3. For repeating change processing, let `lastSuccessfulChangeVersion` be the saved synchronization version from the previous successful pass.
 4. Compute `startChangeVersion = lastSuccessfulChangeVersion + 1`.
 5. Call `availableChangeVersions` and capture its `newestChangeVersion` as `synchronizationVersion`.
-6. Query `keyChanges` for applicable resources in dependency order using `minChangeVersion = startChangeVersion` and omitting `maxChangeVersion`.
-7. Query changed resources in dependency order using the same `minChangeVersion` and omitting `maxChangeVersion`.
-8. Query `/deletes` in reverse-dependency order using the same `minChangeVersion` and omitting `maxChangeVersion`.
+6. Query `keyChanges` for applicable resources in dependency order using `minChangeVersion = startChangeVersion` and `maxChangeVersion = synchronizationVersion`.
+7. Query changed resources in dependency order using the same inclusive bounded window.
+8. Query `/deletes` in reverse-dependency order using the same inclusive bounded window.
 9. Apply key changes first, then live-resource changes, then deletes locally, preserving the same dependency order rules.
 10. Persist `synchronizationVersion` only after the full pass succeeds.
 
 Implications of this algorithm:
 
-- both initial synchronization and repeating change processing are subject to ordinary current-state read timing under concurrent writes
-- rows with `ChangeVersion > synchronizationVersion` may appear during the pass
-- those rows may legitimately be returned again on the next pass because the saved watermark is `synchronizationVersion`, not the highest `ChangeVersion` observed during retrieval
-- callers must treat such repeated rows as expected duplicate delivery rather than as a server bug
-
-**DMS-specific deviation from the Ed-Fi ODS Client Developer Guide:** The standard Ed-Fi ODS client guide recommends providing **both** `minChangeVersion` and `maxChangeVersion` bounds during the repeating change-processing pass to avoid including new concurrent changes mid-pass. The algorithm above intentionally omits `maxChangeVersion` and instead relies on duplicate delivery tolerance and watermark persistence for simplicity. Clients that follow the two-bound algorithm (using `maxChangeVersion = synchronizationVersion`) against DMS will also work correctly; bounded windows are supported by the DMS API contract. However, clients that adopt the DMS single-bound pattern and run that same pattern against ODS may observe different behavior because ODS returns rows up to and including `maxChangeVersion` even when it is absent.
+- supplying both bounds caps the pass at the watermark captured in step 5; rows written after that point are not included in the current pass and will be picked up in the next pass
+- this matches the Ed-Fi ODS Client Developer Guide recommendation and works correctly against both DMS and ODS
+- rows with `ChangeVersion > synchronizationVersion` that arrive during the pass are excluded by the `maxChangeVersion` bound and will appear on the next pass; callers do not need duplicate-delivery tolerance for that case
+- non-snapshot processing remains best-effort under concurrent writes for other paging-drift reasons (see Paging and Completeness by Mode); the bounded window eliminates one entire class of drift by fixing the upper watermark at pass start
 
 ## Snapshot-backed synchronization
 

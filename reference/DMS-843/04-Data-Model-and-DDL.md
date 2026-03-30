@@ -357,6 +357,8 @@ The migration must validate, for each supported engine, that change-version stam
 
 This is a migration validation requirement, not an assumption.
 
+Required validation artifact: the migration step or a dedicated migration smoke-test class must query the database catalog (`pg_trigger` / `sys.triggers`) for each physical partition or table in the deployed layout and fail fast with an explicit error message if any partition is missing the stamping trigger. This check must be a concrete, named deliverable within CQ-STORY-01 rather than an undocumented manual verification step.
+
 Partitioned-FK compatibility requirement:
 
 - for `dms.DocumentChangeEvent -> dms.Document` cascade behavior, each supported engine/version pair must validate whether declarative FK plus `ON DELETE CASCADE` is available for the deployed partitioning layout

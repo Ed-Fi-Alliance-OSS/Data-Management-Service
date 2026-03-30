@@ -21,7 +21,7 @@ The approval bar is correctness and alignment, not mechanical reproduction of OD
 - `availableChangeVersions` uses ODS-compatible sequence-ceiling watermark semantics.
 - Each deliberate departure from legacy ODS behavior is documented as an explicit owned decision in the relevant section, not as an undeclared omission.
 
-**`newestChangeVersion` false-upper-watermark consumer warning:** DMS derives `newestChangeVersion` from the sequence allocation ceiling (`next value - 1`) rather than from `MAX(committed ChangeVersion)` across retained rows. Sequence gaps from rolled-back transactions mean `newestChangeVersion` can exceed the highest committed representation change. This is a safe-direction artifact: the watermark is conservative, not a missed-data watermark. However, downstream tooling built against ODS that assumes `newestChangeVersion == max(committed ChangeVersion)` will observe apparent "empty windows" near the sequence ceiling in DMS. Vendors and integration partners should be made aware of this difference during integration testing.
+**`newestChangeVersion` false-upper-watermark consumer warning:** DMS derives `newestChangeVersion` from the sequence allocation ceiling (`next value - 1`) rather than from `MAX(committed ChangeVersion)` across retained rows. Sequence gaps from rolled-back transactions mean `newestChangeVersion` can exceed the highest committed representation change. This is a safe-direction artifact: the watermark is conservative, not a missed-data watermark. However, downstream tooling built against ODS that assumes `newestChangeVersion == max(committed ChangeVersion)` will observe apparent "empty windows" near the sequence ceiling in DMS. Vendors and integration partners should be made aware of this difference during integration testing. Ed-Fi Alliance must communicate this departure through release notes, the client developer guide, or an equivalent channel before DMS Change Queries ships to production audiences so that integration partners can validate their watermark persistence logic against the sequence-ceiling model.
 
 Known explicit DMS-specific choices in this package:
 
@@ -308,6 +308,30 @@ DMS-843 defers retention and purge to a subsequent Epic B. The deferral is ackno
 - the Epic B retention design should be prioritized within the first production deployment cycle; the suggested outer bound is **90 days after initial GA deployment** unless product or operations decide otherwise
 - `dms.ChangeQueryRetentionFloor` must be deployed before any purge job is allowed to run; see `06-Validation-Rollout-and-Operations.md`, Future Retention Phase
 
+## 17. The ODS Snapshots management API is out of scope for DMS-843; snapshot lifecycle is operator-managed
+
+The published Ed-Fi ODS/API Change Queries specification includes a `Snapshots` resource under `changeQueries/v1`:
+
+- `GET /changeQueries/v1/snapshots` — list available snapshot derivatives
+- `POST /changeQueries/v1/snapshots` — request creation of a snapshot derivative
+- `DELETE /changeQueries/v1/snapshots/{id}` — retire a snapshot derivative
+
+**DMS-843 does not implement the Snapshots management API.** This is a deliberate out-of-scope decision for this package, not an inadvertent omission.
+
+Rationale:
+
+- DMS snapshot lifecycle is operator-managed: each resolved DMS instance is either bound to a configured read-only snapshot derivative (`SnapshotConnectionString` or equivalent) or it is not; there is no API surface for clients to request or retire snapshot derivatives
+- the ODS Snapshots management API delegates snapshot creation and retirement to API clients; DMS-843 chooses operator provisioning instead, because the supported snapshot technologies (Aurora clone, RDS PIT restore, SQL Server database snapshot) are operationally provisioned rather than on-demand request-time actions
+- DMS `Use-Snapshot` preserves the ODS client synchronization intent — one frozen view per bounded pass — through a configured long-lived derivative rather than through an API-managed ephemeral artifact
+- the `Use-Snapshot` header contract and snapshot-unavailable `404 Not Found` failure behavior are sufficient for client synchronization tools to detect the presence and health of a configured snapshot derivative without requiring a Snapshots management route
+
+Required documentation for integration partners and migration tooling:
+
+- sync tools that call `POST /changeQueries/v1/snapshots` against DMS will receive `404 Not Found`; this is expected behavior, not a DMS defect
+- sync tools that enumerate `GET /changeQueries/v1/snapshots` will receive `404 Not Found`; snapshot derivative availability must be confirmed through the `Use-Snapshot = true` probe flow or through operator-provided configuration
+- Ed-Fi Alliance release notes and any updated integration partner documentation for DMS must explicitly state that the Snapshots management API endpoints are not available and that snapshot lifecycle is handled through operator deployment
+- integration tools targeting both ODS and DMS should use the Discovery API response to detect DMS vs. ODS; for DMS, the snapshot derivative is pre-provisioned by the operator and is available through `Use-Snapshot = true` without a prior `POST` call
+
 ## Feature Scope
 
 The full Change Queries feature defined by this package includes:
@@ -334,7 +358,8 @@ The full Change Queries feature defined by this package includes:
 This feature design does not include:
 
 - server-side snapshot tables
-- DMS-managed snapshot creation, refresh, or retention orchestration
+- the ODS Snapshots management API surface (`POST/GET/DELETE /{routePrefix}changeQueries/v1/snapshots`); DMS-843 replaces API-managed snapshot lifecycle with an operator-configured read-only snapshot binding per instance; see Decision 15 and `06-Validation-Rollout-and-Operations.md`, Optional Snapshot Source
+- snapshot infrastructure technology selection for Azure SQL PaaS targets; that selection is a required exit criterion for CQ-STORY-00 before CQ-STORY-07 begins; see `06-Validation-Rollout-and-Operations.md`, Optional Snapshot Source decision record
 - CDC-based or streaming-based change-query behavior
 - event sourcing
 - a historical payload store for updates

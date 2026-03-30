@@ -66,6 +66,7 @@ This story does not own the application-level `Use-Snapshot` request dispatch (C
 - For SQL Server: `CREATE DATABASE ... AS SNAPSHOT OF` DDL, naming convention, and retirement DDL are documented or scripted.
 - For PostgreSQL: the clone or PIT-restore provisioning flow, connection-string configuration, and freeze-on-creation contract are documented or scripted.
 - DMS never automatically falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable.
+- The Azure SQL Database / Azure SQL Managed Instance snapshot strategy is confirmed from the evaluation table in `06-Validation-Rollout-and-Operations.md`, and its lifecycle DDL or operational runbook is reviewed and accepted before CQ-STORY-07 begins.
 - The configuration schema and lifecycle validation logic are reviewed by at least one ops-aware team member before CQ-STORY-07 begins.
 
 ### Tasks
@@ -355,6 +356,8 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Changed-resource collection GET continues normal profile behavior.
 - `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile filtering.
 - Initial claim-set metadata load and later claim-set cache refresh both reject change-query-enabled resources with invalid or incomplete tracked-change authorization contract mappings for required `basisDocumentIds` and declared `relationshipInputs`.
+- When `AppSettings.EnableChangeQueries = true`, the DMS Discovery API (`GET /`) response includes change query capability metadata advertising the `changeQueries/v1` base URL for the resolved instance.
+- The DMS OpenAPI specification exposes `availableChangeVersions`, `{resource}/deletes`, and `{resource}/keyChanges` operation definitions with parameter and response schemas when the feature is enabled.
 - Existing non-change-query GET behavior remains unchanged.
 
 ### Tasks
@@ -370,6 +373,8 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Add DMS-core-owned claim-set metadata validation so required `AuthorizationBasis` inputs and supported `contractVersion` mappings are structurally valid both before serving requests and after claim-set cache refreshes.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
+- Update the DMS Discovery API response to include change query capability metadata (the `changeQueries/v1` base URL for the resolved instance) when `AppSettings.EnableChangeQueries = true`.
+- Update or generate the DMS OpenAPI specification to expose `availableChangeVersions`, `{resource}/deletes`, and `{resource}/keyChanges` operation definitions with parameter and response schemas.
 
 ### Dependencies
 

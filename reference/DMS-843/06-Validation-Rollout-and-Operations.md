@@ -51,8 +51,9 @@ The snapshot source must be a read-consistent, freezable view of the live databa
 
 | Engine | Option | Verdict |
 | --- | --- | --- |
-| SQL Server | Native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) | **Preferred.** Instantaneous, read-consistent, copy-on-write. DMS creates a named snapshot connection string per instance. Snapshot is dropped and recreated on each refresh cycle. Lifecycle is DMS-managed. |
+| SQL Server | Native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) | **Preferred for on-premises SQL Server and SQL Server on IaaS.** Instantaneous, read-consistent, copy-on-write. DMS creates a named snapshot connection string per instance. Snapshot is dropped and recreated on each refresh cycle. Lifecycle is DMS-managed. **Not supported on Azure SQL Database or Azure SQL Managed Instance.** |
 | SQL Server | Read-committed standby (log shipping) | Not suitable; not frozen; does not provide pass-stability. |
+| SQL Server (Azure SQL Database / Azure SQL Managed Instance) | Azure SQL-compatible snapshot strategy (e.g., Hyperscale named database copy, PIT restore to transient read-only instance) | **Decision required in CQ-STORY-00.** Native `CREATE DATABASE ... AS SNAPSHOT OF` is not available on PaaS SQL Server targets. The correct Azure SQL approach — including connection-string configuration and lifecycle semantics — is a required exit criterion for CQ-STORY-00 before CQ-STORY-07 begins. |
 | PostgreSQL | Streaming physical-replication read replica (e.g., AWS RDS read replica) | **Not suitable by itself;** replica continues receiving new writes and cannot be frozen for a pass. |
 | PostgreSQL | Point-in-time restore into a transient read-only instance (e.g., RDS PIT restore) | **Viable but slow** (minutes to provision); not suitable for O(seconds) snapshot refresh cycles; suitable for infrequent scheduled snapshots where SLA allows. |
 | PostgreSQL | Export/import (pg_dump + restore) | Offline only; not suitable for live pass-stability. |

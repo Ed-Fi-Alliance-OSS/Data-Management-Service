@@ -61,6 +61,21 @@ Expected effect:
 - a caller who can read a live resource in the current collection GET path can also read the same resource in changed-resource mode if it falls within the requested window
 - a caller who cannot read the live resource remains blocked in changed-resource mode
 
+## `ReadChanges` Claim-Set Action Gate
+
+In ODS, `/deletes`, `/keyChanges`, and changed-resource queries with change-version parameters require the `ReadChanges` action from the active claim set, evaluated separately from `Read`. DMS already defines `ReadChanges` as action ID 5 with URI `uri://ed-fi.org/api/actions/readChanges` in the CMS `ClaimSetRepository` and exposes it in the `token_info` response. DMS-843 must enforce this gate for all three Change Query data surfaces.
+
+The existing `ResourceActionAuthorizationMiddleware` maps HTTP methods to action names using `_methodToActionNameMapping` (`GET → "Read"`, etc.). For Change Query request contexts, the resolved action name must be `"ReadChanges"` instead of `"Read"`.
+
+Required rule:
+
+- a collection GET that carries `minChangeVersion`, `maxChangeVersion`, or both resolves to the `"ReadChanges"` action for claim-set authorization
+- a request to `/{resource}/deletes` resolves to the `"ReadChanges"` action for claim-set authorization
+- a request to `/{resource}/keyChanges` resolves to the `"ReadChanges"` action for claim-set authorization
+- `availableChangeVersions` requires authentication but is not filtered by per-resource claim-set authorization; the `ReadChanges` gate does not apply to it
+- a caller authorized for `Read` on a resource but not `ReadChanges` must receive `403 Forbidden` on those three Change Query surfaces for that resource
+- `ResourceActionAuthorizationMiddleware` must detect the Change Query request context and resolve `"ReadChanges"` as the action name; one conforming approach is to pass the resolved action name through `RequestInfo` (set by middleware that detects change-query routes and parameters earlier in the pipeline) so `ResourceActionAuthorizationMiddleware` uses it in place of the HTTP-method-derived name
+
 ## Why Tracked Changes Need More Than the Current Live Projection
 
 ODS tracked changes do not simply reuse the current live-read query shape.
@@ -121,31 +136,33 @@ Each key-change row must preserve the pre-update tracked-change authorization st
 
 The design does not store a second post-update authorization snapshot on the key-change row.
 
-**Auth-redesign transition note:** The auth redesign ([auth-redesign-subject-edorg-model.md](../design/auth/auth-redesign-subject-edorg-model.md)) removes the above JSONB authorization arrays from `dms.Document` and replaces live-row authorization with `dms.DocumentSubject` / `dms.SubjectEdOrg` relational tables. When the auth redesign ships, the listed JSONB columns that do not yet exist in the redesigned `dms.Document` model must still be captured on tracked-change rows using the mapping rules below. Implementations must not skip these columns simply because they are absent from the live row in the redesigned schema; instead they must be derived from the equivalent redesign-era authorization structures at capture time.
+**Auth-redesign transition note:** The auth redesign direction for the live-row authorization model is currently defined by two competing documents in this repository — `reference/design/backend-redesign/design-docs/auth.md` (which follows the ODS-equivalent `auth.EducationOrganizationIdTo{securableElementName}` view/table approach and explicitly rejects a `dms.DocumentSubject` table) and `reference/design/auth/auth-redesign-subject-edorg-model.md` (which proposes `dms.DocumentSubject` / `dms.SubjectEdOrg` as the new relational authorization model). Neither document defines tracked-change authorization for `/deletes` or `/keyChanges`, and no single document has been declared the authoritative auth redesign reference for DMS. **DMS-843 does not depend on either competing auth redesign document winning.** The current-backend tracked-change authorization contract defined in this package is fully self-contained: it uses the JSONB authorization columns already present on `dms.Document` for capture and evaluation today. When a future auth redesign story is approved and ships, a separate DMS-843 follow-on story must define the exact mapping from the then-current live-row authorization structures to the tombstone and key-change row capture contract. Until that follow-on story is approved and its mapping is defined, implementations must use the current-backend JSONB column capture contract defined below. Implementations must not anticipate either competing auth redesign direction or hardcode references to `dms.DocumentSubject`, `dms.SubjectEdOrg`, or any other redesign-era tables that have not yet been committed as the canonical auth model.
 
 **Required `AuthorizationBasis.basisDocumentIds` mapping by authorization strategy (normative):**
 
-The following table defines what `basisDocumentIds` must capture per strategy for the current backend. For the redesign backend, the same `DocumentId` values must be sourced from the `dms.DocumentSubject` / `dms.SubjectEdOrg` tables rather than from JSONB projection columns.
+The following table defines what `basisDocumentIds` must capture per strategy for the current backend. The source for these `DocumentId` values is the current-backend JSONB authorization projection columns on `dms.Document`. When a future auth redesign ships and those JSONB columns are replaced by a different live-row authorization structure, a dedicated follow-on story must update this mapping table to name the then-current source; until that story is approved no implementation may substitute a speculative future source.
 
 | Authorization strategy | `basisDocumentIds` key | What is captured |
 | --- | --- | --- |
-| `RelationshipsWithStudentsOnly` / `RelationshipsWithStudentsAndEdOrgs` | `studentDocumentIds` | Sorted unique `DocumentId` values for the `Student` basis documents reachable from this resource row via the active authorization graph (currently `StudentSchoolAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Student`) |
+| `RelationshipsWithStudentsOnly` / `RelationshipsWithStudentsAndEdOrgs` | `studentDocumentIds` | Sorted unique `DocumentId` values for the `Student` basis documents reachable from this resource row via the active authorization graph (current backend: sourced from `StudentSchoolAuthorizationEdOrgIds` expansion on `dms.Document`) |
 | `RelationshipsWithEdOrgsOnly` (direct EdOrg) | `educationOrganizationDocumentIds` | Sorted unique `DocumentId` values for the education-organization basis documents directly or transitively in scope for this row |
-| `RelationshipsWithContactsAndEdOrgs` | `contactDocumentIds` | Sorted unique `DocumentId` values for the `Contact` basis documents reachable from this resource row (currently `ContactStudentSchoolAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Contact`) |
-| `RelationshipsWithStaffAndEdOrgs` | `staffDocumentIds` | Sorted unique `DocumentId` values for the `Staff` basis documents reachable from this resource row (currently `StaffEducationOrganizationAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Staff`) |
+| `RelationshipsWithContactsAndEdOrgs` | `contactDocumentIds` | Sorted unique `DocumentId` values for the `Contact` basis documents reachable from this resource row (current backend: sourced from `ContactStudentSchoolAuthorizationEdOrgIds` expansion on `dms.Document`) |
+| `RelationshipsWithStaffAndEdOrgs` | `staffDocumentIds` | Sorted unique `DocumentId` values for the `Staff` basis documents reachable from this resource row (current backend: sourced from `StaffEducationOrganizationAuthorizationEdOrgIds` expansion on `dms.Document`) |
 | Custom-view authorization | `customViewDocumentIds` (or resource-specific key) | Basis-resource `DocumentId` values required for that custom view, as declared in the resource's tracked-change authorization contract |
 
 For relationship strategies that require ODS-style delete-aware visibility, `relationshipInputs` must also capture the named relationship values that cannot be derived from `DocumentId` lookups alone after the live row has been deleted. The required `relationshipInputs` members must be declared per-resource in the tracked-change authorization contract and validated at claim-set load time.
 
-**Redesign-era tombstone authorization evaluation (normative):**
+**Future auth-redesign tombstone authorization evaluation (deferred):**
 
-When the auth redesign is deployed and the JSONB projection columns no longer exist on `dms.Document`, tracked-change authorization for `/deletes` and `/keyChanges` must evaluate using the stored `AuthorizationBasis.basisDocumentIds` instead of live JSONB array joins:
+When a future auth redesign ships and the JSONB projection columns no longer exist on `dms.Document`, tracked-change authorization for `/deletes` and `/keyChanges` must be re-evaluated against the then-current live-row authorization structures. The exact evaluation mapping depends on which auth redesign design is approved and is not defined in this package. The normative evaluation contract for that future state must be defined in a dedicated follow-on story after the auth redesign direction is settled. Until that story is approved, implementations must use the current-backend JSONB column evaluation contract:
 
-- namespace-based: unchanged; use stored `SecurityElements.Namespace` on the tombstone
-- EdOrg-based: join the stored `educationOrganizationDocumentIds` against `dms.SubjectEdOrg` (or redesign-equivalent) for the caller's authorized EdOrg set
-- student/contact/staff relationship: join the stored `studentDocumentIds` / `contactDocumentIds` / `staffDocumentIds` against the redesign-equivalent EdOrg-to-subject reachability table
+- namespace-based: use stored `SecurityElements.Namespace` on the tombstone or key-change row
+- EdOrg-based: join the stored `educationOrganizationDocumentIds` against the live-row authorization structures for the caller's authorized EdOrg set
+- student/contact/staff relationship: join the stored `studentDocumentIds` / `contactDocumentIds` / `staffDocumentIds` against the current-backend authorization expansion tables
 - ownership: use stored `CreatedByOwnershipTokenId` unchanged
 - custom-view: evaluate the resource's declared tracked-change authorization contract using stored `basisDocumentIds` and `relationshipInputs`
+
+Implementations must not hardcode references to `dms.DocumentSubject`, `dms.SubjectEdOrg`, or any other redesign-era authorization tables until a follow-on story explicitly commits them as the canonical auth model and updates this evaluation contract accordingly.
 
 ## `AuthorizationBasis` Semantics
 
@@ -176,7 +193,25 @@ DMS-843 does not support open-ended tracked-change custom-view authorization tha
 
 The `contractVersion` value for a given resource is owned and stored in the DMS security metadata for that resource (not in `ApiSchema.json`). The following rules govern its lifecycle:
 
-- **Storage location:** `contractVersion` is declared per change-query-enabled resource in the DMS claim-set and authorization metadata, specifically in the `trackedChangeAuthorizationContract` section of the resource's security configuration. The active `contractVersion` and its declared `basisDocumentIds` keys and `relationshipInputs` members are part of the claim-set payload loaded by DMS at startup and on claim-set refresh.
+- **Storage location:** `contractVersion` is declared as part of the `ReadChanges` action claim in the CMS claim-set configuration, as a `trackedChangeAuthorizationContract` property on the resource's `ReadChanges` `ResourceClaim` entry. DMS loads it at startup and on claim-set refresh via `IClaimSetProvider`, as an additional field on the `ResourceClaim` for the `ReadChanges` action. The `ResourceClaim` model must be extended to carry this optional property. A concrete example for `studentSchoolAssociations` with `RelationshipsWithStudentsAndEdOrgs`:
+
+  ```json
+  {
+    "resourceClaimUri": "uri://ed-fi.org/api/claims/ed-fi/studentSchoolAssociations",
+    "action": "ReadChanges",
+    "authorizationStrategies": ["RelationshipsWithStudentsAndEdOrgs"],
+    "trackedChangeAuthorizationContract": {
+      "contractVersion": 1,
+      "basisDocumentIds": {
+        "studentDocumentIds": "student_basis",
+        "educationOrganizationDocumentIds": "edorg_basis"
+      },
+      "relationshipInputs": {}
+    }
+  }
+  ```
+
+  Resources that do not require relationship or custom-view tracked-change authorization (e.g., namespace-only or ownership-only) may omit `trackedChangeAuthorizationContract` from their `ReadChanges` claim entry; DMS treats the absence as meaning only row-local authorization fields (`SecurityElements`, `CreatedByOwnershipTokenId`) are required for tracked-change evaluation.
 - **Derivation:** implementers bump `contractVersion` by incrementing the integer in the resource's security configuration before deploying the incompatible change. There is no automated derivation from schema structure; a developer must increment it as a deployment step whenever the meaning, names, or required presence of `basisDocumentIds` or `relationshipInputs` members changes.
 - **What constitutes an incompatible change:** renaming a `basisDocumentIds` key, adding a newly required `basisDocumentIds` key, removing a previously emitted key, changing the semantics of a `relationshipInputs` field, or removing a field from `relationshipInputs` when retained rows still carry it.
 - **Per-resource scope:** `contractVersion` is scoped per resource; compatible changes to one resource's contract do not require bumping another resource's `contractVersion`.
