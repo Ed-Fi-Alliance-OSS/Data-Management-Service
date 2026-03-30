@@ -33,3 +33,9 @@ task: Flattening reference lookup complete
 decisions: added FlatteningResolvedReferenceLookupSet to compile resolved concrete document/descriptor paths into wildcard+ordinal hot-loop maps; document FK lookup is by binding index + ordinal path, descriptor FK lookup is by compiled absolute path (with table-scope fallback when needed) + ordinal path; resolved paths that do not match compiled bindings fail fast as plan/extraction drift
 files: src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/FlatteningResolvedReferenceLookupSetTests.cs; tasks.json; progress.txt
 notes: initial walker, precomputed binding population, candidate extraction, _ext handling, terminal stage, seam coverage still pending
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Flattening initial walker complete
+decisions: added RelationalWriteFlattener to index selected-body scalar leaves once and materialize root + root-extension rows in compiled binding order; root-aligned non-collection rows only emit when the scope has bound descendant data; scalar reads are strict by compiled type and document/descriptor FK bindings use FlatteningResolvedReferenceLookupSet while precomputed/collection sources still fail fast for later tasks
+files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
+notes: precomputed bindings, collection candidate extraction, deeper _ext handling, terminal stage, seam coverage still pending

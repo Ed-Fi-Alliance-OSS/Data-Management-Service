@@ -61,7 +61,7 @@
       "Add backend/unit fixture tests for root and non-collection row emission, including a supplied-body-is-authoritative case.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Flattening",
