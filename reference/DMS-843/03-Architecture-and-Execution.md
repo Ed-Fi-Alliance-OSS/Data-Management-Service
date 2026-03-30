@@ -144,7 +144,7 @@ Behavior:
 6. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
 7. apply the existing authorization filters from that same selected source
 8. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
-9. order the final surviving verified authorized rows by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+9. order the final surviving verified authorized rows by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
 10. return the current `EdfiDoc` payloads for surviving documents in that selected source
 
 Required paging rule:
@@ -154,6 +154,42 @@ Required paging rule:
 - the public changed-resource order must remain `ChangeVersion` plus the stable backend-local document tie-breaker even when the implementation over-fetches or verifies candidates in batches
 - to avoid unbounded single-query scans under high-churn resources, implementations may use bounded internal candidate-read batches per page build (for example, capped batch size with deterministic continuation tokens)
 - bounded internal batches must remain transparent to the public contract: continue reading batches until the page is full or the requested window is exhausted, and preserve deterministic ordering and `totalCount` semantics throughout
+
+**Concrete batch-sizing guidance:**
+
+The batch multiplier affects both latency and the number of round-trips needed to fill a page. A conforming starting point is:
+
+- initial candidate batch size: `max(100, limit * 4)` where `limit` is the requested page size (default `25`)
+- if the first batch does not fill the page after verification and authorization, continue fetching additional batches of the same size using a deterministic cursor continuation token `(AfterChangeVersion, AfterDocumentId)` until the page is full or the window is exhausted
+- cap the total candidates scanned per page build at a configurable upper bound (suggested default: `limit * 100`) and return a partial page rather than scanning indefinitely; surface a server-side warning log when the cap is reached so deployments can investigate pathological churn
+- implementations should make the batch multiplier and scan cap configurable at the backend level to allow tuning without redeployment
+
+Example cursor continuation query shape (PostgreSQL):
+
+```sql
+WITH candidates AS (
+    SELECT e.ChangeVersion, e.DocumentPartitionKey, e.DocumentId
+    FROM dms.DocumentChangeEvent e
+    WHERE e.ResourceKeyId = @ResourceKeyId
+      AND e.ChangeVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
+      AND (
+        e.ChangeVersion > @AfterChangeVersion OR
+        (e.ChangeVersion = @AfterChangeVersion AND e.DocumentPartitionKey > @AfterDocumentPartitionKey) OR
+        (e.ChangeVersion = @AfterChangeVersion AND e.DocumentPartitionKey = @AfterDocumentPartitionKey AND e.DocumentId > @AfterDocumentId)
+      )
+    ORDER BY e.ChangeVersion, e.DocumentPartitionKey, e.DocumentId
+    LIMIT @CandidateBatchSize
+)
+SELECT c.ChangeVersion, c.DocumentPartitionKey, c.DocumentId
+FROM candidates c
+JOIN dms.Document d
+  ON d.DocumentPartitionKey = c.DocumentPartitionKey
+ AND d.Id = c.DocumentId
+ AND d.ChangeVersion = c.ChangeVersion
+ORDER BY c.ChangeVersion, c.DocumentPartitionKey, c.DocumentId;
+```
+
+For redesign-aligned backends where `DocumentPartitionKey` is absent, replace the three-column cursor continuation with a two-column `(ChangeVersion, DocumentId)` cursor and join `dms.Document` on `DocumentId` only.
 
 Required architectural rule:
 
@@ -170,9 +206,9 @@ Behavior:
 - filter by `ProjectName`, `ResourceName`, and the requested window
 - these shared tracking tables stay resource-scoped by canonical project and resource identity, so the routed-resource filter remains on those columns even though the live change journal uses `ResourceKeyId` as its narrow filter key
 - apply the documented tracked-change authorization predicates against the tombstone's preserved authorization data, including ODS-style delete-aware relationship visibility plus the accepted DMS-specific ownership exception and row-local basis values needed for custom-view authorization, using the same selected source for any companion authorization reads
-- suppress tombstones whose canonical resource identity is represented again by a current live row for the same routed resource within the same requested window on that same selected source
+- suppress tombstones whose **natural-key identity** is represented again by a current live row for the same routed resource within the same requested window on that same selected source; natural-key identity is compared by matching the tombstone's stored `keyValues` against the live row's identity values derived from `ResourceSchema.IdentityJsonPaths`; comparison is always natural-key-based, not `DocumentUuid`-based, because delete-then-reinsert always creates a new live row with a new `DocumentUuid` even when the natural key is identical
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
-- order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+- order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
 
 Delete query execution never reads `dms.DocumentChangeEvent` as a delete source, but it may consult the current live surface to apply the required same-window re-add suppression.
 
@@ -187,7 +223,7 @@ Behavior:
 - these shared tracking tables stay resource-scoped by canonical project and resource identity, so the routed-resource filter remains on those columns even though the live change journal uses `ResourceKeyId` as its narrow filter key
 - apply the documented tracked-change authorization predicates against the copied pre-update tracking-row authorization data, including ODS-style relationship visibility plus the accepted DMS-specific ownership exception and row-local basis values needed for DocumentId-based custom-view authorization, using the same selected source for any companion authorization reads
 - materialize `oldKeyValues` and `newKeyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
-- order the surviving authorized tracking rows by tracked `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+- order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
 - apply `totalCount`, `offset`, and `limit` to that authorized event stream rather than to raw pre-authorization tracking rows
 
 Required semantics:
@@ -271,7 +307,20 @@ Required rules:
 - acquire a row-level write lock on the target `dms.Document` row before step 1 of either write path
 - hold that lock until the tracking-row insert and final commit or rollback are complete
 - concurrent update/update, update/delete, and delete/delete operations against the same document must serialize so only one committed path observes and records each pre-change state
-- PostgreSQL implementations should use `SELECT ... FOR UPDATE`; MSSQL implementations must use an equivalent row-level update-locking pattern on the target row; any other engine must use an equivalent row-level serialization mechanism
+- PostgreSQL implementations should use `SELECT ... FOR UPDATE`; MSSQL implementations must use `SELECT ... WITH (UPDLOCK, ROWLOCK)` on the target row; any other engine must use an equivalent row-level serialization mechanism
+
+**Cascade propagation locking rule:**
+
+When an identity-changing update triggers downstream propagation to dependent documents, each dependent document row that will be rewritten in the same transaction must also be row-locked **before** any identity extraction, tombstone capture, or key-change-row construction for that dependent row.
+
+Required rules for cascade propagation locking:
+
+- before reading the pre-change state of any dependent document `D` in the propagation transaction, acquire a row-level write lock on `D` using the same engine-appropriate mechanism as the primary write
+- acquire locks in a globally consistent order (for example, ascending `DocumentId`) to prevent deadlocks when concurrent propagating transactions visit the same set of dependent rows
+- PostgreSQL: `SELECT ... FOR UPDATE` on each dependent row in `DocumentId ASC` order
+- MSSQL: `SELECT ... WITH (UPDLOCK, ROWLOCK)` on each dependent row in `DocumentId ASC` order
+- relying solely on FK cascade write-intent locks is not sufficient; those locks do not prevent a concurrent `DELETE` from reading stale identity values on the about-to-be-cascaded row before the propagating transaction updates it
+- hold all dependent-row locks until the full transaction commits or rolls back
 
 ## Downstream Identity-Propagation Execution
 

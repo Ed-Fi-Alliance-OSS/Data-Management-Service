@@ -38,6 +38,22 @@ Informative note:
 - JSON payload and authorization-projection columns on tracking rows may use engine-appropriate JSON-capable storage, for example PostgreSQL `jsonb` or SQL Server `nvarchar(max)` carrying JSON text, because the normative requirement is faithful JSON-document storage and response materialization rather than a PostgreSQL-specific physical type
 - those SQL blocks are examples of one conforming backend implementation, not a statement that the public feature contract is PostgreSQL-only
 
+**MSSQL-specific implementation requirements (normative supplement to all PostgreSQL examples in this document):**
+
+SQL Server imposes several behavioral differences that implementers must account for:
+
+| Concern | PostgreSQL approach | MSSQL required equivalent |
+| --- | --- | --- |
+| Sequence ceiling read | `SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM dms."ChangeVersionSequence"` | `SELECT ISNULL(current_value, 0) FROM sys.sequences WHERE object_id = OBJECT_ID('dms.ChangeVersionSequence')` |
+| Per-row sequence in trigger | `nextval(...)` in a per-row trigger | `NEXT VALUE FOR dms.ChangeVersionSequence` used **directly in the set-based UPDATE** inside the `AFTER INSERT`/`AFTER UPDATE` trigger body; do not assign to a scalar variable and reuse it; dedupe `DocumentId`s in the trigger body so each document receives exactly one sequence allocation |
+| Insert/update trigger shape | `BEFORE INSERT` and `BEFORE UPDATE OF EdfiDoc` per-row triggers | `AFTER INSERT` / `AFTER UPDATE` trigger referencing the `inserted` and `deleted` pseudo-tables; emit `UPDATE dms.Document SET ChangeVersion = NEXT VALUE FOR dms.ChangeVersionSequence FROM inserted ...` for qualifying rows |
+| Row-level write lock | `SELECT ... FOR UPDATE` | `SELECT ... WITH (UPDLOCK, ROWLOCK)` |
+| Multi-row stamp isolation | Per-row trigger naturally handles N rows independently | MSSQL `AFTER` triggers fire once per batch; the set-based stamp UPDATE must use `NEXT VALUE FOR` directly (not a variable) to get one allocation per document row |
+| Journal table cascade on delete | Declarative `ON DELETE CASCADE` FK where layout supports it | Declarative FK + cascade where supported; otherwise an `AFTER DELETE` trigger on `dms.Document` that deletes matching `dms.DocumentChangeEvent` rows |
+| JSON storage | `jsonb` columns | `nvarchar(max)` columns; add `CHECK (ISJSON(column_name) = 1)` constraint on insert-eligible columns |
+| Backfill cursor ordering | `ORDER BY DocumentPartitionKey ASC, Id ASC` with `NEXT VALUE FOR` per row in UPDATE | Same ordering; use `NEXT VALUE FOR dms.ChangeVersionSequence` in the row-by-row UPDATE; do not assign one statement-level value to all rows in the same UPDATE |
+| Identity-changing UPDATE | Single-row UPDATE with app-set `IdentityVersion`, trigger-set `ChangeVersion` | Must be issued as a single-row UPDATE per document; do not batch multiple-row identity-changing writes in one statement because the trigger fires once for the batch |
+
 ## Resource key lookup
 
 To align with the backend-redesign journal model, the current backend must add a stable resource-key lookup used to filter live change-journal rows.
@@ -96,11 +112,16 @@ The feature extends this table with:
 
 ## Global Sequence
 
-Create one global sequence:
+Create one global sequence **per DMS tenant instance**:
 
 ```sql
 CREATE SEQUENCE dms.ChangeVersionSequence AS bigint START WITH 1 INCREMENT BY 1;
 ```
+
+**Multi-tenant isolation requirement:** In a multi-tenant DMS deployment, each resolved tenant instance must have its own `dms.ChangeVersionSequence`. Tenant instances must not share a single sequence across schemas or databases. Tenant A's change-version space must not overlap with tenant B's, because clients use the sequence ceiling from `availableChangeVersions` to anchor per-instance synchronization windows. A shared sequence would cause tenant A's watermark to reflect tenant B's write activity and would make `newestChangeVersion` unreliable as an instance-scoped synchronization token. Conforming multi-tenant implementations may achieve isolation by:
+- separate schemas per tenant each with their own sequence, or
+- separate databases per tenant each with their own sequence, or
+- a qualified sequence name that includes a tenant discriminator, provided the DDL provisioning guarantees one sequence per tenant instance and there is no cross-tenant allocation.
 
 Required semantics:
 
@@ -298,6 +319,22 @@ Bridge-mechanics note:
 - insert-time defaults or triggers own initial `IdentityVersion` assignment for newly inserted rows; explicit write-path binding applies only to committed identity-changing updates on existing rows, so the two mechanisms do not compete for the same update event
 - this does not change the redesign-aligned ownership boundary: downstream propagation, restamping, and journaling remain storage-layer responsibilities driven by the committed update plan
 - redesign-aligned backends may use metadata-driven write-path logic, database-native mechanisms, or a combination, provided the normative identity-stamping outcomes in this design are preserved
+
+**Sequence-allocation ordering within an identity-changing UPDATE:**
+
+When the write path executes an identity-changing update on an existing row, both the application code and the `BEFORE UPDATE OF EdfiDoc` trigger may run in the same statement. The following ordering must be preserved to guarantee deterministic stamp values:
+
+1. Application code resolves the new key values and detects the identity change using `ResourceSchema.IdentityJsonPaths`.
+2. Application code allocates a new `IdentityVersion` value via `nextval('dms.ChangeVersionSequence')` and binds it into the UPDATE statement's SET clause alongside the new `EdfiDoc`.
+3. The `BEFORE UPDATE OF EdfiDoc` trigger fires and, because `NEW.EdfiDoc IS DISTINCT FROM OLD.EdfiDoc` (the representation also changed), allocates a new `ChangeVersion` value via `nextval('dms.ChangeVersionSequence')` and sets `NEW.ChangeVersion`.
+4. After the trigger fires, the single UPDATE commits with both `IdentityVersion` (set by application) and `ChangeVersion` (set by trigger) updated to distinct sequence values in the above order.
+
+Required invariants:
+- `IdentityVersion` and `ChangeVersion` must always be distinct sequence values after an identity-changing update (because two separate `nextval` calls are made)
+- the `BEFORE UPDATE` trigger must not skip allocating a new `ChangeVersion` when `IdentityVersion` is also being updated in the same statement
+- the application write path must not bypass the trigger's `ChangeVersion` allocation by pre-setting `ChangeVersion` to the same value as `IdentityVersion`
+
+For MSSQL where triggers fire once per batch rather than once per row, the identity-changing UPDATE path must issue single-row UPDATE statements for identity changes to ensure the trigger allocates exactly one new `ChangeVersion` per affected document. Batched identity-changing updates are not supported in DMS-843 on MSSQL.
 
 Validation requirement for direct-write `IdentityVersion` binding:
 

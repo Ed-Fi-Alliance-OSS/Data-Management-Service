@@ -121,6 +121,32 @@ Each key-change row must preserve the pre-update tracked-change authorization st
 
 The design does not store a second post-update authorization snapshot on the key-change row.
 
+**Auth-redesign transition note:** The auth redesign ([auth-redesign-subject-edorg-model.md](../design/auth/auth-redesign-subject-edorg-model.md)) removes the above JSONB authorization arrays from `dms.Document` and replaces live-row authorization with `dms.DocumentSubject` / `dms.SubjectEdOrg` relational tables. When the auth redesign ships, the listed JSONB columns that do not yet exist in the redesigned `dms.Document` model must still be captured on tracked-change rows using the mapping rules below. Implementations must not skip these columns simply because they are absent from the live row in the redesigned schema; instead they must be derived from the equivalent redesign-era authorization structures at capture time.
+
+**Required `AuthorizationBasis.basisDocumentIds` mapping by authorization strategy (normative):**
+
+The following table defines what `basisDocumentIds` must capture per strategy for the current backend. For the redesign backend, the same `DocumentId` values must be sourced from the `dms.DocumentSubject` / `dms.SubjectEdOrg` tables rather than from JSONB projection columns.
+
+| Authorization strategy | `basisDocumentIds` key | What is captured |
+| --- | --- | --- |
+| `RelationshipsWithStudentsOnly` / `RelationshipsWithStudentsAndEdOrgs` | `studentDocumentIds` | Sorted unique `DocumentId` values for the `Student` basis documents reachable from this resource row via the active authorization graph (currently `StudentSchoolAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Student`) |
+| `RelationshipsWithEdOrgsOnly` (direct EdOrg) | `educationOrganizationDocumentIds` | Sorted unique `DocumentId` values for the education-organization basis documents directly or transitively in scope for this row |
+| `RelationshipsWithContactsAndEdOrgs` | `contactDocumentIds` | Sorted unique `DocumentId` values for the `Contact` basis documents reachable from this resource row (currently `ContactStudentSchoolAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Contact`) |
+| `RelationshipsWithStaffAndEdOrgs` | `staffDocumentIds` | Sorted unique `DocumentId` values for the `Staff` basis documents reachable from this resource row (currently `StaffEducationOrganizationAuthorizationEdOrgIds` expansion; redesign: via `dms.DocumentSubject` `SubjectType = Staff`) |
+| Custom-view authorization | `customViewDocumentIds` (or resource-specific key) | Basis-resource `DocumentId` values required for that custom view, as declared in the resource's tracked-change authorization contract |
+
+For relationship strategies that require ODS-style delete-aware visibility, `relationshipInputs` must also capture the named relationship values that cannot be derived from `DocumentId` lookups alone after the live row has been deleted. The required `relationshipInputs` members must be declared per-resource in the tracked-change authorization contract and validated at claim-set load time.
+
+**Redesign-era tombstone authorization evaluation (normative):**
+
+When the auth redesign is deployed and the JSONB projection columns no longer exist on `dms.Document`, tracked-change authorization for `/deletes` and `/keyChanges` must evaluate using the stored `AuthorizationBasis.basisDocumentIds` instead of live JSONB array joins:
+
+- namespace-based: unchanged; use stored `SecurityElements.Namespace` on the tombstone
+- EdOrg-based: join the stored `educationOrganizationDocumentIds` against `dms.SubjectEdOrg` (or redesign-equivalent) for the caller's authorized EdOrg set
+- student/contact/staff relationship: join the stored `studentDocumentIds` / `contactDocumentIds` / `staffDocumentIds` against the redesign-equivalent EdOrg-to-subject reachability table
+- ownership: use stored `CreatedByOwnershipTokenId` unchanged
+- custom-view: evaluate the resource's declared tracked-change authorization contract using stored `basisDocumentIds` and `relationshipInputs`
+
 ## `AuthorizationBasis` Semantics
 
 `AuthorizationBasis` is a resource-scoped payload stored on tombstone and key-change rows.
@@ -145,6 +171,20 @@ Required structural contract:
 - retained tracked rows are interpreted through their stored `contractVersion`; DMS must not infer old rows against only the current live contract shape
 
 DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and the affected security metadata must be rejected when claim-set metadata is loaded or refreshed rather than silently degrading.
+
+**`contractVersion` registry, derivation, and multi-instance enforcement:**
+
+The `contractVersion` value for a given resource is owned and stored in the DMS security metadata for that resource (not in `ApiSchema.json`). The following rules govern its lifecycle:
+
+- **Storage location:** `contractVersion` is declared per change-query-enabled resource in the DMS claim-set and authorization metadata, specifically in the `trackedChangeAuthorizationContract` section of the resource's security configuration. The active `contractVersion` and its declared `basisDocumentIds` keys and `relationshipInputs` members are part of the claim-set payload loaded by DMS at startup and on claim-set refresh.
+- **Derivation:** implementers bump `contractVersion` by incrementing the integer in the resource's security configuration before deploying the incompatible change. There is no automated derivation from schema structure; a developer must increment it as a deployment step whenever the meaning, names, or required presence of `basisDocumentIds` or `relationshipInputs` members changes.
+- **What constitutes an incompatible change:** renaming a `basisDocumentIds` key, adding a newly required `basisDocumentIds` key, removing a previously emitted key, changing the semantics of a `relationshipInputs` field, or removing a field from `relationshipInputs` when retained rows still carry it.
+- **Per-resource scope:** `contractVersion` is scoped per resource; compatible changes to one resource's contract do not require bumping another resource's `contractVersion`.
+- **Multi-instance / rolling-restart coordination:** in a multi-pod deployment, all active pods must agree on the set of supported `contractVersion` values before tracked-change routes are served. Required operational protocol:
+  1. during a rolling deployment that bumps `contractVersion`, the new version must be backward-compatible or the deployment must drain tracked-change write traffic before rolling pods;
+  2. each pod validates, at startup and on claim-set refresh, that all retained tombstone and key-change rows use only `contractVersion` values present in the current claim-set metadata; if any retained row carries an unsupported `contractVersion`, the pod must refuse to serve tracked-change routes for the affected resource and surface the failure as a health-check violation until the inconsistency is resolved;
+  3. deployments must not silently route requests to pods with split `contractVersion` support; use rolling-pod health checks to prevent out-of-date pods from serving tracked-change routes after a bumped `contractVersion` is deployed.
+- **Validation gates (reiterated):** claim-set load at startup rejects unsupported `contractVersion` values; claim-set refresh rejects them; write-path capture fails the request if the `contractVersion` cannot be determined before tombstone or key-change-row insert.
 
 Enforcement ownership and gates:
 

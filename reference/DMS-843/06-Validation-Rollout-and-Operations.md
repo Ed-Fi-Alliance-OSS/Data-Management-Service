@@ -45,6 +45,28 @@ Rollout rules:
 
 Snapshot-backed reads are one of the two synchronization flows in the design. `Use-Snapshot` absent or `false` selects the live flow, and `Use-Snapshot = true` selects the snapshot-backed flow.
 
+**Snapshot technology decision record (required before CQ-STORY-07):**
+
+The snapshot source must be a read-consistent, freezable view of the live database that DMS can keep stable for one bounded synchronization pass. The technology that provides this view is engine-specific and must be decided before implementing `Use-Snapshot` infrastructure (CQ-STORY-07). The following options are evaluated per engine:
+
+| Engine | Option | Verdict |
+| --- | --- | --- |
+| SQL Server | Native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) | **Preferred.** Instantaneous, read-consistent, copy-on-write. DMS creates a named snapshot connection string per instance. Snapshot is dropped and recreated on each refresh cycle. Lifecycle is DMS-managed. |
+| SQL Server | Read-committed standby (log shipping) | Not suitable; not frozen; does not provide pass-stability. |
+| PostgreSQL | Streaming physical-replication read replica (e.g., AWS RDS read replica) | **Not suitable by itself;** replica continues receiving new writes and cannot be frozen for a pass. |
+| PostgreSQL | Point-in-time restore into a transient read-only instance (e.g., RDS PIT restore) | **Viable but slow** (minutes to provision); not suitable for O(seconds) snapshot refresh cycles; suitable for infrequent scheduled snapshots where SLA allows. |
+| PostgreSQL | Export/import (pg_dump + restore) | Offline only; not suitable for live pass-stability. |
+| PostgreSQL | Logical-replication standby at a fixed LSN | Complex schema-conflict risk; not recommended for initial delivery. |
+| PostgreSQL | **Recommended:** A separate PostgreSQL instance provisioned from a base backup or cloud snapshot (e.g., Aurora cluster clone, RDS snapshot restore), treated as a frozen read-only derivative for one snapshots cycle. DMS connects to the clone endpoint configured per instance; the clone is not promoted and receives no new writes. | **Preferred for PostgreSQL.** Acceptable refresh granularity for scheduled snapshot cycles (e.g., nightly or hourly). |
+
+Required implementation contract regardless of technology:
+
+- the snapshot connection string is configured per DMS instance in a `SnapshotConnectionString` (or equivalent) application setting
+- DMS never automatically falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable
+- DMS validates, at `Use-Snapshot = true` request time, that the snapshot source responds and exposes all required Change Query artifacts before allowing the pass to begin
+- snapshot lifecycle management (creation, refresh, retirement) is an operational responsibility outside the DMS application but DMS must detect stale or retired snapshots and fail the pass explicitly
+- a new story **CQ-STORY-00: Snapshot Infrastructure Provisioning and Configuration** must be added (or equivalent sub-task in CQ-STORY-07) before CQ-STORY-07 is implemented, covering: snapshot technology selection, `SnapshotConnectionString` configuration schema, lifecycle validation logic, and engine-specific DDL for snapshot creation/retirement
+
 Operational rules:
 
 - the snapshot source is read-only and instance-scoped
@@ -225,6 +247,7 @@ The design must be evaluated against:
 - large key-change counts in `/keyChanges`
 - cost of `availableChangeVersions` under steady write load
 - journal growth and candidate verification costs under the required live-query path
+- **`AuthorizationBasis` capture overhead on the delete and identity-changing-update write paths**
 
 Expected success criteria:
 
@@ -232,6 +255,17 @@ Expected success criteria:
 - tombstone queries use the tombstone resource-window index
 - normal resource-scoped Change Queries do not require full-table scans
 - live candidate queries use `journal + verify` rather than attempting to materialize historical payloads
+
+**`AuthorizationBasis` write-path overhead acknowledgment:**
+
+Populating `AuthorizationBasis.basisDocumentIds` at delete or identity-changing-update time requires resolving basis-resource `DocumentId` values from the live authorization graph before the tombstone or key-change row is inserted. For complex relationship-based strategies (e.g., student relationship authorization that currently requires joining through `auth.EducationOrganizationIdToStudentUSI`), this is additional I/O on the hot delete path.
+
+Required mitigations:
+
+- the `AuthorizationBasis` resolution query must run inside the same transaction as the tombstone or key-change-row insert, using the row-locked pre-change state; it must not execute after the live row or companion rows have been deleted
+- basis-resource `DocumentId` resolution may reuse the same per-request authorization resolution pass that already authorizes the delete or update; no additional round-trips are required if the authorization pass already resolves the same basis-resource identifiers
+- deployments must baseline-measure delete and identity-changing-update latency for high-relationship resources (e.g., `StudentSchoolAssociation`, `StaffEducationOrganizationAssignment`) before and after enabling Change Queries to confirm the additional I/O is within tolerance
+- if `AuthorizationBasis` resolution latency is unacceptable for a specific resource, the tracked-change authorization contract for that resource may declare a simplified `basisDocumentIds` mapping that avoids deep relationship joins, provided the simplified mapping preserves the required authorization visibility guarantees
 
 ## Future Retention Phase
 

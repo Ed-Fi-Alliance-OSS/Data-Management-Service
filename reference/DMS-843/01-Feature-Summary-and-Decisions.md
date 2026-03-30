@@ -21,6 +21,8 @@ The approval bar is correctness and alignment, not mechanical reproduction of OD
 - `availableChangeVersions` uses ODS-compatible sequence-ceiling watermark semantics.
 - Each deliberate departure from legacy ODS behavior is documented as an explicit owned decision in the relevant section, not as an undeclared omission.
 
+**`newestChangeVersion` false-upper-watermark consumer warning:** DMS derives `newestChangeVersion` from the sequence allocation ceiling (`next value - 1`) rather than from `MAX(committed ChangeVersion)` across retained rows. Sequence gaps from rolled-back transactions mean `newestChangeVersion` can exceed the highest committed representation change. This is a safe-direction artifact: the watermark is conservative, not a missed-data watermark. However, downstream tooling built against ODS that assumes `newestChangeVersion == max(committed ChangeVersion)` will observe apparent "empty windows" near the sequence ceiling in DMS. Vendors and integration partners should be made aware of this difference during integration testing.
+
 Known explicit DMS-specific choices in this package:
 
 - tracked-change authorization includes the accepted DMS-specific ownership exception for `/deletes` and `/keyChanges`; legacy ODS `ReadChanges` does not currently apply ownership filtering on those surfaces, but DMS-843 does because redesign auth treats ownership as a first-class DMS authorization input.
@@ -283,6 +285,28 @@ Required rule:
 - when the flag is `false`, dedicated Change Query routes are not exposed and collection GET requests that supply change-query parameters fail explicitly rather than silently falling back
 - use the flag to control exposure of the Change Queries API surface
 - do not treat the flag as a substitute for the required database artifacts, migrations, or cleanup operations
+
+## 15. Snapshot infrastructure technology must be decided before implementing Use-Snapshot execution
+
+`Use-Snapshot = true` requires a configured read-only snapshot source. The technology that provides a frozen, pass-stable view of the live database is engine-specific and **must be resolved as a prerequisite before CQ-STORY-07 is implemented**. See `06-Validation-Rollout-and-Operations.md`, Optional Snapshot Source, for the full engine-by-engine technology decision record.
+
+Key decisions already fixed for initial delivery:
+
+- SQL Server: native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) is the preferred option; DMS creates and retires named snapshot connection strings per instance
+- PostgreSQL: a separately provisioned frozen read-only instance (e.g., Aurora cluster clone, RDS snapshot restore) is the preferred option; streaming replicas are not suitable because they continue receiving live writes
+- DMS never falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable
+- snapshot lifecycle management is an operational responsibility; DMS validates snapshot availability and required-artifact presence at request time
+
+## 16. Retention and purge are planned technical debt deferred to a later phase
+
+Delete tombstones, key-change rows, and the live change journal will grow indefinitely without a retention policy. In real production deployments all ODS instances advance `oldestChangeVersion` over time.
+
+DMS-843 defers retention and purge to a subsequent Epic B. The deferral is acknowledged as planned technical debt:
+
+- DMS deployments older than one synchronization cycle will accumulate multi-year retention of tombstones and key-change events with `oldestChangeVersion = 0`
+- sync clients will have to scan increasingly large windows on long-running instances
+- the Epic B retention design should be prioritized within the first production deployment cycle; the suggested outer bound is **90 days after initial GA deployment** unless product or operations decide otherwise
+- `dms.ChangeQueryRetentionFloor` must be deployed before any purge job is allowed to run; see `06-Validation-Rollout-and-Operations.md`, Future Retention Phase
 
 ## Feature Scope
 

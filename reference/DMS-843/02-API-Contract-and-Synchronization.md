@@ -86,7 +86,7 @@ Semantics:
 - when `Use-Snapshot = true`, "current representation" means the representation current inside the snapshot rather than the representation current on the live primary at request time
 - the API does not return every intermediate mutation
 - `limit`, `offset`, and `totalCount` in changed-resource mode apply to the final authorized one-row-per-resource result set; internal journal candidates eliminated by verification or authorization do not consume page space or count toward `totalCount`
-- the final changed-resource result set is ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+- the final changed-resource result set is ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
 - when a readable profile is applied, change eligibility is still resource-level based on the underlying resource `ChangeVersion`
 - readable profiles filter only the returned representation; they do not create profile-specific change tracking or suppress an otherwise qualifying changed resource
 
@@ -120,7 +120,7 @@ Delete query semantics:
 - `id` is the canonical public resource identifier for the deleted item and is sourced from the stored `DocumentUuid`
 - delete rows are ordered deterministically
 - delete rows preserve the natural-key values needed by downstream synchronization clients
-- the public `/deletes` surface suppresses a tombstone when the same routed resource identity is re-added and visible as a current live row within the same requested window on the same selected source
+- the public `/deletes` surface suppresses a tombstone when the same **natural-key identity** (not the same `DocumentUuid`) is re-added and visible as a current live row within the same requested window on the same selected source; a delete-then-reinsert operation creates a new `DocumentUuid` but the same natural key, so suppression must compare natural-key identity derived from `ResourceSchema.IdentityJsonPaths`, not document instance identity
 - delete rows are authorization-filtered according to the tracked-change contract defined in `05-Authorization-and-Delete-Semantics.md`, including the accepted DMS-specific ownership exception
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
 
@@ -223,6 +223,15 @@ The field-name contract is evaluated per routed resource, so different resources
 - when absent and `maxChangeVersion` is also absent on `/deletes` or `/keyChanges`, the route returns all retained tracked rows for the routed resource
 - must be a non-negative signed 64-bit integer
 
+## `keyValues`, `oldKeyValues`, and `newKeyValues` — Extension Resource Identity
+
+When an extension adds identity-component fields to a base resource (extended identity), those additional fields participate in `/keyChanges`, `oldKeyValues`/`newKeyValues`, and the `IdentityVersion` advancement decision on exactly the same footing as base-resource identity fields.
+
+Required rule:
+- the source of truth for all identity fields — base and extension — is always `ResourceSchema.IdentityJsonPaths` for the deployed effective schema
+- the shortest-unique-suffix aliasing algorithm operates across the full merged set of identity paths, including extension-contributed paths
+- extension deployments that add new identity paths to an existing resource may generate new or changed alias names for existing identity fields if the extension introduces a duplicate leaf name; such alias collisions must be detected and rejected at schema compilation time as described in the fail-fast alias-derivation validation rule in `06-Validation-Rollout-and-Operations.md`
+
 ## `maxChangeVersion`
 
 - optional
@@ -297,6 +306,8 @@ Implications of this algorithm:
 - rows with `ChangeVersion > synchronizationVersion` may appear during the pass
 - those rows may legitimately be returned again on the next pass because the saved watermark is `synchronizationVersion`, not the highest `ChangeVersion` observed during retrieval
 - callers must treat such repeated rows as expected duplicate delivery rather than as a server bug
+
+**DMS-specific deviation from the Ed-Fi ODS Client Developer Guide:** The standard Ed-Fi ODS client guide recommends providing **both** `minChangeVersion` and `maxChangeVersion` bounds during the repeating change-processing pass to avoid including new concurrent changes mid-pass. The algorithm above intentionally omits `maxChangeVersion` and instead relies on duplicate delivery tolerance and watermark persistence for simplicity. Clients that follow the two-bound algorithm (using `maxChangeVersion = synchronizationVersion`) against DMS will also work correctly; bounded windows are supported by the DMS API contract. However, clients that adopt the DMS single-bound pattern and run that same pattern against ODS may observe different behavior because ODS returns rows up to and including `maxChangeVersion` even when it is absent.
 
 ## Snapshot-backed synchronization
 
