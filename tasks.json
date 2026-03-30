@@ -37,15 +37,6 @@
     "completed": false
   },
   {
-    "category": "Authorization",
-    "description": "Preserve authorization behavior on the new relational seam. Acceptance: POST and PUT still invoke the existing resource authorization handler before flattening and terminal handoff, authorization failures return the existing `UpsertFailureNotAuthorized` and `UpdateFailureNotAuthorized` results, and the new repository does not reintroduce any legacy repository delegation to achieve authorization behavior.",
-    "steps-to-verify": [
-      "Add backend or Core-fronted tests that prove authorization short-circuits before flattening and terminal invocation.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
-    ],
-    "completed": false
-  },
-  {
     "category": "Reference Resolution",
     "description": "Integrate `IReferenceResolver` into the relational repository flow. Acceptance: POST and PUT call the real resolver with the selected mapping set and request-extracted references, relational writes short-circuit on missing or incompatible references using the existing `UpsertFailureReference` and `UpdateFailureReference` semantics, and neither the flattener nor the terminal stage is called when reference resolution fails.",
     "steps-to-verify": [
