@@ -381,7 +381,7 @@ function Add-Application {
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
 
-        [int[]]
+        [long[]]
         $EducationOrganizationIds = @(255901, 19255901),
 
         [long[]]

@@ -93,15 +93,44 @@ public class Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixtu
             var rootTable = tablePlans[0] as JsonObject;
             rootTable.Should().NotBeNull();
             rootTable!["delete_by_parent_sql_sha256"].Should().BeNull();
+            rootTable["collection_merge_plan"].Should().BeNull();
+
+            var collectionChildTablePlans = 0;
+            var nonCollectionChildTablePlans = 0;
 
             foreach (var tablePlanNode in tablePlans.Skip(1))
             {
                 var tablePlan = tablePlanNode as JsonObject;
                 tablePlan.Should().NotBeNull();
 
-                var deleteByParentHashNode = tablePlan!["delete_by_parent_sql_sha256"];
-                deleteByParentHashNode.Should().NotBeNull();
-                deleteByParentHashNode!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+                var collectionMergePlan = tablePlan!["collection_merge_plan"] as JsonObject;
+
+                if (collectionMergePlan is not null)
+                {
+                    collectionChildTablePlans++;
+                    tablePlan["delete_by_parent_sql_sha256"].Should().BeNull();
+                    tablePlan["update_sql_sha256"].Should().BeNull();
+                    collectionMergePlan["update_by_stable_row_identity_sql_sha256"]!
+                        .GetValue<string>()
+                        .Should()
+                        .NotBeNullOrWhiteSpace();
+                    collectionMergePlan["delete_by_stable_row_identity_sql_sha256"]!
+                        .GetValue<string>()
+                        .Should()
+                        .NotBeNullOrWhiteSpace();
+
+                    var compareBindingIndexes =
+                        collectionMergePlan["compare_binding_indexes_in_order"] as JsonArray;
+                    compareBindingIndexes.Should().NotBeNull();
+                    compareBindingIndexes!.Count.Should().BeGreaterThan(0);
+                }
+                else
+                {
+                    nonCollectionChildTablePlans++;
+                    var deleteByParentHashNode = tablePlan["delete_by_parent_sql_sha256"];
+                    deleteByParentHashNode.Should().NotBeNull();
+                    deleteByParentHashNode!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+                }
 
                 var batching = tablePlan["bulk_insert_batching"] as JsonObject;
                 batching.Should().NotBeNull();
@@ -110,6 +139,9 @@ public class Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixtu
                 batching["parameters_per_row"]!.GetValue<int>().Should().BeGreaterThan(0);
                 batching["max_parameters_per_command"]!.GetValue<int>().Should().BeGreaterThan(0);
             }
+
+            collectionChildTablePlans.Should().BeGreaterThan(0);
+            nonCollectionChildTablePlans.Should().BeGreaterThan(0);
 
             var readPlan = schoolResource["read_plan"] as JsonObject;
             readPlan.Should().NotBeNull();

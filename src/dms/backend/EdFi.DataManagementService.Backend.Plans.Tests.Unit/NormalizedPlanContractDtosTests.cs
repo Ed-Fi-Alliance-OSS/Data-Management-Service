@@ -299,7 +299,7 @@ public class Given_NormalizedPlanContractDtos
     }
 
     [Test]
-    public void It_should_emit_collection_key_preallocation_plan_when_present()
+    public void It_should_emit_collection_merge_and_collection_key_preallocation_plans_when_present()
     {
         var collectionWritePlan = new ResourceWritePlanDto(
             new QualifiedResourceNameDto("Ed-Fi", "School"),
@@ -308,7 +308,7 @@ public class Given_NormalizedPlanContractDtos
                     Table: new DbTableNameDto("edfi", "SchoolAddress"),
                     InsertSql: "INSERT INTO [edfi].[SchoolAddress] ([CollectionItemId])\r\nVALUES (@collectionItemId);",
                     UpdateSql: null,
-                    DeleteByParentSql: "DELETE FROM [edfi].[SchoolAddress]\r\nWHERE [School_DocumentId] = @schoolDocumentId;",
+                    DeleteByParentSql: null,
                     BulkInsertBatching: new BulkInsertBatchingInfoDto(
                         MaxRowsPerBatch: 200,
                         ParametersPerRow: 1,
@@ -323,6 +323,20 @@ public class Given_NormalizedPlanContractDtos
                         ),
                     ],
                     KeyUnificationPlans: [],
+                    CollectionMergePlan: new CollectionMergePlanDto(
+                        SemanticIdentityBindings:
+                        [
+                            new CollectionMergeSemanticIdentityBindingDto(
+                                RelativePath: "$.addressTypeDescriptor",
+                                BindingIndex: 0
+                            ),
+                        ],
+                        StableRowIdentityBindingIndex: 0,
+                        UpdateByStableRowIdentitySql: "UPDATE [edfi].[SchoolAddress]\r\nSET [CollectionItemId] = @collectionItemId\r\nWHERE [CollectionItemId] = @collectionItemId;",
+                        DeleteByStableRowIdentitySql: "DELETE FROM [edfi].[SchoolAddress]\r\nWHERE [CollectionItemId] = @collectionItemId;",
+                        OrdinalBindingIndex: 0,
+                        CompareBindingIndexesInOrder: [0]
+                    ),
                     CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlanDto(
                         ColumnName: "CollectionItemId",
                         BindingIndex: 0
@@ -332,10 +346,29 @@ public class Given_NormalizedPlanContractDtos
         );
 
         var json = NormalizedPlanDtoJson.EmitCanonicalJson(collectionWritePlan);
+        var repeatedJson = NormalizedPlanDtoJson.EmitCanonicalJson(collectionWritePlan);
 
+        json.Should().Contain("\"collection_merge_plan\": {");
+        json.Should().Contain("\"semantic_identity_bindings\": [");
+        json.Should().Contain("\"relative_path\": \"$.addressTypeDescriptor\"");
+        json.Should().Contain("\"stable_row_identity_binding_index\": 0");
+        json.Should()
+            .Contain(
+                "\"update_by_stable_row_identity_sql\": \"UPDATE [edfi].[SchoolAddress]\\nSET [CollectionItemId] = @collectionItemId\\nWHERE [CollectionItemId] = @collectionItemId;\""
+            );
+        json.Should()
+            .Contain(
+                "\"delete_by_stable_row_identity_sql\": \"DELETE FROM [edfi].[SchoolAddress]\\nWHERE [CollectionItemId] = @collectionItemId;\""
+            );
+        json.Should().Contain("\"compare_binding_indexes_in_order\": [");
         json.Should().Contain("\"collection_key_preallocation_plan\": {");
         json.Should().Contain("\"column_name\": \"CollectionItemId\"");
         json.Should().Contain("\"binding_index\": 0");
+        repeatedJson.Should().Be(json);
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(repeatedJson)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(collectionWritePlan));
     }
 
     [Test]

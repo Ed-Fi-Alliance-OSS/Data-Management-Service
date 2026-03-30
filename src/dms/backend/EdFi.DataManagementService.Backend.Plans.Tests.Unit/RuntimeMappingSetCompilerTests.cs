@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -15,6 +16,8 @@ public class Given_RuntimeMappingSetCompiler
 {
     private const string MissingSemanticIdentityFixturePath =
         "Fixtures/runtime-plan-compilation/focused-stable-key/negative/missing-semantic-identity/fixture.manifest.json";
+    private const string PositiveStableKeyFixturePath =
+        "Fixtures/runtime-plan-compilation/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
 
     private const string MinimalProjectSchemaJson = """
         {
@@ -94,6 +97,7 @@ public class Given_RuntimeMappingSetCompiler
     private static readonly string _testHash = new('a', 64);
 
     private static readonly QualifiedResourceName _studentResource = new("Ed-Fi", "Student");
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
 
     private static EffectiveSchemaSet CreateEffectiveSchemaSet(string? hash = null)
     {
@@ -261,6 +265,80 @@ public class Given_RuntimeMappingSetCompiler
             exception.Message.Should().Contain("$.addresses[*]");
             exception.Message.Should().Contain("Ed-Fi:School");
             exception.Message.Should().Contain("arrayUniquenessConstraints");
+        }
+    }
+
+    [TestFixture(SqlDialect.Pgsql)]
+    [TestFixture(SqlDialect.Mssql)]
+    public class Given_A_Runtime_Collection_Fixture_With_Stable_Keys(SqlDialect dialect)
+        : Given_RuntimeMappingSetCompiler
+    {
+        private ResourceWritePlan _writePlan = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var schemaSet = RuntimePlanFixtureModelSetBuilder.CreateEffectiveSchemaSet(
+                PositiveStableKeyFixturePath
+            );
+            var compiler = CreateCompiler(dialect, accessor: () => schemaSet);
+            var key = compiler.GetCurrentKey();
+            var mappingSet = await compiler.CompileAsync(key, CancellationToken.None);
+
+            _writePlan = mappingSet.WritePlansByResource[_schoolResource];
+        }
+
+        [Test]
+        public void It_should_compile_collection_merge_plans_for_true_collection_tables()
+        {
+            foreach (
+                var tableName in new[]
+                {
+                    "SchoolAddress",
+                    "SchoolAddressPeriod",
+                    "SchoolExtensionIntervention",
+                    "SchoolExtensionInterventionVisit",
+                    "SchoolExtensionAddressSponsorReference",
+                }
+            )
+            {
+                AssertUsesCollectionMergeContract(tableName);
+            }
+        }
+
+        [Test]
+        public void It_should_keep_non_collection_scopes_on_the_existing_one_to_one_contract()
+        {
+            var rootPlan = GetTablePlan("School");
+            rootPlan.DeleteByParentSql.Should().BeNull();
+            rootPlan.CollectionMergePlan.Should().BeNull();
+
+            var rootExtensionPlan = GetTablePlan("SchoolExtension");
+            rootExtensionPlan.UpdateSql.Should().NotBeNullOrWhiteSpace();
+            rootExtensionPlan.DeleteByParentSql.Should().NotBeNullOrWhiteSpace();
+            rootExtensionPlan.CollectionMergePlan.Should().BeNull();
+
+            var collectionExtensionScopePlan = GetTablePlan("SchoolExtensionAddress");
+            collectionExtensionScopePlan.UpdateSql.Should().NotBeNullOrWhiteSpace();
+            collectionExtensionScopePlan.DeleteByParentSql.Should().NotBeNullOrWhiteSpace();
+            collectionExtensionScopePlan.CollectionMergePlan.Should().BeNull();
+        }
+
+        private void AssertUsesCollectionMergeContract(string tableName)
+        {
+            var tablePlan = GetTablePlan(tableName);
+
+            tablePlan.UpdateSql.Should().BeNull();
+            tablePlan.DeleteByParentSql.Should().BeNull();
+            tablePlan.CollectionMergePlan.Should().NotBeNull();
+            tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
+        }
+
+        private TableWritePlan GetTablePlan(string tableName)
+        {
+            return _writePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+                string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
+            );
         }
     }
 }

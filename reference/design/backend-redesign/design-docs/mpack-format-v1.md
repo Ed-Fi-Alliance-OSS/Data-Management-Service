@@ -141,6 +141,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - `table_plans`: ascending by `(table.schema, table.name)`
 - Within each `TableWritePlan`:
   - `collection_merge_plan`, when present, is semantically significant and MUST be emitted deterministically
+    - `semantic_identity_bindings` order is semantically significant and MUST preserve compiled semantic-identity order
+    - `compare_binding_indexes_in_order` order is semantically significant and MUST preserve deterministic compare/no-op projection order
   - `bulk_insert_batching` is semantically significant and MUST be derived deterministically from:
     - dialect limits (e.g., SQL Server parameter limits),
     - policy row caps, and
@@ -148,6 +150,7 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
     - `bulk_insert_batching.max_rows_per_batch`, `bulk_insert_batching.parameters_per_row`, and `bulk_insert_batching.max_parameters_per_command` MUST all be stable for the same selection key
   - `column_bindings`: order is semantically significant (defines parameter ordering) and MUST NOT be sorted
     - `parameter_name` is semantically significant and MUST be deterministic and unique within its statement
+  - `collection_key_preallocation_plan`, when present, is semantically significant and MUST deterministically reference one `column_bindings` slot that receives reserved collection-row identities
   - `key_unification_plans`: ascending by `(canonical_column.value)`
   - within `key_unification_plans[*]`:
     - `members_in_order` order is semantically significant and MUST NOT be sorted
@@ -581,29 +584,38 @@ message TableWritePlan {
   // SQL is dialect-specific and MUST be canonicalized (stable bytes).
   string insert_sql = 10;
   string update_sql = 11;                                // empty => not present
-  string delete_by_parent_sql = 12;                      // empty => not present
+  string delete_by_parent_sql = 12;                      // empty => not present; collection tables leave this empty and use collection_merge_plan instead
 
   // Deterministic bulk-insert batching bound for this table.
   // Derived from dialect limits (e.g., SQL Server parameter limits), policy row caps, and the plan's bound column count.
   BulkInsertBatchingInfo bulk_insert_batching = 13;
-  CollectionMergePlan collection_merge_plan = 14;        // omitted when not a collection table
+  CollectionMergePlan collection_merge_plan = 14;        // omitted when not a persisted collection table
 
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
+  CollectionKeyPreallocationPlan collection_key_preallocation_plan = 21; // omitted when this table does not reserve collection-row identities
 
   // Empty when this table has no key-unification classes.
   repeated KeyUnificationWritePlan key_unification_plans = 30;
 }
 
 message CollectionMergePlan {
-  repeated CollectionSemanticIdentityBinding semantic_identity_bindings = 2; // required and non-empty for persisted multi-item collection scopes
-  string select_current_sibling_set_sql = 10;
-  string delete_by_collection_item_ids_sql = 11;
+  repeated CollectionMergeSemanticIdentityBinding semantic_identity_bindings = 2; // required and non-empty for persisted multi-item collection scopes
+  uint32 stable_row_identity_binding_index = 12;         // index into TableWritePlan.column_bindings
+  string update_by_stable_row_identity_sql = 13;         // canonical UPDATE keyed by the stable row identity binding
+  string delete_by_stable_row_identity_sql = 14;         // canonical DELETE keyed by the stable row identity binding
+  uint32 ordinal_binding_index = 15;                     // index into TableWritePlan.column_bindings
+  repeated uint32 compare_binding_indexes_in_order = 16; // ordered projection of stored/writable values for compare/no-op work
 }
 
-message CollectionSemanticIdentityBinding {
+message CollectionMergeSemanticIdentityBinding {
   string relative_path = 1;                              // relative to table scope node
-  DbColumnName column_name = 2;
+  uint32 binding_index = 2;                              // index into TableWritePlan.column_bindings
+}
+
+message CollectionKeyPreallocationPlan {
+  DbColumnName column_name = 1;
+  uint32 binding_index = 2;                              // index into TableWritePlan.column_bindings
 }
 
 message BulkInsertBatchingInfo {

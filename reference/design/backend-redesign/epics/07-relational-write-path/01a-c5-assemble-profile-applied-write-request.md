@@ -24,7 +24,7 @@ Depends on:
 
 **Core responsibility coverage:** #7 (writable request shaping — final assembly), pipeline orchestration
 
-This story produces the `ProfileAppliedWriteRequest` that backend consumes in `E07-S01b` (DMS-1103). It also invokes C6 for update/upsert flows to produce `ProfileAppliedWriteContext`.
+This story produces the `ProfileAppliedWriteRequest` that backend consumes in `E07-S01b` (DMS-1106). It also invokes C6 for update/upsert flows to produce `ProfileAppliedWriteContext`.
 
 ### Orchestration Sequence
 

@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1112
 
 Define the shared typed profile error contract used across Core and backend for invalid profile definitions, invalid usage, writable validation failures, creatability violations, Core/backend contract mismatches, and binding-accounting failures.
 
-C8 defines the type hierarchy for all six error categories before the consuming stories implement detection. Detection stays in the story that owns the relevant processing: category 1 in C2, category 2 in C5 (profile-mode validation gate), category 3 in C3/C4, category 4 in C4, category 5 in DMS-1103 (contract mismatch), and category 6 in DMS-1104 (binding-accounting failure). This keeps all downstream stories on one shared failure vocabulary instead of inventing local error shapes.
+C8 defines the type hierarchy for all six error categories before the consuming stories implement detection. Detection stays in the story that owns the relevant processing: category 1 in C2, category 2 in C5 (profile-mode validation gate), category 3 in C3/C4, category 4 in C4, category 5 in DMS-1106 (contract mismatch), and category 6 in DMS-1104 (binding-accounting failure). This keeps all downstream stories on one shared failure vocabulary instead of inventing local error shapes.
 
 Align with:
 
@@ -18,7 +18,7 @@ Align with:
 
 Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
 
-Depends on: None. This story defines the shared failure contract that C2, C3, C4, C5, DMS-1103, and DMS-1104 consume.
+Depends on: None. This story defines the shared failure contract that C2, C3, C4, C5, DMS-1106, and DMS-1104 consume.
 
 **Core responsibility coverage:** #15 (structured error classification)
 
@@ -52,11 +52,11 @@ The typed failure contract must distinguish:
   - `ProfileRootCreateRejectedWhenNonCreatable`,
   - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` for 1:1, nested/common-type, collection, extension scope, and extension collection item, and
   - the three-level parent-create-denied/child-denied chain.
-- Type shapes for categories 5 (contract mismatch) and 6 (binding-accounting failure) are ready for backend stories DMS-1103 and DMS-1104 to emit without redefining them.
+- Type shapes for categories 5 (contract mismatch) and 6 (binding-accounting failure) are ready for backend stories DMS-1106 and DMS-1104 to emit without redefining them.
 
 ## Tasks
 
 1. Define the typed failure contract with discriminated categories for the six error classes, including enough diagnostic detail for each to be actionable.
 2. Provide constructors/factories or equivalent shared abstractions that consumer stories use when they emit categories 1–6.
-3. Document emitter ownership for each category so consuming stories wire detection into the correct pipeline stage: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1103, and category 6 in DMS-1104.
+3. Document emitter ownership for each category so consuming stories wire detection into the correct pipeline stage: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1106, and category 6 in DMS-1104.
 4. Add representative tests covering each category shape, including duplicate visible collection-item collisions for category 3 and the creatability violation scenarios from the shared profile scenario matrix for category 4.
