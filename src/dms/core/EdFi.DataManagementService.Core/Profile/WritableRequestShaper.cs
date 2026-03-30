@@ -1,0 +1,437 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using System.Text.Json.Nodes;
+
+namespace EdFi.DataManagementService.Core.Profile;
+
+/// <summary>
+/// The result of shaping a writable request body through a profile.
+/// Contains the filtered JSON, scope state emissions, visible collection
+/// items, and any validation failures for items that failed value filters.
+/// </summary>
+/// <param name="WritableRequestBody">
+/// The shaped request body with hidden members stripped.
+/// </param>
+/// <param name="RequestScopeStates">
+/// Scope state for each non-collection scope, with Creatable initially false.
+/// </param>
+/// <param name="VisibleRequestCollectionItems">
+/// Visible collection items that passed value filters, with Creatable initially false.
+/// </param>
+/// <param name="ValidationFailures">
+/// Category-3 failures for collection items that failed value filters.
+/// </param>
+public sealed record WritableRequestShapingResult(
+    JsonNode WritableRequestBody,
+    ImmutableArray<RequestScopeState> RequestScopeStates,
+    ImmutableArray<VisibleRequestCollectionItem> VisibleRequestCollectionItems,
+    ImmutableArray<WritableProfileValidationFailure> ValidationFailures
+);
+
+/// <summary>
+/// Walks a request body once, building a shaped JSON output while emitting
+/// <see cref="RequestScopeState"/> and <see cref="VisibleRequestCollectionItem"/>
+/// entries, and collecting validation failures for collection items that fail
+/// value filters. Consumes <see cref="ProfileVisibilityClassifier"/> and
+/// <see cref="AddressDerivationEngine"/>.
+/// </summary>
+public sealed class WritableRequestShaper(
+    ProfileVisibilityClassifier classifier,
+    AddressDerivationEngine addressEngine
+)
+{
+    // -----------------------------------------------------------------------
+    //  Accumulators (reset per Shape call)
+    // -----------------------------------------------------------------------
+
+    private readonly List<RequestScopeState> _scopeStates = [];
+    private readonly List<VisibleRequestCollectionItem> _collectionItems = [];
+    private readonly List<WritableProfileValidationFailure> _validationFailures = [];
+    private readonly HashSet<string> _emittedScopes = [];
+
+    // -----------------------------------------------------------------------
+    //  Public API
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Shapes the given request body according to the writable profile,
+    /// performing a single-pass walk of the JSON document.
+    /// </summary>
+    public WritableRequestShapingResult Shape(JsonNode requestBody)
+    {
+        _scopeStates.Clear();
+        _collectionItems.Clear();
+        _validationFailures.Clear();
+        _emittedScopes.Clear();
+
+        JsonObject shapedRoot = ShapeScope("$", requestBody.AsObject(), []);
+
+        // Emit missing non-collection scope states for scopes not encountered during the walk
+        EmitMissingScopeStates();
+
+        return new WritableRequestShapingResult(
+            shapedRoot,
+            [.. _scopeStates],
+            [.. _collectionItems],
+            [.. _validationFailures]
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    //  Core recursive shaping
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Shapes a single scope (root or non-collection child) and emits its
+    /// RequestScopeState.
+    /// </summary>
+    private JsonObject ShapeScope(
+        string jsonScope,
+        JsonObject source,
+        IReadOnlyList<AncestorItemContext> ancestorItems
+    )
+    {
+        // Classify and emit scope state
+        ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, source);
+        ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
+        _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+        _emittedScopes.Add(jsonScope);
+
+        // Get member filter for this scope
+        ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
+
+        var output = new JsonObject();
+
+        foreach (var kvp in source)
+        {
+            string memberName = kvp.Key;
+            JsonNode? memberValue = kvp.Value;
+
+            // Handle _ext (extensions)
+            if (memberName == "_ext")
+            {
+                JsonObject? shapedExt = ShapeExtensions(jsonScope, memberValue, ancestorItems);
+                if (shapedExt != null && shapedExt.Count > 0)
+                {
+                    output["_ext"] = shapedExt;
+                }
+                continue;
+            }
+
+            // Check if member is a non-collection scope
+            string childNonCollectionScope = $"{jsonScope}.{memberName}";
+            if (
+                IsScopeKnown(childNonCollectionScope, out ScopeKind childKind)
+                && childKind == ScopeKind.NonCollection
+            )
+            {
+                ShapeNonCollectionChild(
+                    childNonCollectionScope,
+                    memberValue,
+                    ancestorItems,
+                    output,
+                    memberName
+                );
+                continue;
+            }
+
+            // Check if member is a collection scope
+            string childCollectionScope = $"{jsonScope}.{memberName}[*]";
+            if (
+                IsScopeKnown(childCollectionScope, out ScopeKind collKind)
+                && collKind == ScopeKind.Collection
+            )
+            {
+                ShapeCollection(childCollectionScope, memberValue, ancestorItems, output, memberName);
+                continue;
+            }
+
+            // Scalar member: apply member filter
+            if (IsMemberVisible(memberFilter, memberName))
+            {
+                output[memberName] = memberValue?.DeepClone();
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>
+    /// Shapes a non-collection child scope. Classifies visibility, derives
+    /// address, emits RequestScopeState. If VisiblePresent, recurses into
+    /// the child scope.
+    /// </summary>
+    private void ShapeNonCollectionChild(
+        string jsonScope,
+        JsonNode? scopeData,
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        JsonObject output,
+        string memberName
+    )
+    {
+        ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, scopeData);
+        ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
+        _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+        _emittedScopes.Add(jsonScope);
+
+        if (visibility == ProfileVisibilityKind.VisiblePresent && scopeData != null)
+        {
+            ScopeMemberFilter childFilter = classifier.GetMemberFilter(jsonScope);
+            var childOutput = new JsonObject();
+
+            foreach (var kvp in scopeData.AsObject().Where(kvp => IsMemberVisible(childFilter, kvp.Key)))
+            {
+                childOutput[kvp.Key] = kvp.Value?.DeepClone();
+            }
+
+            output[memberName] = childOutput;
+        }
+    }
+
+    /// <summary>
+    /// Shapes a collection scope. Classifies visibility. If VisiblePresent,
+    /// iterates items, checking value filters, emitting
+    /// VisibleRequestCollectionItem for passing items and failures for failing
+    /// items.
+    /// </summary>
+    private void ShapeCollection(
+        string jsonScope,
+        JsonNode? scopeData,
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        JsonObject output,
+        string memberName
+    )
+    {
+        ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, scopeData);
+
+        // For collections, emit as a scope state for missing-scope detection
+        // (collections are tracked via _emittedScopes but not emitted as RequestScopeState)
+        _emittedScopes.Add(jsonScope);
+
+        if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
+        {
+            // If VisibleAbsent, emit the array key with empty array to match expectations
+            if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            {
+                output[memberName] = new JsonArray();
+            }
+            return;
+        }
+
+        ScopeMemberFilter itemMemberFilter = classifier.GetMemberFilter(jsonScope);
+        var outputArray = new JsonArray();
+
+        JsonArray sourceArray = scopeData.AsArray();
+        for (int i = 0; i < sourceArray.Count; i++)
+        {
+            JsonNode item = sourceArray[i]!;
+
+            if (!classifier.PassesCollectionItemFilter(jsonScope, item))
+            {
+                // Item fails value filter — create ForbiddenSubmittedData failure
+                _validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: "placeholder",
+                        resourceName: "placeholder",
+                        method: "placeholder",
+                        operation: "placeholder",
+                        jsonScope: jsonScope,
+                        scopeKind: ScopeKind.Collection,
+                        requestJsonPaths: [$"{memberName}[{i}]"],
+                        forbiddenCanonicalMemberPaths: []
+                    )
+                );
+                continue;
+            }
+
+            // Item passes filter — derive address and emit
+            CollectionRowAddress rowAddress = addressEngine.DeriveCollectionRowAddress(
+                jsonScope,
+                item,
+                ancestorItems
+            );
+            _collectionItems.Add(new VisibleRequestCollectionItem(rowAddress, Creatable: false));
+
+            // Build filtered item
+            var filteredItem = new JsonObject();
+            JsonObject itemObj = item.AsObject();
+
+            // Build ancestor context for potential nested scopes
+            var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
+
+            foreach (var kvp in itemObj)
+            {
+                string itemMemberName = kvp.Key;
+                JsonNode? itemMemberValue = kvp.Value;
+
+                // Check for nested non-collection scope
+                string nestedNonCollScope = $"{jsonScope}.{itemMemberName}";
+                if (
+                    IsScopeKnown(nestedNonCollScope, out ScopeKind nestedKind)
+                    && nestedKind == ScopeKind.NonCollection
+                )
+                {
+                    ShapeNonCollectionChild(
+                        nestedNonCollScope,
+                        itemMemberValue,
+                        newAncestors,
+                        filteredItem,
+                        itemMemberName
+                    );
+                    continue;
+                }
+
+                // Check for nested collection scope
+                string nestedCollScope = $"{jsonScope}.{itemMemberName}[*]";
+                if (
+                    IsScopeKnown(nestedCollScope, out ScopeKind nestedCollKind)
+                    && nestedCollKind == ScopeKind.Collection
+                )
+                {
+                    ShapeCollection(
+                        nestedCollScope,
+                        itemMemberValue,
+                        newAncestors,
+                        filteredItem,
+                        itemMemberName
+                    );
+                    continue;
+                }
+
+                // Scalar: apply member filter
+                if (IsMemberVisible(itemMemberFilter, itemMemberName))
+                {
+                    filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
+                }
+            }
+
+            outputArray.Add(filteredItem);
+        }
+
+        output[memberName] = outputArray;
+    }
+
+    /// <summary>
+    /// Shapes extensions under the _ext member of a scope.
+    /// </summary>
+    private JsonObject? ShapeExtensions(
+        string parentScope,
+        JsonNode? extNode,
+        IReadOnlyList<AncestorItemContext> ancestorItems
+    )
+    {
+        if (extNode == null)
+        {
+            return null;
+        }
+
+        var extOutput = new JsonObject();
+
+        foreach (var kvp in extNode.AsObject())
+        {
+            string extName = kvp.Key;
+            JsonNode? extData = kvp.Value;
+
+            string extScope = $"{parentScope}._ext.{extName}";
+
+            if (!IsScopeKnown(extScope, out _))
+            {
+                // Not a known scope — skip
+                continue;
+            }
+
+            ProfileVisibilityKind visibility = classifier.ClassifyScope(extScope, extData);
+            ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(extScope, ancestorItems);
+            _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+            _emittedScopes.Add(extScope);
+
+            if (visibility == ProfileVisibilityKind.VisiblePresent && extData != null)
+            {
+                ScopeMemberFilter extFilter = classifier.GetMemberFilter(extScope);
+                var extChildOutput = new JsonObject();
+
+                foreach (var innerKvp in extData.AsObject().Where(kvp => IsMemberVisible(extFilter, kvp.Key)))
+                {
+                    extChildOutput[innerKvp.Key] = innerKvp.Value?.DeepClone();
+                }
+
+                extOutput[extName] = extChildOutput;
+            }
+        }
+
+        return extOutput;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Missing scope state emission
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// After the walk, emits RequestScopeState for any non-collection scope
+    /// in the classifier's catalog that was not encountered during the walk.
+    /// These are VisibleAbsent or Hidden depending on the classifier.
+    /// </summary>
+    private void EmitMissingScopeStates()
+    {
+        foreach (string jsonScope in classifier.AllScopeJsonScopes)
+        {
+            if (_emittedScopes.Contains(jsonScope))
+            {
+                continue;
+            }
+
+            ScopeKind kind = classifier.GetScopeKind(jsonScope);
+            if (kind == ScopeKind.Collection)
+            {
+                // Collection scopes that were missed get VisibleAbsent classification
+                // but are not emitted as RequestScopeState (they don't have a non-collection address)
+                continue;
+            }
+
+            // Classify with null data (absent from request)
+            ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, null);
+            ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, []);
+            _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+            _emittedScopes.Add(jsonScope);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Helpers
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Checks whether the given jsonScope exists in the classifier's scope catalog.
+    /// </summary>
+    private bool IsScopeKnown(string jsonScope, out ScopeKind scopeKind)
+    {
+        try
+        {
+            scopeKind = classifier.GetScopeKind(jsonScope);
+            return true;
+        }
+        catch (KeyNotFoundException)
+        {
+            scopeKind = default;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Determines whether a member is visible given the scope's member filter.
+    /// </summary>
+    private static bool IsMemberVisible(ScopeMemberFilter filter, string name)
+    {
+        return filter.Mode switch
+        {
+            MemberSelection.IncludeOnly => filter.ExplicitNames.Contains(name),
+            MemberSelection.ExcludeOnly => !filter.ExplicitNames.Contains(name),
+            MemberSelection.IncludeAll => true,
+            _ => true,
+        };
+    }
+}
