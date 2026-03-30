@@ -199,6 +199,14 @@ public sealed class ProfileVisibilityClassifier
     public IEnumerable<string> AllScopeJsonScopes => _cache.Keys;
 
     /// <summary>
+    /// Returns whether the specified scope exists in the scope catalog this classifier
+    /// was constructed with.
+    /// </summary>
+    /// <param name="jsonScope">The compiled scope identifier to look up.</param>
+    /// <returns>True when the scope is known; false otherwise.</returns>
+    public bool ContainsScope(string jsonScope) => _cache.ContainsKey(jsonScope);
+
+    /// <summary>
     /// Returns the <see cref="ScopeKind"/> for the specified compiled scope.
     /// </summary>
     /// <param name="jsonScope">The compiled scope identifier.</param>

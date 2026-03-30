@@ -330,11 +330,11 @@ public abstract class ProfileVisibilityClassifierTests
     }
 
     // -----------------------------------------------------------------------
-    //  Scope-level visibility: ExcludeOnly profile + excluded scope
+    //  Scope-level visibility: IncludeOnly profile hiding an unlisted child scope
     // -----------------------------------------------------------------------
 
     [TestFixture]
-    public class Given_ExcludeOnly_Profile_Excluding_A_Scope : ProfileVisibilityClassifierTests
+    public class Given_IncludeOnly_Profile_Hiding_Unlisted_Child_Scope : ProfileVisibilityClassifierTests
     {
         private ProfileVisibilityKind _result;
 
@@ -753,6 +753,39 @@ public abstract class ProfileVisibilityClassifierTests
         public void It_should_have_empty_explicit_names()
         {
             _result.ExplicitNames.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  Member filtering: ExcludeOnly scope → mode=ExcludeOnly, names=[excluded props]
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_ExcludeOnly_Scope_Member_Filter : ProfileVisibilityClassifierTests
+    {
+        private ScopeMemberFilter _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            // ExcludeOnly root with entryTypeDescriptor explicitly excluded
+            var classifier = new ProfileVisibilityClassifier(
+                BuildExcludeOnlyProfileExcludingCalendar(),
+                SharedFixtureScopes
+            );
+            _result = classifier.GetMemberFilter("$");
+        }
+
+        [Test]
+        public void It_should_have_ExcludeOnly_mode()
+        {
+            _result.Mode.Should().Be(MemberSelection.ExcludeOnly);
+        }
+
+        [Test]
+        public void It_should_contain_excluded_property_names()
+        {
+            _result.ExplicitNames.Should().Contain("entryTypeDescriptor");
         }
     }
 }

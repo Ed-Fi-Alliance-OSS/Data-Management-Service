@@ -45,15 +45,6 @@ public sealed class WritableRequestShaper(
 )
 {
     // -----------------------------------------------------------------------
-    //  Accumulators (reset per Shape call)
-    // -----------------------------------------------------------------------
-
-    private readonly List<RequestScopeState> _scopeStates = [];
-    private readonly List<VisibleRequestCollectionItem> _collectionItems = [];
-    private readonly List<WritableProfileValidationFailure> _validationFailures = [];
-    private readonly HashSet<string> _emittedScopes = [];
-
-    // -----------------------------------------------------------------------
     //  Public API
     // -----------------------------------------------------------------------
 
@@ -63,21 +54,29 @@ public sealed class WritableRequestShaper(
     /// </summary>
     public WritableRequestShapingResult Shape(JsonNode requestBody)
     {
-        _scopeStates.Clear();
-        _collectionItems.Clear();
-        _validationFailures.Clear();
-        _emittedScopes.Clear();
+        List<RequestScopeState> scopeStates = [];
+        List<VisibleRequestCollectionItem> collectionItems = [];
+        List<WritableProfileValidationFailure> validationFailures = [];
+        HashSet<string> emittedScopes = [];
 
-        JsonObject shapedRoot = ShapeScope("$", requestBody.AsObject(), []);
+        JsonObject shapedRoot = ShapeScope(
+            "$",
+            requestBody.AsObject(),
+            [],
+            scopeStates,
+            collectionItems,
+            validationFailures,
+            emittedScopes
+        );
 
         // Emit missing non-collection scope states for scopes not encountered during the walk
-        EmitMissingScopeStates();
+        EmitMissingScopeStates(scopeStates, emittedScopes);
 
         return new WritableRequestShapingResult(
             shapedRoot,
-            [.. _scopeStates],
-            [.. _collectionItems],
-            [.. _validationFailures]
+            [.. scopeStates],
+            [.. collectionItems],
+            [.. validationFailures]
         );
     }
 
@@ -92,14 +91,18 @@ public sealed class WritableRequestShaper(
     private JsonObject ShapeScope(
         string jsonScope,
         JsonObject source,
-        IReadOnlyList<AncestorItemContext> ancestorItems
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        List<RequestScopeState> scopeStates,
+        List<VisibleRequestCollectionItem> collectionItems,
+        List<WritableProfileValidationFailure> validationFailures,
+        HashSet<string> emittedScopes
     )
     {
         // Classify and emit scope state
         ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, source);
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
-        _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
-        _emittedScopes.Add(jsonScope);
+        scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+        emittedScopes.Add(jsonScope);
 
         // Get member filter for this scope
         ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
@@ -114,7 +117,13 @@ public sealed class WritableRequestShaper(
             // Handle _ext (extensions)
             if (memberName == "_ext")
             {
-                JsonObject? shapedExt = ShapeExtensions(jsonScope, memberValue, ancestorItems);
+                JsonObject? shapedExt = ShapeExtensions(
+                    jsonScope,
+                    memberValue,
+                    ancestorItems,
+                    scopeStates,
+                    emittedScopes
+                );
                 if (shapedExt != null && shapedExt.Count > 0)
                 {
                     output["_ext"] = shapedExt;
@@ -134,7 +143,9 @@ public sealed class WritableRequestShaper(
                     memberValue,
                     ancestorItems,
                     output,
-                    memberName
+                    memberName,
+                    scopeStates,
+                    emittedScopes
                 );
                 continue;
             }
@@ -146,7 +157,17 @@ public sealed class WritableRequestShaper(
                 && collKind == ScopeKind.Collection
             )
             {
-                ShapeCollection(childCollectionScope, memberValue, ancestorItems, output, memberName);
+                ShapeCollection(
+                    childCollectionScope,
+                    memberValue,
+                    ancestorItems,
+                    output,
+                    memberName,
+                    scopeStates,
+                    collectionItems,
+                    validationFailures,
+                    emittedScopes
+                );
                 continue;
             }
 
@@ -170,13 +191,15 @@ public sealed class WritableRequestShaper(
         JsonNode? scopeData,
         IReadOnlyList<AncestorItemContext> ancestorItems,
         JsonObject output,
-        string memberName
+        string memberName,
+        List<RequestScopeState> scopeStates,
+        HashSet<string> emittedScopes
     )
     {
         ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, scopeData);
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
-        _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
-        _emittedScopes.Add(jsonScope);
+        scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+        emittedScopes.Add(jsonScope);
 
         if (visibility == ProfileVisibilityKind.VisiblePresent && scopeData != null)
         {
@@ -203,14 +226,18 @@ public sealed class WritableRequestShaper(
         JsonNode? scopeData,
         IReadOnlyList<AncestorItemContext> ancestorItems,
         JsonObject output,
-        string memberName
+        string memberName,
+        List<RequestScopeState> scopeStates,
+        List<VisibleRequestCollectionItem> collectionItems,
+        List<WritableProfileValidationFailure> validationFailures,
+        HashSet<string> emittedScopes
     )
     {
         ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, scopeData);
 
         // For collections, emit as a scope state for missing-scope detection
-        // (collections are tracked via _emittedScopes but not emitted as RequestScopeState)
-        _emittedScopes.Add(jsonScope);
+        // (collections are tracked via emittedScopes but not emitted as RequestScopeState)
+        emittedScopes.Add(jsonScope);
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
@@ -233,7 +260,7 @@ public sealed class WritableRequestShaper(
             if (!classifier.PassesCollectionItemFilter(jsonScope, item))
             {
                 // Item fails value filter — create ForbiddenSubmittedData failure
-                _validationFailures.Add(
+                validationFailures.Add(
                     ProfileFailures.ForbiddenSubmittedData(
                         profileName: "placeholder",
                         resourceName: "placeholder",
@@ -254,7 +281,7 @@ public sealed class WritableRequestShaper(
                 item,
                 ancestorItems
             );
-            _collectionItems.Add(new VisibleRequestCollectionItem(rowAddress, Creatable: false));
+            collectionItems.Add(new VisibleRequestCollectionItem(rowAddress, Creatable: false));
 
             // Build filtered item
             var filteredItem = new JsonObject();
@@ -280,7 +307,9 @@ public sealed class WritableRequestShaper(
                         itemMemberValue,
                         newAncestors,
                         filteredItem,
-                        itemMemberName
+                        itemMemberName,
+                        scopeStates,
+                        emittedScopes
                     );
                     continue;
                 }
@@ -297,7 +326,11 @@ public sealed class WritableRequestShaper(
                         itemMemberValue,
                         newAncestors,
                         filteredItem,
-                        itemMemberName
+                        itemMemberName,
+                        scopeStates,
+                        collectionItems,
+                        validationFailures,
+                        emittedScopes
                     );
                     continue;
                 }
@@ -321,7 +354,9 @@ public sealed class WritableRequestShaper(
     private JsonObject? ShapeExtensions(
         string parentScope,
         JsonNode? extNode,
-        IReadOnlyList<AncestorItemContext> ancestorItems
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        List<RequestScopeState> scopeStates,
+        HashSet<string> emittedScopes
     )
     {
         if (extNode == null)
@@ -346,8 +381,8 @@ public sealed class WritableRequestShaper(
 
             ProfileVisibilityKind visibility = classifier.ClassifyScope(extScope, extData);
             ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(extScope, ancestorItems);
-            _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
-            _emittedScopes.Add(extScope);
+            scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+            emittedScopes.Add(extScope);
 
             if (visibility == ProfileVisibilityKind.VisiblePresent && extData != null)
             {
@@ -375,11 +410,11 @@ public sealed class WritableRequestShaper(
     /// in the classifier's catalog that was not encountered during the walk.
     /// These are VisibleAbsent or Hidden depending on the classifier.
     /// </summary>
-    private void EmitMissingScopeStates()
+    private void EmitMissingScopeStates(List<RequestScopeState> scopeStates, HashSet<string> emittedScopes)
     {
         foreach (string jsonScope in classifier.AllScopeJsonScopes)
         {
-            if (_emittedScopes.Contains(jsonScope))
+            if (emittedScopes.Contains(jsonScope))
             {
                 continue;
             }
@@ -395,8 +430,8 @@ public sealed class WritableRequestShaper(
             // Classify with null data (absent from request)
             ProfileVisibilityKind visibility = classifier.ClassifyScope(jsonScope, null);
             ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, []);
-            _scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
-            _emittedScopes.Add(jsonScope);
+            scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+            emittedScopes.Add(jsonScope);
         }
     }
 
@@ -409,16 +444,14 @@ public sealed class WritableRequestShaper(
     /// </summary>
     private bool IsScopeKnown(string jsonScope, out ScopeKind scopeKind)
     {
-        try
-        {
-            scopeKind = classifier.GetScopeKind(jsonScope);
-            return true;
-        }
-        catch (KeyNotFoundException)
+        if (!classifier.ContainsScope(jsonScope))
         {
             scopeKind = default;
             return false;
         }
+
+        scopeKind = classifier.GetScopeKind(jsonScope);
+        return true;
     }
 
     /// <summary>
