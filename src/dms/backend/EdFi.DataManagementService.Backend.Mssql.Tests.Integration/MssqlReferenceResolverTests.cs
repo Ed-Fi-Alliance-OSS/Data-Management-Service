@@ -342,6 +342,79 @@ public class Given_MssqlReferenceResolver
     }
 
     [Test]
+    public async Task It_resolves_school_and_lea_references_with_ids_above_int32_max()
+    {
+        const long BigIntSchoolId = 3_000_000_001L;
+        const long BigIntLeaId = 3_000_000_002L;
+
+        var schoolResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.SchoolResource
+        ];
+        var leaResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.LocalEducationAgencyResource
+        ];
+
+        var bigIntSchoolReferentialId = new ReferentialId(Guid.Parse("A0000000-0000-0000-0000-000000000001"));
+        var bigIntLeaReferentialId = new ReferentialId(Guid.Parse("A0000000-0000-0000-0000-000000000002"));
+
+        await _database.ResetAsync();
+        await _database.SeedAsync(
+            new ReferenceResolverSeedData(
+                ResourceKeys: _database.Fixture.SeedData.ResourceKeys,
+                Documents:
+                [
+                    new ReferenceResolverDocumentSeed(
+                        901,
+                        Guid.Parse("A1000000-0000-0000-0000-000000000901"),
+                        schoolResourceKeyId
+                    ),
+                    new ReferenceResolverDocumentSeed(
+                        902,
+                        Guid.Parse("A2000000-0000-0000-0000-000000000902"),
+                        leaResourceKeyId
+                    ),
+                ],
+                ReferentialIdentities:
+                [
+                    new ReferenceResolverReferentialIdentitySeed(
+                        bigIntSchoolReferentialId,
+                        901,
+                        schoolResourceKeyId
+                    ),
+                    new ReferenceResolverReferentialIdentitySeed(
+                        bigIntLeaReferentialId,
+                        902,
+                        leaResourceKeyId
+                    ),
+                ],
+                Schools: [new ReferenceResolverSchoolSeed(901, BigIntSchoolId)],
+                LocalEducationAgencies: [new ReferenceResolverLocalEducationAgencySeed(902, BigIntLeaId)],
+                Descriptors: []
+            )
+        );
+
+        var result = await ResolveDocumentReferencesAsync(
+            CreateSchoolReference("$.schoolReference", bigIntSchoolReferentialId, BigIntSchoolId),
+            CreateLocalEducationAgencyReference(
+                "$.localEducationAgencyReference",
+                bigIntLeaReferentialId,
+                BigIntLeaId
+            )
+        );
+
+        result.SuccessfulDocumentReferencesByPath.Should().HaveCount(2);
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(901L);
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.localEducationAgencyReference")]
+            .DocumentId.Should()
+            .Be(902L);
+        result.InvalidDocumentReferences.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_resolves_a_threshold_crossing_deduped_lookup_set_without_losing_repeated_missing_path_diagnostics()
     {
         const int LargeLookupCount = 1999;
@@ -470,7 +543,7 @@ public class Given_MssqlReferenceResolver
         );
     }
 
-    private DocumentReference CreateSchoolReference(string path, ReferentialId referentialId, int schoolId)
+    private DocumentReference CreateSchoolReference(string path, ReferentialId referentialId, long schoolId)
     {
         return new(
             ResourceInfo: new BaseResourceInfo(
@@ -480,6 +553,29 @@ public class Given_MssqlReferenceResolver
             ),
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), schoolId.ToString()),
+            ]),
+            ReferentialId: referentialId,
+            Path: new JsonPath(path)
+        );
+    }
+
+    private DocumentReference CreateLocalEducationAgencyReference(
+        string path,
+        ReferentialId referentialId,
+        long localEducationAgencyId
+    )
+    {
+        return new(
+            ResourceInfo: new BaseResourceInfo(
+                new ProjectName(_database.Fixture.LocalEducationAgencyResource.ProjectName),
+                new ResourceName(_database.Fixture.LocalEducationAgencyResource.ResourceName),
+                false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(
+                    new JsonPath("$.localEducationAgencyId"),
+                    localEducationAgencyId.ToString()
+                ),
             ]),
             ReferentialId: referentialId,
             Path: new JsonPath(path)
