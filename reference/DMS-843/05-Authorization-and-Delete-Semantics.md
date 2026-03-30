@@ -5,7 +5,7 @@
 Ensure Change Queries preserve the correct authorization behavior for each surface:
 
 - live changed-resource queries continue to use the current live-read authorization behavior
-- `/deletes` and `/keyChanges` target the same tracked-change authorization criteria ODS applies for `ReadChanges`
+- `/deletes` and `/keyChanges` target the documented tracked-change authorization contract, preserving ODS-style delete-aware relationship visibility while applying the accepted DMS-specific ownership exception
 - tracked-change artifacts preserve the redesign authorization inputs needed for ownership-based and DocumentId-based authorization
 - authorization-maintenance updates do not create false change records
 
@@ -70,7 +70,7 @@ Relevant ODS behavior:
 - tracked changes use `ReadChanges` authorization criteria
 - delete visibility can remain valid even when the authorizing relationship row has already been deleted
 - relationship authorization uses delete-aware semantics
-- ownership and custom-view authorization apply to tracked changes too
+- this package additionally applies redesign-aligned ownership filtering and eligible custom-view authorization to tracked changes using captured tracked-change state
 
 The redesign authorization direction has the same implication in DMS:
 
@@ -78,6 +78,24 @@ The redesign authorization direction has the same implication in DMS:
 - relationship and custom-view authorization depend on basis-resource `DocumentId` values rather than natural keys
 
 Therefore, copied live-row projection columns alone are not enough for tracked changes. A tombstone or key-change row must preserve the tracked-change authorization state needed to reproduce the correct outcome after the live row, companion rows, or related relationship rows are gone.
+
+## Accepted DMS Authorization Exception
+
+The tracked-change ownership rule in DMS-843 is an accepted DMS-specific authorization exception, not an unresolved review comment.
+
+Architectural basis:
+
+- backend-redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md) says DMS follows the ODS authorization design unless specified otherwise and then specifies that `CreatedByOwnershipTokenId` is stored on shared `dms.Document` and always populated in DMS
+- backend-redesign [`data-model.md`](../design/backend-redesign/design-docs/data-model.md) treats `CreatedByOwnershipTokenId` as part of the canonical DMS row model and as an ownership-based authorization input
+- backend-redesign [`transactions-and-concurrency.md`](../design/backend-redesign/design-docs/transactions-and-concurrency.md) includes ownership-based authorization in the normal DMS write pipeline
+- redesign [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) preserves ownership-style constraints in the target authorization direction
+
+Required interpretation for DMS-843:
+
+- `/deletes` and `/keyChanges` preserve ODS-style delete-aware relationship visibility and the selected DMS tracked-change authorization contract
+- that contract intentionally includes ownership filtering using captured `CreatedByOwnershipTokenId`
+- reviewers should evaluate this as an explicit DMS exception justified by redesign auth, not as a hidden claim of strict legacy ODS parity
+- implementers must preserve the exception consistently in write-side capture, read-side filtering, validation, and tests
 
 ## Required Tracked-Change Authorization Data
 
@@ -117,10 +135,14 @@ Required meaning:
 Required structural contract:
 
 - the payload root is a JSON object
+- when `AuthorizationBasis` is present, the payload root must contain `contractVersion`
+- `contractVersion` is a positive integer identifying the resource-scoped tracked-change authorization contract version used when the row was captured
 - when relationship or custom-view tracked-change authorization applies, the payload must contain `basisDocumentIds`
 - `basisDocumentIds` maps stable basis-resource identifiers to sorted unique arrays of positive `DocumentId` values resolved during the same authorization pass
 - when a resource needs additional delete-aware relationship facts beyond those ids, the payload must also contain `relationshipInputs`, a deterministic resource-scoped object of named captured values
 - each change-query-enabled resource that relies on this payload must define the expected `basisDocumentIds` keys and any `relationshipInputs` members as part of its tracked-change authorization contract
+- incompatible changes to the meaning or required members of `basisDocumentIds` or `relationshipInputs` must bump `contractVersion`
+- retained tracked rows are interpreted through their stored `contractVersion`; DMS must not infer old rows against only the current live contract shape
 
 DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and the affected security metadata must be rejected when claim-set metadata is loaded or refreshed rather than silently degrading.
 
@@ -128,13 +150,15 @@ Enforcement ownership and gates:
 
 - enforcement of the resource-scoped `AuthorizationBasis` contract is owned by the DMS core authorization and claim-set metadata pipeline in this feature scope; it is not delegated to optional external components
 - claim-set and authorization metadata validation must run both at initial bootstrap and whenever the claim-set cache is refreshed
-- if a refreshed claim set introduces an invalid tracked-change relationship/custom-view contract, DMS must mark the affected authorization metadata invalid and fail requests with a security configuration error rather than requiring a process restart or silently weakening authorization
+- if a refreshed claim set introduces an invalid tracked-change relationship/custom-view contract, or drops support for a retained `AuthorizationBasis.contractVersion` that still exists in tracked rows, DMS must mark the affected authorization metadata invalid and fail requests with a security configuration error rather than requiring a process restart or silently weakening authorization
 - write-path capture must fail the request if required tracked-change authorization inputs for that routed resource cannot be resolved to the declared contract shape before tombstone or key-change-row insert
+- when that write-path failure reaches the API surface, DMS returns `500 Internal Server Error` ProblemDetails with type `urn:ed-fi:api:system-configuration:security`; no tombstone or key-change row may be committed in that failure path
 - deployments must treat these failures as contract-safety failures; silent fallback to weaker tracked-change authorization is not allowed
+- before exposing an incompatible tracked-change authorization contract, deployments must either migrate retained tracked rows, purge/reinitialize the retained tracked-change artifacts, or keep backward-compatible evaluation support for the older `contractVersion`
 
 ## Tracked-Change Authorization Model
 
-The tracked-change endpoints should follow the same authorization criteria that ODS applies for `ReadChanges`, even though DMS may satisfy that requirement with different physical SQL than ODS.
+The tracked-change endpoints should preserve the selected ODS-aligned `ReadChanges` outcomes adopted by this package, plus the accepted DMS-specific ownership exception justified above.
 
 The query sources are:
 
@@ -156,17 +180,18 @@ Required tracked-change categories:
 
 Ownership note:
 
-- ownership-based tracked-change authorization is included because backend-redesign stores `CreatedByOwnershipTokenId` on `dms.Document` as a first-class authorization input
-- this is a deliberate redesign-aligned DMS product choice, not a claim that legacy ODS `ReadChanges` currently applies ownership filtering on `/deletes` or `/keyChanges`
+- ownership-based tracked-change authorization is included because backend-redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md) stores `CreatedByOwnershipTokenId` on `dms.Document` as a first-class authorization input and redesign [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) preserves ownership-style constraints
+- this is an accepted DMS-specific authorization exception, not a claim that legacy ODS `ReadChanges` currently applies ownership filtering on `/deletes` or `/keyChanges`
 
 Implementation guidance:
 
 - namespace and direct education-organization checks may reuse copied row-local projection data directly
 - ownership checks use the stored `CreatedByOwnershipTokenId`
+- a tracked row with `CreatedByOwnershipTokenId = null` does not bypass ownership filtering; under ownership-based authorization it is treated as ownership-uninitialized and is not returned through that strategy
 - relationship and custom-view checks use the stored `AuthorizationBasis` rather than assuming the required live relationship rows still exist
-- key-change-query authorization filtering must happen before collapse
-- the promised earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion` semantics apply only to the rows that remain after authorization filtering
-- rows removed by authorization filtering must not participate in collapse
+- key-change-query authorization filtering must happen before ordering, paging, and `totalCount`
+- each surviving key-change tracking row is evaluated and returned as its own public key-change event with that row's stored `oldKeyValues`, `newKeyValues`, and `ChangeVersion`
+- rows removed by authorization filtering must not consume page slots or contribute to `totalCount`
 - hierarchy-based filters continue to use `dms.EducationOrganizationHierarchyTermsLookup` where they are still part of the active authorization evaluation
 
 ## How Delete-Aware Relationship Visibility Is Preserved
@@ -294,8 +319,8 @@ If product policy later decides to exclude some descriptor endpoints from Change
 The authorization design is acceptable if reviewers agree that:
 
 - live changed-resource queries reuse the current live authorization semantics
-- delete queries target ODS-style tracked-change authorization criteria rather than only current live-read semantics
-- key-change queries target ODS-style tracked-change authorization criteria while preserving pre-update transition visibility
+- delete queries target the documented tracked-change authorization contract, including ODS-style delete-aware relationship visibility and the accepted DMS-specific ownership exception
+- key-change queries target the documented tracked-change authorization contract while preserving pre-update transition visibility and the accepted DMS-specific ownership exception
 - tombstones preserve enough tracked-change authorization data to survive deletion of the live row and related relationship rows
 - key-change tracking preserves enough tracked-change authorization data to survive later key mutations or deletion of the live row
 - redesign ownership and DocumentId-based authorization concepts are represented in the tracked-change artifacts

@@ -222,16 +222,16 @@ The story owns:
 - extraction of `oldKeyValues` and `newKeyValues` from `ResourceSchema.IdentityJsonPaths`
 - canonical key-alias derivation for repeated identity leaf names
 - copied pre-update tracked-change authorization data on the tracking row, including ownership and authorization basis values
-- use of the new live `dms.Document.ChangeVersion` as the public synchronization token on the tracking row
+- use of a newly allocated distinct public key-change token from `dms.ChangeVersionSequence` as the public synchronization token on the tracking row
 
-This story does not own the public `/keyChanges` endpoint behavior or collapse semantics. It owns the write-path capture artifact that endpoint depends on.
+This story does not own the public `/keyChanges` endpoint read semantics. It owns the write-path capture artifact that endpoint depends on.
 
 ### Acceptance Criteria
 
 - Each committed identity-changing update produces exactly one key-change tracking row.
 - Non-identity updates produce no key-change tracking row.
 - Tracking rows contain `id`, `changeVersion`, `oldKeyValues`, and `newKeyValues`.
-- Tracking-row `changeVersion` is the new live `dms.Document.ChangeVersion`, not the internal `IdentityVersion`.
+- Tracking-row `changeVersion` is a newly allocated distinct public key-change token from `dms.ChangeVersionSequence`, not the live `dms.Document.ChangeVersion` and not the internal `IdentityVersion`.
 - `oldKeyValues` and `newKeyValues` remain deterministic for simple, composite, and repeated-leaf identity shapes.
 - The tracking row preserves the pre-update tracked-change authorization data required for transition visibility.
 - No key-change row is created for authorization-only maintenance updates.
@@ -242,7 +242,7 @@ This story does not own the public `/keyChanges` endpoint behavior or collapse s
 - Detect identity-changing updates by comparing the pre-update and post-update identity tuples derived from `IdentityJsonPaths`.
 - Capture the pre-update identity tuple and tracked-change authorization data before mutating the live row.
 - Capture the post-update identity tuple from the updated `EdfiDoc`.
-- Insert one tracking row with `ChangeVersion = dms.Document.ChangeVersion` for the committed identity-changing update.
+- Allocate a new distinct public key-change token from `dms.ChangeVersionSequence` and insert one tracking row with that token for the committed identity-changing update.
 - Ensure dependent representation rewrites do not create key-change rows unless the dependent document's own identity tuple changed.
 
 ### Dependencies
@@ -312,7 +312,7 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Parse and validate `Use-Snapshot` consistently across synchronization reads.
 - Implement the documented `400 Bad Request` and `404 Not Found` ProblemDetails contracts for feature-disabled collection GET requests, invalid values, invalid window relationships, and unavailable snapshot sources.
 - Keep replay-floor `409 Conflict` behavior explicitly deferred to the later retention phase.
-- Add DMS-core-owned claim-set metadata validation so required `AuthorizationBasis` inputs are structurally valid both before serving requests and after claim-set cache refreshes.
+- Add DMS-core-owned claim-set metadata validation so required `AuthorizationBasis` inputs and supported `contractVersion` mappings are structurally valid both before serving requests and after claim-set cache refreshes.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
 
@@ -414,7 +414,7 @@ The story owns:
 - `availableChangeVersions` computation across the participating artifacts
 - live-vs-snapshot source selection for those synchronization reads
 - snapshot lifecycle handling for snapshot-backed synchronization passes without changing public route or header contracts
-- key-change collapse rules
+- key-change one-row-per-event read rules
 - delete and key-change authorization semantics
 - row-level locking or engine-equivalent serialization on identity-changing updates and deletes
 
@@ -424,19 +424,19 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 
 - `/deletes` returns tombstones ordered deterministically.
 - `/deletes` suppresses same-window re-add churn when the same routed resource identity is live again within the requested window on the selected source.
-- `/keyChanges` returns collapsed rows ordered deterministically.
+- `/keyChanges` returns one row per authorized key-change event ordered deterministically.
 - `/keyChanges` remains valid for resources that do not support identity updates and returns `200 OK` with an empty array for them.
 - `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`.
-- `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse.
-- Delete-query authorization matches the documented ODS-style tracked-change semantics.
-- Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility.
-- `/keyChanges` uses a distinct public key-change token allocated for the tracked row, matching legacy ODS sequencing expectations.
+- `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering over the final key-change event stream.
+- Delete-query authorization matches the documented tracked-change contract, including ODS-style delete-aware relationship visibility and the accepted DMS-specific ownership exception.
+- Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility, including the accepted DMS-specific ownership exception.
+- `/keyChanges` uses a distinct public key-change token allocated from `dms.ChangeVersionSequence` for the tracked row, matching legacy ODS sequencing expectations.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
 - `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
 - Snapshot-backed synchronization preserves one consistent snapshot derivative across the pass; if that cannot be preserved, the pass fails explicitly with the documented snapshot-unavailable behavior.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
-- Writes that cannot resolve required tracked-change authorization inputs fail before tombstone or key-change persistence, and do not commit partial tracking rows.
+- Writes that cannot resolve required tracked-change authorization inputs fail with the documented security-configuration ProblemDetails contract before tombstone or key-change persistence, and do not commit partial tracking rows.
 
 ### Tasks
 
@@ -444,11 +444,12 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Implement `/keyChanges` query execution over `dms.DocumentKeyChangeTracking`.
 - Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
 - Apply same-window re-add suppression on `/deletes` before public paging and `totalCount` semantics are finalized.
-- Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
+- Apply key-change authorization against the stored pre-update tracked-change authorization data before ordering, paging, and `totalCount` are finalized.
+- Preserve the accepted DMS-specific ownership exception documented in `05-Authorization-and-Delete-Semantics.md` across `/deletes`, `/keyChanges`, validation, and tests.
 - Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
 - Implement snapshot lifecycle checks that enforce consistent derivative selection and explicit failure when lifecycle validity cannot be maintained, without introducing new public routes or headers.
-- Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
-- Allocate a distinct public key-change token when persisting each committed key-change tracking row.
+- Implement one-row-per-event key-change semantics so each surviving tracking row returns its own `oldKeyValues`, `newKeyValues`, and `changeVersion`.
+- Allocate a distinct public key-change token from `dms.ChangeVersionSequence` when persisting each committed key-change tracking row.
 - Compute `availableChangeVersions.oldestChangeVersion` from replay-floor semantics (or bootstrap `0`) and `availableChangeVersions.newestChangeVersion` from the selected source sequence ceiling (`next value - 1`) for ODS-compatible watermark behavior.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.
 - Enforce write-path failure when required `AuthorizationBasis` inputs cannot be resolved for tombstone or key-change capture, with no downgrade to weaker authorization semantics.
@@ -505,7 +506,6 @@ This story is not a generic testing bucket. Its purpose is to prove the document
 
 ### Tasks
 
-- Add unit tests for parameter parsing, feature-off behavior, route dispatch, profile behavior, key alias derivation, and response mapping.
 - Add unit tests for parameter parsing, feature-off behavior, `Use-Snapshot`, route dispatch, profile behavior, key alias derivation, and response mapping.
 - Add integration tests for live-row stamping, journal emission, delete capture, key-change capture, authorization behavior, `availableChangeVersions`, snapshot-backed reads, and row-level locking semantics.
 - Add E2E tests for changed-resource queries, `/deletes`, `/keyChanges`, profile interactions, deterministic ordering, invalid windows, snapshot-backed bounded windows, and unsupported-resource behavior.
@@ -579,6 +579,7 @@ A story should be considered done only if:
 - E2E impact is covered for route or behavior changes
 - no existing API behavior regresses
 - the resulting artifact still matches the documented change-query synchronization model, including the live-mode tradeoffs, snapshot-backed rules, and saved-watermark rules
+- when the story touches `/keyChanges`, the resulting artifact preserves the distinct public key-change token model rather than substituting the live `ChangeVersion` or the internal `IdentityVersion`
 - the story can be understood without requiring unstated assumptions outside the numbered package
 
 ## Deferred Later-Phase Work

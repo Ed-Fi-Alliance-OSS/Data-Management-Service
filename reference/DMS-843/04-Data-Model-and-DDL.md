@@ -108,9 +108,15 @@ Required semantics:
 - values may contain gaps
 - rollbacks may consume values
 - clients treat values as ordering tokens rather than row counts
-- value `0` is reserved for the bootstrap watermark sentinel exposed by `availableChangeVersions` when no retained change rows exist
+- value `0` matches the ODS-output-compatible bootstrap watermark exposed by `availableChangeVersions` when no change versions have been allocated; legacy ODS also returns `0` on an empty instance because `MAX(ChangeVersion)` over empty tables is `NULL`, serialized as `0`
 - the sequence is both the stamp-allocation mechanism and the public source for the ODS-compatible `newestChangeVersion` ceiling (`next value - 1` on the selected source)
 - `oldestChangeVersion` remains replay-floor metadata (or bootstrap `0` when no replay-floor metadata exists)
+
+Dialect-specific ceiling computation:
+
+- PostgreSQL: query sequence state without consuming a value; the standard read is `SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM dms."ChangeVersionSequence"` so the pre-first-allocation state normalizes to `0` instead of exposing the engine's raw start value
+- SQL Server: `NEXT VALUE FOR` is DDL-level and cannot be called in a read-only context; use `SELECT current_value FROM sys.sequences WHERE object_id = OBJECT_ID('dms.ChangeVersionSequence')` to read the ceiling without consuming a value; `current_value` is `NULL` before the first allocation, which must be normalized to `0` for the bootstrap response
+- both engines must normalize a pre-allocation state to `0` rather than returning a raw engine-specific initial sequence descriptor value
 
 ## `dms.Document.ResourceKeyId`
 
@@ -146,6 +152,12 @@ Required semantics:
 - the live row stores the ownership stamp used by redesign authorization concepts
 - tombstones and key-change rows copy the live row's value so tracked-change authorization can evaluate ownership after deletes or later key changes
 - if historical rows cannot be retroactively assigned an ownership token, null values remain valid persisted state and carry the same authorization implications they do in the redesign authorization model
+- under ownership-based authorization, a tracked row with `CreatedByOwnershipTokenId = null` does not bypass ownership filtering; it remains ownership-uninitialized state and is not returned through that strategy
+
+Implementation note:
+
+- this package treats tracked-change ownership filtering as an accepted DMS-specific authorization exception justified by redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md), [`data-model.md`](../design/backend-redesign/design-docs/data-model.md), [`transactions-and-concurrency.md`](../design/backend-redesign/design-docs/transactions-and-concurrency.md), and [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md)
+- preserving `CreatedByOwnershipTokenId` on the live row and on tracked rows is therefore part of the approved DMS-843 contract, not an optional extension
 
 ## `dms.Document.ChangeVersion`
 
@@ -191,6 +203,12 @@ Final state after backfill:
 For redesign alignment, `dms.Document.IdentityVersion` is the current-backend equivalent of redesign `dms.Document.IdentityVersion`.
 
 This column is not a public Change Query response field, but it is required so the current-backend bridge model matches redesign identity-tracking responsibilities.
+
+Mutual-exclusivity rule for `IdentityVersion` initialization vs. update-time binding:
+
+- database insert trigger or column default is the sole owner of `IdentityVersion` assignment for newly inserted rows
+- the application write path is the sole owner of `IdentityVersion` advancement for committed identity-changing updates on already-existing rows
+- these two mechanisms apply to disjoint events (insert vs. identity-changing update) and must never compete; no insert trigger may fire an additional `IdentityVersion` allocation during an identity-changing update, and no update write path may skip the mandatory application-side allocation on insert
 
 ## Content and Identity Stamping Rules
 
@@ -277,6 +295,7 @@ Trigger responsibility note:
 Bridge-mechanics note:
 
 - direct-row `IdentityVersion` binding is a current-backend bridge implementation detail when one universal JSON trigger cannot infer identity tuples
+- insert-time defaults or triggers own initial `IdentityVersion` assignment for newly inserted rows; explicit write-path binding applies only to committed identity-changing updates on existing rows, so the two mechanisms do not compete for the same update event
 - this does not change the redesign-aligned ownership boundary: downstream propagation, restamping, and journaling remain storage-layer responsibilities driven by the committed update plan
 - redesign-aligned backends may use metadata-driven write-path logic, database-native mechanisms, or a combination, provided the normative identity-stamping outcomes in this design are preserved
 
@@ -344,9 +363,16 @@ Delete responses must return the resource identifier values clients use for sync
 
 Those values are derived from `ResourceSchema.IdentityJsonPaths`. Persisting them at delete time avoids dependence on a deleted live row or on new schema metadata tables that do not exist in the current backend.
 
+ResourceVersion stability invariant:
+
+- `dms.DocumentDeleteTracking` and `dms.DocumentKeyChangeTracking` both store `ResourceVersion` alongside `KeyValues`, `OldKeyValues`, and `NewKeyValues`
+- the `IdentityJsonPaths` used to materialize key alias fields at `/deletes` and `/keyChanges` query time are derived from the deployed schema for that `ResourceVersion`
+- this design requires that `IdentityJsonPaths` for a given `(ProjectName, ResourceName, ResourceVersion)` triple is stable within a deployment; a schema upgrade that changes identity paths must use a new `ResourceVersion` value rather than mutating the existing one in place
+- implementations must enforce this invariant at migration time; a deployed version of the schema must not retroactively alter the `IdentityJsonPaths` for a `ResourceVersion` that already has committed tombstone or key-change rows
+
 ## Why tracked-change authorization data is stored on tombstones
 
-Delete queries must preserve ODS-style tracked-change authorization criteria after the live row and relationship rows have been removed.
+Delete queries must preserve the documented tracked-change authorization contract, including ODS-style delete-aware relationship visibility, after the live row and relationship rows have been removed.
 
 The tombstone therefore stores:
 
@@ -391,7 +417,7 @@ Current-backend key note:
 
 Required semantics:
 
-- `dms.DocumentKeyChangeTracking.ChangeVersion` stores a distinct public key-change token allocated for the tracked key-change row
+- `dms.DocumentKeyChangeTracking.ChangeVersion` stores a distinct public key-change token allocated for the tracked key-change row from the same `dms.ChangeVersionSequence`
 - `dms.DocumentKeyChangeTracking.ChangeVersion` does not store `dms.Document.IdentityVersion`
 - this preserves legacy ODS key-change token sequencing while still leaving `IdentityVersion` as an internal bridge artifact
 
@@ -429,10 +455,13 @@ Required semantics:
 - it preserves any additional delete-aware relationship inputs needed to reproduce ODS tracked-change visibility when the authorizing relationship row has already been deleted
 - it is captured from the same pre-delete or pre-update authorization-resolution pass that determines the row's live authorization state
 - the payload root is a JSON object
+- when `AuthorizationBasis` is present, the payload root must contain `contractVersion`
+- `contractVersion` is a positive integer identifying the resource-scoped tracked-change authorization contract version used when the row was captured
 - when tracked-change relationship or custom-view authorization applies, the payload must contain `basisDocumentIds`
 - `basisDocumentIds` is a deterministic JSON object whose keys are stable basis-resource identifiers for the routed resource and whose values are sorted unique arrays of positive `DocumentId` values resolved during the same pre-change authorization pass
 - when delete-aware relationship authorization needs facts beyond basis-resource `DocumentId` values, the payload must also contain `relationshipInputs`, a deterministic resource-scoped object containing only the named pre-change facts required by that resource's tracked-change authorization contract
 - each change-query-enabled resource that relies on relationship or custom-view tracked-change authorization must define the expected `basisDocumentIds` keys and any `relationshipInputs` members as part of its resource-scoped contract
+- incompatible changes to that resource-scoped contract must bump `contractVersion`; retained rows are interpreted against their stored version rather than against heuristics derived only from the current live contract
 
 ## Resource-scoped key payload contract for shared tracking tables
 
@@ -491,7 +520,7 @@ Reasons:
 
 - delete rows are terminal tombstones and must preserve `KeyValues` after the live row disappears
 - key-change rows are transition records and must preserve both `OldKeyValues` and `NewKeyValues`
-- key-change queries have route-specific collapse semantics that do not apply to delete rows
+- key-change queries expose one row per retained identity-transition event rather than a tombstone-style terminal state
 - live changed-resource queries are driven by the current live representation stamp and required live-change journal, not by historical tombstones
 - separate tables keep indexes purpose-built, avoid sparse nullable payload columns, and allow retention policies to evolve without conflating distinct artifact lifecycles
 
@@ -666,7 +695,7 @@ CREATE INDEX IX_DocumentKeyChangeTracking_Project_Resource_ChangeVersion
 Purpose:
 
 - support resource-scoped key-change scans
-- support deterministic ordering before window collapse
+- support deterministic ordering over retained key-change events
 
 ## Required journal indexes
 
@@ -703,11 +732,11 @@ For the participating sources:
 
 - `newestChangeVersion` is the selected source sequence ceiling (`next value - 1` on that source), not the max retained committed tracking-row value across the participating sources
 - for the initial DMS-843 scope, each participating surface contributes replay floor `0`, so `oldestChangeVersion` remains `0`
-- if the selected source has never allocated a change-version value and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a DMS-843 starting watermark sentinel rather than a retained change row or raw engine-specific initial sequence state
+- if the selected source has never allocated a change-version value and no replay-floor metadata exists, return `0` for both values; this is ODS-output-compatible behavior: legacy ODS also returns `0/0` on an empty instance (NULL MAX serialized as 0), and DMS-843 reaches the same result via sequence-ceiling arithmetic (`next value - 1` = `0` before the first allocation)
 - if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
-- for identity-changing updates, the key-change participation value is the distinct public key-change token allocated for the tracked row, not the live resource `ChangeVersion` and not the internal `IdentityVersion`
+- for identity-changing updates, the key-change participation value is the distinct public key-change token allocated from `dms.ChangeVersionSequence` for the tracked row, not the live resource `ChangeVersion` and not the internal `IdentityVersion`
 
-Legacy ODS allocates a distinct sequence value for key-change rows.
+Legacy ODS allocates a distinct sequence value for key-change rows from the same change-version sequence used by other synchronization artifacts.
 
 DMS-843 adopts that same public key-change token model for `/keyChanges`.
 

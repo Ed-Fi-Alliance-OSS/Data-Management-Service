@@ -48,10 +48,22 @@ Snapshot-backed reads are one of the two synchronization flows in the design. `U
 Operational rules:
 
 - the snapshot source is read-only and instance-scoped
-- the snapshot source must expose the same DMS schema, `dms.Document` rows, journals, tombstones, key-change rows, and required authorization companion artifacts as the live instance
+- snapshot configuration is a per-instance binding to one usable snapshot derivative; `Use-Snapshot = true` is invalid for an instance that has no active binding
+- the bound derivative must expose the same DMS schema, `dms.Document` rows, journals, tombstones, key-change rows, `dms.EducationOrganizationHierarchyTermsLookup`, and all authorization companion tables listed in `05-Authorization-and-Delete-Semantics.md` that are still used during tracked-change authorization evaluation; omitting any of these tables from the snapshot will produce silently wrong tracked-change authorization results or query-time failures
+- the bound derivative must expose an immutable enough identity or lifecycle handle that operations can keep one derivative stable for a bounded synchronization pass
 - if no snapshot source is configured, ordinary live-flow requests still work exactly as they do today and `Use-Snapshot = true` requests fail explicitly
 - snapshot refresh or recreation must occur only after the matching migrations, backfill, and application version are in place
 - clients that rely on snapshot-backed synchronization must use `availableChangeVersions` and all later data reads against that same snapshot surface
+- if operations retire, refresh, or repoint the bound derivative before a pass completes, later `Use-Snapshot = true` requests must fail with the documented snapshot-unavailable contract rather than continuing on a different derivative
+
+## `AuthorizationBasis` Contract Evolution
+
+Operational rules:
+
+- every retained `AuthorizationBasis` payload must carry a supported positive-integer `contractVersion`
+- incompatible changes to a resource's tracked-change authorization contract must bump `contractVersion`
+- deployments must validate that retained tombstone and key-change rows use only supported `contractVersion` values before serving tracked-change requests
+- if claim-set refresh or deployment rollout removes support for a retained `contractVersion`, DMS must fail with the documented security-configuration behavior until rows are migrated, purged/reinitialized, or backward-compatible evaluation support is restored
 
 ## Backfill Validation
 
@@ -104,7 +116,7 @@ Required unit coverage:
 - old-key and new-key extraction from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix alias derivation for simple, composite, and repeated-leaf identities
 - fail-fast validation for duplicate or otherwise unresolvable identity-path alias sets
-- fail-fast authorization-metadata validation at initial claim-set load and on claim-set cache refresh for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid `basisDocumentIds` and optional `relationshipInputs` mapping
+- fail-fast authorization-metadata validation at initial claim-set load and on claim-set cache refresh for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid supported `contractVersion`, `basisDocumentIds`, and optional `relationshipInputs` mapping
 - tombstone DTO or response mapping
 - key-change DTO or response mapping
 - `/deletes` and `/keyChanges` map `id` from stored `DocumentUuid`
@@ -123,15 +135,16 @@ Required backend integration coverage:
 8. snapshot-backed changed-resource paging remains stable when later live writes occur after the snapshot point
 9. delete inserts one tombstone row with copied natural-key and authorization data
 10. delete rollback leaves no tombstone row committed
-11. delete query authorization matches the documented ODS-style tracked-change authorization criteria, including delete-aware relationship cases
-12. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the selected source
+11. delete query authorization matches the documented tracked-change authorization contract, including ODS-style delete-aware relationship cases and the accepted DMS-specific ownership exception
+12. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the selected source (live-primary flow)
+12a. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the **snapshot source** when `Use-Snapshot = true`; suppression must not consult the live primary during a snapshot-backed pass
 13. identity-changing update inserts one key-change tracking row with copied old-key, new-key, and tracked-change authorization data
-14. identity-changing update records a distinct public key-change token, not the live resource `ChangeVersion` and not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
+14. identity-changing update records a distinct public key-change token from `dms.ChangeVersionSequence`, not the live resource `ChangeVersion` and not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
 15. non-identity update does not insert a key-change tracking row
 16. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
-17. key-change query collapses multiple key changes for one resource within a window correctly
+17. key-change query returns one row per authorized key-change event within a window and preserves each event's stored `oldKeyValues`, `newKeyValues`, and tracked `changeVersion`
 18. key-change query authorization uses the stored pre-update tracked-change authorization data as documented
-19. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
+19. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering over the final key-change event stream
 20. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
 21. `availableChangeVersions` with `Use-Snapshot = true` returns the snapshot-visible ceiling rather than the live-primary ceiling
 22. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
@@ -142,6 +155,7 @@ Required backend integration coverage:
 27. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
 28. tombstones and key-change rows preserve `CreatedByOwnershipTokenId` and the tracked-change authorization basis data needed for redesign authorization concepts
 29. write-path capture fails explicitly when required tracked-change authorization inputs cannot be reduced to the declared `AuthorizationBasis` contract for the routed resource, and no tombstone or key-change row is committed in that failure path
+30. startup and claim-set refresh both reject unsupported retained `AuthorizationBasis.contractVersion` values before tracked-change routes are served
 
 ## End-to-end tests
 
@@ -151,7 +165,7 @@ Required E2E coverage:
 2. GET by id remains unchanged
 3. changed-resource query returns current resources within the requested window
 4. `/deletes` returns tombstones in deterministic order
-5. `/keyChanges` returns collapsed key-change rows in deterministic order
+5. `/keyChanges` returns key-change event rows in deterministic order
 6. `minChangeVersion = 0` is accepted when used as a bootstrap watermark
 7. `maxChangeVersion = minChangeVersion` returns a valid single-version bounded-window response
 8. max-only windows are accepted on changed-resource, `/deletes`, and `/keyChanges`
@@ -163,21 +177,23 @@ Required E2E coverage:
 14. malformed, negative, or otherwise invalid change-query windows return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `validationErrors`, `errors`, and `correlationId`
 15. if a later retention phase is added, requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details with the documented replay-floor fields
 16. `availableChangeVersions` returns bootstrap `0/0` before any retained tracking rows exist
-17. `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
-18. when Change Queries is disabled, `/deletes`, `/keyChanges`, and `availableChangeVersions` return `404 Not Found` without being interpreted as ordinary resource routes
-19. unauthorized callers do not see unauthorized changed resources
-20. unauthorized callers do not see unauthorized deletes under the documented tracked-change authorization rules
-21. unauthorized callers do not see unauthorized key changes under the documented tracked-change authorization rules
-22. insert then delete before sync returns only the delete row
-23. delete then reinsert in the same window suppresses the delete row and returns only the later live resource for that window
-24. delete then reinsert in a later window yields a delete row in the earlier window and a later live resource in the later window
-25. multiple key changes before sync yield one collapsed key-change row
-26. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
-27. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
-28. required `journal + verify` changed-resource execution preserves the documented public paging semantics
-29. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
-30. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
-31. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
+17. delete or identity-changing update requests whose tracked-change authorization capture cannot satisfy the declared `AuthorizationBasis` contract return `500 Internal Server Error` problem details with the documented security-configuration type and do not commit partial tracking rows
+18. `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
+19. when Change Queries is disabled, `/deletes`, `/keyChanges`, and `availableChangeVersions` return `404 Not Found` without being interpreted as ordinary resource routes
+20. unauthorized callers do not see unauthorized changed resources
+21. unauthorized callers do not see unauthorized deletes under the documented tracked-change authorization rules
+22. unauthorized callers do not see unauthorized key changes under the documented tracked-change authorization rules
+23. insert then delete before sync returns only the delete row
+24. delete then reinsert in the same window suppresses the delete row and returns only the later live resource for that window
+25. delete then reinsert in a later window yields a delete row in the earlier window and a later live resource in the later window
+26. multiple key changes before sync yield one key-change row per authorized committed event in deterministic order
+27. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
+28. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering over the final key-change event stream
+29. required `journal + verify` changed-resource execution preserves the documented public paging semantics
+30. unsupported retained `AuthorizationBasis.contractVersion` values produce the documented security-configuration failure until corrected
+31. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
+32. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
+33. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
 
 ## Scenario Expectations
 
@@ -193,7 +209,7 @@ Required E2E coverage:
 | Delete transaction rollback | No committed tombstone |
 | Delete then reinsert in the same window | Suppress the delete row and expose only the later live state for that window |
 | Delete then reinsert in a later window | Return the earlier delete in its window and the later live row in the later window |
-| Multiple key changes in one window | Return one collapsed key-change row |
+| Multiple key changes in one window | Return one ordered key-change row per authorized committed event |
 | Snapshot-backed bounded synchronization | Return the snapshot-visible surface for the bounded window without paging drift from later live writes |
 | Snapshot source unavailable | Return explicit snapshot-unavailable problem details; do not silently fall back to live reads |
 | Repeated identity leaf names | Return deterministic disambiguated key payload fields |
@@ -245,6 +261,7 @@ Required external-contract behavior:
 - invalid or negative `minChangeVersion` returns `400 Bad Request` problem details
 - invalid or negative `maxChangeVersion` returns `400 Bad Request` problem details
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request` problem details
+- delete and identity-changing update requests that cannot capture the tracked-change authorization data required by the routed resource return `500 Internal Server Error` problem details
 - if a later retention phase introduces replay-floor advancement, `minChangeVersion < oldestChangeVersion` returns `409 Conflict` problem details
 
 ODS compatibility note:
@@ -261,6 +278,7 @@ Problem-detail expectations:
 - invalid `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version`
 - invalid `maxChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:max-change-version`
 - invalid window relationship uses type `urn:ed-fi:api:change-queries:validation:window`
+- tracked-change write-side authorization-capture failure uses type `urn:ed-fi:api:system-configuration:security`
 - if a later retention phase is added, replay-floor miss uses type `urn:ed-fi:api:change-queries:sync:window-unavailable`
 - if a later retention phase is added, replay-floor miss responses include `requestedMinChangeVersion`, `oldestChangeVersion`, and `newestChangeVersion`
 
@@ -334,17 +352,17 @@ Mitigation:
 - copy the tracked-change authorization data into `dms.DocumentDeleteTracking`, including ownership and row-local authorization basis values
 - build delete-query filters against that preserved tracked-change state
 
-## Key-change collapse or authorization drift
+## Key-change event ordering or authorization drift
 
 Risk:
 
-- key-change queries could return duplicate rows, the wrong old/new keys, or unauthorized rows if tracking or collapse logic is incomplete
+- key-change queries could return missing events, duplicated events, the wrong old/new keys, or unauthorized rows if tracking or event ordering logic is incomplete
 
 Mitigation:
 
 - capture explicit old and new key values in `dms.DocumentKeyChangeTracking`
 - copy the tracked-change authorization data into each key-change tracking row
-- test multi-change collapse and authorization parity explicitly
+- test multi-event ordering and authorization parity explicitly
 
 ## Journal misuse for deletes
 
@@ -368,7 +386,7 @@ The feature design is ready for review if reviewers can answer yes to the follow
 - same-window delete plus re-add churn is suppressed from the public `/deletes` surface
 - key changes remain visible after later key mutations or deletion of the live row
 - live changed-resource authorization remains aligned to current live-read semantics
-- delete and key-change authorization target the documented ODS-style tracked-change criteria
+- delete and key-change authorization target the documented tracked-change contract, including ODS-style delete-aware relationship visibility and the accepted DMS-specific ownership exception
 - tracked-change artifacts preserve redesign ownership and DocumentId-based authorization inputs
 - the key payload contract stays deterministic even when a resource reuses the same leaf name in multiple identity paths
 - the design avoids snapshot history tables, preserves the current live mode, and explicitly documents both the live and snapshot-backed synchronization behaviors and obligations

@@ -22,7 +22,7 @@ Use this package for design review first, then for implementation planning, Jira
 
 This package is the DMS-843 design for the current backend shape. It is not the full backend-redesign package.
 
-**Approval target:** The approval bar is ODS-compatible Change Query behavior in DMS context, delivered through a redesign-aligned implementation. DMS-843 must preserve additive API compatibility while matching ODS-facing semantics for route shapes, windowing, `Use-Snapshot` synchronization behavior (including lifecycle handling), ODS-compatible watermark semantics, and ODS-style tracked-change authorization goals.
+**Approval target:** The approval bar is ODS-compatible Change Query behavior in DMS context, delivered through a redesign-aligned implementation. DMS-843 must preserve additive API compatibility while matching ODS-facing semantics for route shapes, windowing, `Use-Snapshot` synchronization behavior (including lifecycle handling), ODS-compatible watermark semantics, and ODS-style tracked-change authorization goals except for the accepted DMS-specific ownership exception documented in `05-Authorization-and-Delete-Semantics.md`.
 
 The package does not claim, and is not required to claim, byte-for-byte replication of legacy ODS internal mechanics. Where it departs from ODS behavior, each departure is named, reasoned, and owned in the numbered design documents.
 
@@ -30,13 +30,15 @@ The package does not claim, and is not required to claim, byte-for-byte replicat
 
 The alignment target is redesign artifact-responsibility alignment plus the selected Ed-Fi ODS/API behaviors explicitly adopted in this package, while still using current-backend bridge artifacts where names or storage differ.
 
+For DMS-843 approval, the required carry-forward artifacts are the live-row stamps on `dms.Document`, `dms.ResourceKey` plus `dms.Document.ResourceKeyId`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, tracked-change authorization capture, and the two `Use-Snapshot`-selected synchronization flows. Optional redesign projections such as `dms.DocumentCache` and ETL-oriented views remain informative context only.
+
 This package keeps snapshot history tables out of scope, but snapshot lifecycle handling is in scope. Synchronization reads run in one of two built-in flows selected by `Use-Snapshot`: absent or `false` uses the live non-snapshot flow, and `true` uses the snapshot-backed flow against the configured snapshot source with DMS-managed lifecycle checks that preserve one-pass consistency guarantees.
 
 Important explicit DMS-specific choices that remain in this package:
 
-- tracked-change authorization includes redesign-aligned ownership filtering on `/deletes` and `/keyChanges` even though legacy ODS `ReadChanges` does not currently apply ownership filtering on those surfaces
+- tracked-change authorization includes the accepted DMS-specific ownership exception on `/deletes` and `/keyChanges`; legacy ODS `ReadChanges` does not currently apply ownership filtering on those surfaces, but redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md) and [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) make ownership a first-class DMS authorization concern
 - `availableChangeVersions` uses ODS-compatible sequence-ceiling `newestChangeVersion` semantics (`next value - 1` on the selected source)
-- when the selected synchronization surface has not yet allocated any change-version values, `availableChangeVersions` returns bootstrap `0/0` as a DMS-843 normalization instead of exposing raw engine-specific initial sequence metadata
+- when the selected synchronization surface has not yet allocated any change-version values, `availableChangeVersions` returns bootstrap `0/0`; this is verified ODS-output-compatible behavior: legacy ODS also returns `0/0` on an empty instance (NULL MAX serialized as 0), and DMS-843 reaches the same result via sequence-ceiling arithmetic
 - current-backend `_etag` and `_lastModifiedDate` remain physically stored inside `EdfiDoc`, so DMS-843 aligns to redesign change-tracking responsibilities but not yet to redesign metadata-stamp storage ownership
 
 The most important current-backend to redesign mappings used throughout this package are:
@@ -104,13 +106,19 @@ Recommended cross-reference points:
 | whole-feature alignment and bridge posture | [`overview.md`](../design/backend-redesign/design-docs/overview.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | explains why the package uses redesign-aligned artifact responsibilities |
 | changed-resource execution and concurrency | [`transactions-and-concurrency.md`](../design/backend-redesign/design-docs/transactions-and-concurrency.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | provides the broader `journal + verify` and committed-state execution context |
 | live-row stamps, journal, and core tracking artifacts | [`data-model.md`](../design/backend-redesign/design-docs/data-model.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md), [`ddl-generation.md`](../design/backend-redesign/design-docs/ddl-generation.md) | aligns `ResourceKey`, live stamps, journal responsibilities, indexing, and deterministic provisioning |
-| authorization semantics | [`auth.md`](../design/backend-redesign/design-docs/auth.md) | companion context for ownership and DocumentId-based authorization behavior, including tracked-change implications |
+| authorization semantics | [`auth.md`](../design/backend-redesign/design-docs/auth.md), [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) | companion context for ownership and DocumentId-based authorization behavior, including the accepted tracked-change ownership exception in DMS-843 |
 | optional downstream projections and ETL ideas | [`etl-view-sketch.md`](../design/backend-redesign/design-docs/etl-view-sketch.md) | informative only; not required for DMS-843 approval |
 
 Important boundary:
 
 - optional redesign projections such as `dms.DocumentCache` and ETL-oriented views are not required DMS-843 spike artifacts
 - the DMS-843 package is approval-complete without those optional projections
+
+Reviewer and implementer note:
+
+- treat tracked-change ownership filtering as an accepted DMS-specific authorization exception, not as a hidden strict-parity claim
+- redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md) makes `CreatedByOwnershipTokenId` a shared `dms.Document` authorization input in DMS, and [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) preserves ownership-style constraints in the redesign direction
+- DMS-843 therefore keeps ownership filtering on `/deletes` and `/keyChanges` while still documenting that legacy ODS `ReadChanges` does not currently do so
 
 ## Normative Vs Informative Material
 
@@ -150,4 +158,4 @@ This package is designed to align to the Ed-Fi ODS/API Change Query behavior whe
 - Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
 - Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
-The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. Those explicit choices include `Use-Snapshot` as the selector between the live and snapshot-backed synchronization flows over the same tracking artifacts, legacy ODS parity for `/keyChanges` token sequencing, ODS-compatible sequence-ceiling `availableChangeVersions.newestChangeVersion` semantics, and retention of current-backend `_etag/_lastModifiedDate` storage ownership.
+The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. Those explicit choices include `Use-Snapshot` as the selector between the live and snapshot-backed synchronization flows over the same tracking artifacts, adoption of legacy ODS parity for distinct `/keyChanges` token sequencing, the accepted DMS-specific tracked-change ownership exception justified by redesign auth, bootstrap `0/0` as ODS-output-compatible behavior for empty synchronization surfaces (verified), ODS-compatible sequence-ceiling `availableChangeVersions.newestChangeVersion` semantics, and retention of current-backend `_etag/_lastModifiedDate` storage ownership.

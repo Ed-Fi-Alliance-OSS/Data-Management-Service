@@ -47,15 +47,17 @@ Semantics:
 - `newestChangeVersion` is not computed as max committed retained row value across participating tracking tables
 - when `Use-Snapshot = true`, both bounds are computed from the snapshot-visible synchronization surface rather than from the live primary database, so `newestChangeVersion` is the ceiling for that snapshot-backed pass
 - callers must pair `availableChangeVersions` with later data reads that use the same `Use-Snapshot` choice; mixing snapshot and non-snapshot reads in one pass invalidates the advertised ceiling
-- when the synchronization surface has no allocated change versions and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a DMS-843 starting watermark sentinel rather than a retained change row or raw engine-specific initial sequence state
+- when the synchronization surface has no allocated change versions and no replay-floor metadata exists, the endpoint returns `0` for both values; this is ODS-output-compatible behavior: legacy ODS returns `0/0` on an empty instance because `MAX(ChangeVersion)` across empty tables evaluates to `NULL`, which the ODS serializes as `0`; DMS-843 reaches the same output via sequence-ceiling arithmetic (`next value - 1` = `0` before the first allocation); the output contracts are identical, though the internal computation paths differ
 - if a later retention phase introduces replay-floor metadata, `oldestChangeVersion` becomes the lowest valid inclusive `minChangeVersion` that can still return complete results, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
 
 ODS-compatible snapshot derivative context:
 
 - synchronization requests operate on one resolved instance derivative at a time: live-primary derivative when `Use-Snapshot` is absent or `false`, snapshot-visible derivative when `Use-Snapshot = true`
 - route-prefix instance resolution still determines the base DMS instance; `Use-Snapshot` only selects which derivative of that same instance supplies the synchronization surface
+- snapshot selection is configuration-driven per resolved instance: either no snapshot derivative is bound, or exactly one read-only snapshot derivative binding is available for `Use-Snapshot = true`
 - the selected derivative must expose a complete synchronization surface, including `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, `dms.ResourceKey`, and required authorization companion artifacts used by tracked-change authorization
 - ODS-style client flow applies unchanged: obtain one window from `availableChangeVersions`, then execute changed-resource, `/keyChanges`, and `/deletes` against that same derivative
+- the snapshot derivative binding must remain stable for one bounded synchronization pass; if the configured derivative is unavailable, expired, or refreshed away before the pass completes, later `Use-Snapshot = true` requests fail with the documented snapshot-unavailable contract rather than continuing on a different derivative
 - DMS-843 does not require ODS-specific infrastructure naming, but any snapshot implementation must preserve the same derivative-selection behavior and equivalent synchronization artifacts
 
 ## 2. Changed-resource collection query
@@ -119,7 +121,7 @@ Delete query semantics:
 - delete rows are ordered deterministically
 - delete rows preserve the natural-key values needed by downstream synchronization clients
 - the public `/deletes` surface suppresses a tombstone when the same routed resource identity is re-added and visible as a current live row within the same requested window on the same selected source
-- delete rows are authorization-filtered
+- delete rows are authorization-filtered according to the tracked-change contract defined in `05-Authorization-and-Delete-Semantics.md`, including the accepted DMS-specific ownership exception
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
 
 ## 4. Key change query
@@ -160,9 +162,11 @@ Key change semantics:
 - this token is distinct from both the live resource `ChangeVersion` and the internal `IdentityVersion`
 - DMS-843 adopts the legacy ODS model here so key-change rows sort on their own tracked-change token rather than on the live representation-change stamp of the identity-changing write
 - key-change rows are ordered deterministically
-- key-change-query authorization is evaluated before collapse against each tracking row's stored pre-update tracked-change authorization data
-- if multiple key changes occur for the same resource inside one window, the API returns one collapsed row with the earliest `oldKeyValues`, the latest `newKeyValues`, and the latest `changeVersion` from the rows that remain after authorization filtering
-- `limit`, `offset`, and `totalCount` on `/keyChanges` apply to that collapsed authorized result set rather than to raw tracking rows
+- key-change-query authorization is evaluated against each tracking row's stored pre-update tracked-change authorization data before ordering, paging, and `totalCount` are finalized
+- key-change-query authorization follows the tracked-change contract defined in `05-Authorization-and-Delete-Semantics.md`, including the accepted DMS-specific ownership exception
+- each surviving tracking row is exposed as one public key-change event row with its own `oldKeyValues`, `newKeyValues`, and tracked `changeVersion`
+- if multiple key changes occur for the same resource inside one window, the API returns one row per authorized key-change event in deterministic chronological order
+- `limit`, `offset`, and `totalCount` on `/keyChanges` apply to that final authorized event stream rather than to a collapsed per-resource result set
 - key-change rows are authorization-filtered
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
 
@@ -231,7 +235,7 @@ The field-name contract is evaluated per routed resource, so different resources
 - remain valid in changed-resource mode and on `/deletes`
 - remain valid on `/keyChanges`
 - in changed-resource mode, all three apply to the final authorized one-row-per-resource result set after any internal candidate verification or elimination required by the execution strategy
-- on `/keyChanges`, all three apply after authorization filtering and collapse, over the final one-row-per-resource result set
+- on `/keyChanges`, all three apply after authorization filtering, over the final one-row-per-key-change-event result set
 
 ## Window Semantics
 
@@ -317,6 +321,7 @@ Implications of this algorithm:
 - bounded windows using `maxChangeVersion = synchronizationVersion` are correctness-safe for that pass because later live writes are not visible inside the snapshot
 - offset paging is stable within that snapshot-backed pass because page membership and ordering do not drift under concurrent writes to the live primary
 - writes committed after the snapshot point are invisible to the pass and will not be observed until a later snapshot refresh or a later non-snapshot run
+- snapshot-backed passes rely on one stable configured derivative binding for the resolved instance; if operations retire or repoint that derivative before the pass completes, later `Use-Snapshot = true` requests fail explicitly instead of silently switching to a different derivative
 - if the snapshot source becomes unavailable during a pass, the client must discard the partial pass and retry once the snapshot is available again or rerun in non-snapshot mode according to its tolerance for best-effort behavior
 
 Bounded or max-only windows remain supported by the public API for ODS compatibility, caller-managed partitioning, diagnostics, or specialized workflows in either mode.
@@ -360,10 +365,9 @@ Expected behavior:
 
 Expected behavior:
 
-- `/keyChanges` returns one collapsed row for the resource in the requested window
-- `oldKeyValues` come from the earliest key state in the window
-- `newKeyValues` come from the latest key state in the window
-- `changeVersion` is the latest key-change `ChangeVersion` in the window
+- `/keyChanges` returns one row per authorized key-change event in the requested window
+- each row's `oldKeyValues` and `newKeyValues` describe that specific committed identity transition
+- each row's `changeVersion` is the tracked key-change token allocated for that specific event
 
 ## Key change followed by delete before synchronization
 
@@ -465,6 +469,21 @@ Compatibility note:
 - `errors`: exactly one entry, `The supplied 'minChangeVersion' is older than the current replay floor.`
 - extension members `requestedMinChangeVersion`, `oldestChangeVersion`, and `newestChangeVersion` are required
 
+`500 Internal Server Error` for tracked-change authorization contract failure during write-side capture:
+
+- `type`: `urn:ed-fi:api:system-configuration:security`
+- `title`: `Security Configuration Error`
+- `status`: `500`
+- `detail`: `The tracked-change authorization contract for the routed resource is invalid or incomplete for this deployment.`
+- `validationErrors`: `{}`
+- `errors`: exactly one entry, `The request could not capture the tracked-change authorization data required for this resource.`
+
+Write-side failure semantics:
+
+- this applies when a delete or identity-changing update cannot resolve the required tracked-change authorization inputs to the declared `AuthorizationBasis` contract for the routed resource
+- no tombstone or key-change row is committed in this failure path
+- DMS must not silently downgrade to weaker tracked-change authorization behavior
+
 ## Paging and Completeness by Mode
 
 The feature still avoids snapshot history tables, but it now supports two consistency modes.
@@ -497,12 +516,14 @@ The public API contract must preserve these invariants:
 - `Use-Snapshot` is optional; when absent or `false`, the API preserves the current live best-effort behavior
 - when `Use-Snapshot = true`, `availableChangeVersions` and the subsequent synchronization reads are all resolved against the configured snapshot source rather than against the live primary
 - DMS never silently downgrades a `Use-Snapshot = true` request to a live read
+- snapshot-backed synchronization relies on one stable configured derivative binding per resolved instance for the duration of a pass; if that binding is unavailable or refreshed away, later `Use-Snapshot = true` requests fail explicitly
 - changed-resource results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 - delete results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 - key-change results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 - changed-resource paging semantics are based on the final authorized result set rather than on raw internal candidates
 - delete visibility is supported independently from the live row
 - key-change visibility is supported independently from the current live key state
+- key-change visibility is one public row per authorized key-change tracking event; the API never collapses multiple retained key-change rows for one resource into one public row
 - `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
 - key payload field names and ordering are deterministic for the routed resource
 - `/keyChanges` remains a valid route for resources that do not support identity updates and returns an empty array for them
