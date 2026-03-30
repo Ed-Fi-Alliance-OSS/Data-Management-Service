@@ -1,0 +1,133 @@
+[
+  {
+    "category": "Composition",
+    "description": "Add an exclusive `UseRelationalBackend` repository swap in the host composition root. Acceptance: when `UseRelationalBackend=false`, DI still registers only the legacy `PostgresqlDocumentStoreRepository`; when `UseRelationalBackend=true`, DI registers only a new `RelationalDocumentStoreRepository` as `IDocumentStoreRepository`, adds PostgreSQL relational write-prerequisite services for PostgreSQL deployments, and adds the matching SQL Server relational write-prerequisite services for MSSQL deployments. No operation delegates back to the legacy repository when the flag is on.",
+    "steps-to-verify": [
+      "Add frontend/unit composition tests for PostgreSQL with the flag off, PostgreSQL with the flag on, and MSSQL with the flag on.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter WebApplicationBuilderExtensionsTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Define the backend-local DMS-983 write contracts: relational operation kind, target context, `FlatteningInput`, `FlattenedWriteSet`, root/non-collection row buffers, collection candidates, candidate-attached aligned-scope data, and `IRelationalWriteTerminalStage`. Acceptance: contracts use the selected `JsonNode` body rather than Core profile types, root `DocumentId` and new `CollectionItemId` remain unresolved for create flows, and collection-aligned 1:1 scopes such as `$.addresses[*]._ext.sample` remain attached to the owning collection candidate instead of being emitted as standalone bound rows.",
+    "steps-to-verify": [
+      "Add backend/unit contract tests that lock down the unresolved-key and candidate-attached-scope behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Repository",
+    "description": "Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository. Acceptance: POST and PUT for non-descriptor resources enter the relational seam; GET and DELETE fail fast with `UnknownFailure` and precise not-implemented messages; descriptor POST and PUT also fail fast with precise not-implemented messages; missing `MappingSet`, missing non-descriptor `ResourceWritePlan`, and unsupported relational gaps return deterministic `UnknownFailure` messages; no legacy fallback path is used anywhere.",
+    "steps-to-verify": [
+      "Add backend/unit tests for unsupported operations, descriptor writes, and missing-plan guard rails.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Orchestration",
+    "description": "Add target-context selection ahead of flattening. Acceptance: POST performs real relational upsert existence detection using the request `ReferentialId` and passes `create-new` versus `existing` target context to the terminal stage, including existing `DocumentId` and `DocumentUuid` when found; PUT passes an update-by-id target context keyed by the requested `DocumentUuid` without attempting legacy ETag, immutable-identity, no-op, or not-found behavior in this story.",
+    "steps-to-verify": [
+      "Add backend/unit tests for POST create-new detection, POST existing-document detection, and the PUT target-context shape.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization",
+    "description": "Preserve authorization behavior on the new relational seam. Acceptance: POST and PUT still invoke the existing resource authorization handler before flattening and terminal handoff, authorization failures return the existing `UpsertFailureNotAuthorized` and `UpdateFailureNotAuthorized` results, and the new repository does not reintroduce any legacy repository delegation to achieve authorization behavior.",
+    "steps-to-verify": [
+      "Add backend or Core-fronted tests that prove authorization short-circuits before flattening and terminal invocation.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Resolution",
+    "description": "Integrate `IReferenceResolver` into the relational repository flow. Acceptance: POST and PUT call the real resolver with the selected mapping set and request-extracted references, relational writes short-circuit on missing or incompatible references using the existing `UpsertFailureReference` and `UpdateFailureReference` semantics, and neither the flattener nor the terminal stage is called when reference resolution fails.",
+    "steps-to-verify": [
+      "Add backend/unit tests for successful resolution and short-circuit failure behavior on both document and descriptor failures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Adapt `ResolvedReferenceSet` into flattener-local hot-loop lookups for document and descriptor FKs. Acceptance: compiled document-reference bindings can resolve FK values by ordinal path without runtime JSONPath evaluation, nested collection references map to the correct owning candidate or row, and descriptor lookups use the resolved concrete-path data instead of re-reading source JSON.",
+    "steps-to-verify": [
+      "Add backend/unit tests for root, nested, and repeated reference lookups keyed by ordinal path.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Implement the initial flattener walker for the root table and non-collection scopes. Acceptance: traversal reads the selected body once, emits deterministic row buffers in `TableWritePlan.ColumnBindings` order for the root table and present non-collection scopes, treats the selected body as authoritative input, performs strict scalar reading against compiled types, and does not invoke a general-purpose JSONPath engine in the hot loop.",
+    "steps-to-verify": [
+      "Add backend/unit fixture tests for root and non-collection row emission, including a supplied-body-is-authoritative case.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Populate non-storage-assigned write bindings during flattening. Acceptance: `KeyUnificationWritePlan` producers populate canonical storage columns and synthetic presence flags where required, `WriteValueSource.Precomputed` values are filled for non-storage-assigned bindings except storage-assigned root and collection identities, and unified-alias columns are never materialized as writable outputs.",
+    "steps-to-verify": [
+      "Add backend/unit tests against the focused stable-key fixture to prove key-unification precomputed values and presence flags are emitted correctly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Implement collection and common-type candidate extraction. Acceptance: the flattener emits deterministic candidates for top-level and nested collection scopes with ordinal path, request sibling order, semantic-identity values in compiled order, scalar/FK/precomputed values, and attached aligned-scope data; duplicate submitted semantic identities under the same stable parent are detected in DMS-983 and fail deterministically before terminal handoff.",
+    "steps-to-verify": [
+      "Add backend/unit tests for top-level collections, nested collections, request sibling order preservation, and duplicate semantic-identity detection.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Extensions",
+    "description": "Handle root-scope `_ext` flattening. Acceptance: root-level extension rows are emitted only when extension data exists, root-level extension child collections flatten into collection candidates with preserved request order, and empty or absent `_ext` sites do not create rows.",
+    "steps-to-verify": [
+      "Add backend/unit tests for root `_ext` row emission and root-level extension child collections.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Extensions",
+    "description": "Handle `_ext` within collection and common-type scopes, including collection-aligned one-to-one scopes and aligned extension child collections. Acceptance: aligned one-to-one scopes stay attached to the owning base collection candidate until stable `CollectionItemId` binding exists, nested extension child collections preserve sibling order and semantic identity, and root-level versus collection-aligned attachment rules match `extensions.md`.",
+    "steps-to-verify": [
+      "Add backend/unit tests using the collections-with-nested-extension and focused stable-key extension fixtures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Terminal Stage",
+    "description": "Implement `IRelationalWriteTerminalStage` orchestration and a production default stage for DMS-983. Acceptance: after successful plan selection, authorization, reference resolution, and flattening, the repository invokes the terminal stage with operation kind, target context, `ResourceWritePlan`, selected body, `ResolvedReferenceSet`, flattened output, and trace or diagnostic identifiers; the default production stage returns `UnknownFailure` with a precise not-implemented message; tests can substitute a capturing fake without changing repository logic.",
+    "steps-to-verify": [
+      "Add backend/unit tests for terminal-stage invocation, default not-implemented behavior, and capture-stage substitution.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Add Core-fronted seam integration coverage for the new relational write path using a capturing terminal stage. Acceptance: tests cover POST happy path, PUT happy path, reference-failure short-circuit, supplied-body-is-authoritative, mapping-set and write-plan guard rails, one complex fixture with nested collections plus `_ext`, and one top-level HTTP smoke with `UseRelationalBackend=true`; PostgreSQL and SQL Server composition are both covered at the registration and seam level, while heavier DB-backed write coverage remains deferred to DMS-984.",
+    "steps-to-verify": [
+      "Add Core-fronted integration tests in Core and one HTTP smoke in the frontend test project.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]
