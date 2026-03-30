@@ -287,10 +287,16 @@ internal static class SemanticIdentityCompatibilityValidator
 
         foreach (string path in semanticIdentityPaths)
         {
+            // For reference-backed paths like "schoolReference.schoolId", the
+            // top-level member name ("schoolReference") is what appears in the
+            // collection rule's PropertyNameSet. Including the reference member
+            // includes all its descendant properties.
+            string memberName = ExtractTopLevelMember(path);
+
             bool isHidden = rule.MemberSelection switch
             {
-                MemberSelection.IncludeOnly => !rule.PropertyNameSet.Contains(path),
-                MemberSelection.ExcludeOnly => rule.PropertyNameSet.Contains(path),
+                MemberSelection.IncludeOnly => !rule.PropertyNameSet.Contains(memberName),
+                MemberSelection.ExcludeOnly => rule.PropertyNameSet.Contains(memberName),
                 MemberSelection.IncludeAll => false,
                 _ => false,
             };
@@ -311,6 +317,17 @@ internal static class SemanticIdentityCompatibilityValidator
 
     private static string StripArraySuffix(string segment) =>
         segment.EndsWith("[*]", StringComparison.Ordinal) ? segment[..^3] : segment;
+
+    /// <summary>
+    /// Extracts the top-level member name from a scope-relative path.
+    /// For dotted paths like "schoolReference.schoolId", returns "schoolReference".
+    /// For flat paths like "classPeriodName", returns the path unchanged.
+    /// </summary>
+    private static string ExtractTopLevelMember(string path)
+    {
+        int dotIndex = path.IndexOf('.');
+        return dotIndex >= 0 ? path[..dotIndex] : path;
+    }
 
     /// <summary>
     /// Normalized view of a profile tree node for navigation. Adapts the

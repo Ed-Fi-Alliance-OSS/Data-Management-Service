@@ -697,6 +697,170 @@ public abstract class SemanticIdentityCompatibilityValidatorTests
     }
 
     [TestFixture]
+    public class Given_ReferenceBackedIdentity_With_Reference_Included
+        : SemanticIdentityCompatibilityValidatorTests
+    {
+        private IReadOnlyList<HiddenSemanticIdentityMembersProfileDefinitionFailure> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Collection with reference-backed semantic identity paths (dotted).
+            // Backend compilation emits paths like "schoolReference.schoolId" —
+            // the profile rule includes "schoolReference" which covers descendants.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.addresses[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder:
+                    [
+                        "schoolReference.schoolId",
+                        "schoolReference.educationOrganizationId",
+                    ],
+                    CanonicalScopeRelativeMemberPaths:
+                    [
+                        "schoolReference.schoolId",
+                        "schoolReference.educationOrganizationId",
+                        "city",
+                    ]
+                ),
+            ];
+
+            ContentTypeDefinition writeContent = new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("schoolReference"), new PropertyRule("city")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            _result = SemanticIdentityCompatibilityValidator.Validate(
+                BuildProfile(writeContent),
+                ResourceName,
+                scopes
+            );
+        }
+
+        [Test]
+        public void It_should_return_no_failures()
+        {
+            _result.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_ReferenceBackedIdentity_With_Reference_Hidden
+        : SemanticIdentityCompatibilityValidatorTests
+    {
+        private IReadOnlyList<HiddenSemanticIdentityMembersProfileDefinitionFailure> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Collection with reference-backed semantic identity paths (dotted).
+            // The profile does NOT include "schoolReference" — both dotted identity
+            // paths are hidden.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.addresses[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder:
+                    [
+                        "schoolReference.schoolId",
+                        "schoolReference.educationOrganizationId",
+                    ],
+                    CanonicalScopeRelativeMemberPaths:
+                    [
+                        "schoolReference.schoolId",
+                        "schoolReference.educationOrganizationId",
+                        "city",
+                    ]
+                ),
+            ];
+
+            ContentTypeDefinition writeContent = new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("city")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            _result = SemanticIdentityCompatibilityValidator.Validate(
+                BuildProfile(writeContent),
+                ResourceName,
+                scopes
+            );
+        }
+
+        [Test]
+        public void It_should_return_one_failure()
+        {
+            _result.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_identify_both_hidden_reference_paths()
+        {
+            _result[0]
+                .HiddenCanonicalMemberPaths.Should()
+                .Equal("schoolReference.schoolId", "schoolReference.educationOrganizationId");
+        }
+
+        [Test]
+        public void It_should_identify_the_correct_scope()
+        {
+            _result[0].JsonScope.Should().Be("$.addresses[*]");
+        }
+    }
+
+    [TestFixture]
     public class Given_Multiple_Collections_With_Multiple_Failures
         : SemanticIdentityCompatibilityValidatorTests
     {
