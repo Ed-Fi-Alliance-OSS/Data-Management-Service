@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b';
         END IF;
     END IF;
 END $$;
@@ -460,7 +460,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 (
     "DocumentId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NOT NULL,
     "TotalInstructionalDays" integer NOT NULL,
@@ -475,7 +475,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "Rating" varchar(35) NOT NULL,
@@ -493,9 +493,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NULL,
-    "EducationOrganization_EducationOrganizationId" integer NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NULL,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
-    "MandatingEducationOrganization_EducationOrganizationId" integer NULL,
+    "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "AssessmentCategoryDescriptor_DescriptorId" bigint NULL,
     "ContentStandardPublicationStatusDescriptor_DescriptorId" bigint NULL,
     "AdaptiveAssessment" boolean NULL,
@@ -625,7 +625,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceProgram_DocumentId" bigint NULL,
-    "SectionOrProgramChoiceProgram_EducationOrganizationId" integer NULL,
+    "SectionOrProgramChoiceProgram_EducationOrganizationId" bigint NULL,
     "SectionOrProgramChoiceProgram_ProgramName" varchar(60) NULL,
     "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" bigint NULL,
     CONSTRAINT "PK_AssessmentProgram" PRIMARY KEY ("CollectionItemId"),
@@ -655,7 +655,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceSection_DocumentId" bigint NULL,
     "SectionOrProgramChoiceSection_LocalCourseCode" varchar(60) NULL,
-    "SectionOrProgramChoiceSection_SchoolId" integer NULL,
+    "SectionOrProgramChoiceSection_SchoolId" bigint NULL,
     "SectionOrProgramChoiceSection_SchoolYear" integer NULL,
     "SectionOrProgramChoiceSection_SessionName" varchar(60) NULL,
     "SectionOrProgramChoiceSection_SectionIdentifier" varchar(255) NULL,
@@ -672,7 +672,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
     "AssigningEducationOrganization_DocumentId" bigint NOT NULL,
-    "AssigningEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "AssigningEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AdministrationIdentifier" varchar(255) NOT NULL,
     CONSTRAINT "PK_AssessmentAdministration" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AssessmentAdministration_NK" UNIQUE ("AdministrationIdentifier", "Assessment_DocumentId", "AssigningEducationOrganization_DocumentId"),
@@ -715,9 +715,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
     "AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
     "AssessmentAdministration_Namespace" varchar(255) NOT NULL,
-    "AssessmentAdministration_AssigningEducationOrganizationId" integer NOT NULL,
+    "AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
     "ParticipatingEducationOrganization_DocumentId" bigint NOT NULL,
-    "ParticipatingEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "ParticipatingEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_AssessmentAdministrationParticipation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_AssessmentAdministrationParticipation_NK" UNIQUE ("AssessmentAdministration_DocumentId", "ParticipatingEducationOrganization_DocumentId"),
     CONSTRAINT "CK_AssessmentAdministrationParticipation_AssessmentA_050786432e" CHECK (("AssessmentAdministration_DocumentId" IS NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NULL AND "AssessmentAdministration_Namespace" IS NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NULL) OR ("AssessmentAdministration_DocumentId" IS NOT NULL AND "AssessmentAdministration_AdministrationIdentifier" IS NOT NULL AND "AssessmentAdministration_AssessmentIdentifier" IS NOT NULL AND "AssessmentAdministration_Namespace" IS NOT NULL AND "AssessmentAdministration_AssigningEducationOrganizationId" IS NOT NULL)),
@@ -730,7 +730,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdminist
     "AssessmentAdministrationParticipation_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AdministrationPointOfContactEducationOrganization_DocumentId" bigint NOT NULL,
-    "AdministrationPointOfContactEducationOrganization_Ed_205063b290" integer NOT NULL,
+    "AdministrationPointOfContactEducationOrganization_Ed_205063b290" bigint NOT NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "LastSurname" varchar(75) NOT NULL,
@@ -875,7 +875,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
 (
     "DocumentId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "AlternateDayName" varchar(20) NULL,
     "BellScheduleName" varchar(60) NOT NULL,
     "EndTime" time NULL,
@@ -893,7 +893,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleClassPeriod"
     "Ordinal" integer NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
-    "ClassPeriod_SchoolId" integer NULL,
+    "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_BellScheduleClassPeriod" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297" UNIQUE ("BellSchedule_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_BellScheduleClassPeriod_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal"),
@@ -928,7 +928,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "CalendarTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CalendarCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_Calendar" PRIMARY KEY ("DocumentId"),
@@ -954,7 +954,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
     "DocumentId" bigint NOT NULL,
     "Calendar_DocumentId" bigint NOT NULL,
     "Calendar_CalendarCode" varchar(60) NOT NULL,
-    "Calendar_SchoolId" integer NOT NULL,
+    "Calendar_SchoolId" bigint NOT NULL,
     "Calendar_SchoolYear" integer NOT NULL,
     "Date" date NOT NULL,
     CONSTRAINT "PK_CalendarDate" PRIMARY KEY ("DocumentId"),
@@ -982,7 +982,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
     "BalanceSheetBalanceSheetDimension_Code" varchar(16) NULL,
     "BalanceSheetBalanceSheetDimension_FiscalYear" integer GENERATED ALWAYS AS (CASE WHEN "BalanceSheetBalanceSheetDimension_DocumentId" IS NULL THEN NULL ELSE "FiscalYear_Unified" END) STORED,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "FunctionFunctionDimension_DocumentId" bigint NULL,
     "FunctionFunctionDimension_Code" varchar(16) NULL,
     "FunctionFunctionDimension_FiscalYear" integer GENERATED ALWAYS AS (CASE WHEN "FunctionFunctionDimension_DocumentId" IS NULL THEN NULL ELSE "FiscalYear_Unified" END) STORED,
@@ -1038,7 +1038,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
 (
     "DocumentId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "ClassPeriodName" varchar(60) NOT NULL,
     "OfficialAttendancePeriod" boolean NULL,
     CONSTRAINT "PK_ClassPeriod" PRIMARY KEY ("DocumentId"),
@@ -1063,7 +1063,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
     "CohortScopeDescriptor_DescriptorId" bigint NULL,
     "CohortTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1081,7 +1081,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
     "Cohort_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ProgramProgram_DocumentId" bigint NULL,
-    "ProgramProgram_EducationOrganizationId" integer NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NULL,
     "ProgramProgram_ProgramName" varchar(60) NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_CohortProgram" PRIMARY KEY ("CollectionItemId"),
@@ -1094,7 +1094,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
 (
     "DocumentId" bigint NOT NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "CommunityOrganizationId" integer NOT NULL,
+    "CommunityOrganizationId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
@@ -1229,12 +1229,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
 (
     "DocumentId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NULL,
-    "CommunityOrganization_CommunityOrganizationId" integer NULL,
+    "CommunityOrganization_CommunityOrganizationId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "ProviderCategoryDescriptor_DescriptorId" bigint NOT NULL,
     "ProviderProfitabilityDescriptor_DescriptorId" bigint NULL,
     "ProviderStatusDescriptor_DescriptorId" bigint NOT NULL,
-    "CommunityProviderId" integer NOT NULL,
+    "CommunityProviderId" bigint NOT NULL,
     "LicenseExemptIndicator" boolean NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "SchoolIndicator" boolean NULL,
@@ -1372,7 +1372,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
 (
     "DocumentId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
-    "CommunityProvider_CommunityProviderId" integer NOT NULL,
+    "CommunityProvider_CommunityProviderId" bigint NOT NULL,
     "LicenseStatusDescriptor_DescriptorId" bigint NULL,
     "LicenseTypeDescriptor_DescriptorId" bigint NOT NULL,
     "AuthorizedFacilityCapacity" integer NULL,
@@ -1392,7 +1392,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ObjectiveGradeLevelDescriptor_DescriptorId" bigint NOT NULL,
     "CompetencyObjectiveId" varchar(60) NULL,
     "Description" varchar(1024) NULL,
@@ -1454,16 +1454,6 @@ CREATE TABLE IF NOT EXISTS "sample"."ContactExtension"
     CONSTRAINT "PK_ContactExtension" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionAddress"
-(
-    "BaseCollectionItemId" bigint NOT NULL,
-    "Contact_DocumentId" bigint NOT NULL,
-    "Complex" varchar(255) NULL,
-    "OnBusRoute" boolean NULL,
-    CONSTRAINT "PK_ContactExtensionAddress" PRIMARY KEY ("BaseCollectionItemId"),
-    CONSTRAINT "UX_ContactExtensionAddress_BaseCollectionItemId_Cont_3f60679c7b" UNIQUE ("BaseCollectionItemId", "Contact_DocumentId")
-);
-
 CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionAuthor"
 (
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
@@ -1517,8 +1507,8 @@ CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionStudentProgramAssociation"
     "Ordinal" integer NOT NULL,
     "StudentProgramAssociation_DocumentId" bigint NULL,
     "StudentProgramAssociation_BeginDate" date NULL,
-    "StudentProgramAssociation_EducationOrganizationId" integer NULL,
-    "StudentProgramAssociation_ProgramEducationOrganizationId" integer NULL,
+    "StudentProgramAssociation_EducationOrganizationId" bigint NULL,
+    "StudentProgramAssociation_ProgramEducationOrganizationId" bigint NULL,
     "StudentProgramAssociation_ProgramName" varchar(60) NULL,
     "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     "StudentProgramAssociation_StudentUniqueId" varchar(32) NULL,
@@ -1551,6 +1541,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
     CONSTRAINT "UX_ContactAddress_City_PostalCode_StreetNumberName_A_e8e80fdb6a" UNIQUE ("Contact_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
     CONSTRAINT "UX_ContactAddress_CollectionItemId_Contact_DocumentId" UNIQUE ("CollectionItemId", "Contact_DocumentId"),
     CONSTRAINT "UX_ContactAddress_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
+);
+
+CREATE TABLE IF NOT EXISTS "sample"."ContactExtensionAddress"
+(
+    "BaseCollectionItemId" bigint NOT NULL,
+    "Contact_DocumentId" bigint NOT NULL,
+    "Complex" varchar(255) NULL,
+    "OnBusRoute" boolean NULL,
+    CONSTRAINT "PK_ContactExtensionAddress" PRIMARY KEY ("BaseCollectionItemId"),
+    CONSTRAINT "UX_ContactExtensionAddress_BaseCollectionItemId_Cont_3f60679c7b" UNIQUE ("BaseCollectionItemId", "Contact_DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactElectronicMail"
@@ -1700,7 +1700,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "CareerPathwayDescriptor_DescriptorId" bigint NULL,
     "CourseDefinedByDescriptor_DescriptorId" bigint NULL,
     "CourseGPAApplicabilityDescriptor_DescriptorId" bigint NULL,
@@ -1798,14 +1798,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
-    "Course_EducationOrganizationId" integer NOT NULL,
+    "Course_EducationOrganizationId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Session_DocumentId" bigint NOT NULL,
-    "Session_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Session_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Session_SchoolYear" integer NOT NULL,
     "Session_SessionName" varchar(60) NOT NULL,
     "InstructionalTimePlanned" integer NULL,
@@ -1857,13 +1857,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
     "DocumentId" bigint NOT NULL,
     "CourseCourse_DocumentId" bigint NOT NULL,
     "CourseCourse_CourseCode" varchar(60) NOT NULL,
-    "CourseCourse_EducationOrganizationId" integer NOT NULL,
+    "CourseCourse_EducationOrganizationId" bigint NOT NULL,
     "ExternalEducationOrganization_DocumentId" bigint NULL,
-    "ExternalEducationOrganization_EducationOrganizationId" integer NULL,
+    "ExternalEducationOrganization_EducationOrganizationId" bigint NULL,
     "ResponsibleTeacherStaff_DocumentId" bigint NULL,
     "ResponsibleTeacherStaff_StaffUniqueId" varchar(32) NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
-    "StudentAcademicRecord_EducationOrganizationId" integer NOT NULL,
+    "StudentAcademicRecord_EducationOrganizationId" bigint NOT NULL,
     "StudentAcademicRecord_SchoolYear" integer NOT NULL,
     "StudentAcademicRecord_StudentUniqueId" varchar(32) NOT NULL,
     "StudentAcademicRecord_TermDescriptor_DescriptorId" bigint NOT NULL,
@@ -1923,7 +1923,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseProgram_DocumentId" bigint NULL,
-    "CourseProgram_EducationOrganizationId" integer NULL,
+    "CourseProgram_EducationOrganizationId" bigint NULL,
     "CourseProgram_ProgramName" varchar(60) NULL,
     "CourseProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_CourseTranscriptCourseProgram" PRIMARY KEY ("CollectionItemId"),
@@ -1977,7 +1977,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NULL,
     "Section_LocalCourseCode" varchar(60) NULL,
-    "Section_SchoolId" integer NULL,
+    "Section_SchoolId" bigint NULL,
     "Section_SchoolYear" integer NULL,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
@@ -2077,9 +2077,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
 (
     "DocumentId" bigint NOT NULL,
     "AssignmentSchool_DocumentId" bigint NULL,
-    "AssignmentSchool_SchoolId" integer NULL,
+    "AssignmentSchool_SchoolId" bigint NULL,
     "ResponsibilitySchool_DocumentId" bigint NOT NULL,
-    "ResponsibilitySchool_SchoolId" integer NOT NULL,
+    "ResponsibilitySchool_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" bigint NULL,
@@ -2128,7 +2128,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NULL,
     "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" bigint NULL,
     "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" varchar(36) NULL,
-    "StudentDisciplineIncidentBehaviorAssociation_SchoolId" integer NULL,
+    "StudentDisciplineIncidentBehaviorAssociation_SchoolId" bigint NULL,
     "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_10ccb6b8f8" UNIQUE ("DisciplineAction_DocumentId", "Ordinal"),
@@ -2140,7 +2140,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
 (
     "DocumentId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "IncidentLocationDescriptor_DescriptorId" bigint NULL,
     "ReporterDescriptionDescriptor_DescriptorId" bigint NULL,
     "CaseNumber" varchar(20) NULL,
@@ -2303,9 +2303,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescription
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
-    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" integer NOT NULL,
+    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NOT NULL,
     "BeginDate" date NULL,
     "EndDate" date NULL,
@@ -2320,7 +2320,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
     "DocumentId" bigint NOT NULL,
     "NetworkPurposeDescriptor_DescriptorId" bigint NOT NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "EducationOrganizationNetworkId" integer NOT NULL,
+    "EducationOrganizationNetworkId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
@@ -2455,9 +2455,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
-    "EducationOrganizationNetwork_EducationOrganizationNetworkId" integer NOT NULL,
+    "EducationOrganizationNetwork_EducationOrganizationNetworkId" bigint NOT NULL,
     "MemberEducationOrganization_DocumentId" bigint NOT NULL,
-    "MemberEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "MemberEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "BeginDate" date NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkAssociation" PRIMARY KEY ("DocumentId"),
@@ -2470,9 +2470,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "PeerEducationOrganization_DocumentId" bigint NOT NULL,
-    "PeerEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "PeerEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     CONSTRAINT "PK_EducationOrganizationPeerAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationPeerAssociation_NK" UNIQUE ("EducationOrganization_DocumentId", "PeerEducationOrganization_DocumentId"),
     CONSTRAINT "CK_EducationOrganizationPeerAssociation_EducationOrg_cf46bd2870" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
@@ -2483,9 +2483,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
 (
     "DocumentId" bigint NOT NULL,
     "StateEducationAgency_DocumentId" bigint NULL,
-    "StateEducationAgency_StateEducationAgencyId" integer NULL,
+    "StateEducationAgency_StateEducationAgencyId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "EducationServiceCenterId" integer NOT NULL,
+    "EducationServiceCenterId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
@@ -2622,7 +2622,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
     "DocumentId" bigint NOT NULL,
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
-    "ProgramEvaluationElement_ProgramEducationOrganizationId" integer NOT NULL,
+    "ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" bigint NOT NULL,
@@ -2641,9 +2641,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "FeederSchool_DocumentId" bigint NOT NULL,
-    "FeederSchool_SchoolId" integer NOT NULL,
+    "FeederSchool_SchoolId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "FeederRelationshipDescription" varchar(1024) NULL,
@@ -2700,17 +2700,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."Grade"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "GradingPeriodGradingPeriod_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriodGradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "GradingPeriodGradingPeriod_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "GradingPeriodGradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "GradingPeriodGradingPeriod_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriodGradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "StudentSectionAssociation_DocumentId" bigint NOT NULL,
     "StudentSectionAssociation_BeginDate" date NOT NULL,
     "StudentSectionAssociation_LocalCourseCode" varchar(60) NOT NULL,
-    "StudentSectionAssociation_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "StudentSectionAssociation_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "StudentSectionAssociation_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "StudentSectionAssociation_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "StudentSectionAssociation_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "StudentSectionAssociation_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "StudentSectionAssociation_SectionIdentifier" varchar(255) NOT NULL,
     "StudentSectionAssociation_SessionName" varchar(60) NOT NULL,
@@ -2750,16 +2750,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
 CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NULL,
+    "SchoolId_Unified" bigint NULL,
     "SchoolYear_Unified" integer NULL,
     "GradingPeriod_DocumentId" bigint NULL,
     "GradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "GradingPeriod_GradingPeriodName" varchar(60) NULL,
-    "GradingPeriod_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "GradingPeriod_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "GradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "GradingPeriod_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Section_DocumentId" bigint NULL,
     "Section_LocalCourseCode" varchar(60) NULL,
-    "Section_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Section_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Section_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
@@ -2799,7 +2799,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NOT NULL,
@@ -2817,7 +2817,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GraduationSchoolYear_DocumentId" bigint NOT NULL,
     "GraduationSchoolYear_GraduationSchoolYear" integer NOT NULL,
     "GraduationPlanTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2905,7 +2905,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCoursCours"
     "ParentCollectionItemId" bigint NOT NULL,
     "CourseCourse_DocumentId" bigint NULL,
     "CourseCourse_CourseCode" varchar(60) NULL,
-    "CourseCourse_EducationOrganizationId" integer NULL,
+    "CourseCourse_EducationOrganizationId" bigint NULL,
     CONSTRAINT "PK_GraduationPlanCreditsByCoursCours" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_Ordinal_ParentC_aa33a1c93b" UNIQUE ("ParentCollectionItemId", "Ordinal"),
     CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69" UNIQUE ("ParentCollectionItemId", "CourseCourse_DocumentId"),
@@ -2931,7 +2931,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
     "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
@@ -2998,7 +2998,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionInterventionPrescription"
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NULL,
-    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" integer NULL,
+    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" bigint NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NULL,
     CONSTRAINT "PK_InterventionInterventionPrescription" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8" UNIQUE ("Intervention_DocumentId", "InterventionPrescriptionInterventionPrescription_DocumentId"),
@@ -3068,7 +3068,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
     "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
     "InterventionPrescriptionIdentificationCode" varchar(60) NOT NULL,
@@ -3164,9 +3164,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
-    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" integer NOT NULL,
+    "InterventionPrescriptionInterventionPrescription_Edu_532babb247" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NOT NULL,
     "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
     "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
@@ -3277,7 +3277,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
 (
     "DocumentId" bigint NOT NULL,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
-    "MandatingEducationOrganization_EducationOrganizationId" integer NULL,
+    "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "ParentLearningStandard_DocumentId" bigint NULL,
     "ParentLearningStandard_LearningStandardId" varchar(60) NULL,
     "ContentStandardPublicationStatusDescriptor_DescriptorId" bigint NULL,
@@ -3372,10 +3372,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
     "FiscalYear_Unified" integer NOT NULL,
     "ChartOfAccountChartOfAccount_DocumentId" bigint NOT NULL,
     "ChartOfAccountChartOfAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "ChartOfAccountChartOfAccount_EducationOrganizationId" integer NOT NULL,
+    "ChartOfAccountChartOfAccount_EducationOrganizationId" bigint NOT NULL,
     "ChartOfAccountChartOfAccount_FiscalYear" integer GENERATED ALWAYS AS (CASE WHEN "ChartOfAccountChartOfAccount_DocumentId" IS NULL THEN NULL ELSE "FiscalYear_Unified" END) STORED,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "AccountIdentifier" varchar(50) NOT NULL,
     "AccountName" varchar(100) NULL,
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
@@ -3403,7 +3403,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
     "DocumentId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "LocalAccount_EducationOrganizationId" integer NOT NULL,
+    "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
     "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
     "Amount" numeric(19,4) NOT NULL,
@@ -3418,7 +3418,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
     "DocumentId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "LocalAccount_EducationOrganizationId" integer NOT NULL,
+    "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
     "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
     "Amount" numeric(19,4) NOT NULL,
@@ -3433,7 +3433,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
     "DocumentId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "LocalAccount_EducationOrganizationId" integer NOT NULL,
+    "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
@@ -3450,15 +3450,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NULL,
-    "EducationServiceCenter_EducationServiceCenterId" integer NULL,
+    "EducationServiceCenter_EducationServiceCenterId" bigint NULL,
     "ParentLocalEducationAgency_DocumentId" bigint NULL,
-    "ParentLocalEducationAgency_LocalEducationAgencyId" integer NULL,
+    "ParentLocalEducationAgency_LocalEducationAgencyId" bigint NULL,
     "StateEducationAgency_DocumentId" bigint NULL,
-    "StateEducationAgency_StateEducationAgencyId" integer NULL,
+    "StateEducationAgency_StateEducationAgencyId" bigint NULL,
     "CharterStatusDescriptor_DescriptorId" bigint NULL,
     "LocalEducationAgencyCategoryDescriptor_DescriptorId" bigint NOT NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "LocalEducationAgencyId" integer NOT NULL,
+    "LocalEducationAgencyId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
@@ -3631,7 +3631,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
     "DocumentId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "LocalAccount_EducationOrganizationId" integer NOT NULL,
+    "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
     "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
     "Amount" numeric(19,4) NOT NULL,
@@ -3646,7 +3646,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
     "DocumentId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
-    "LocalAccount_EducationOrganizationId" integer NOT NULL,
+    "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
@@ -3663,7 +3663,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Location"
 (
     "DocumentId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "ClassroomIdentificationCode" varchar(60) NOT NULL,
     "MaximumNumberOfSeats" integer NULL,
     "OptimalNumberOfSeats" integer NULL,
@@ -3782,7 +3782,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
     "PostingResultDescriptor_DescriptorId" bigint NULL,
     "ProgramAssignmentDescriptor_DescriptorId" bigint NULL,
@@ -3844,11 +3844,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
 (
     "DocumentId" bigint NOT NULL,
     "ParentEducationOrganization_DocumentId" bigint NULL,
-    "ParentEducationOrganization_EducationOrganizationId" integer NULL,
+    "ParentEducationOrganization_EducationOrganizationId" bigint NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
-    "OrganizationDepartmentId" integer NOT NULL,
+    "OrganizationDepartmentId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_OrganizationDepartment" PRIMARY KEY ("DocumentId"),
@@ -3992,7 +3992,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
 (
     "DocumentId" bigint NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NULL,
-    "PostSecondaryInstitution_PostSecondaryInstitutionId" integer NULL,
+    "PostSecondaryInstitution_PostSecondaryInstitutionId" bigint NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "PostSecondaryEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -4010,7 +4010,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "PostSecondaryInstitutionLevelDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
-    "PostSecondaryInstitutionId" integer NOT NULL,
+    "PostSecondaryInstitutionId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_PostSecondaryInstitution" PRIMARY KEY ("DocumentId"),
@@ -4155,7 +4155,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "ProgramId" varchar(20) NULL,
     "ProgramName" varchar(60) NOT NULL,
@@ -4226,7 +4226,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "ProgramEvaluationPeriodDescriptor_DescriptorId" bigint NOT NULL,
@@ -4257,7 +4257,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
 (
     "DocumentId" bigint NOT NULL,
-    "ProgramEducationOrganizationId_Unified" integer NOT NULL,
+    "ProgramEducationOrganizationId_Unified" bigint NOT NULL,
     "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" bigint NOT NULL,
     "ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
     "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" bigint NOT NULL,
@@ -4265,7 +4265,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "ProgramTypeDescriptor_Unified_DescriptorId" bigint NOT NULL,
     "ProgramEvaluationObjective_DocumentId" bigint NULL,
     "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" varchar(50) NULL,
-    "ProgramEvaluationObjective_ProgramEducationOrganizationId" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
+    "ProgramEvaluationObjective_ProgramEducationOrganizationId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
     "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluationObjective_ProgramEvaluationTitle" varchar(50) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTitle_Unified" END) STORED,
     "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
@@ -4275,7 +4275,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTitle_Unified" END) STORED,
     "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
-    "ProgramEvaluation_ProgramEducationOrganizationId" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
+    "ProgramEvaluation_ProgramEducationOrganizationId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
     "ProgramEvaluation_ProgramName" varchar(60) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramName_Unified" END) STORED,
     "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramTypeDescriptor_Unified_DescriptorId" END) STORED,
     "ElementMaxNumericRating" numeric(6,3) NULL,
@@ -4310,7 +4310,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
     "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "ProgramEvaluation_ProgramEducationOrganizationId" integer NOT NULL,
+    "ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
     "ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
     "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "ObjectiveMaxNumericRating" numeric(6,3) NULL,
@@ -4363,11 +4363,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "GradingPeriodGradingPeriod_SchoolId" integer NOT NULL,
+    "GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
@@ -4401,16 +4401,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NULL,
+    "SchoolId_Unified" bigint NULL,
     "Grade_DocumentId" bigint NULL,
     "Grade_GradeTypeDescriptor_DescriptorId" bigint NULL,
     "Grade_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "Grade_GradingPeriodName" varchar(60) NULL,
-    "Grade_GradingPeriodReferenceSchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Grade_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Grade_GradingPeriodReferenceSchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Grade_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Grade_GradingPeriodSchoolYear" integer NULL,
     "Grade_BeginDate" date NULL,
     "Grade_LocalCourseCode" varchar(60) NULL,
-    "Grade_StudentSectionAssociationReferenceSchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Grade_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Grade_StudentSectionAssociationReferenceSchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Grade_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Grade_SchoolYear" integer NULL,
     "Grade_SectionIdentifier" varchar(255) NULL,
     "Grade_SessionName" varchar(60) NULL,
@@ -4429,9 +4429,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
     "StudentCompetencyObjective_DocumentId" bigint NULL,
     "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "StudentCompetencyObjective_GradingPeriodName" varchar(60) NULL,
-    "StudentCompetencyObjective_GradingPeriodSchoolId" integer NULL,
+    "StudentCompetencyObjective_GradingPeriodSchoolId" bigint NULL,
     "StudentCompetencyObjective_GradingPeriodSchoolYear" integer NULL,
-    "StudentCompetencyObjective_ObjectiveEducationOrganizationId" integer NULL,
+    "StudentCompetencyObjective_ObjectiveEducationOrganizationId" bigint NULL,
     "StudentCompetencyObjective_Objective" varchar(60) NULL,
     "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" bigint NULL,
     "StudentCompetencyObjective_StudentUniqueId" varchar(32) NULL,
@@ -4444,12 +4444,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NULL,
-    "DisciplineIncident_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "DisciplineIncident_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "DisciplineIncident_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "DisciplineIncident_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
@@ -4468,7 +4468,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
     "Ordinal" integer NOT NULL,
     "RestraintEvent_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
-    "Program_EducationOrganizationId" integer NULL,
+    "Program_EducationOrganizationId" bigint NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_RestraintEventProgram" PRIMARY KEY ("CollectionItemId"),
@@ -4494,7 +4494,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "CharterApprovalSchoolYear_DocumentId" bigint NULL,
     "CharterApprovalSchoolYear_CharterApprovalSchoolYear" integer NULL,
     "LocalEducationAgency_DocumentId" bigint NULL,
-    "LocalEducationAgency_LocalEducationAgencyId" integer NULL,
+    "LocalEducationAgency_LocalEducationAgencyId" bigint NULL,
     "AdministrativeFundingControlDescriptor_DescriptorId" bigint NULL,
     "CharterApprovalAgencyTypeDescriptor_DescriptorId" bigint NULL,
     "CharterStatusDescriptor_DescriptorId" bigint NULL,
@@ -4504,7 +4504,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "SchoolTypeDescriptor_DescriptorId" bigint NULL,
     "TitleIPartASchoolDesignationDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
-    "SchoolId" integer NOT NULL,
+    "SchoolId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
@@ -4697,19 +4697,19 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
 CREATE TABLE IF NOT EXISTS "edfi"."Section"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_U35501e03_Unified" integer NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_U35501e03_Unified" bigint NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
     "CourseOffering_LocalCourseCode" varchar(60) NOT NULL,
-    "CourseOffering_SchoolReferenceSchoolId" integer GENERATED ALWAYS AS (CASE WHEN "CourseOffering_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
-    "CourseOffering_SessionReferenceSchoolId" integer GENERATED ALWAYS AS (CASE WHEN "CourseOffering_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "CourseOffering_SchoolReferenceSchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "CourseOffering_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "CourseOffering_SessionReferenceSchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "CourseOffering_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "CourseOffering_SchoolYear" integer NOT NULL,
     "CourseOffering_SessionName" varchar(60) NOT NULL,
     "LocationLocation_DocumentId" bigint NULL,
     "LocationLocation_ClassroomIdentificationCode" varchar(60) NULL,
-    "LocationLocation_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "LocationLocation_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
+    "LocationLocation_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "LocationLocation_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
     "LocationSchool_DocumentId" bigint NULL,
-    "LocationSchool_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "LocationSchool_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
+    "LocationSchool_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "LocationSchool_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
     "AvailableCreditTypeDescriptor_DescriptorId" bigint NULL,
     "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
     "InstructionLanguageDescriptor_DescriptorId" bigint NULL,
@@ -4748,7 +4748,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionClassPeriod"
     "Section_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
-    "ClassPeriod_SchoolId" integer NULL,
+    "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_SectionClassPeriod" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_SectionClassPeriod_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
@@ -4783,7 +4783,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
-    "Program_EducationOrganizationId" integer NULL,
+    "Program_EducationOrganizationId" bigint NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_SectionProgram" PRIMARY KEY ("CollectionItemId"),
@@ -4795,16 +4795,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "CalendarDate_DocumentId" bigint NOT NULL,
     "CalendarDate_CalendarCode" varchar(60) NOT NULL,
-    "CalendarDate_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "CalendarDate_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "CalendarDate_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "CalendarDate_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "CalendarDate_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "CalendarDate_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "CalendarDate_Date" date NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
-    "Section_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Section_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Section_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Section_SessionName" varchar(60) NOT NULL,
     "Section_SectionIdentifier" varchar(255) NOT NULL,
@@ -4824,7 +4824,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer NOT NULL,
+    "School_SchoolId" bigint NOT NULL,
     "TermDescriptor_DescriptorId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NOT NULL,
@@ -4843,7 +4843,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionAcademicWeek"
     "Ordinal" integer NOT NULL,
     "Session_DocumentId" bigint NOT NULL,
     "AcademicWeek_DocumentId" bigint NULL,
-    "AcademicWeek_SchoolId" integer NULL,
+    "AcademicWeek_SchoolId" bigint NULL,
     "AcademicWeek_WeekIdentifier" varchar(80) NULL,
     CONSTRAINT "PK_SessionAcademicWeek" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21" UNIQUE ("Session_DocumentId", "AcademicWeek_DocumentId"),
@@ -4859,7 +4859,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
     "GradingPeriod_DocumentId" bigint NULL,
     "GradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "GradingPeriod_GradingPeriodName" varchar(60) NULL,
-    "GradingPeriod_SchoolId" integer NULL,
+    "GradingPeriod_SchoolId" bigint NULL,
     "GradingPeriod_SchoolYear" integer NULL,
     CONSTRAINT "PK_SessionGradingPeriod" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b" UNIQUE ("Session_DocumentId", "GradingPeriod_DocumentId"),
@@ -5215,7 +5215,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
     "DocumentId" bigint NOT NULL,
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
-    "Cohort_EducationOrganizationId" integer NOT NULL,
+    "Cohort_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "BeginDate" date NOT NULL,
@@ -5232,7 +5232,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
     "DocumentId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "DisciplineIncident_SchoolId" integer NOT NULL,
+    "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StaffDisciplineIncidentAssociation" PRIMARY KEY ("DocumentId"),
@@ -5260,9 +5260,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" bigint NULL,
-    "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" integer NULL,
+    "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" bigint NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" bigint NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" date NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33" varchar(32) GENERATED ALWAYS AS (CASE WHEN "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" IS NULL THEN NULL ELSE "StaffUniqueId_Unified" END) STORED,
@@ -5287,7 +5287,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "AddressAddressTypeDescriptor_DescriptorId" bigint NULL,
@@ -5347,7 +5347,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -5387,7 +5387,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5404,16 +5404,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
     "Calendar_CalendarCode" varchar(60) NULL,
-    "Calendar_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Calendar_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Calendar_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "SchoolYear_DocumentId" bigint NULL,
     "SchoolYear_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "SchoolYear_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "ProgramAssignmentDescriptor_DescriptorId" bigint NOT NULL,
@@ -5452,7 +5452,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
     "DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
-    "Section_SchoolId" integer NOT NULL,
+    "Section_SchoolId" bigint NOT NULL,
     "Section_SchoolYear" integer NOT NULL,
     "Section_SessionName" varchar(60) NOT NULL,
     "Section_SectionIdentifier" varchar(255) NOT NULL,
@@ -5476,7 +5476,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
     "OperationalStatusDescriptor_DescriptorId" bigint NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
-    "StateEducationAgencyId" integer NOT NULL,
+    "StateEducationAgencyId" bigint NOT NULL,
     "WebSite" varchar(255) NULL,
     CONSTRAINT "PK_StateEducationAgency" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StateEducationAgency_NK" UNIQUE ("StateEducationAgencyId"),
@@ -5785,7 +5785,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -5814,6 +5814,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
     CONSTRAINT "CK_StudentAcademicRecord_EducationOrganization_AllNone" CHECK (("EducationOrganization_DocumentId" IS NULL AND "EducationOrganization_EducationOrganizationId" IS NULL) OR ("EducationOrganization_DocumentId" IS NOT NULL AND "EducationOrganization_EducationOrganizationId" IS NOT NULL)),
     CONSTRAINT "CK_StudentAcademicRecord_SchoolYear_AllNone" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
     CONSTRAINT "CK_StudentAcademicRecord_Student_AllNone" CHECK (("Student_DocumentId" IS NULL AND "Student_StudentUniqueId" IS NULL) OR ("Student_DocumentId" IS NOT NULL AND "Student_StudentUniqueId" IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS "sample"."StudentAcademicRecordExtension"
+(
+    "DocumentId" bigint NOT NULL,
+    "Notes" varchar(280) NULL,
+    CONSTRAINT "PK_StudentAcademicRecordExtension" PRIMARY KEY ("DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
@@ -5907,10 +5914,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "ReportCard_DocumentId" bigint NULL,
-    "ReportCard_EducationOrganizationId" integer NULL,
+    "ReportCard_EducationOrganizationId" bigint NULL,
     "ReportCard_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "ReportCard_GradingPeriodName" varchar(60) NULL,
-    "ReportCard_GradingPeriodSchoolId" integer NULL,
+    "ReportCard_GradingPeriodSchoolId" bigint NULL,
     "ReportCard_GradingPeriodSchoolYear" integer NULL,
     "ReportCard_StudentUniqueId" varchar(32) NULL,
     CONSTRAINT "PK_StudentAcademicRecordReportCard" PRIMARY KEY ("CollectionItemId"),
@@ -5926,7 +5933,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
     "ReportedSchool_DocumentId" bigint NULL,
-    "ReportedSchool_SchoolId" integer NULL,
+    "ReportedSchool_SchoolId" bigint NULL,
     "SchoolYear_DocumentId" bigint NULL,
     "SchoolYear_SchoolYear" integer NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6067,7 +6074,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SchoolYear_DocumentId" bigint NULL,
     "SchoolYear_SchoolYear" integer NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
@@ -6091,21 +6098,21 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
     "AssessmentAdministration_AdministrationIdentifier" varchar(255) NOT NULL,
     "AssessmentAdministration_AssessmentIdentifier" varchar(60) NOT NULL,
     "AssessmentAdministration_Namespace" varchar(255) NOT NULL,
-    "AssessmentAdministration_AssigningEducationOrganizationId" integer NOT NULL,
+    "AssessmentAdministration_AssigningEducationOrganizationId" bigint NOT NULL,
     "ReportingEducationOrganization_DocumentId" bigint NULL,
-    "ReportingEducationOrganization_EducationOrganizationId" integer NULL,
+    "ReportingEducationOrganization_EducationOrganizationId" bigint NULL,
     "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" bigint NULL,
-    "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" integer NULL,
+    "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" bigint NULL,
     "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" varchar(32) NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "StudentEducationOrganizationAssociation_EducationOrganizationId" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_EducationOrganizationId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_StudentUniqueId" varchar(32) GENERATED ALWAYS AS (CASE WHEN "StudentEducationOrganizationAssociation_DocumentId" IS NULL THEN NULL ELSE "StudentUniqueId_Unified" END) STORED,
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "StudentSchoolAssociation_EntryDate" date NOT NULL,
-    "StudentSchoolAssociation_SchoolId" integer NOT NULL,
+    "StudentSchoolAssociation_SchoolId" bigint NOT NULL,
     "StudentSchoolAssociation_StudentUniqueId" varchar(32) GENERATED ALWAYS AS (CASE WHEN "StudentSchoolAssociation_DocumentId" IS NULL THEN NULL ELSE "StudentUniqueId_Unified" END) STORED,
     "TestingEducationOrganization_DocumentId" bigint NULL,
-    "TestingEducationOrganization_EducationOrganizationId" integer NULL,
+    "TestingEducationOrganization_EducationOrganizationId" bigint NULL,
     "AssessmentGradeLevelDescriptor_DescriptorId" bigint NULL,
     "PlatformTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentAssessmentRegistration" PRIMARY KEY ("DocumentId"),
@@ -6154,9 +6161,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
     "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
     "StudentAssessmentRegistration_AdministrationIdentifier" varchar(255) NOT NULL,
     "StudentAssessmentRegistration_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "StudentAssessmentRegistration_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
-    "StudentAssessmentRegistration_AssigningEducationOrganizationId" integer NOT NULL,
+    "StudentAssessmentRegistration_AssigningEducationOrganizationId" bigint NOT NULL,
     "StudentAssessmentRegistration_Namespace" varchar(255) GENERATED ALWAYS AS (CASE WHEN "StudentAssessmentRegistration_DocumentId" IS NULL THEN NULL ELSE "Namespace_Unified" END) STORED,
-    "StudentAssessmentRegistration_EducationOrganizationId" integer NOT NULL,
+    "StudentAssessmentRegistration_EducationOrganizationId" bigint NOT NULL,
     "StudentAssessmentRegistration_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentAssessmentRegistrationBatteryPartAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociation_NK" UNIQUE ("AssessmentBatteryPart_DocumentId", "StudentAssessmentRegistration_DocumentId"),
@@ -6179,9 +6186,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6242,7 +6249,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
     "DocumentId" bigint NOT NULL,
     "Cohort_DocumentId" bigint NOT NULL,
     "Cohort_CohortIdentifier" varchar(36) NOT NULL,
-    "Cohort_EducationOrganizationId" integer NOT NULL,
+    "Cohort_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "BeginDate" date NOT NULL,
@@ -6260,7 +6267,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
     "StudentCohortAssociation_DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NULL,
     "Section_LocalCourseCode" varchar(60) NULL,
-    "Section_SchoolId" integer NULL,
+    "Section_SchoolId" bigint NULL,
     "Section_SchoolYear" integer NULL,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
@@ -6276,10 +6283,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
-    "GradingPeriodGradingPeriod_SchoolId" integer NOT NULL,
+    "GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
     "ObjectiveCompetencyObjective_DocumentId" bigint NOT NULL,
-    "ObjectiveCompetencyObjective_EducationOrganizationId" integer NOT NULL,
+    "ObjectiveCompetencyObjective_EducationOrganizationId" bigint NOT NULL,
     "ObjectiveCompetencyObjective_Objective" varchar(60) NOT NULL,
     "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -6301,8 +6308,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgr
     "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" date NULL,
-    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" integer NULL,
-    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" integer NULL,
+    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" bigint NULL,
+    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" varchar(60) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" varchar(32) NULL,
@@ -6320,7 +6327,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssoc
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" date NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" varchar(60) NULL,
-    "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" integer NULL,
+    "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" integer NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" varchar(255) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" varchar(60) NULL,
@@ -6356,7 +6363,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentContactAssociationExtension"
 (
     "DocumentId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NULL,
-    "InterventionStudy_EducationOrganizationId" integer NULL,
+    "InterventionStudy_EducationOrganizationId" bigint NULL,
     "InterventionStudy_InterventionStudyIdentificationCode" varchar(60) NULL,
     "TelephoneTelephoneNumberTypeDescriptor_DescriptorId" bigint NULL,
     "BedtimeReader" boolean NULL,
@@ -6428,7 +6435,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentContactAssociationExtensionStaffEduc
     "Ordinal" integer NOT NULL,
     "StudentContactAssociation_DocumentId" bigint NOT NULL,
     "StaffEducationOrganizationEmploymentAssociation_DocumentId" bigint NULL,
-    "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f" integer NULL,
+    "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f" bigint NULL,
     "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4" bigint NULL,
     "StaffEducationOrganizationEmploymentAssociation_HireDate" date NULL,
     "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId" varchar(32) NULL,
@@ -6443,7 +6450,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
     "DocumentId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "DisciplineIncident_SchoolId" integer NOT NULL,
+    "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
@@ -6482,7 +6489,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
     "DocumentId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "DisciplineIncident_IncidentIdentifier" varchar(36) NOT NULL,
-    "DisciplineIncident_SchoolId" integer NOT NULL,
+    "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentNonOffenderAssociation" PRIMARY KEY ("DocumentId"),
@@ -6506,7 +6513,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodation" PRIMARY KEY ("DocumentId"),
@@ -6531,7 +6538,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "BarrierToInternetAccessInResidenceDescriptor_DescriptorId" bigint NULL,
@@ -6559,29 +6566,11 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExte
 (
     "DocumentId" bigint NOT NULL,
     "FavoriteProgram_DocumentId" bigint NULL,
-    "FavoriteProgram_EducationOrganizationId" integer NULL,
+    "FavoriteProgram_EducationOrganizationId" bigint NULL,
     "FavoriteProgram_ProgramName" varchar(60) NULL,
     "FavoriteProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationExtension" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociationExtension__2b56ba1d84" CHECK (("FavoriteProgram_DocumentId" IS NULL AND "FavoriteProgram_EducationOrganizationId" IS NULL AND "FavoriteProgram_ProgramName" IS NULL AND "FavoriteProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("FavoriteProgram_DocumentId" IS NOT NULL AND "FavoriteProgram_EducationOrganizationId" IS NOT NULL AND "FavoriteProgram_ProgramName" IS NOT NULL AND "FavoriteProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
-);
-
-CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionAddress"
-(
-    "BaseCollectionItemId" bigint NOT NULL,
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "Complex" varchar(255) NULL,
-    "OnBusRoute" boolean NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionAddress" PRIMARY KEY ("BaseCollectionItemId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionA_27f1b8e591" UNIQUE ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-);
-
-CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
-(
-    "BaseCollectionItemId" bigint NOT NULL,
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionS_ec37b7cc33" PRIMARY KEY ("BaseCollectionItemId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_39b1cee52c" UNIQUE ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddress"
@@ -6607,6 +6596,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddres
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Ci_f2b693b72d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Co_b84aff04d3" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Or_30c5d084da" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
+);
+
+CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionAddress"
+(
+    "BaseCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "Complex" varchar(255) NULL,
+    "OnBusRoute" boolean NULL,
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionAddress" PRIMARY KEY ("BaseCollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionA_27f1b8e591" UNIQUE ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin"
@@ -6737,6 +6736,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
     CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_ff5ab4d58a" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "StudentCharacteristicDescriptor_DescriptorId")
 );
 
+CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
+(
+    "BaseCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionS_ec37b7cc33" PRIMARY KEY ("BaseCollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_39b1cee52c" UNIQUE ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+);
+
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
 (
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
@@ -6815,20 +6822,6 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExte
     CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionA_c5e8afe910" UNIQUE ("BaseCollectionItemId", "Ordinal")
 );
 
-CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"
-(
-    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
-    "BaseCollectionItemId" bigint NOT NULL,
-    "Ordinal" integer NOT NULL,
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "BeginDate" date NOT NULL,
-    "EndDate" date NULL,
-    "PrimaryStudentNeedIndicator" boolean NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionS_5945da8ca7" PRIMARY KEY ("CollectionItemId"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_095f72a7d2" UNIQUE ("BaseCollectionItemId", "BeginDate"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_fb8c8b2825" UNIQUE ("BaseCollectionItemId", "Ordinal")
-);
-
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddressPeriod"
 (
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
@@ -6866,6 +6859,20 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLangua
     CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_7479ba86d3" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
+CREATE TABLE IF NOT EXISTS "sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"
+(
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
+    "BaseCollectionItemId" bigint NOT NULL,
+    "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "BeginDate" date NOT NULL,
+    "EndDate" date NULL,
+    "PrimaryStudentNeedIndicator" boolean NULL,
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationExtensionS_5945da8ca7" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_095f72a7d2" UNIQUE ("BaseCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationExtensionS_fb8c8b2825" UNIQUE ("BaseCollectionItemId", "Ordinal")
+);
+
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
 (
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
@@ -6896,7 +6903,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "ResponsibilityDescriptor_DescriptorId" bigint NOT NULL,
@@ -6935,7 +6942,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "NonMedicalImmunizationExemptionDescriptor_DescriptorId" bigint NULL,
@@ -7001,9 +7008,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7055,9 +7062,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
     "DocumentId" bigint NOT NULL,
     "CohortCohort_DocumentId" bigint NULL,
     "CohortCohort_CohortIdentifier" varchar(36) NULL,
-    "CohortCohort_EducationOrganizationId" integer NULL,
+    "CohortCohort_EducationOrganizationId" bigint NULL,
     "Intervention_DocumentId" bigint NOT NULL,
-    "Intervention_EducationOrganizationId" integer NOT NULL,
+    "Intervention_EducationOrganizationId" bigint NOT NULL,
     "Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
@@ -7089,7 +7096,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
-    "Intervention_EducationOrganizationId" integer NOT NULL,
+    "Intervention_EducationOrganizationId" bigint NOT NULL,
     "Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
@@ -7109,9 +7116,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7178,9 +7185,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7237,9 +7244,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7290,9 +7297,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7341,9 +7348,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7365,12 +7372,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NULL,
-    "EducationOrganization_EducationOrganizationId" integer NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "ProgramEvaluation_ProgramEducationOrganizationId" integer NOT NULL,
+    "ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
     "ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
     "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "StaffEvaluatorStaff_DocumentId" bigint NULL,
@@ -7408,7 +7415,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElem
     "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" varchar(50) NOT NULL,
-    "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" integer NOT NULL,
+    "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" varchar(50) NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" bigint NOT NULL,
@@ -7429,7 +7436,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
     "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" varchar(50) NOT NULL,
-    "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" integer NOT NULL,
+    "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" varchar(50) NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" bigint NOT NULL,
@@ -7446,24 +7453,24 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NULL,
     "Calendar_DocumentId" bigint NULL,
     "Calendar_CalendarCode" varchar(60) NULL,
-    "Calendar_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Calendar_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Calendar_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Calendar_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "ClassOfSchoolYear_DocumentId" bigint NULL,
     "ClassOfSchoolYear_ClassOfSchoolYear" integer NULL,
     "GraduationPlan_DocumentId" bigint NULL,
-    "GraduationPlan_EducationOrganizationId" integer NULL,
+    "GraduationPlan_EducationOrganizationId" bigint NULL,
     "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" bigint NULL,
     "GraduationPlan_GraduationSchoolYear" integer NULL,
     "NextYearSchool_DocumentId" bigint NULL,
-    "NextYearSchool_SchoolId" integer NULL,
+    "NextYearSchool_SchoolId" bigint NULL,
     "SchoolYear_DocumentId" bigint NULL,
     "SchoolYear_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "SchoolYear_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "EnrollmentTypeDescriptor_DescriptorId" bigint NULL,
@@ -7508,7 +7515,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduation
     "Ordinal" integer NOT NULL,
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "AlternativeGraduationPlan_DocumentId" bigint NULL,
-    "AlternativeGraduationPlan_EducationOrganizationId" integer NULL,
+    "AlternativeGraduationPlan_EducationOrganizationId" bigint NULL,
     "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" bigint NULL,
     "AlternativeGraduationPlan_GraduationSchoolYear" integer NULL,
     CONSTRAINT "PK_StudentSchoolAssociationAlternativeGraduationPlan" PRIMARY KEY ("CollectionItemId"),
@@ -7531,11 +7538,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
-    "SchoolId_Unified" integer NOT NULL,
+    "SchoolId_Unified" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "School_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Session_DocumentId" bigint NOT NULL,
-    "Session_SchoolId" integer GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
+    "Session_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Session_SchoolYear" integer NOT NULL,
     "Session_SessionName" varchar(60) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7559,9 +7566,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7610,9 +7617,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7651,10 +7658,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "DualCreditEducationOrganization_DocumentId" bigint NULL,
-    "DualCreditEducationOrganization_EducationOrganizationId" integer NULL,
+    "DualCreditEducationOrganization_EducationOrganizationId" bigint NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
-    "Section_SchoolId" integer NOT NULL,
+    "Section_SchoolId" bigint NOT NULL,
     "Section_SchoolYear" integer NOT NULL,
     "Section_SessionName" varchar(60) NOT NULL,
     "Section_SectionIdentifier" varchar(255) NOT NULL,
@@ -7691,8 +7698,8 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentSectionAssociationExtensionRelatedGe
     "StudentSectionAssociation_DocumentId" bigint NOT NULL,
     "RelatedGeneralStudentProgramAssociation_DocumentId" bigint NULL,
     "RelatedGeneralStudentProgramAssociation_BeginDate" date NULL,
-    "RelatedGeneralStudentProgramAssociation_EducationOrganizationId" integer NULL,
-    "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014" integer NULL,
+    "RelatedGeneralStudentProgramAssociation_EducationOrganizationId" bigint NULL,
+    "RelatedGeneralStudentProgramAssociation_ProgramEduca_79002f6014" bigint NULL,
     "RelatedGeneralStudentProgramAssociation_ProgramName" varchar(60) NULL,
     "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1" bigint NULL,
     "RelatedGeneralStudentProgramAssociation_StudentUniqueId" varchar(32) NULL,
@@ -7708,7 +7715,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
     "Ordinal" integer NOT NULL,
     "StudentSectionAssociation_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
-    "Program_EducationOrganizationId" integer NULL,
+    "Program_EducationOrganizationId" bigint NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_StudentSectionAssociationProgram" PRIMARY KEY ("CollectionItemId"),
@@ -7722,7 +7729,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
     "DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
-    "Section_SchoolId" integer NOT NULL,
+    "Section_SchoolId" bigint NOT NULL,
     "Section_SchoolYear" integer NOT NULL,
     "Section_SessionName" varchar(60) NOT NULL,
     "Section_SectionIdentifier" varchar(255) NOT NULL,
@@ -7749,7 +7756,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
     "StudentSectionAttendanceEvent_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
-    "ClassPeriod_SchoolId" integer NULL,
+    "ClassPeriod_SchoolId" bigint NULL,
     CONSTRAINT "PK_StudentSectionAttendanceEventClassPeriod" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "ClassPeriod_DocumentId"),
     CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_Ordinal__2fbe6b01f4" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "Ordinal"),
@@ -7760,9 +7767,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7882,9 +7889,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7916,9 +7923,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -7969,7 +7976,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "TransportationEducationOrganization_DocumentId" bigint NOT NULL,
-    "TransportationEducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "TransportationEducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "StudentBusDetailsBusRouteDescriptor_DescriptorId" bigint NULL,
     "TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" bigint NULL,
     "TransportationTypeDescriptor_DescriptorId" bigint NULL,
@@ -8009,11 +8016,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
     "DocumentId" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "EducationOrganization_DocumentId" bigint NULL,
-    "EducationOrganization_EducationOrganizationId" integer NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NULL,
     "SchoolYear_DocumentId" bigint NOT NULL,
     "SchoolYear_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "SchoolYear_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Session_DocumentId" bigint NULL,
-    "Session_SchoolId" integer NULL,
+    "Session_SchoolId" bigint NULL,
     "Session_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Session_SessionName" varchar(60) NULL,
     "SurveyCategoryDescriptor_DescriptorId" bigint NULL,
@@ -8034,7 +8041,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
     "DocumentId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Course_CourseCode" varchar(60) NOT NULL,
-    "Course_EducationOrganizationId" integer NOT NULL,
+    "Course_EducationOrganizationId" bigint NOT NULL,
     "Survey_DocumentId" bigint NOT NULL,
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
@@ -8048,7 +8055,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
-    "Program_EducationOrganizationId" integer NOT NULL,
+    "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Survey_DocumentId" bigint NOT NULL,
@@ -8200,7 +8207,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAsso
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
     "SurveyResponse_Namespace" varchar(255) NOT NULL,
     "SurveyResponse_SurveyIdentifier" varchar(60) NOT NULL,
@@ -8244,7 +8251,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
     "DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Section_LocalCourseCode" varchar(60) NOT NULL,
-    "Section_SchoolId" integer NOT NULL,
+    "Section_SchoolId" bigint NOT NULL,
     "Section_SchoolYear" integer NOT NULL,
     "Section_SessionName" varchar(60) NOT NULL,
     "Section_SectionIdentifier" varchar(255) NOT NULL,
@@ -8284,7 +8291,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTar
     "Namespace_Unified" varchar(255) NOT NULL,
     "SurveyIdentifier_Unified" varchar(60) NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "SurveySectionResponse_DocumentId" bigint NOT NULL,
     "SurveySectionResponse_SurveyResponseReferenceNamespace" varchar(255) GENERATED ALWAYS AS (CASE WHEN "SurveySectionResponse_DocumentId" IS NULL THEN NULL ELSE "Namespace_Unified" END) STORED,
     "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "SurveySectionResponse_DocumentId" IS NULL THEN NULL ELSE "SurveyIdentifier_Unified" END) STORED,
@@ -8334,7 +8341,7 @@ CREATE TABLE IF NOT EXISTS "sample"."BusRoute"
     "Bus_BusId" varchar(60) NOT NULL,
     "StaffEducationOrganizationAssignmentAssociation_DocumentId" bigint NULL,
     "StaffEducationOrganizationAssignmentAssociation_BeginDate" date NULL,
-    "StaffEducationOrganizationAssignmentAssociation_Educ_50282edcf9" integer NULL,
+    "StaffEducationOrganizationAssignmentAssociation_Educ_50282edcf9" bigint NULL,
     "StaffEducationOrganizationAssignmentAssociation_Staf_4a33b875fa" bigint NULL,
     "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId" varchar(32) NULL,
     "DisabilityDescriptor_DescriptorId" bigint NULL,
@@ -8371,7 +8378,7 @@ CREATE TABLE IF NOT EXISTS "sample"."BusRouteProgram"
     "BusRoute_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NULL,
-    "Program_EducationOrganizationId" integer NULL,
+    "Program_EducationOrganizationId" bigint NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
     CONSTRAINT "PK_BusRouteProgram" PRIMARY KEY ("CollectionItemId"),
@@ -8421,9 +8428,9 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentArtProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
-    "EducationOrganization_EducationOrganizationId" integer NOT NULL,
+    "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_DocumentId" bigint NOT NULL,
-    "ProgramProgram_EducationOrganizationId" integer NOT NULL,
+    "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
@@ -8529,7 +8536,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentGraduationPlanAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
-    "GraduationPlan_EducationOrganizationId" integer NOT NULL,
+    "GraduationPlan_EducationOrganizationId" bigint NOT NULL,
     "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" bigint NOT NULL,
     "GraduationPlan_GraduationSchoolYear" integer NOT NULL,
     "Staff_DocumentId" bigint NULL,
@@ -8646,7 +8653,7 @@ CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizatio
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
-    "EducationOrganizationId" integer NOT NULL,
+    "EducationOrganizationId" bigint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
@@ -8657,8 +8664,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
 (
     "DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
-    "EducationOrganizationReferenceEducationOrganizationId" integer NOT NULL,
-    "ProgramReferenceEducationOrganizationId" integer NOT NULL,
+    "EducationOrganizationReferenceEducationOrganizationId" bigint NOT NULL,
+    "ProgramReferenceEducationOrganizationId" bigint NOT NULL,
     "ProgramReferenceProgramName" varchar(60) NOT NULL,
     "ProgramReferenceProgramTypeDescriptor" bigint NOT NULL,
     "StudentReferenceStudentUniqueId" varchar(32) NOT NULL,
@@ -11511,23 +11518,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ContactExtensionAddress_ContactAddress'
-        AND conrelid = to_regclass('"sample"."ContactExtensionAddress"')
-    )
-    THEN
-        ALTER TABLE "sample"."ContactExtensionAddress"
-        ADD CONSTRAINT "FK_ContactExtensionAddress_ContactAddress"
-        FOREIGN KEY ("BaseCollectionItemId", "Contact_DocumentId")
-        REFERENCES "edfi"."ContactAddress" ("CollectionItemId", "Contact_DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_ContactExtensionAuthor_ContactExtension'
         AND conrelid = to_regclass('"sample"."ContactExtensionAuthor"')
     )
@@ -11724,6 +11714,23 @@ BEGIN
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_ContactExtensionAddress_ContactAddress'
+        AND conrelid = to_regclass('"sample"."ContactExtensionAddress"')
+    )
+    THEN
+        ALTER TABLE "sample"."ContactExtensionAddress"
+        ADD CONSTRAINT "FK_ContactExtensionAddress_ContactAddress"
+        FOREIGN KEY ("BaseCollectionItemId", "Contact_DocumentId")
+        REFERENCES "edfi"."ContactAddress" ("CollectionItemId", "Contact_DocumentId")
+        ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -24703,6 +24710,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentAcademicRecordExtension_StudentAcademicRecord'
+        AND conrelid = to_regclass('"sample"."StudentAcademicRecordExtension"')
+    )
+    THEN
+        ALTER TABLE "sample"."StudentAcademicRecordExtension"
+        ADD CONSTRAINT "FK_StudentAcademicRecordExtension_StudentAcademicRecord"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."StudentAcademicRecord" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentAcademicRecordAcademicHonor_AcademicHonorC_69b992b298'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordAcademicHonor"')
     )
@@ -27202,40 +27226,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionA_9a76f5ea92'
-        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionAddress"')
-    )
-    THEN
-        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionA_9a76f5ea92"
-        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationAddress" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionS_02e1bf2916'
-        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"')
-    )
-    THEN
-        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionS_02e1bf2916"
-        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_Ad_90eeefdf2b'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddress"')
     )
@@ -27295,6 +27285,23 @@ BEGIN
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_St_f47e23ee31"
         FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId")
         REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionA_9a76f5ea92'
+        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionAddress"')
+    )
+    THEN
+        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionAddress"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionA_9a76f5ea92"
+        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationAddress" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -27695,6 +27702,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionS_02e1bf2916'
+        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"')
+    )
+    THEN
+        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionS_02e1bf2916"
+        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentIde_733a8495fa'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"')
     )
@@ -27865,23 +27889,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionS_3200ff8a99'
-        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"')
-    )
-    THEN
-        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionS_3200ff8a99"
-        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        REFERENCES "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8" ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationAddressPer_13ffaeb11b'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddressPeriod"')
     )
@@ -27958,6 +27965,23 @@ BEGIN
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguageUs_ea236b4594"
         FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         REFERENCES "edfi"."StudentEducationOrganizationAssociationLanguage" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtensionS_3200ff8a99'
+        AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"')
+    )
+    THEN
+        ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtensionStud_40660db350"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtensionS_3200ff8a99"
+        FOREIGN KEY ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "sample"."StudentEducationOrganizationAssociationExtensionStud_bc907717e8" ("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -52867,6 +52891,28 @@ BEFORE INSERT OR UPDATE OR DELETE ON "sample"."StaffExtensionPet"
 FOR EACH ROW
 EXECUTE FUNCTION "sample"."TF_TR_StaffExtensionPet_Stamp"();
 
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_StudentAcademicRecordExtension_Stamp"()
+RETURNS TRIGGER AS $func$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_StudentAcademicRecordExtension_Stamp" ON "sample"."StudentAcademicRecordExtension";
+CREATE TRIGGER "TR_StudentAcademicRecordExtension_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "sample"."StudentAcademicRecordExtension"
+FOR EACH ROW
+EXECUTE FUNCTION "sample"."TF_TR_StudentAcademicRecordExtension_Stamp"();
+
 CREATE OR REPLACE FUNCTION "sample"."TF_TR_StudentArtProgramAssociation_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -54901,25 +54947,25 @@ INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName",
 VALUES (351, 'Ed-Fi', 'WeaponDescriptor', '5.2.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (352, 'Sample', 'ArtMediumDescriptor', '1.1.0')
+VALUES (352, 'Sample', 'ArtMediumDescriptor', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (353, 'Sample', 'Bus', '1.1.0')
+VALUES (353, 'Sample', 'Bus', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (354, 'Sample', 'BusRoute', '1.1.0')
+VALUES (354, 'Sample', 'BusRoute', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (355, 'Sample', 'FavoriteBookCategoryDescriptor', '1.1.0')
+VALUES (355, 'Sample', 'FavoriteBookCategoryDescriptor', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (356, 'Sample', 'MembershipTypeDescriptor', '1.1.0')
+VALUES (356, 'Sample', 'MembershipTypeDescriptor', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (357, 'Sample', 'StudentArtProgramAssociation', '1.1.0')
+VALUES (357, 'Sample', 'StudentArtProgramAssociation', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
-VALUES (358, 'Sample', 'StudentGraduationPlanAssociation', '1.1.0')
+VALUES (358, 'Sample', 'StudentGraduationPlanAssociation', '1.0.0')
 ON CONFLICT ("ResourceKeyId") DO NOTHING;
 
 -- ResourceKey full-table validation (count + content)
@@ -55289,13 +55335,13 @@ BEGIN
             (349::smallint, 'Ed-Fi', 'TribalAffiliationDescriptor', '5.2.0'),
             (350::smallint, 'Ed-Fi', 'VisaDescriptor', '5.2.0'),
             (351::smallint, 'Ed-Fi', 'WeaponDescriptor', '5.2.0'),
-            (352::smallint, 'Sample', 'ArtMediumDescriptor', '1.1.0'),
-            (353::smallint, 'Sample', 'Bus', '1.1.0'),
-            (354::smallint, 'Sample', 'BusRoute', '1.1.0'),
-            (355::smallint, 'Sample', 'FavoriteBookCategoryDescriptor', '1.1.0'),
-            (356::smallint, 'Sample', 'MembershipTypeDescriptor', '1.1.0'),
-            (357::smallint, 'Sample', 'StudentArtProgramAssociation', '1.1.0'),
-            (358::smallint, 'Sample', 'StudentGraduationPlanAssociation', '1.1.0')
+            (352::smallint, 'Sample', 'ArtMediumDescriptor', '1.0.0'),
+            (353::smallint, 'Sample', 'Bus', '1.0.0'),
+            (354::smallint, 'Sample', 'BusRoute', '1.0.0'),
+            (355::smallint, 'Sample', 'FavoriteBookCategoryDescriptor', '1.0.0'),
+            (356::smallint, 'Sample', 'MembershipTypeDescriptor', '1.0.0'),
+            (357::smallint, 'Sample', 'StudentArtProgramAssociation', '1.0.0'),
+            (358::smallint, 'Sample', 'StudentGraduationPlanAssociation', '1.0.0')
         ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
         WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
         AND expected."ProjectName" = rk."ProjectName"
@@ -55660,13 +55706,13 @@ BEGIN
                     (349::smallint, 'Ed-Fi', 'TribalAffiliationDescriptor', '5.2.0'),
                     (350::smallint, 'Ed-Fi', 'VisaDescriptor', '5.2.0'),
                     (351::smallint, 'Ed-Fi', 'WeaponDescriptor', '5.2.0'),
-                    (352::smallint, 'Sample', 'ArtMediumDescriptor', '1.1.0'),
-                    (353::smallint, 'Sample', 'Bus', '1.1.0'),
-                    (354::smallint, 'Sample', 'BusRoute', '1.1.0'),
-                    (355::smallint, 'Sample', 'FavoriteBookCategoryDescriptor', '1.1.0'),
-                    (356::smallint, 'Sample', 'MembershipTypeDescriptor', '1.1.0'),
-                    (357::smallint, 'Sample', 'StudentArtProgramAssociation', '1.1.0'),
-                    (358::smallint, 'Sample', 'StudentGraduationPlanAssociation', '1.1.0')
+                    (352::smallint, 'Sample', 'ArtMediumDescriptor', '1.0.0'),
+                    (353::smallint, 'Sample', 'Bus', '1.0.0'),
+                    (354::smallint, 'Sample', 'BusRoute', '1.0.0'),
+                    (355::smallint, 'Sample', 'FavoriteBookCategoryDescriptor', '1.0.0'),
+                    (356::smallint, 'Sample', 'MembershipTypeDescriptor', '1.0.0'),
+                    (357::smallint, 'Sample', 'StudentArtProgramAssociation', '1.0.0'),
+                    (358::smallint, 'Sample', 'StudentGraduationPlanAssociation', '1.0.0')
                 ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
                 WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
                 AND expected."ProjectName" = rk."ProjectName"
@@ -55682,7 +55728,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', 358, '\x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662'::bytea)
+VALUES (1, '1.0.0', '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', 358, '\xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -55702,18 +55748,18 @@ BEGIN
         IF _stored_count <> 358 THEN
             RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 358, found %', _stored_count;
         END IF;
-        IF _stored_hash <> '\x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662'::bytea THEN
-            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662'::bytea, 'hex');
+        IF _stored_hash <> '\xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4'::bytea THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode('\xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4'::bytea, 'hex');
         END IF;
     END IF;
 END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', 'ed-fi', 'Ed-Fi', '5.2.0', false)
+VALUES ('029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', 'ed-fi', 'Ed-Fi', '5.2.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', 'sample', 'Sample', '1.1.0', true)
+VALUES ('029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', 'sample', 'Sample', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -55723,18 +55769,18 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44'
+    WHERE sc."EffectiveSchemaHash" = '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.2.0', false),
-            ('sample', 'Sample', '1.1.0', true)
+            ('sample', 'Sample', '1.0.0', true)
         ) AS expected("ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
         WHERE expected."ProjectEndpointName" = sc."ProjectEndpointName"
         AND expected."ProjectName" = sc."ProjectName"
@@ -55746,11 +55792,11 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44'
+            WHERE sc."EffectiveSchemaHash" = '029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.2.0', false),
-                    ('sample', 'Sample', '1.1.0', true)
+                    ('sample', 'Sample', '1.0.0', true)
                 ) AS expected("ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
                 WHERE expected."ProjectEndpointName" = sc."ProjectEndpointName"
                 AND expected."ProjectName" = sc."ProjectName"

@@ -278,7 +278,7 @@ public sealed class ReferenceResolverIntegrationFixture
                         ),
                         new AbstractUnionViewOutputColumn(
                             new DbColumnName("EducationOrganizationId"),
-                            new RelationalScalarType(ScalarKind.Int32),
+                            new RelationalScalarType(ScalarKind.Int64),
                             new JsonPathExpression("$.educationOrganizationId", []),
                             null
                         ),
@@ -457,10 +457,10 @@ public sealed class ReferenceResolverIntegrationFixture
     {
         return resource.ResourceName switch
         {
-            "School" => [CreateIdentityColumn("SchoolId", "$.schoolId", ScalarKind.Int32)],
+            "School" => [CreateIdentityColumn("SchoolId", "$.schoolId", ScalarKind.Int64)],
             "LocalEducationAgency" =>
             [
-                CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int32),
+                CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int64),
             ],
             _ => [],
         };
@@ -655,9 +655,9 @@ public sealed record ReferenceResolverReferentialIdentitySeed(
     short ResourceKeyId
 );
 
-public sealed record ReferenceResolverSchoolSeed(long DocumentId, int SchoolId);
+public sealed record ReferenceResolverSchoolSeed(long DocumentId, long SchoolId);
 
-public sealed record ReferenceResolverLocalEducationAgencySeed(long DocumentId, int LocalEducationAgencyId);
+public sealed record ReferenceResolverLocalEducationAgencySeed(long DocumentId, long LocalEducationAgencyId);
 
 public sealed record ReferenceResolverDescriptorSeed(
     long DocumentId,

@@ -52,10 +52,7 @@ internal static class RelationalModelSystemColumnFactory
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.CollectionKey => new RelationalScalarType(ScalarKind.Int64),
-            ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
-            || RelationalNameConventions.IsCollectionIdentityColumn(keyColumn.ColumnName)
-                ? new RelationalScalarType(ScalarKind.Int64)
-                : new RelationalScalarType(ScalarKind.Int32),
+            ColumnKind.ParentKeyPart => new RelationalScalarType(ScalarKind.Int64),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
             _ => throw new InvalidOperationException(
                 $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."

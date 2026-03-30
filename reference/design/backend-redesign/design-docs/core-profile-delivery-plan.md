@@ -118,7 +118,7 @@ Per `profiles.md` §"Shared Compiled-Scope Adapter", the selected mapping set mu
 
 ### Construction Responsibility
 
-C1 delivers the adapter contract types, the address derivation engine, and a test-only adapter factory (constructing adapter instances from hand-built test metadata). The production adapter factory — which populates adapter instances from the selected mapping set's `TableWritePlan`, `CollectionMergePlan`, and `DbTableModel` — is backend's responsibility. This factory is owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. Because `SemanticIdentityRelativePathsInOrder` is sourced from `CollectionMergePlan.SemanticIdentityBindings`, that backend adapter-factory work is also blocked on DMS-1102 / `E15-S04b`. C1 does not depend on backend compiled-plan types; backend depends on C1's contract types.
+C1 delivers the adapter contract types, the address derivation engine, and a test-only adapter factory (constructing adapter instances from hand-built test metadata). The production adapter factory — which populates adapter instances from the selected mapping set's `TableWritePlan`, `CollectionMergePlan`, and `DbTableModel` — is backend's responsibility. This factory is owned by DMS-1106 (`E07-S01b`) or a prerequisite task within it. Because `SemanticIdentityRelativePathsInOrder` is sourced from `CollectionMergePlan.SemanticIdentityBindings`, that backend adapter-factory work is also blocked on DMS-1108 / `E15-S04b`. C1 does not depend on backend compiled-plan types; backend depends on C1's contract types.
 
 ### Storage Topology Is Backend-Only
 
@@ -502,7 +502,7 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 
 **Inputs:**
 - Validation and error semantics from `profiles.md`
-- Consumer requirements from C2, C3, C4, C5, DMS-1103, and DMS-1104
+- Consumer requirements from C2, C3, C4, C5, DMS-1106, and DMS-1104
 
 **Outputs:**
 - Shared typed failure categories:
@@ -512,13 +512,13 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
   - Creatability violation (e.g., new visible scope with hidden required members)
   - Core/backend contract mismatch (e.g., unknown `JsonScope`, ancestor-chain mismatch)
   - Binding-accounting failure (e.g., profiled binding cannot be classified)
-- Shared diagnostic payload shapes/factories consumable by C2, C3, C4, C5, DMS-1103, and DMS-1104
+- Shared diagnostic payload shapes/factories consumable by C2, C3, C4, C5, DMS-1106, and DMS-1104
 
 **Test expectations:**
 - Each category shape can be instantiated with representative diagnostic detail
 - Category 3 examples cover both forbidden submitted data and duplicate visible collection-item collisions
 - Category 4 examples cover both root create rejection and visible scope/item insert rejection
-- Type shapes for categories 5–6 are ready for DMS-1103 and DMS-1104 to emit without redefining them
+- Type shapes for categories 5–6 are ready for DMS-1106 and DMS-1104 to emit without redefining them
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
 
@@ -528,14 +528,14 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
-| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6, DMS-1103, DMS-1105 |
+| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6, DMS-1106, DMS-1105 |
 | C2 | Semantic Identity Compatibility Validation | 1 | C1, C8 | C4, C5 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1, C8 | C4, C5, C6 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3, C8 | C5 |
-| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4, C8 | C6, DMS-1103 |
-| C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4, C8 | C6, DMS-1106 |
+| C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1106, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 0 | — | DMS-990 |
-| C8 | Typed Profile Error Classification | 0 | — | C2, C3, C4, C5, DMS-1103, DMS-1104 |
+| C8 | Typed Profile Error Classification | 0 | — | C2, C3, C4, C5, DMS-1106, DMS-1104 |
 
 ### Per-Story Details
 
@@ -575,7 +575,7 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: DMS-1113
 
 **C8** — `01a-c8-typed-profile-error-classification.md`
-- Description: Define the shared typed failure contract for all six error categories up front. Detection stays in the owning stories: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1103, and category 6 in DMS-1104.
+- Description: Define the shared typed failure contract for all six error categories up front. Detection stays in the owning stories: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1106, and category 6 in DMS-1104.
 - Acceptance criteria: All six category shapes are defined with enough diagnostic detail for consumers; category 3 covers forbidden submitted data and duplicate visible collection-item collisions; consumer stories can emit the shared types without redefining them.
 - Jira: DMS-1112
 
@@ -586,11 +586,11 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 ### Dependency Graph
 
 ```
-C8 ──┬──> C2 ──> C4 ──> C5 ──> C6 ──> [DMS-1103, DMS-1105]
+C8 ──┬──> C2 ──> C4 ──> C5 ──> C6 ──> [DMS-1106, DMS-1105]
      ├──> C3 ──────┘
      ├──> C4
      ├──> C5
-     └──> [DMS-1103, DMS-1104]
+     └──> [DMS-1106, DMS-1104]
 
 C1 ──┬──> C2
      ├──> C3
@@ -599,7 +599,7 @@ C1 ──┬──> C2
      └──> C6
 
 C7 ──> [DMS-990]      (no C-story dependencies — can start immediately)
-E15-S04b ──> [DMS-1103]  (production adapter factory consumes stable-identity merge-plan metadata)
+E15-S04b ──> [DMS-1106]  (production adapter factory consumes stable-identity merge-plan metadata)
 
 Additional edges not shown above (would create crossing lines):
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
@@ -618,7 +618,7 @@ Additional edges not shown above (would create crossing lines):
 
 The shortest path to unblock the four hard-blocked backend stories now has two parallel Core foundations plus one cross-epic backend prerequisite:
 
-1. **C8** → Shared typed error contract (used by C2, C3, C4, C5, DMS-1103, and DMS-1104)
+1. **C8** → Shared typed error contract (used by C2, C3, C4, C5, DMS-1106, and DMS-1104)
 2. **C1** → Foundation adapter and address derivation
 3. **C3** → Request-side visibility and shaping (depends on C1 + C8)
 4. **C2** → Semantic identity compatibility validation (depends on C1 + C8, can parallel with C3)
@@ -626,19 +626,19 @@ The shortest path to unblock the four hard-blocked backend stories now has two p
 6. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C1, C2, C3, C4, C8)
 7. **C6** → Stored-state projection + `ProfileAppliedWriteContext` (depends on C1, C3, C5) — **unblocks DMS-1105**
 8. **E15-S04b** → Stable-identity merge-plan metadata required for the backend production adapter factory
-9. **DMS-1103** starts when C1, C5, C6, C8, and E15-S04b are all complete
+9. **DMS-1106** starts when C1, C5, C6, C8, and E15-S04b are all complete
 
 In parallel from the start:
 - **C7** → Readable projection (no C-story dependencies) — **unblocks DMS-990 as soon as C7 is complete**
 
 After the Core contract stories are in place:
-- **DMS-1104** still waits on C8 plus backend runtime stories (`DMS-1103`, `DMS-984`)
+- **DMS-1104** still waits on C8 plus backend runtime stories (`DMS-1106`, `DMS-984`)
 
 ### Parallelization Opportunities
 
 - C7 and C8 have no C-story dependencies and can start immediately, in parallel with all other work. C7 is still the fastest path to unblock DMS-990.
 - C2 and C3 can run in parallel after C1 + C8 complete.
-- DMS-1103 still waits on E15-S04b even after the Core request/context stories complete.
+- DMS-1106 still waits on E15-S04b even after the Core request/context stories complete.
 
 ---
 
@@ -668,11 +668,11 @@ New dependency edges:
 | Hard | `E07-S01a-C3` | `E07-S01a-C6` | C6 uses the same visibility classification rules as C3 |
 | Hard | `E07-S01a-C4` | `E07-S01a-C5` | C5 consumes creatability and collection items from C4 |
 | Hard | `E07-S01a-C5` | `E07-S01a-C6` | C6 includes the assembled request in the write context |
-| Hard | `E07-S01a-C1` | `E07-S01b` | DMS-1103 consumes adapter contract from C1 |
-| Hard | `E07-S01a-C8` | `E07-S01b` | DMS-1103 emits category-5 contract-mismatch diagnostics using the shared C8 type contract |
-| Hard | `E07-S01a-C5` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteRequest` from C5 |
-| Hard | `E07-S01a-C6` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteContext` from C6 |
-| Hard | `E15-S04b` | `E07-S01b` | DMS-1103's production adapter factory consumes `CollectionMergePlan.SemanticIdentityBindings` to populate `SemanticIdentityRelativePathsInOrder` |
+| Hard | `E07-S01a-C1` | `E07-S01b` | DMS-1106 consumes adapter contract from C1 |
+| Hard | `E07-S01a-C8` | `E07-S01b` | DMS-1106 emits category-5 contract-mismatch diagnostics using the shared C8 type contract |
+| Hard | `E07-S01a-C5` | `E07-S01b` | DMS-1106 consumes `ProfileAppliedWriteRequest` from C5 |
+| Hard | `E07-S01a-C6` | `E07-S01b` | DMS-1106 consumes `ProfileAppliedWriteContext` from C6 |
+| Hard | `E15-S04b` | `E07-S01b` | DMS-1106's production adapter factory consumes `CollectionMergePlan.SemanticIdentityBindings` to populate `SemanticIdentityRelativePathsInOrder` |
 | Hard | `E07-S01a-C1` | `E07-S01c` | DMS-1105 consumes adapter contract from C1 |
 | Hard | `E07-S01a-C6` | `E07-S01c` | DMS-1105 hands off to C6 for stored-state projection |
 | Hard | `E07-S01a-C7` | `E08-S01` | DMS-990 invokes the readable projector from C7 |
@@ -684,7 +684,7 @@ The blocked backend/read-path stories should update their dependency notes from 
 
 | Story | Current dependency | Updated dependency |
 | --- | --- | --- |
-| `E07-S01b` (DMS-1103) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C5 (request assembly), C6 (stored-state projection), C8 (shared contract-mismatch error type), and `E15-S04b` (stable-identity merge-plan metadata for the production adapter factory) |
+| `E07-S01b` (DMS-1106) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C5 (request assembly), C6 (stored-state projection), C8 (shared contract-mismatch error type), and `E15-S04b` (stable-identity merge-plan metadata for the production adapter factory) |
 | `E07-S01c` (DMS-1105) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C6 (stored-state projection) |
 | `E07-S05b` (DMS-1104) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C8 (typed error classification) |
 | `E08-S01` (DMS-990) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C7 (readable profile projection) |

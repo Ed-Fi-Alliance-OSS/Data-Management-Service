@@ -35,7 +35,7 @@ Note: `ScopeKind` intentionally does not distinguish inlined-vs-separate-table s
 
 ### Construction Responsibility
 
-C1 delivers the contract types, the derivation engine, and a test-only adapter factory. The production adapter factory (populating from `TableWritePlan` / `CollectionMergePlan` / `DbTableModel` in the selected mapping set) is backend's responsibility, owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. C1's contract types do not reference backend compiled-plan types.
+C1 delivers the contract types, the derivation engine, and a test-only adapter factory. The production adapter factory (populating from `TableWritePlan` / `CollectionMergePlan` / `DbTableModel` in the selected mapping set) is backend's responsibility, owned by DMS-1106 (`E07-S01b`) or a prerequisite task within it. C1's contract types do not reference backend compiled-plan types.
 
 ### Address Derivation Engine
 
