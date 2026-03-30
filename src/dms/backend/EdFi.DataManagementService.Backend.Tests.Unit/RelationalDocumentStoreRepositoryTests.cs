@@ -18,6 +18,16 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalDocumentStoreRepository
 {
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
+    private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
+        new ProjectName("Ed-Fi"),
+        new ResourceName("LocalEducationAgency"),
+        false
+    );
+    private static readonly BaseResourceInfo _schoolCategoryDescriptorResourceInfo = new(
+        new ProjectName("Ed-Fi"),
+        new ResourceName("SchoolCategoryDescriptor"),
+        true
+    );
     private static readonly ResourceInfo _descriptorResourceInfo = CreateResourceInfo(
         "SchoolTypeDescriptor",
         isDescriptor: true
@@ -25,11 +35,13 @@ public class Given_RelationalDocumentStoreRepository
 
     private RelationalDocumentStoreRepository _sut = null!;
     private IRelationalWriteTargetContextResolver _targetContextResolver = null!;
+    private IReferenceResolver _referenceResolver = null!;
 
     [SetUp]
     public void Setup()
     {
         _targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
+        _referenceResolver = A.Fake<IReferenceResolver>();
         A.CallTo(() =>
                 _targetContextResolver.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -57,10 +69,13 @@ public class Given_RelationalDocumentStoreRepository
                     new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(2))
                 )
             );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() => Task.FromResult(CreateResolvedReferenceSet()));
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
-            _targetContextResolver
+            _targetContextResolver,
+            _referenceResolver
         );
     }
 
@@ -116,22 +131,19 @@ public class Given_RelationalDocumentStoreRepository
     [Test]
     public async Task It_returns_a_deterministic_unknown_failure_when_post_reaches_an_unsupported_relational_gap()
     {
+        var documentReference = CreateDocumentReference(
+            _localEducationAgencyResourceInfo,
+            "$.localEducationAgencyReference"
+        );
+        var descriptorReference = CreateDescriptorReference(
+            _schoolCategoryDescriptorResourceInfo,
+            "$.schoolCategoryDescriptor"
+        );
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo)
-            .Returns(
-                new DocumentInfo(
-                    DocumentIdentity: new DocumentIdentity([
-                        new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
-                    ]),
-                    ReferentialId: new ReferentialId(Guid.NewGuid()),
-                    DocumentReferences: [],
-                    DocumentReferenceArrays: [],
-                    DescriptorReferences: [],
-                    SuperclassIdentity: null
-                )
-            );
+            .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
 
         var result = await _sut.UpsertDocument(upsertRequest);
@@ -154,14 +166,38 @@ public class Given_RelationalDocumentStoreRepository
                 )
             )
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _referenceResolver.ResolveAsync(
+                    A<ReferenceResolverRequest>.That.Matches(request =>
+                        ReferenceEquals(request.MappingSet, upsertRequest.MappingSet)
+                        && request.RequestResource == new QualifiedResourceName("Ed-Fi", "School")
+                        && request.DocumentReferences.Count == 1
+                        && request.DocumentReferences[0] == documentReference
+                        && request.DescriptorReferences.Count == 1
+                        && request.DescriptorReferences[0] == descriptorReference
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
     public async Task It_returns_a_deterministic_unknown_failure_when_put_reaches_an_unsupported_relational_gap()
     {
+        var documentReference = CreateDocumentReference(
+            _localEducationAgencyResourceInfo,
+            "$.localEducationAgencyReference"
+        );
+        var descriptorReference = CreateDescriptorReference(
+            _schoolCategoryDescriptorResourceInfo,
+            "$.schoolCategoryDescriptor"
+        );
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo)
+            .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
         A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
 
         var result = await _sut.UpdateDocumentById(updateRequest);
@@ -183,6 +219,150 @@ public class Given_RelationalDocumentStoreRepository
                 )
             )
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _referenceResolver.ResolveAsync(
+                    A<ReferenceResolverRequest>.That.Matches(request =>
+                        ReferenceEquals(request.MappingSet, updateRequest.MappingSet)
+                        && request.RequestResource == new QualifiedResourceName("Ed-Fi", "School")
+                        && request.DocumentReferences.Count == 1
+                        && request.DocumentReferences[0] == documentReference
+                        && request.DescriptorReferences.Count == 1
+                        && request.DescriptorReferences[0] == descriptorReference
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_short_circuits_post_requests_when_document_reference_resolution_fails()
+    {
+        var documentReference = CreateDocumentReference(
+            _localEducationAgencyResourceInfo,
+            "$.localEducationAgencyReference"
+        );
+        var invalidDocumentReference = DocumentReferenceFailure.From(
+            documentReference,
+            DocumentReferenceFailureReason.Missing
+        );
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                Task.FromResult(
+                    CreateResolvedReferenceSet(invalidDocumentReferences: [invalidDocumentReference])
+                )
+            );
+
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpsertFailureReference([invalidDocumentReference], []));
+    }
+
+    [Test]
+    public async Task It_short_circuits_post_requests_when_descriptor_reference_resolution_fails()
+    {
+        var descriptorReference = CreateDescriptorReference(
+            _schoolCategoryDescriptorResourceInfo,
+            "$.schoolCategoryDescriptor"
+        );
+        var invalidDescriptorReference = DescriptorReferenceFailure.From(
+            descriptorReference,
+            DescriptorReferenceFailureReason.Missing
+        );
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                Task.FromResult(
+                    CreateResolvedReferenceSet(invalidDescriptorReferences: [invalidDescriptorReference])
+                )
+            );
+
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo)
+            .Returns(CreateDocumentInfo(descriptorReferences: [descriptorReference]));
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpsertFailureReference([], [invalidDescriptorReference]));
+    }
+
+    [Test]
+    public async Task It_short_circuits_put_requests_when_document_reference_resolution_fails()
+    {
+        var documentReference = CreateDocumentReference(
+            _localEducationAgencyResourceInfo,
+            "$.localEducationAgencyReference"
+        );
+        var invalidDocumentReference = DocumentReferenceFailure.From(
+            documentReference,
+            DocumentReferenceFailureReason.IncompatibleTargetType
+        );
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                Task.FromResult(
+                    CreateResolvedReferenceSet(invalidDocumentReferences: [invalidDocumentReference])
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpdateResult.UpdateFailureReference([invalidDocumentReference], []));
+    }
+
+    [Test]
+    public async Task It_short_circuits_put_requests_when_descriptor_reference_resolution_fails()
+    {
+        var descriptorReference = CreateDescriptorReference(
+            _schoolCategoryDescriptorResourceInfo,
+            "$.schoolCategoryDescriptor"
+        );
+        var invalidDescriptorReference = DescriptorReferenceFailure.From(
+            descriptorReference,
+            DescriptorReferenceFailureReason.DescriptorTypeMismatch
+        );
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                Task.FromResult(
+                    CreateResolvedReferenceSet(invalidDescriptorReferences: [invalidDescriptorReference])
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo)
+            .Returns(CreateDocumentInfo(descriptorReferences: [descriptorReference]));
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpdateResult.UpdateFailureReference([], [invalidDescriptorReference]));
     }
 
     [Test]
@@ -192,6 +372,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -213,6 +394,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
@@ -234,6 +416,7 @@ public class Given_RelationalDocumentStoreRepository
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -254,6 +437,7 @@ public class Given_RelationalDocumentStoreRepository
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(null);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
 
         Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
 
@@ -274,6 +458,64 @@ public class Given_RelationalDocumentStoreRepository
                 default
             ),
             AuthorizationSecurableInfo: []
+        );
+    }
+
+    private static DocumentInfo CreateDocumentInfo(
+        DocumentReference[]? documentReferences = null,
+        DescriptorReference[]? descriptorReferences = null
+    )
+    {
+        return new DocumentInfo(
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+            ]),
+            ReferentialId: new ReferentialId(Guid.NewGuid()),
+            DocumentReferences: documentReferences ?? [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: descriptorReferences ?? [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private static DocumentReference CreateDocumentReference(BaseResourceInfo targetResource, string path)
+    {
+        return new DocumentReference(
+            ResourceInfo: targetResource,
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.localEducationAgencyId"), "255901"),
+            ]),
+            ReferentialId: new ReferentialId(Guid.NewGuid()),
+            Path: new JsonPath(path)
+        );
+    }
+
+    private static DescriptorReference CreateDescriptorReference(BaseResourceInfo targetResource, string path)
+    {
+        return new DescriptorReference(
+            ResourceInfo: targetResource,
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.namespace"), "uri://sample"),
+                new DocumentIdentityElement(new JsonPath("$.codeValue"), "SchoolCategory#Charter"),
+            ]),
+            ReferentialId: new ReferentialId(Guid.NewGuid()),
+            Path: new JsonPath(path)
+        );
+    }
+
+    private static ResolvedReferenceSet CreateResolvedReferenceSet(
+        DocumentReferenceFailure[]? invalidDocumentReferences = null,
+        DescriptorReferenceFailure[]? invalidDescriptorReferences = null
+    )
+    {
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: invalidDocumentReferences ?? [],
+            InvalidDescriptorReferences: invalidDescriptorReferences ?? [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
         );
     }
 

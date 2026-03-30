@@ -13,13 +13,16 @@ namespace EdFi.DataManagementService.Backend;
 
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
-    IRelationalWriteTargetContextResolver targetContextResolver
+    IRelationalWriteTargetContextResolver targetContextResolver,
+    IReferenceResolver referenceResolver
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteTargetContextResolver _targetContextResolver =
         targetContextResolver ?? throw new ArgumentNullException(nameof(targetContextResolver));
+    private readonly IReferenceResolver _referenceResolver =
+        referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -34,7 +37,14 @@ public sealed class RelationalDocumentStoreRepository(
             upsertRequest.MappingSet,
             upsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
+            upsertRequest.DocumentInfo.DocumentReferences,
+            upsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
+            static (invalidDocumentReferences, invalidDescriptorReferences) =>
+                new UpsertResult.UpsertFailureReference(
+                    invalidDocumentReferences,
+                    invalidDescriptorReferences
+                ),
             async (mappingSet, resource) =>
                 _ = await _targetContextResolver
                     .ResolveForPostAsync(
@@ -76,7 +86,14 @@ public sealed class RelationalDocumentStoreRepository(
             updateRequest.MappingSet,
             updateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
+            updateRequest.DocumentInfo.DocumentReferences,
+            updateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
+            static (invalidDocumentReferences, invalidDescriptorReferences) =>
+                new UpdateResult.UpdateFailureReference(
+                    invalidDocumentReferences,
+                    invalidDescriptorReferences
+                ),
             async (mappingSet, resource) =>
                 _ = await _targetContextResolver
                     .ResolveForPutAsync(mappingSet, resource, updateRequest.DocumentUuid)
@@ -116,16 +133,22 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    private static async Task<TResult> ExecuteWriteGuardRails<TResult>(
+    private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         MappingSet? mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
+        IReadOnlyList<DocumentReference> documentReferences,
+        IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
+        Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
         Func<MappingSet, QualifiedResourceName, Task> resolveTargetContextAsync
     )
     {
         ArgumentNullException.ThrowIfNull(resourceInfo);
+        ArgumentNullException.ThrowIfNull(documentReferences);
+        ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
+        ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
         ArgumentNullException.ThrowIfNull(mappingSet);
 
@@ -135,6 +158,25 @@ public sealed class RelationalDocumentStoreRepository(
         {
             _ = RelationalWriteSupport.GetWritePlanOrThrow(mappingSet, resource);
             await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
+
+            var resolvedReferences = await _referenceResolver
+                .ResolveAsync(
+                    new ReferenceResolverRequest(
+                        MappingSet: mappingSet,
+                        RequestResource: resource,
+                        DocumentReferences: documentReferences,
+                        DescriptorReferences: descriptorReferences
+                    )
+                )
+                .ConfigureAwait(false);
+
+            if (resolvedReferences.HasFailures)
+            {
+                return referenceFailureFactory(
+                    [.. resolvedReferences.InvalidDocumentReferences],
+                    [.. resolvedReferences.InvalidDescriptorReferences]
+                );
+            }
         }
         catch (Exception ex)
             when (ex is NotSupportedException or InvalidOperationException or KeyNotFoundException)
