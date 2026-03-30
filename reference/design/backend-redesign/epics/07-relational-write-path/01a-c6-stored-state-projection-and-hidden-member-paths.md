@@ -28,7 +28,7 @@ Depends on:
 - #11 (collection visibility details)
 - #14 (extension profile semantics — stored side)
 
-This story produces the `ProfileAppliedWriteContext` that backend consumes in `E07-S01b` (DMS-1103) and that the write-side current-document loader in `E07-S01c` (DMS-1105) hands off to.
+This story produces the `ProfileAppliedWriteContext` that backend consumes in `E07-S01b` (DMS-1106) and that the write-side current-document loader in `E07-S01c` (DMS-1105) hands off to.
 
 ### HiddenMemberPaths Vocabulary Split
 

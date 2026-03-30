@@ -18,13 +18,15 @@ Dependency note: this story is hard-blocked on the following Core profile storie
 - C5 (`01a-c5-assemble-profile-applied-write-request.md`) — produces `ProfileAppliedWriteRequest`, and
 - C6 (`01a-c6-stored-state-projection-and-hidden-member-paths.md`) — produces `ProfileAppliedWriteContext` including stored-state projection and `HiddenMemberPaths`,
 - C8 (`01a-c8-typed-profile-error-classification.md`) — supplies the shared typed error contract for category-5 contract-mismatch diagnostics, and
-- `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) — the production adapter factory in this story populates `SemanticIdentityRelativePathsInOrder` from `CollectionMergePlan.SemanticIdentityBindings`.
+- `DMS-1108` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) — the production adapter factory in this story populates `SemanticIdentityRelativePathsInOrder` from `CollectionMergePlan.SemanticIdentityBindings`.
 
 This story introduces the request-scoped Core/backend profile hand-off needed before profiled create and stable-identity merge execution:
 
 - Core may supply a `ProfileAppliedWriteRequest` containing `WritableRequestBody`, root-resource creatability, request-scope visibility, and visible request collection-item metadata,
 - for `POST` requests that would create a new document, backend consults a Core-owned root-creatability decision before inserting `dms.Document` or root rows,
 - for update/upsert-to-existing flows, backend accepts the separately loaded current stored document plus the selected mapping-set-scoped compiled-scope catalog or equivalent adapter and invokes a Core-owned projector to obtain `ProfileAppliedWriteContext`, including `VisibleStoredBody`, stored-scope visibility, visible stored collection-row metadata, and hidden-member preservation metadata required by the merge executor's compiled-binding overlay behavior.
+
+This story stops at exposing the Core-owned request/context contract to backend orchestration boundaries. Direct flattener body-source selection between the normal validated request body and `WritableRequestBody` is intentionally deferred to `reference/design/backend-redesign/epics/07-relational-write-path/02b-profile-applied-request-flattening.md`.
 
 Backend must not re-evaluate profile member filters or collection-item value predicates itself, and assumes Core has already rejected invalid writable profiles that hide compiled semantic-identity members required for persisted collection merges.
 
@@ -36,7 +38,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 
 - When no writable profile applies, the backend write pipeline behaves as it does today and treats all stored scopes as visible.
 - When a writable profile applies:
-  - backend consumes `WritableRequestBody` for flattening,
+  - backend receives `ProfileAppliedWriteRequest`, including `WritableRequestBody`, at the orchestration boundary without reinterpreting profile rules,
   - for a `POST` that would create a new document, backend can determine whether the root resource instance is creatable before persistence starts,
   - backend receives structured request-side scope/item visibility metadata rather than inferring behavior from filtered request JSON,
   - for update/upsert-to-existing flows, the contract accepts the current stored document produced by the separate write-side load/reconstitution step,
@@ -91,6 +93,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 
 - Backend does not implement profile member filtering, profile collection value predicates, or readable-vs-writable profile selection rules.
 - Hidden vs absent semantics are not inferred from `WritableRequestBody` or `VisibleStoredBody` alone.
+- Direct selection of the flattener input body between the normal validated request body and `WritableRequestBody` is owned by `02b-profile-applied-request-flattening.md`, not by this story.
 
 ### Testing
 
@@ -106,7 +109,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 ## Tasks
 
 1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, plus the selected compiled-scope catalog or equivalent adapter used by Core, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, deterministic address-validation diagnostics, and hidden-member preservation metadata that downstream executors can apply through compiled bindings, key-unification canonical storage, synthetic presence flags, and hidden FK/descriptor bindings.
-2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
+2. Thread optional `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` through write-path orchestration boundaries without duplicating profile logic in backend; leave direct flattener body-source selection to `02b-profile-applied-request-flattening.md`.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document plus the selected compiled-scope adapter from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
 4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so the executor can distinguish create-of-new-visible-data from update-of-existing-visible-data without re-evaluating profile rules, including the four-way binding-accounting split between visible/writable, hidden/preserved, clear-on-visible-absent, and storage-managed bindings.
 5. Validate Core-emitted scope/row addresses and canonical member paths against the selected compiled-scope adapter/compiled metadata before downstream merge/no-op code uses them, and emit deterministic C8 category-5 contract-mismatch diagnostics instead of guessing from ordinals or filtered JSON.
