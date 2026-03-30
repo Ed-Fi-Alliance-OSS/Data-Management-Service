@@ -62,6 +62,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     /// - Empty profiles are valid
     /// - Multiple resources are validated independently
     /// - Both ReadContentType and WriteContentType are validated
+    ///
+    /// This method intentionally continues to return
+    /// <see cref="ProfileValidationResult" /> until category-1
+    /// <see cref="ProfileFailure" /> wiring lands. Keep any future adaptation at
+    /// this validator boundary or its immediate caller rather than in
+    /// middleware/API mapping.
     /// </remarks>
     public ProfileValidationResult Validate(
         ProfileDefinition profileDefinition,

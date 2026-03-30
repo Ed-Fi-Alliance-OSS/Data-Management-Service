@@ -84,11 +84,3 @@ public sealed record CollectionRowAddress(
 /// Preserves missing-vs-explicit-null semantics.
 /// </param>
 public sealed record SemanticIdentityPart(string RelativePath, JsonNode? Value, bool IsPresent);
-
-/// <summary>
-/// Caller-provided context identifying one concrete collection item on the JSON
-/// traversal path to the addressed scope.
-/// </summary>
-/// <param name="JsonScope">Compiled JsonScope of the ancestor collection.</param>
-/// <param name="Item">The concrete JSON collection item on the traversal path.</param>
-public sealed record AncestorItemContext(string JsonScope, JsonNode Item);
