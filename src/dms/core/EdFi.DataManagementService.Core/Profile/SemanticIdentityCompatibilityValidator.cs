@@ -184,7 +184,9 @@ internal static class SemanticIdentityCompatibilityValidator
                 ? new(CollectionVisibility.VisibleWithExplicitRules, rule)
                 : _hidden,
 
-            MemberSelection.ExcludeOnly => node.Collections.ContainsKey(name) ? _hidden : _visibleAllMembers,
+            MemberSelection.ExcludeOnly => node.Collections.TryGetValue(name, out CollectionRule? exRule)
+                ? new(CollectionVisibility.VisibleWithExplicitRules, exRule)
+                : _visibleAllMembers,
 
             MemberSelection.IncludeAll => node.Collections.TryGetValue(name, out CollectionRule? rule)
                 ? new(CollectionVisibility.VisibleWithExplicitRules, rule)
@@ -207,7 +209,9 @@ internal static class SemanticIdentityCompatibilityValidator
                 ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
                 : _hidden,
 
-            MemberSelection.ExcludeOnly => node.Collections.ContainsKey(name) ? _hidden : _visibleAllMembers,
+            MemberSelection.ExcludeOnly => node.Collections.TryGetValue(name, out CollectionRule? exRule)
+                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
+                : _visibleAllMembers,
 
             MemberSelection.IncludeAll => node.Collections.TryGetValue(name, out CollectionRule? rule)
                 ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
@@ -230,7 +234,9 @@ internal static class SemanticIdentityCompatibilityValidator
                 ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
                 : _hidden,
 
-            MemberSelection.ExcludeOnly => node.Objects.ContainsKey(name) ? _hidden : _visibleAllMembers,
+            MemberSelection.ExcludeOnly => node.Objects.TryGetValue(name, out ObjectRule? exRule)
+                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
+                : _visibleAllMembers,
 
             MemberSelection.IncludeAll => node.Objects.TryGetValue(name, out ObjectRule? rule)
                 ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
@@ -258,8 +264,11 @@ internal static class SemanticIdentityCompatibilityValidator
                 ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
                 : _hidden,
 
-            MemberSelection.ExcludeOnly => node.Extensions.ContainsKey(extensionName)
-                ? _hidden
+            MemberSelection.ExcludeOnly => node.Extensions.TryGetValue(
+                extensionName,
+                out ExtensionRule? exRule
+            )
+                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
                 : _visibleAllMembers,
 
             MemberSelection.IncludeAll => node.Extensions.TryGetValue(extensionName, out ExtensionRule? rule)

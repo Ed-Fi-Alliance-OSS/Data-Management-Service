@@ -342,6 +342,64 @@ public abstract class SemanticIdentityCompatibilityValidatorTests
     }
 
     [TestFixture]
+    public class Given_ExcludeOnly_Parent_With_Explicit_Collection_SubRule_Hiding_Identity
+        : SemanticIdentityCompatibilityValidatorTests
+    {
+        private IReadOnlyList<HiddenSemanticIdentityMembersProfileDefinitionFailure> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // ExcludeOnly at root with an explicit collection sub-rule.
+            // The collection IS visible (explicit rules refine, not exclude),
+            // but the sub-rule hides the identity field.
+            ContentTypeDefinition writeContent = new(
+                MemberSelection: MemberSelection.ExcludeOnly,
+                Properties: [new PropertyRule("entryTypeDescriptor")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("officialAttendancePeriod")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            _result = SemanticIdentityCompatibilityValidator.Validate(
+                BuildProfile(writeContent),
+                ResourceName,
+                SharedFixtureScopes
+            );
+        }
+
+        [Test]
+        public void It_should_return_one_failure()
+        {
+            _result.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_identify_the_hidden_identity_member()
+        {
+            _result[0].HiddenCanonicalMemberPaths.Should().Equal("classPeriodName");
+        }
+
+        [Test]
+        public void It_should_identify_the_correct_scope()
+        {
+            _result[0].JsonScope.Should().Be("$.classPeriods[*]");
+        }
+    }
+
+    [TestFixture]
     public class Given_IncludeAll_Profile : SemanticIdentityCompatibilityValidatorTests
     {
         private IReadOnlyList<HiddenSemanticIdentityMembersProfileDefinitionFailure> _result = null!;
