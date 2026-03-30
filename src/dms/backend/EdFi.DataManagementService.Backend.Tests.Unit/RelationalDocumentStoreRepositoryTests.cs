@@ -24,11 +24,44 @@ public class Given_RelationalDocumentStoreRepository
     );
 
     private RelationalDocumentStoreRepository _sut = null!;
+    private IRelationalWriteTargetContextResolver _targetContextResolver = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalDocumentStoreRepository(NullLogger<RelationalDocumentStoreRepository>.Instance);
+        _targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(call =>
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(3))
+                )
+            );
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(call =>
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(2))
+                )
+            );
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _targetContextResolver
+        );
     }
 
     [Test]
@@ -86,6 +119,20 @@ public class Given_RelationalDocumentStoreRepository
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo)
+            .Returns(
+                new DocumentInfo(
+                    DocumentIdentity: new DocumentIdentity([
+                        new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+                    ]),
+                    ReferentialId: new ReferentialId(Guid.NewGuid()),
+                    DocumentReferences: [],
+                    DocumentReferenceArrays: [],
+                    DescriptorReferences: [],
+                    SuperclassIdentity: null
+                )
+            );
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
@@ -97,6 +144,16 @@ public class Given_RelationalDocumentStoreRepository
                         + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
                 )
             );
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -105,6 +162,7 @@ public class Given_RelationalDocumentStoreRepository
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
@@ -116,6 +174,15 @@ public class Given_RelationalDocumentStoreRepository
                         + "Write-plan selection succeeded, but the relational write orchestration path is still pending."
                 )
             );
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]

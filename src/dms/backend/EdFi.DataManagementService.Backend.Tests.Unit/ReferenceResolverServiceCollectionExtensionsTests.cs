@@ -28,6 +28,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
         factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<TestReferenceResolverAdapter>();
     }
@@ -46,6 +47,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var targetContextResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -58,6 +61,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }

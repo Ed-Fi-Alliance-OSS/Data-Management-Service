@@ -34,7 +34,7 @@
       "Add backend/unit tests for POST create-new detection, POST existing-document detection, PUT existing-document context resolution, and the resulting PUT target-context shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference Resolution",

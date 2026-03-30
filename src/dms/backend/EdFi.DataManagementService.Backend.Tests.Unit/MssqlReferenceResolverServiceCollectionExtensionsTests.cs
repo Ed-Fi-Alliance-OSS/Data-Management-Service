@@ -28,11 +28,14 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         using var scope = serviceProvider.CreateScope();
 
         var resolver = scope.ServiceProvider.GetRequiredService<IReferenceResolver>();
+        var targetContextResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
         factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();

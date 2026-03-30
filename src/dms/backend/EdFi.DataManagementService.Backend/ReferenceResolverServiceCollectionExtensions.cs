@@ -40,6 +40,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteTargetContextResolver,
+                RelationalWriteTargetContextResolver
+            >()
+        );
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }
