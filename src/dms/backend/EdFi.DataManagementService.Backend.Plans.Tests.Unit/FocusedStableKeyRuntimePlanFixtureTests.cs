@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -149,5 +150,19 @@ public class Given_RuntimePlanFixtureModelSetBuilder_FocusedStableKeyNegativeMis
         );
 
         addressTable.IdentityMetadata.SemanticIdentityBindings.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_compile_a_permissive_collection_merge_plan_without_inventing_fallback_semantic_keys()
+    {
+        var mappingSet = new MappingSetCompiler().Compile(_modelSet);
+        var schoolWritePlan = mappingSet.WritePlansByResource[_schoolResource];
+        var addressPlan = schoolWritePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            tablePlan.TableModel.JsonScope.Canonical == "$.addresses[*]"
+        );
+
+        addressPlan.DeleteByParentSql.Should().BeNull();
+        addressPlan.CollectionMergePlan.Should().NotBeNull();
+        addressPlan.CollectionMergePlan!.SemanticIdentityBindings.Should().BeEmpty();
     }
 }

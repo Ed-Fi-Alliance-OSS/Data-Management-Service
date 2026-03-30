@@ -49,6 +49,7 @@ internal static class NormalizedPlanContractCodec
                             )
                         )
                     ),
+                    CollectionMergePlan: CollectionMergePlanDto.Encode(tablePlan.CollectionMergePlan),
                     CollectionKeyPreallocationPlan: tablePlan.CollectionKeyPreallocationPlan is null
                         ? null
                         : new CollectionKeyPreallocationPlanDto(
@@ -217,6 +218,14 @@ internal static class NormalizedPlanContractCodec
                 tablePlanArgument
             );
 
+            ValidateCollectionTablePlanShape(tablePlanDto, tableModel, tablePlanArgument);
+
+            var decodedCollectionMergePlan = DecodeCollectionMergePlan(
+                tablePlanDto,
+                decodedColumnBindings.Length,
+                tablePlanArgument
+            );
+
             decodedTablePlans[tablePlanIndex] = new ExternalPlans.TableWritePlan(
                 TableModel: tableModel,
                 InsertSql: tablePlanDto.InsertSql,
@@ -229,6 +238,7 @@ internal static class NormalizedPlanContractCodec
                 ),
                 ColumnBindings: decodedColumnBindings,
                 KeyUnificationPlans: decodedKeyUnificationPlans,
+                CollectionMergePlan: decodedCollectionMergePlan,
                 CollectionKeyPreallocationPlan: DecodeCollectionKeyPreallocationPlan(
                     tablePlanDto,
                     tableModel,
@@ -240,6 +250,55 @@ internal static class NormalizedPlanContractCodec
         }
 
         return new ExternalPlans.ResourceWritePlan(model, decodedTablePlans);
+    }
+
+    private static void ValidateCollectionTablePlanShape(
+        TableWritePlanDto tablePlanDto,
+        DbTableModel tableModel,
+        string tablePlanArgument
+    )
+    {
+        var tableKind = tableModel.IdentityMetadata.TableKind;
+
+        if (
+            tableKind is not DbTableKind.Collection and not DbTableKind.ExtensionCollection
+            || tablePlanDto.CollectionMergePlan is not null
+        )
+        {
+            return;
+        }
+
+        var detail = tablePlanDto.DeleteByParentSql is null
+            ? $"Neither {nameof(TableWritePlanDto.CollectionMergePlan)} nor {nameof(TableWritePlanDto.DeleteByParentSql)} was provided."
+            : $"{nameof(TableWritePlanDto.DeleteByParentSql)} cannot replace {nameof(TableWritePlanDto.CollectionMergePlan)} for persisted collection tables.";
+
+        throw new ArgumentException(
+            $"{tablePlanArgument} targets {nameof(DbTableModel.IdentityMetadata)}.{nameof(DbTableIdentityMetadata.TableKind)} '{tableKind}', which requires {nameof(TableWritePlanDto.CollectionMergePlan)}. {detail}",
+            nameof(tablePlanDto)
+        );
+    }
+
+    private static ExternalPlans.CollectionMergePlan? DecodeCollectionMergePlan(
+        TableWritePlanDto tablePlanDto,
+        int bindingCount,
+        string tablePlanArgument
+    )
+    {
+        if (tablePlanDto.CollectionMergePlan is null)
+        {
+            return null;
+        }
+
+        if (tablePlanDto.DeleteByParentSql is not null)
+        {
+            throw new ArgumentException(
+                $"{nameof(TableWritePlanDto.CollectionMergePlan)} requires {nameof(TableWritePlanDto.DeleteByParentSql)} to be null.",
+                nameof(tablePlanDto)
+            );
+        }
+
+        var planArgument = $"{tablePlanArgument}.{nameof(TableWritePlanDto.CollectionMergePlan)}";
+        return tablePlanDto.CollectionMergePlan.Decode(bindingCount, planArgument);
     }
 
     private static ExternalPlans.CollectionKeyPreallocationPlan? DecodeCollectionKeyPreallocationPlan(
@@ -276,8 +335,8 @@ internal static class NormalizedPlanContractCodec
         if (planDto.BindingIndex < 0 || planDto.BindingIndex >= bindingCount)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(tablePlanDto),
-                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)} must be between 0 and {bindingCount - 1}."
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)}",
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)} is out of range. Expected a value between 0 and {bindingCount - 1}."
             );
         }
 

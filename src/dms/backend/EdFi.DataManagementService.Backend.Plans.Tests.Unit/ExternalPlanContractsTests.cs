@@ -129,28 +129,328 @@ public class Given_ExternalPlanContracts
                     MaxParametersPerCommand: 2100
                 )
             );
+        writePlan.TablePlansInDependencyOrder[0].CollectionMergePlan.Should().BeNull();
     }
 
     [Test]
-    public void It_should_expose_collection_key_preallocation_plan_for_collection_write_tables()
+    public void It_should_expose_binding_index_first_collection_merge_metadata_for_collection_write_tables()
     {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+        var tablePlan = fixture.CreateTableWritePlan();
+
+        tablePlan.DeleteByParentSql.Should().BeNull();
+        tablePlan.CollectionMergePlan.Should().NotBeNull();
+        tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
+        tablePlan
+            .CollectionKeyPreallocationPlan.Should()
+            .Be(
+                new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: 1
+                )
+            );
+        tablePlan
+            .CollectionMergePlan!.SemanticIdentityBindings.Select(static binding => binding.BindingIndex)
+            .Should()
+            .Equal(3);
+        tablePlan.CollectionMergePlan.UpdateByStableRowIdentitySql.Should().Be("UPDATE COLLECTION SQL");
+        tablePlan.CollectionMergePlan.DeleteByStableRowIdentitySql.Should().Be("DELETE COLLECTION SQL");
+        tablePlan
+            .CollectionMergePlan.CompareBindingIndexesInOrder.Select(bindingIndex =>
+                tablePlan.ColumnBindings[bindingIndex].ParameterName
+            )
+            .Should()
+            .Equal("ordinal", "addressType", "streetNumberName");
+        tablePlan
+            .ColumnBindings[tablePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+            .ParameterName.Should()
+            .Be("collectionItemId");
+        tablePlan
+            .CollectionMergePlan.CompareBindingIndexesInOrder.Should()
+            .NotContain(tablePlan.CollectionMergePlan.StableRowIdentityBindingIndex);
+        tablePlan
+            .ColumnBindings[tablePlan.CollectionMergePlan.OrdinalBindingIndex]
+            .ParameterName.Should()
+            .Be("ordinal");
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_without_collection_merge_metadata()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: null,
+                collectionMergePlan: null,
+                collectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_that_try_to_fall_back_to_delete_by_parent_without_collection_merge_metadata()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: "DELETE SQL",
+                collectionMergePlan: null,
+                collectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+        exception.Message.Should().Contain(DbTableKind.Collection.ToString());
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_that_mix_delete_by_parent_and_collection_merge_metadata()
+    {
+        var act = () => CreateCollectionTableWritePlan(deleteByParentSql: "DELETE SQL");
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("DeleteByParentSql");
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.DeleteByParentSql));
+    }
+
+    [Test]
+    public void It_should_reject_collection_table_plans_that_mix_update_sql_and_collection_merge_metadata()
+    {
+        var act = () => CreateCollectionTableWritePlan(updateSql: "UPDATE SQL");
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.UpdateSql));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.UpdateSql));
+    }
+
+    [TestCase(DbTableKind.RootExtension)]
+    [TestCase(DbTableKind.CollectionExtensionScope)]
+    public void It_should_reject_collection_merge_plans_for_non_collection_table_kinds(DbTableKind tableKind)
+    {
+        var act = () => CreateCollectionTableWritePlan(tableKind: tableKind);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be("TableModel.IdentityMetadata.TableKind");
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception.Message.Should().Contain(nameof(DbTableKind.Collection));
+        exception.Message.Should().Contain(nameof(DbTableKind.ExtensionCollection));
+        exception.Message.Should().Contain(tableKind.ToString());
+    }
+
+    [Test]
+    public void It_should_allow_collection_merge_plans_without_semantic_identity_bindings_for_permissive_shared_artifacts()
+    {
+        var collectionMergePlan = new ExternalPlans.CollectionMergePlan(
+            SemanticIdentityBindings: [],
+            StableRowIdentityBindingIndex: 1,
+            UpdateByStableRowIdentitySql: "UPDATE COLLECTION SQL",
+            DeleteByStableRowIdentitySql: "DELETE COLLECTION SQL",
+            OrdinalBindingIndex: 2,
+            CompareBindingIndexesInOrder: [1, 2, 3, 4]
+        );
+
+        collectionMergePlan.SemanticIdentityBindings.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_plans_without_collection_key_preallocation_metadata()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            fixture.CreateTableWritePlan(
+                updateSql: null,
+                deleteByParentSql: null,
+                collectionMergePlan: fixture.CollectionMergePlan,
+                collectionKeyPreallocationPlan: null
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(ExternalPlans.TableWritePlan.CollectionKeyPreallocationPlan));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.CollectionMergePlan));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.TableWritePlan.CollectionKeyPreallocationPlan));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_plans_when_stable_row_identity_binding_index_does_not_match_collection_key_preallocation_binding_index()
+    {
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: 2
+                )
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.BindingIndex));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.BindingIndex));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_plans_when_stable_row_identity_binding_column_does_not_match_collection_key_preallocation_column_name()
+    {
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("OtherCollectionItemId"),
+                    BindingIndex: 1
+                )
+            );
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.ColumnName));
+        exception
+            .Message.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.ColumnName));
+        exception.Message.Should().Contain("OtherCollectionItemId");
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_semantic_identity_binding_indexes_outside_column_bindings()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+        var semanticIdentityBindings = fixture.CollectionMergePlan.SemanticIdentityBindings.ToArray();
+        semanticIdentityBindings[0] = semanticIdentityBindings[0] with { BindingIndex = 99 };
+
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    SemanticIdentityBindings = [.. semanticIdentityBindings],
+                }
+            );
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.SemanticIdentityBindings));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.ColumnBindings));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_stable_row_identity_binding_indexes_outside_column_bindings()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    StableRowIdentityBindingIndex = 99,
+                }
+            );
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.StableRowIdentityBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.ColumnBindings));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_ordinal_binding_indexes_outside_column_bindings()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    OrdinalBindingIndex = 99,
+                }
+            );
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(ExternalPlans.CollectionMergePlan.OrdinalBindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.ColumnBindings));
+    }
+
+    [Test]
+    public void It_should_reject_collection_merge_compare_binding_indexes_outside_column_bindings()
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create();
+
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionMergePlan: fixture.CollectionMergePlan with
+                {
+                    CompareBindingIndexesInOrder = [1, 99],
+                }
+            );
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionMergePlan.CompareBindingIndexesInOrder));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.ColumnBindings));
+    }
+
+    [Test]
+    public void It_should_reject_collection_key_preallocation_binding_indexes_outside_column_bindings()
+    {
+        var act = () =>
+            CreateCollectionTableWritePlan(
+                collectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: 99
+                )
+            );
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ExternalPlans.CollectionKeyPreallocationPlan.BindingIndex));
+        exception.Message.Should().Contain(nameof(ExternalPlans.TableWritePlan.ColumnBindings));
+    }
+
+    [Test]
+    public void It_should_keep_delete_by_parent_contract_for_non_collection_non_root_tables()
+    {
+        var termPath = new JsonPathExpression("$.term", [new JsonPathSegment.Property("term")]);
         var tableModel = new DbTableModel(
-            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
-            new JsonPathExpression(
-                "$.addresses[*]",
-                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
-            ),
+            new DbTableName(new DbSchemaName("edfi"), "SchoolSession"),
+            new JsonPathExpression("$.session", [new JsonPathSegment.Property("session")]),
             new TableKey(
-                "PK_SchoolAddress",
-                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                "PK_SchoolSession",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
             [
                 new DbColumnModel(
-                    new DbColumnName("CollectionItemId"),
-                    ColumnKind.CollectionKey,
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
                     new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
                     SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Term"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    IsNullable: false,
+                    SourceJsonPath: termPath,
                     TargetResource: null
                 ),
             ],
@@ -160,33 +460,31 @@ public class Given_ExternalPlanContracts
         var tablePlan = new ExternalPlans.TableWritePlan(
             TableModel: tableModel,
             InsertSql: "INSERT SQL",
-            UpdateSql: null,
+            UpdateSql: "UPDATE SQL",
             DeleteByParentSql: "DELETE SQL",
-            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 1, 2100),
+            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 2, 2100),
             ColumnBindings:
             [
                 new ExternalPlans.WriteColumnBinding(
                     Column: tableModel.Columns[0],
-                    Source: new ExternalPlans.WriteValueSource.Precomputed(),
-                    ParameterName: "collectionItemId"
+                    Source: new ExternalPlans.WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new ExternalPlans.WriteValueSource.Scalar(
+                        termPath,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    ParameterName: "term"
                 ),
             ],
             KeyUnificationPlans: [],
-            CollectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
-                ColumnName: new DbColumnName("CollectionItemId"),
-                BindingIndex: 0
-            )
+            CollectionMergePlan: null
         );
 
-        tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
-        tablePlan
-            .CollectionKeyPreallocationPlan.Should()
-            .Be(
-                new ExternalPlans.CollectionKeyPreallocationPlan(
-                    ColumnName: new DbColumnName("CollectionItemId"),
-                    BindingIndex: 0
-                )
-            );
+        tablePlan.DeleteByParentSql.Should().Be("DELETE SQL");
+        tablePlan.CollectionMergePlan.Should().BeNull();
     }
 
     [Test]
@@ -608,5 +906,24 @@ public class Given_ExternalPlanContracts
             .KeyUnificationPlans[0]
             .MembersInOrder.Should()
             .ContainSingle();
+    }
+
+    private static ExternalPlans.TableWritePlan CreateCollectionTableWritePlan(
+        string? updateSql = null,
+        string? deleteByParentSql = null,
+        ExternalPlans.CollectionMergePlan? collectionMergePlan = null,
+        ExternalPlans.CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan = null,
+        DbTableKind tableKind = DbTableKind.Collection
+    )
+    {
+        var fixture = SchoolAddressCollectionPlanFixture.Create(tableKind);
+
+        return fixture.CreateTableWritePlan(
+            updateSql: updateSql,
+            deleteByParentSql: deleteByParentSql,
+            collectionMergePlan: collectionMergePlan ?? fixture.CollectionMergePlan,
+            collectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+                ?? fixture.CollectionKeyPreallocationPlan
+        );
     }
 }

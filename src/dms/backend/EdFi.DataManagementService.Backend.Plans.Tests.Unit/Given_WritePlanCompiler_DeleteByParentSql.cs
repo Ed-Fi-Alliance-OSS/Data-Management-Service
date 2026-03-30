@@ -262,5 +262,60 @@ public class Given_WritePlanCompiler_DeleteByParentSql : WritePlanCompilerTestBa
                     _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
                 }
             );
+
+        tablePlan.UpdateSql.Should().NotBeNull();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_keep_delete_by_parent_for_explicit_root_and_extension_scope_tables(
+        SqlDialect dialect
+    )
+    {
+        var writePlan = new WritePlanCompiler(dialect).Compile(
+            CreateFocusedStableKeyFixtureResourceModel(dialect)
+        );
+
+        var rootPlan = GetTablePlan(writePlan, "School");
+        var rootExtensionPlan = GetTablePlan(writePlan, "SchoolExtension");
+        var collectionExtensionScopePlan = GetTablePlan(writePlan, "SchoolExtensionAddress");
+
+        rootPlan.DeleteByParentSql.Should().BeNull();
+
+        rootExtensionPlan.UpdateSql.Should().NotBeNull();
+        rootExtensionPlan.DeleteByParentSql.Should().NotBeNull();
+
+        collectionExtensionScopePlan.UpdateSql.Should().NotBeNull();
+        collectionExtensionScopePlan.DeleteByParentSql.Should().NotBeNull();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_suppress_delete_by_parent_for_explicit_collection_tables(SqlDialect dialect)
+    {
+        var writePlan = new WritePlanCompiler(dialect).Compile(
+            CreateFocusedStableKeyFixtureResourceModel(dialect)
+        );
+
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolAddressPeriod",
+                "SchoolExtensionIntervention",
+                "SchoolExtensionInterventionVisit",
+                "SchoolExtensionAddressSponsorReference",
+            }
+        )
+        {
+            GetTablePlan(writePlan, tableName).DeleteByParentSql.Should().BeNull();
+        }
+    }
+
+    private static TableWritePlan GetTablePlan(ResourceWritePlan plan, string tableName)
+    {
+        return plan.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
+        );
     }
 }

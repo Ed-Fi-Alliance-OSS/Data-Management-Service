@@ -112,6 +112,17 @@ internal static class NormalizedPlanDtoJson
                 );
             }
 
+            writer.WritePropertyName("collection_merge_plan");
+
+            if (tablePlan.CollectionMergePlan is null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                tablePlan.CollectionMergePlan.WriteCanonicalJson(writer);
+            }
+
             writer.WritePropertyName("bulk_insert_batching");
             writer.WriteStartObject();
             writer.WriteNumber("max_rows_per_batch", tablePlan.BulkInsertBatching.MaxRowsPerBatch);

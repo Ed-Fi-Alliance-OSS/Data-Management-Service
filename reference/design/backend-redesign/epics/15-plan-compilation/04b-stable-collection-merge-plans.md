@@ -32,6 +32,13 @@ This story is also the runtime-boundary follow-on to `DMS-1103`'s relational-mod
 - shared/default relational-model compilation remains permissive for DDL, manifests, snapshots, and generic fixtures, but
 - runtime/write-plan compilation in this story must opt into the strict relational-model pipeline so executable merge plans never compile against a persisted multi-item collection scope with missing semantic identity.
 
+Implemented contract summary:
+
+- `TableWritePlan` retains `InsertSql`, `UpdateSql`, and `DeleteByParentSql` for root and non-root 1:1 scopes.
+- Persisted collection tables populate `CollectionMergePlan` instead of relying on `DeleteByParentSql`.
+- `CollectionMergePlan` is binding-index-first and carries ordered `SemanticIdentityBindings` as `(RelativePath, BindingIndex)` entries back into `TableWritePlan.ColumnBindings`, plus `StableRowIdentityBindingIndex`, `UpdateByStableRowIdentitySql`, `DeleteByStableRowIdentitySql`, `OrdinalBindingIndex`, and `CompareBindingIndexesInOrder`.
+- `CollectionKeyPreallocationPlan` remains separate table-local metadata for reserving and binding new `CollectionItemId` values before insert DML executes.
+
 ## Acceptance Criteria
 
 ### Executor-facing contract changes

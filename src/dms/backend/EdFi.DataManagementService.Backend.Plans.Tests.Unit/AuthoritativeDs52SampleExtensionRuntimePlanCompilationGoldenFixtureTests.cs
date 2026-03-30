@@ -47,7 +47,7 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
     }
 
     [Test]
-    public void It_should_emit_extension_table_write_plans_for_root_and_child_scopes()
+    public void It_should_emit_extension_table_delete_or_merge_contracts_for_one_to_one_and_collection_scopes()
     {
         foreach (var mappingSet in ParseMappingSets(_manifest))
         {
@@ -74,10 +74,32 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
                 .Should()
                 .BeTrue();
 
+            var collectionScopedTablePlans = 0;
+            var oneToOneScopedTablePlans = 0;
+
             foreach (var extensionTablePlan in extensionTablePlans)
             {
-                ReadRequiredString(extensionTablePlan, "delete_by_parent_sql_sha256");
+                var collectionMergePlan = ReadOptionalObject(
+                    extensionTablePlan["collection_merge_plan"],
+                    "collection_merge_plan"
+                );
+
+                if (collectionMergePlan is not null)
+                {
+                    collectionScopedTablePlans++;
+                    ReadOptionalString(extensionTablePlan, "delete_by_parent_sql_sha256").Should().BeNull();
+                    ReadRequiredString(collectionMergePlan, "update_by_stable_row_identity_sql_sha256");
+                    ReadRequiredString(collectionMergePlan, "delete_by_stable_row_identity_sql_sha256");
+                }
+                else
+                {
+                    oneToOneScopedTablePlans++;
+                    ReadRequiredString(extensionTablePlan, "delete_by_parent_sql_sha256");
+                }
             }
+
+            collectionScopedTablePlans.Should().BeGreaterThan(0);
+            oneToOneScopedTablePlans.Should().BeGreaterThan(0);
         }
     }
 
@@ -355,6 +377,18 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
             null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
             _ => throw new InvalidOperationException(
                 $"Manifest property '{propertyName}' must be an object."
+            ),
+        };
+    }
+
+    private static JsonObject? ReadOptionalObject(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => jsonObject,
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an object or null."
             ),
         };
     }

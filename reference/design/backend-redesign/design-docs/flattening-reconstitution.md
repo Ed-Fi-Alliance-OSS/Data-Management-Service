@@ -548,11 +548,12 @@ Within a single transaction:
    - match incoming candidates using the compiled semantic collection identity
    - for profile-constrained merges, rely on semantic-key matching; Core must reject writable profiles that would hide fields required for that match
    - insert unmatched visible request candidates only when Core marked the corresponding request collection item creatable
-   - reserve any needed `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows
-   - update matched rows in place by `CollectionItemId`, using the same compiled-binding overlay model to preserve bindings governed by `HiddenMemberPaths`
-   - delete omitted visible rows by `CollectionItemId`
+   - reserve any needed `CollectionItemId`s from `dms.CollectionItemIdSequence` using the table's `CollectionKeyPreallocationPlan`
+   - update matched rows in place using `CollectionMergePlan.UpdateByStableRowIdentitySql`, with `CollectionMergePlan.StableRowIdentityBindingIndex` targeting the matched row and the same compiled-binding overlay model preserving bindings governed by `HiddenMemberPaths`
+   - delete omitted visible rows using `CollectionMergePlan.DeleteByStableRowIdentitySql`
    - bulk insert newly created rows
-   - recompute `Ordinal` for the stored sibling set using the deterministic post-merge sibling-order rule below
+   - recompute `Ordinal` for the stored sibling set using the deterministic post-merge sibling-order rule below and `CollectionMergePlan.OrdinalBindingIndex`
+   - project hydrated current rows for guarded no-op detection using `CollectionMergePlan.CompareBindingIndexesInOrder` rather than SQL parsing or column-name re-derivation
 5. Write extension tables using the same stable-identity rules:
    - root extension rows keyed by `DocumentId`
    - collection/common-type extension scope rows keyed by the owning base row identity
@@ -1388,10 +1389,13 @@ public sealed record ResourceWritePlan(
 /// </summary>
 /// <param name="TableModel">The shape model for the table.</param>
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
-/// <param name="UpdateSql">Optional update SQL for in-place row updates. For 1:1 scopes this targets the scope key; for collection tables it targets <c>CollectionItemId</c>.</param>
+/// <param name="UpdateSql">Optional update SQL for in-place row updates on root and non-root 1:1 scopes.</param>
 /// <param name="DeleteByParentSql">Delete SQL used when a separate-table 1:1 scope is <c>VisibleAbsent</c>. Collection-row deletes are driven by the merge executor using stable row identities.</param>
 /// <param name="CollectionMergePlan">
-/// Optional compiled merge metadata for collection tables. Null for root and non-collection 1:1 scopes.
+/// Optional binding-index-first merge metadata for persisted collection tables. Null for root and non-collection 1:1 scopes.
+/// </param>
+/// <param name="CollectionKeyPreallocationPlan">
+/// Optional table-local metadata that binds reserved <c>CollectionItemId</c> values into <c>ColumnBindings</c> before insert DML executes.
 /// </param>
 /// <param name="BulkInsertBatching">
 /// Deterministic bulk-insert batching metadata for this table plan.
@@ -1409,38 +1413,54 @@ public sealed record TableWritePlan(
     string? UpdateSql,
     string? DeleteByParentSql,
     CollectionMergePlan? CollectionMergePlan,
+    CollectionKeyPreallocationPlan? CollectionKeyPreallocationPlan,
     BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
 
 /// <summary>
-/// Compiled merge metadata for one collection table.
+/// Binding-index-first compiled merge metadata for one collection table.
 /// </summary>
 /// <param name="SemanticIdentityBindings">
-/// Relative-path-to-column bindings used to compute the semantic collection identity.
+/// Relative-path-to-binding-index entries used to compute the semantic collection identity from <c>TableWritePlan.ColumnBindings</c>.
 /// </param>
-/// <param name="SelectCurrentSiblingSetSql">
-/// Parameterized SQL that loads the current sibling set for one parent scope, including <c>CollectionItemId</c>,
-/// root document scope, <c>Ordinal</c>, and any columns required for semantic matching and writable comparison.
-/// Visibility selection is request-scoped data assembled during the write pipeline and is not compiled into this SQL.
+/// <param name="StableRowIdentityBindingIndex">
+/// Binding index for the stable persisted row identity (for example <c>CollectionItemId</c>).
 /// </param>
-/// <param name="DeleteByCollectionItemIdsSql">
-/// Parameterized SQL that deletes omitted visible rows by stable collection-row identity.
+/// <param name="UpdateByStableRowIdentitySql">
+/// Parameterized SQL that updates one matched row in place by stable row identity.
+/// </param>
+/// <param name="DeleteByStableRowIdentitySql">
+/// Parameterized SQL that deletes one omitted visible row by stable row identity.
+/// </param>
+/// <param name="OrdinalBindingIndex">
+/// Binding index for the authoritative persisted ordering column.
+/// </param>
+/// <param name="CompareBindingIndexesInOrder">
+/// Binding indexes used to project hydrated current rows into deterministic compare/no-op order.
 /// </param>
 public sealed record CollectionMergePlan(
-    IReadOnlyList<CollectionSemanticIdentityBinding> SemanticIdentityBindings,
-    string SelectCurrentSiblingSetSql,
-    string DeleteByCollectionItemIdsSql
+    IReadOnlyList<CollectionMergeSemanticIdentityBinding> SemanticIdentityBindings,
+    int StableRowIdentityBindingIndex,
+    string UpdateByStableRowIdentitySql,
+    string DeleteByStableRowIdentitySql,
+    int OrdinalBindingIndex,
+    IReadOnlyList<int> CompareBindingIndexesInOrder
 );
 
 /// <summary>
-/// Maps one semantic-identity JSON path to its physical storage column.
+/// Maps one semantic-identity JSON path to the authoritative write binding that carries its value.
 /// </summary>
-public sealed record CollectionSemanticIdentityBinding(
+public sealed record CollectionMergeSemanticIdentityBinding(
     JsonPathExpression RelativePath,
-    DbColumnName ColumnName
+    int BindingIndex
 );
+
+/// <summary>
+/// Table-local metadata for reserving and binding new stable collection-row identities before insert DML.
+/// </summary>
+public sealed record CollectionKeyPreallocationPlan(DbColumnName ColumnName, int BindingIndex);
 
 /// <summary>
 /// Binds a physical column to a write-time value source.
@@ -2082,9 +2102,10 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
 Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
-- `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
+- `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
+- Persisted collection tables do not compile or execute `DeleteByParentSql`; they merge via `CollectionMergePlan` stable-row DML and compare-order metadata.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWritePlan.KeyUnificationPlans` get used):
 

@@ -215,7 +215,10 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             tableCompilationContext.ColumnBindings.Select(static binding => binding.ParameterName).ToArray()
         );
         var updateSql = TryEmitUpdateSql(tableCompilationContext);
-        var deleteByParentSql = TryEmitDeleteByParentSql(rootScopeTableModel, tableCompilationContext);
+        var collectionMergePlan = TryCompileCollectionMergePlan(tableCompilationContext);
+        var deleteByParentSql = collectionMergePlan is null
+            ? TryEmitDeleteByParentSql(rootScopeTableModel, tableCompilationContext)
+            : null;
         var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
             _dialect,
             tableCompilationContext.ColumnBindings
@@ -229,7 +232,81 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: tableCompilationContext.ColumnBindings,
             KeyUnificationPlans: keyUnificationPlans,
+            CollectionMergePlan: collectionMergePlan,
             CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+        );
+    }
+
+    private CollectionMergePlan? TryCompileCollectionMergePlan(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        var tableModel = tableCompilationContext.TableModel;
+
+        if (!UsesCollectionMergeContract(tableModel))
+        {
+            return null;
+        }
+
+        // Shared/default compilation preserves upstream semantic-identity metadata as-is.
+        // Strict runtime compilation rejects empty identities before this compiler runs.
+        var semanticIdentityBindings = tableModel
+            .IdentityMetadata.SemanticIdentityBindings.Select(
+                binding => new CollectionMergeSemanticIdentityBinding(
+                    RelativePath: binding.RelativePath,
+                    BindingIndex: ResolveRequiredBindingIndex(
+                        tableCompilationContext,
+                        binding.ColumnName,
+                        "semantic-identity"
+                    )
+                )
+            )
+            .ToArray();
+
+        if (tableModel.IdentityMetadata.PhysicalRowIdentityColumns.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableModel.Table}': expected exactly one physical row-identity column, but found {tableModel.IdentityMetadata.PhysicalRowIdentityColumns.Count}."
+            );
+        }
+
+        var stableRowIdentityBindingIndex = ResolveRequiredBindingIndex(
+            tableCompilationContext,
+            tableModel.IdentityMetadata.PhysicalRowIdentityColumns[0],
+            "stable-row-identity"
+        );
+        var updateByStableRowIdentitySql = EmitCollectionUpdateByStableRowIdentitySql(
+            tableCompilationContext,
+            stableRowIdentityBindingIndex
+        );
+        var deleteByStableRowIdentitySql = EmitCollectionDeleteByStableRowIdentitySql(
+            tableCompilationContext,
+            stableRowIdentityBindingIndex
+        );
+
+        var ordinalBindings = tableCompilationContext
+            .ColumnBindings.Select((binding, index) => (binding, index))
+            .Where(static tuple => tuple.binding.Column.Kind is ColumnKind.Ordinal)
+            .ToArray();
+
+        if (ordinalBindings.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableModel.Table}': expected exactly one ordinal binding, but found {ordinalBindings.Length}."
+            );
+        }
+
+        var compareBindingIndexesInOrder = DeriveCollectionCompareBindingIndexesInOrder(
+            tableCompilationContext
+        );
+
+        return new CollectionMergePlan(
+            SemanticIdentityBindings: semanticIdentityBindings,
+            StableRowIdentityBindingIndex: stableRowIdentityBindingIndex,
+            UpdateByStableRowIdentitySql: updateByStableRowIdentitySql,
+            DeleteByStableRowIdentitySql: deleteByStableRowIdentitySql,
+            OrdinalBindingIndex: ordinalBindings[0].index,
+            CompareBindingIndexesInOrder: compareBindingIndexesInOrder
         );
     }
 
@@ -266,6 +343,52 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return new CollectionKeyPreallocationPlan(
             ColumnName: binding.Column.ColumnName,
             BindingIndex: bindingIndex
+        );
+    }
+
+    private string EmitCollectionUpdateByStableRowIdentitySql(
+        WritePlanTableCompilationContext tableCompilationContext,
+        int stableRowIdentityBindingIndex
+    )
+    {
+        var locatorColumns = DeriveCollectionLocatorColumns(tableCompilationContext);
+        var bindingsToUpdateInOrder = tableCompilationContext
+            .ColumnBindings.Where(
+                (binding, index) =>
+                    index != stableRowIdentityBindingIndex
+                    && !locatorColumns.Contains(binding.Column.ColumnName)
+            )
+            .ToArray();
+
+        if (bindingsToUpdateInOrder.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': no writable bindings remain after excluding the stable-row-identity binding."
+            );
+        }
+
+        var stableRowIdentityBinding = tableCompilationContext.ColumnBindings[stableRowIdentityBindingIndex];
+
+        return _updateSqlEmitter.Emit(
+            tableCompilationContext.TableModel.Table,
+            bindingsToUpdateInOrder.Select(static binding => binding.Column.ColumnName).ToArray(),
+            bindingsToUpdateInOrder.Select(static binding => binding.ParameterName).ToArray(),
+            [stableRowIdentityBinding.Column.ColumnName],
+            [stableRowIdentityBinding.ParameterName]
+        );
+    }
+
+    private string EmitCollectionDeleteByStableRowIdentitySql(
+        WritePlanTableCompilationContext tableCompilationContext,
+        int stableRowIdentityBindingIndex
+    )
+    {
+        var stableRowIdentityBinding = tableCompilationContext.ColumnBindings[stableRowIdentityBindingIndex];
+
+        return _deleteSqlEmitter.Emit(
+            tableCompilationContext.TableModel.Table,
+            [stableRowIdentityBinding.Column.ColumnName],
+            [stableRowIdentityBinding.ParameterName]
         );
     }
 
@@ -577,8 +700,16 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return !tableModel.Columns.Any(static column => column.Kind is ColumnKind.Ordinal);
     }
 
+    private static bool UsesCollectionMergeContract(DbTableModel tableModel)
+    {
+        return RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel)
+            && tableModel.IdentityMetadata.TableKind
+                is DbTableKind.Collection
+                    or DbTableKind.ExtensionCollection;
+    }
+
     /// <summary>
-    /// Emits table <c>DELETE</c> SQL for replace semantics by parent key for all non-root tables.
+    /// Emits table <c>DELETE</c> SQL for separate-table 1:1 scope replacement by parent key.
     /// </summary>
     private string? TryEmitDeleteByParentSql(
         DbTableModel rootScopeTableModel,
@@ -618,6 +749,60 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
 
         return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
+    }
+
+    private static int[] DeriveCollectionCompareBindingIndexesInOrder(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        var nonComparableColumns = DeriveCollectionNonComparableColumns(tableCompilationContext);
+
+        return tableCompilationContext
+            .ColumnBindings.Select((binding, index) => (binding, index))
+            .Where(tuple => !nonComparableColumns.Contains(tuple.binding.Column.ColumnName))
+            .Select(static tuple => tuple.index)
+            .ToArray();
+    }
+
+    private static HashSet<DbColumnName> DeriveCollectionLocatorColumns(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        return tableCompilationContext
+            .TableModel.IdentityMetadata.RootScopeLocatorColumns.Concat(
+                tableCompilationContext.TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns
+            )
+            .ToHashSet();
+    }
+
+    /// <summary>
+    /// Identifies bindings that participate in merge bookkeeping but not collection equality/no-op comparison.
+    /// </summary>
+    private static HashSet<DbColumnName> DeriveCollectionNonComparableColumns(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        return tableCompilationContext
+            .TableModel.IdentityMetadata.PhysicalRowIdentityColumns.Concat(
+                DeriveCollectionLocatorColumns(tableCompilationContext)
+            )
+            .ToHashSet();
+    }
+
+    private static int ResolveRequiredBindingIndex(
+        WritePlanTableCompilationContext tableCompilationContext,
+        DbColumnName columnName,
+        string metadataPurpose
+    )
+    {
+        if (tableCompilationContext.BindingIndexByColumn.TryGetValue(columnName, out var bindingIndex))
+        {
+            return bindingIndex;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile collection-merge plan for '{tableCompilationContext.TableModel.Table}': {metadataPurpose} column '{columnName.Value}' does not have a write binding."
+        );
     }
 
     /// <summary>
