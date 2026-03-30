@@ -125,10 +125,22 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         ArgumentNullException.ThrowIfNull(tableWritePlan);
         ArgumentNullException.ThrowIfNull(descriptorReference);
 
-        var lookupKey = new DescriptorLookupKey(
+        return GetDescriptorId(
             descriptorReference.DescriptorResource,
-            GetDescriptorLookupPath(tableWritePlan, descriptorReference)
+            GetDescriptorLookupPath(tableWritePlan, descriptorReference),
+            ordinalPath
         );
+    }
+
+    public long? GetDescriptorId(
+        QualifiedResourceName descriptorResource,
+        string wildcardPath,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
+
+        var lookupKey = new DescriptorLookupKey(descriptorResource, wildcardPath);
 
         return
             _descriptorIdMapsByKey.TryGetValue(lookupKey, out var ordinalPathMap)
@@ -157,6 +169,21 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                     )
                 );
             }
+
+            foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
+            {
+                foreach (
+                    var descriptorMember in keyUnificationPlan.MembersInOrder.OfType<KeyUnificationMemberWritePlan.DescriptorMember>()
+                )
+                {
+                    descriptorLookupKeys.Add(
+                        new DescriptorLookupKey(
+                            descriptorMember.DescriptorResource,
+                            GetDescriptorLookupPath(tableWritePlan, descriptorMember)
+                        )
+                    );
+                }
+            }
         }
 
         return descriptorLookupKeys;
@@ -176,6 +203,20 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         [
             .. tableWritePlan.TableModel.JsonScope.Segments,
             .. descriptorReference.RelativePath.Segments,
+        ];
+
+        return JsonPathCanonicalizer.Build(combinedSegments);
+    }
+
+    private static string GetDescriptorLookupPath(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.DescriptorMember descriptorMember
+    )
+    {
+        JsonPathSegment[] combinedSegments =
+        [
+            .. tableWritePlan.TableModel.JsonScope.Segments,
+            .. descriptorMember.RelativePath.Segments,
         ];
 
         return JsonPathCanonicalizer.Build(combinedSegments);

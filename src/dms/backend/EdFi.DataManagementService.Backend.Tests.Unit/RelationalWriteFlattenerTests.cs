@@ -16,6 +16,16 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_RelationalWriteFlattener
 {
+    private static readonly QualifiedResourceName _presenceGateExampleResource = new(
+        "Ed-Fi",
+        "PresenceGateExample"
+    );
+    private static readonly BaseResourceInfo _schoolTypeDescriptorResourceInfo = new(
+        new ProjectName("Ed-Fi"),
+        new ResourceName("SchoolTypeDescriptor"),
+        true
+    );
+
     private RelationalWriteFlattener _sut = null!;
     private FlattenerFixture _fixture = null!;
 
@@ -146,6 +156,267 @@ public class Given_RelationalWriteFlattener
             .WithMessage(
                 "*Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32' at path '$.schoolYear'*"
             );
+    }
+
+    [Test]
+    public void It_populates_key_unification_precomputed_values_and_presence_flags()
+    {
+        var writePlan = CreatePresenceGateExampleWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "presenceGateExampleId": 1001,
+                  "secondarySchoolTypeDescriptor": "uri://ed-fi.org/schooltypedescriptor#secondary"
+                }
+                """
+            )!,
+            CreateResolvedDescriptorReferences(
+                ("$.secondarySchoolTypeDescriptor", 702L, "uri://ed-fi.org/schooltypedescriptor#secondary")
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(702L),
+                new FlattenedWriteValue.Literal(true),
+                new FlattenedWriteValue.Literal(1001)
+            );
+    }
+
+    [Test]
+    public void It_rejects_conflicting_key_unification_descriptor_members()
+    {
+        var writePlan = CreatePresenceGateExampleWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "presenceGateExampleId": 1001,
+                  "primarySchoolTypeDescriptor": "uri://ed-fi.org/schooltypedescriptor#elementary",
+                  "secondarySchoolTypeDescriptor": "uri://ed-fi.org/schooltypedescriptor#secondary"
+                }
+                """
+            )!,
+            CreateResolvedDescriptorReferences(
+                ("$.primarySchoolTypeDescriptor", 701L, "uri://ed-fi.org/schooltypedescriptor#elementary"),
+                ("$.secondarySchoolTypeDescriptor", 702L, "uri://ed-fi.org/schooltypedescriptor#secondary")
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Key-unification conflict for canonical column 'PrimarySchoolTypeDescriptor_Unified_DescriptorId'*"
+            );
+    }
+
+    private static ResourceWritePlan CreatePresenceGateExampleWritePlan()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "PresenceGateExample"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_PresenceGateExample",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("PrimarySchoolTypeDescriptor_DescriptorId_Present"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("PrimarySchoolTypeDescriptor_Unified_DescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: descriptorResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SecondarySchoolTypeDescriptor_DescriptorId_Present"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("PresenceGateExampleId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: CreateTestPath(
+                        "$.presenceGateExampleId",
+                        new JsonPathSegment.Property("presenceGateExampleId")
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var rootPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO edfi.\"PresenceGateExample\" VALUES (...)",
+            UpdateSql: "UPDATE edfi.\"PresenceGateExample\" SET ...",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 5, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "primarySchoolTypeDescriptor_DescriptorId_Present"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "primarySchoolTypeDescriptor_Unified_DescriptorId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "secondarySchoolTypeDescriptor_DescriptorId_Present"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[4],
+                    Source: new WriteValueSource.Scalar(
+                        CreateTestPath(
+                            "$.presenceGateExampleId",
+                            new JsonPathSegment.Property("presenceGateExampleId")
+                        ),
+                        new RelationalScalarType(ScalarKind.Int32)
+                    ),
+                    ParameterName: "presenceGateExampleId"
+                ),
+            ],
+            KeyUnificationPlans:
+            [
+                new KeyUnificationWritePlan(
+                    CanonicalColumn: new DbColumnName("PrimarySchoolTypeDescriptor_Unified_DescriptorId"),
+                    CanonicalBindingIndex: 2,
+                    MembersInOrder:
+                    [
+                        new KeyUnificationMemberWritePlan.DescriptorMember(
+                            MemberPathColumn: new DbColumnName("PrimarySchoolTypeDescriptor_DescriptorId"),
+                            RelativePath: CreateTestPath(
+                                "$.primarySchoolTypeDescriptor",
+                                new JsonPathSegment.Property("primarySchoolTypeDescriptor")
+                            ),
+                            DescriptorResource: descriptorResource,
+                            PresenceColumn: new DbColumnName(
+                                "PrimarySchoolTypeDescriptor_DescriptorId_Present"
+                            ),
+                            PresenceBindingIndex: 1,
+                            PresenceIsSynthetic: true
+                        ),
+                        new KeyUnificationMemberWritePlan.DescriptorMember(
+                            MemberPathColumn: new DbColumnName("SecondarySchoolTypeDescriptor_DescriptorId"),
+                            RelativePath: CreateTestPath(
+                                "$.secondarySchoolTypeDescriptor",
+                                new JsonPathSegment.Property("secondarySchoolTypeDescriptor")
+                            ),
+                            DescriptorResource: descriptorResource,
+                            PresenceColumn: new DbColumnName(
+                                "SecondarySchoolTypeDescriptor_DescriptorId_Present"
+                            ),
+                            PresenceBindingIndex: 3,
+                            PresenceIsSynthetic: true
+                        ),
+                    ]
+                ),
+            ]
+        );
+        var resourceModel = new RelationalResourceModel(
+            Resource: _presenceGateExampleResource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: tableModel,
+            TablesInDependencyOrder: [tableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new ResourceWritePlan(resourceModel, [rootPlan]);
+    }
+
+    private static ResolvedReferenceSet CreateResolvedDescriptorReferences(
+        params (string Path, long DocumentId, string Uri)[] descriptors
+    )
+    {
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: descriptors.ToDictionary(
+                descriptor => new JsonPath(descriptor.Path),
+                descriptor => new ResolvedDescriptorReference(
+                    new DescriptorReference(
+                        _schoolTypeDescriptorResourceInfo,
+                        new DocumentIdentity([
+                            new DocumentIdentityElement(
+                                DocumentIdentity.DescriptorIdentityJsonPath,
+                                descriptor.Uri
+                            ),
+                        ]),
+                        new ReferentialId(Guid.NewGuid()),
+                        new JsonPath(descriptor.Path)
+                    ),
+                    descriptor.DocumentId,
+                    ResourceKeyId: 31
+                )
+            ),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+    }
+
+    private static JsonPathExpression CreateTestPath(string canonical, params JsonPathSegment[] segments)
+    {
+        return new JsonPathExpression(canonical, segments);
     }
 
     private sealed record FlattenerFixture(

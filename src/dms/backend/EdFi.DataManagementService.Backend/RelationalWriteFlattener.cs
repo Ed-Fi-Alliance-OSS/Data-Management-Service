@@ -37,7 +37,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 rootTablePlan,
                 selectedBodyIndex,
                 resolvedReferenceLookups,
-                parentKeyParts: []
+                parentKeyParts: [],
+                ordinalPath: []
             ),
             nonCollectionRows: MaterializeRootExtensionRows(
                 flatteningInput,
@@ -101,7 +102,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     tableWritePlan,
                     selectedBodyIndex,
                     resolvedReferenceLookups,
-                    rootParentKeyParts
+                    rootParentKeyParts,
+                    ordinalPath: []
                 ),
                 nonCollectionRows: [],
                 collectionCandidates: []
@@ -114,24 +116,319 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan tableWritePlan,
         SelectedBodyIndex selectedBodyIndex,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        IReadOnlyList<FlattenedWriteValue> parentKeyParts
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        ReadOnlySpan<int> ordinalPath
     )
     {
         FlattenedWriteValue[] values = new FlattenedWriteValue[tableWritePlan.ColumnBindings.Length];
+        bool[] valueAssigned = new bool[tableWritePlan.ColumnBindings.Length];
 
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
         {
+            if (tableWritePlan.ColumnBindings[bindingIndex].Source is WriteValueSource.Precomputed)
+            {
+                continue;
+            }
+
             values[bindingIndex] = MaterializeValue(
                 flatteningInput,
                 tableWritePlan,
                 tableWritePlan.ColumnBindings[bindingIndex],
                 selectedBodyIndex,
                 resolvedReferenceLookups,
-                parentKeyParts
+                parentKeyParts,
+                ordinalPath
+            );
+            valueAssigned[bindingIndex] = true;
+        }
+
+        ApplyKeyUnificationValues(
+            tableWritePlan,
+            selectedBodyIndex,
+            resolvedReferenceLookups,
+            ordinalPath,
+            values,
+            valueAssigned
+        );
+        EnsureAllBindingsAssigned(tableWritePlan, values, valueAssigned);
+
+        return values;
+    }
+
+    private static void ApplyKeyUnificationValues(
+        TableWritePlan tableWritePlan,
+        SelectedBodyIndex selectedBodyIndex,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath,
+        FlattenedWriteValue[] values,
+        bool[] valueAssigned
+    )
+    {
+        foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
+        {
+            var canonicalValue = EvaluateCanonicalValue(
+                tableWritePlan,
+                keyUnificationPlan,
+                selectedBodyIndex,
+                resolvedReferenceLookups,
+                ordinalPath,
+                values,
+                valueAssigned
+            );
+
+            values[keyUnificationPlan.CanonicalBindingIndex] = new FlattenedWriteValue.Literal(
+                canonicalValue
+            );
+            valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
+
+            ValidateKeyUnificationGuardrails(
+                tableWritePlan,
+                keyUnificationPlan,
+                canonicalValue,
+                values,
+                valueAssigned
+            );
+        }
+    }
+
+    private static object? EvaluateCanonicalValue(
+        TableWritePlan tableWritePlan,
+        KeyUnificationWritePlan keyUnificationPlan,
+        SelectedBodyIndex selectedBodyIndex,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath,
+        FlattenedWriteValue[] values,
+        bool[] valueAssigned
+    )
+    {
+        object? canonicalValue = null;
+        KeyUnificationMemberWritePlan? firstPresentMember = null;
+
+        foreach (var member in keyUnificationPlan.MembersInOrder)
+        {
+            var evaluation = EvaluateKeyUnificationMember(
+                tableWritePlan,
+                member,
+                selectedBodyIndex,
+                resolvedReferenceLookups,
+                ordinalPath
+            );
+
+            if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
+            {
+                values[presenceBindingIndex] = new FlattenedWriteValue.Literal(
+                    evaluation.IsPresent ? true : null
+                );
+                valueAssigned[presenceBindingIndex] = true;
+            }
+
+            if (!evaluation.IsPresent)
+            {
+                continue;
+            }
+
+            if (firstPresentMember is null)
+            {
+                canonicalValue = evaluation.Value;
+                firstPresentMember = member;
+                continue;
+            }
+
+            if (!Equals(canonicalValue, evaluation.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
+                        + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
+                        + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
+                        + $"resolved to {FormatLiteral(evaluation.Value)}."
+                );
+            }
+        }
+
+        return canonicalValue;
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan member,
+        SelectedBodyIndex selectedBodyIndex,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        var absolutePath = RestrictedJsonPath.CombineCanonical(
+            tableWritePlan.TableModel.JsonScope,
+            member.RelativePath
+        );
+
+        if (!selectedBodyIndex.TryGetLeafNode(absolutePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
+        return member switch
+        {
+            KeyUnificationMemberWritePlan.ScalarMember scalarMember => EvaluateScalarKeyUnificationMember(
+                tableWritePlan,
+                scalarMember,
+                absolutePath,
+                memberNode
+            ),
+            KeyUnificationMemberWritePlan.DescriptorMember descriptorMember =>
+                EvaluateDescriptorKeyUnificationMember(
+                    tableWritePlan,
+                    descriptorMember,
+                    absolutePath,
+                    memberNode,
+                    resolvedReferenceLookups,
+                    ordinalPath
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported key-unification member kind '{member.GetType().Name}' on table '{FormatTable(tableWritePlan)}'."
+            ),
+        };
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateScalarKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ScalarMember member,
+        string absolutePath,
+        JsonNode memberNode
+    )
+    {
+        if (memberNode is not JsonValue jsonValue)
+        {
+            throw CreateInvalidKeyUnificationScalarReadException(
+                tableWritePlan,
+                member,
+                absolutePath,
+                $"encountered non-scalar JSON node type '{memberNode.GetType().Name}'"
             );
         }
 
-        return values;
+        return KeyUnificationMemberEvaluation.Present(
+            ConvertScalarValue(
+                jsonValue,
+                member.ScalarType,
+                tableWritePlan,
+                member.MemberPathColumn,
+                absolutePath
+            )
+        );
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateDescriptorKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.DescriptorMember member,
+        string absolutePath,
+        JsonNode memberNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (memberNode is not JsonValue jsonValue || !jsonValue.TryGetValue<string>(out _))
+        {
+            throw new InvalidOperationException(
+                $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
+                    + $"expected a descriptor URI string at path '{absolutePath}', but encountered "
+                    + $"JSON value kind '{GetJsonValueKind(memberNode)}'."
+            );
+        }
+
+        var descriptorId = resolvedReferenceLookups.GetDescriptorId(
+            member.DescriptorResource,
+            absolutePath,
+            ordinalPath
+        );
+
+        if (descriptorId is null)
+        {
+            throw new InvalidOperationException(
+                $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
+                    + $"did not have a resolved descriptor id for path '{absolutePath}' and descriptor resource "
+                    + $"'{RelationalWriteSupport.FormatResource(member.DescriptorResource)}'."
+            );
+        }
+
+        return KeyUnificationMemberEvaluation.Present(descriptorId.Value);
+    }
+
+    private static void ValidateKeyUnificationGuardrails(
+        TableWritePlan tableWritePlan,
+        KeyUnificationWritePlan keyUnificationPlan,
+        object? canonicalValue,
+        IReadOnlyList<FlattenedWriteValue> values,
+        IReadOnlyList<bool> valueAssigned
+    )
+    {
+        foreach (var member in keyUnificationPlan.MembersInOrder)
+        {
+            if (member.PresenceBindingIndex is not int presenceBindingIndex)
+            {
+                continue;
+            }
+
+            if (!valueAssigned[presenceBindingIndex])
+            {
+                throw new InvalidOperationException(
+                    $"Presence binding for key-unification member '{member.MemberPathColumn.Value}' on table "
+                        + $"'{FormatTable(tableWritePlan)}' was not assigned before guardrail validation."
+                );
+            }
+
+            if (values[presenceBindingIndex] is not FlattenedWriteValue.Literal presenceValue)
+            {
+                throw new InvalidOperationException(
+                    $"Presence binding for key-unification member '{member.MemberPathColumn.Value}' on table "
+                        + $"'{FormatTable(tableWritePlan)}' was not materialized as a literal value."
+                );
+            }
+
+            if (presenceValue.Value is not null && canonicalValue is null)
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification canonical column '{keyUnificationPlan.CanonicalColumn.Value}' on table "
+                        + $"'{FormatTable(tableWritePlan)}' resolved to null while presence column "
+                        + $"'{member.PresenceColumn!.Value}' indicated member '{member.MemberPathColumn.Value}' was present."
+                );
+            }
+        }
+
+        var canonicalBinding = tableWritePlan.ColumnBindings[keyUnificationPlan.CanonicalBindingIndex];
+
+        if (!canonicalBinding.Column.IsNullable && canonicalValue is null)
+        {
+            throw new InvalidOperationException(
+                $"Key-unification canonical column '{canonicalBinding.Column.ColumnName.Value}' on table "
+                    + $"'{FormatTable(tableWritePlan)}' is not nullable but resolved to null."
+            );
+        }
+    }
+
+    private static void EnsureAllBindingsAssigned(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values,
+        IReadOnlyList<bool> valueAssigned
+    )
+    {
+        List<string> unassignedColumns = [];
+
+        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            if (!valueAssigned[bindingIndex] || values[bindingIndex] is null)
+            {
+                unassignedColumns.Add(tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value);
+            }
+        }
+
+        if (unassignedColumns.Count == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Table '{FormatTable(tableWritePlan)}' left write bindings unassigned during flattening: {string.Join(", ", unassignedColumns)}."
+        );
     }
 
     private static FlattenedWriteValue MaterializeValue(
@@ -140,7 +437,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         WriteColumnBinding columnBinding,
         SelectedBodyIndex selectedBodyIndex,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        IReadOnlyList<FlattenedWriteValue> parentKeyParts
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        ReadOnlySpan<int> ordinalPath
     )
     {
         return columnBinding.Source switch
@@ -159,20 +457,19 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 selectedBodyIndex
             ),
             WriteValueSource.DocumentReference documentReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, [])
+                resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath)
             ),
             WriteValueSource.DescriptorReference descriptorReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDescriptorId(tableWritePlan, descriptorReference, [])
+                resolvedReferenceLookups.GetDescriptorId(tableWritePlan, descriptorReference, ordinalPath)
             ),
             WriteValueSource.Ordinal => throw CreateUnsupportedValueSourceException(
                 tableWritePlan,
                 columnBinding,
                 "collection ordinals"
             ),
-            WriteValueSource.Precomputed => throw CreateUnsupportedValueSourceException(
-                tableWritePlan,
-                columnBinding,
-                "precomputed write values"
+            WriteValueSource.Precomputed => throw new InvalidOperationException(
+                $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' "
+                    + "was routed through non-precomputed materialization."
             ),
             _ => throw new InvalidOperationException(
                 $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' uses unsupported write source '{columnBinding.Source.GetType().Name}'."
@@ -243,62 +540,79 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         string absolutePath
     )
     {
+        return ConvertScalarValue(
+            jsonValue,
+            scalarType,
+            tableWritePlan,
+            columnBinding.Column.ColumnName,
+            absolutePath
+        );
+    }
+
+    private static object ConvertScalarValue(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        string absolutePath
+    )
+    {
         return scalarType.Kind switch
         {
             ScalarKind.String => ReadRequiredJsonValue<string>(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Int32 => ReadRequiredJsonValue<int>(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Int64 => ReadRequiredJsonValue<long>(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Boolean => ReadRequiredJsonValue<bool>(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Date => ReadDateOnlyValue(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.DateTime => ReadDateTimeValue(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             ScalarKind.Time => ReadTimeOnlyValue(
                 jsonValue,
                 scalarType,
                 tableWritePlan,
-                columnBinding,
+                columnName,
                 absolutePath
             ),
             _ => throw new InvalidOperationException(
@@ -311,7 +625,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonValue jsonValue,
         RelationalScalarType scalarType,
         TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
+        DbColumnName columnName,
         string absolutePath
     )
         where T : notnull
@@ -323,7 +637,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw CreateInvalidScalarReadException(
             tableWritePlan,
-            columnBinding,
+            columnName,
             absolutePath,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
@@ -334,7 +648,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonValue jsonValue,
         RelationalScalarType scalarType,
         TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
+        DbColumnName columnName,
         string absolutePath
     )
     {
@@ -354,7 +668,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw CreateInvalidScalarReadException(
             tableWritePlan,
-            columnBinding,
+            columnName,
             absolutePath,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
@@ -365,7 +679,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonValue jsonValue,
         RelationalScalarType scalarType,
         TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
+        DbColumnName columnName,
         string absolutePath
     )
     {
@@ -384,7 +698,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw CreateInvalidScalarReadException(
             tableWritePlan,
-            columnBinding,
+            columnName,
             absolutePath,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
@@ -395,7 +709,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonValue jsonValue,
         RelationalScalarType scalarType,
         TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
+        DbColumnName columnName,
         string absolutePath
     )
     {
@@ -414,7 +728,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw CreateInvalidScalarReadException(
             tableWritePlan,
-            columnBinding,
+            columnName,
             absolutePath,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
@@ -454,15 +768,75 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         string reason
     )
     {
-        return new InvalidOperationException(
-            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind '{scalarType.Kind}' at path '{absolutePath}', but {reason}."
+        return CreateInvalidScalarReadException(
+            tableWritePlan,
+            columnBinding.Column.ColumnName,
+            absolutePath,
+            scalarType,
+            reason
         );
+    }
+
+    private static InvalidOperationException CreateInvalidScalarReadException(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        string absolutePath,
+        RelationalScalarType scalarType,
+        string reason
+    )
+    {
+        return new InvalidOperationException(
+            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind '{scalarType.Kind}' at path '{absolutePath}', but {reason}."
+        );
+    }
+
+    private static InvalidOperationException CreateInvalidKeyUnificationScalarReadException(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ScalarMember member,
+        string absolutePath,
+        string reason
+    )
+    {
+        return new InvalidOperationException(
+            $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
+                + $"expected scalar kind '{member.ScalarType.Kind}' at path '{absolutePath}', but {reason}."
+        );
+    }
+
+    private static string FormatLiteral(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            string stringValue => $"'{stringValue}'",
+            bool boolValue => boolValue ? "true" : "false",
+            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString() ?? "<unknown>",
+        };
+    }
+
+    private static string GetJsonValueKind(JsonNode node)
+    {
+        return node switch
+        {
+            JsonValue jsonValue => jsonValue.GetValueKind().ToString(),
+            _ => node.GetType().Name,
+        };
     }
 
     private static string FormatTable(TableWritePlan tableWritePlan)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
         return $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
+    }
+
+    private sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
+    {
+        public static KeyUnificationMemberEvaluation Absent { get; } = new(false, null);
+
+        public static KeyUnificationMemberEvaluation Present(object value)
+        {
+            return new(true, value);
+        }
     }
 
     private sealed class SelectedBodyIndex
