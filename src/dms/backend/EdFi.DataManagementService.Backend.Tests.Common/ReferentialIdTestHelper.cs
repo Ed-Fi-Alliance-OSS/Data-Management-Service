@@ -3,20 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 /// <summary>
-/// Test helper for computing expected ReferentialId values, matching the
-/// string format used by ReferentialIdCalculator in production code.
+/// Test helper for computing expected ReferentialId values.
 /// </summary>
 public static class ReferentialIdTestHelper
 {
-    private static readonly Guid EdFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
     /// <summary>
-    /// Compute expected ReferentialId matching the trigger's hash format.
+    /// Convenience wrapper around <see cref="ReferentialIdCalculator.ReferentialIdFrom"/>
+    /// that accepts raw strings for use in test assertions.
     /// </summary>
     public static Guid ComputeReferentialId(
         string projectName,
@@ -24,10 +23,18 @@ public static class ReferentialIdTestHelper
         params (string jsonPath, string value)[] identityElements
     )
     {
-        var identityString = string.Join(
-            "#",
-            identityElements.Select(e => $"${e.jsonPath}={e.value}")
+        var resourceInfo = new BaseResourceInfo(
+            new ProjectName(projectName),
+            new ResourceName(resourceName),
+            IsDescriptor: false
         );
-        return Deterministic.Create(EdFiUuidv5Namespace, $"{projectName}{resourceName}{identityString}");
+
+        var documentIdentity = new DocumentIdentity(
+            identityElements
+                .Select(e => new DocumentIdentityElement(new JsonPath(e.jsonPath), e.value))
+                .ToArray()
+        );
+
+        return ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity).Value;
     }
 }

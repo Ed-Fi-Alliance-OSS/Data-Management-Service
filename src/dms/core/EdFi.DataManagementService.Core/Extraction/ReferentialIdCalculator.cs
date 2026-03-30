@@ -35,7 +35,7 @@ internal static class ReferentialIdCalculator
             "#",
             documentIdentity.DocumentIdentityElements.Select(
                 (DocumentIdentityElement element) =>
-                    $"${element.IdentityJsonPath.Value}=${element.IdentityValue}"
+                    $"${element.IdentityJsonPath.Value}={element.IdentityValue}"
             )
         );
     }
