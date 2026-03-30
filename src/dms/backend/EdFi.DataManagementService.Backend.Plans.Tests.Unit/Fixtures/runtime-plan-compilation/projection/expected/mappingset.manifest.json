@@ -22,6 +22,7 @@
                 "insert_sql_sha256": "5924f5602151f5447d88efa6cb1bd1b6fec94cef706cdc4dcb6ea363b27ee6f1",
                 "update_sql_sha256": "7a17b62476e1512b80349962be145bb7cb34d0a98885517cf481240ddcabf071",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 233,
                   "parameters_per_row": 9,
@@ -249,6 +250,7 @@
                 "insert_sql_sha256": "dc427e59baf1b3e8ebc0c6b1db908c73dc88c1d7006a301e70a8990c7f3215cc",
                 "update_sql_sha256": "21887d38a32c45ff114de24c1816f06d18b41c4a91027e72a9c0fe6890bd0a73",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 525,
                   "parameters_per_row": 4,
@@ -349,6 +351,7 @@
                 "insert_sql_sha256": "b3d95cd26b1624c6d52c40f96aaabe414959426b1157ee878b7a16202f33ca5b",
                 "update_sql_sha256": "d324ba6aa7b892fe64ae000a950bcf0d002ff5759eba186a6959049e6ab830aa",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 9,
@@ -576,6 +579,7 @@
                 "insert_sql_sha256": "893c39a4ac831a3ac4b202dae36575f1ea0f4d5913c306f00a05332e8258c963",
                 "update_sql_sha256": "072cf0be392120f2ded52b8af036d1cb774d2ec865d215613a927ef47d3274f7",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 4,

@@ -22,6 +22,7 @@
                 "insert_sql_sha256": "0cb9a236aabc8c50e9f3ce930b38dffafc9c55a9291215a9de8fbccc6f76632a",
                 "update_sql_sha256": "1107b4888af31afc2130e27401740eb08fb7a318f137e87b65f6aec6983b4c11",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 700,
                   "parameters_per_row": 3,
@@ -67,6 +68,7 @@
                 "insert_sql_sha256": "9d4e641c2e4751cf05122d595161859b93a01454869796c290252265db1aaae2",
                 "update_sql_sha256": "cf0481f393ade2c61caccd9c66c2248b0f8d10e299885b4ded4229e2917dfe52",
                 "delete_by_parent_sql_sha256": "d0d9450dbf9bc7d29ffcd08eb14c773dd899cf7bdb2bdc8f9585769e1d43692d",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 2,
@@ -102,6 +104,7 @@
                 "insert_sql_sha256": "8eddb86d0bba5ed2e2118d97262a4210fe51d372af87297a78c80aad9c759908",
                 "update_sql_sha256": "79765c07c96e719ffd98ba9daef5515d9ef980298e341c7bcc5cf051a5b99cb0",
                 "delete_by_parent_sql_sha256": "b29da3d009f8355363db23f361400b34b25af5057f34a42d5ec70598edc82faf",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 700,
                   "parameters_per_row": 3,
@@ -145,7 +148,23 @@
                 },
                 "insert_sql_sha256": "987cc4fcbf85fa5817ccc9040514e3145892585283be6a605c7c95af210642e2",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "cfa72015c203e5ff45702425136f9c79b580fe9367f3917fe39c8bc55710293d",
+                "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": {
+                  "semantic_identity_bindings_in_order": [
+                    {
+                      "relative_path": "$.city",
+                      "binding_index": 3
+                    }
+                  ],
+                  "stable_row_identity_binding_index": 0,
+                  "update_by_stable_row_identity_sql_sha256": "888fc69c81bb3788a35786727b78896181fe81396f9f3ef4112ff898aed655bb",
+                  "delete_by_stable_row_identity_sql_sha256": "a0e26b47dc8581c095a292c72c662571fe7ef5b91f4fe3ae5abc2f2d93b14ec7",
+                  "ordinal_binding_index": 1,
+                  "compare_binding_indexes_in_order": [
+                    1,
+                    3
+                  ]
+                },
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 525,
                   "parameters_per_row": 4,
@@ -201,6 +220,7 @@
                 "insert_sql_sha256": "e7770c66b752f3ea2ca5aa325f9bb7f1adf6c1926046460966ef15d128e0834f",
                 "update_sql_sha256": "557f6ad50408538a29110915717d55e3a6e900712ae971d4f9dcc3e17f01777d",
                 "delete_by_parent_sql_sha256": "62ffd31b3feab54a808e894a128492960a9d97be6c8ec9cf8f9b145e88f60a32",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 700,
                   "parameters_per_row": 3,
@@ -244,7 +264,23 @@
                 },
                 "insert_sql_sha256": "b212c5a9e665d28648ca37456f89fdbe032ea918f134639232502b29ad83aed9",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "d3b5a5c4f6f9db330b387a0509fe1fb5a3fb76cd6075d3f7ad13d58b491bf79f",
+                "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": {
+                  "semantic_identity_bindings_in_order": [
+                    {
+                      "relative_path": "$.periodName",
+                      "binding_index": 4
+                    }
+                  ],
+                  "stable_row_identity_binding_index": 0,
+                  "update_by_stable_row_identity_sql_sha256": "58838c908e585427fb8daf12cbafe1fa5aa2599cda5ee1f7012610aa5012fb6d",
+                  "delete_by_stable_row_identity_sql_sha256": "b904511221c2dcaa57051fb81689796e25306b820f51a20427b19f99fb1ec78e",
+                  "ordinal_binding_index": 1,
+                  "compare_binding_indexes_in_order": [
+                    1,
+                    4
+                  ]
+                },
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 420,
                   "parameters_per_row": 5,
@@ -435,6 +471,7 @@
                 "insert_sql_sha256": "d73fde7b11668b5e1b3235a75f61f4b9a09dea41ce51fcd407fe80a7c633b56b",
                 "update_sql_sha256": "5daa822bc2283e7974c9bc6a6dc488e5854a239b8ee8dea98afc9eacbee493fb",
                 "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 3,
@@ -480,6 +517,7 @@
                 "insert_sql_sha256": "f6e76bbe4fb483425bd17adcb0d6964bde19e19844cd51d9129eb9c03a9df67d",
                 "update_sql_sha256": "e23a7fdcb115f136481a309ebf952e32bfaa992a607c22672d96543b06009515",
                 "delete_by_parent_sql_sha256": "8263638c0d98f4920497c789d763261fc9177fa6f6d3116dd4eb1b8e9a01258b",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 2,
@@ -515,6 +553,7 @@
                 "insert_sql_sha256": "522587b2bb7c4beb88df191329f36dd3c3e474ec6d31f948088154cd64d1ef27",
                 "update_sql_sha256": "cdc4feed5db16a18e7f70bd54a1b0b36d5ffc6af145b0b86bd567d1a38bb4647",
                 "delete_by_parent_sql_sha256": "a7f08ff77fca49a9b22de358aaa5302b3726558544042972a5d01e38475720bc",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 3,
@@ -558,7 +597,23 @@
                 },
                 "insert_sql_sha256": "61ea175a37cd45cf0260cd5f3660f5e3134238e9407ceb86496028fd71aa8bda",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "8f4b35307b54ede81fadc454935cef8e413c939bbc51d7f981b2570345758c97",
+                "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": {
+                  "semantic_identity_bindings_in_order": [
+                    {
+                      "relative_path": "$.city",
+                      "binding_index": 3
+                    }
+                  ],
+                  "stable_row_identity_binding_index": 0,
+                  "update_by_stable_row_identity_sql_sha256": "0db0f743880ec9d53e2d7092cf6ff92093519016a33b09fe34fe0ddfcc1c2567",
+                  "delete_by_stable_row_identity_sql_sha256": "6e5fac8ded52a034ad92bc824c2978edf91e262c4e508d1c30c580ccf10f9e0a",
+                  "ordinal_binding_index": 1,
+                  "compare_binding_indexes_in_order": [
+                    1,
+                    3
+                  ]
+                },
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 4,
@@ -614,6 +669,7 @@
                 "insert_sql_sha256": "4b48ffab3a974e65bb86ddbe8cac40e7ce241382b72b43412889e200504242b4",
                 "update_sql_sha256": "344d35fdd5cba92915f3576ed29698281817bfd3c716dbbf3117e8d0a6b137dc",
                 "delete_by_parent_sql_sha256": "594a18ab7c9f350d8fc2cd0242e74cfd736000edbf8e47fca4dd265c24a44214",
+                "collection_merge_plan": null,
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 3,
@@ -657,7 +713,23 @@
                 },
                 "insert_sql_sha256": "36423059e58a33ec168dc965e94bbdd67958ab6664737cb5e885fde74e0695b0",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "0fecc9c6a40da053d3983dd9dfcbe4a294765b9fdf4b1cb01072e7881b24024f",
+                "delete_by_parent_sql_sha256": null,
+                "collection_merge_plan": {
+                  "semantic_identity_bindings_in_order": [
+                    {
+                      "relative_path": "$.periodName",
+                      "binding_index": 4
+                    }
+                  ],
+                  "stable_row_identity_binding_index": 0,
+                  "update_by_stable_row_identity_sql_sha256": "4f2559fb8b04c628899253ae4fefec22ed06ddd6ae7a07fed6ab81a5372fd315",
+                  "delete_by_stable_row_identity_sql_sha256": "1c64617d4f4674472562716385058184695bc142283fc6814c3edd7bc796a044",
+                  "ordinal_binding_index": 1,
+                  "compare_binding_indexes_in_order": [
+                    1,
+                    4
+                  ]
+                },
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 5,

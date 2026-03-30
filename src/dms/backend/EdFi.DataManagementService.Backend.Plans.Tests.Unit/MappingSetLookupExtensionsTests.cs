@@ -541,7 +541,8 @@ public class Given_MappingSetLookupExtensions
                     ParameterName: "documentId"
                 ),
             ],
-            KeyUnificationPlans: []
+            KeyUnificationPlans: [],
+            CollectionMergePlan: null
         );
 
         return new ResourceWritePlan(model, [tablePlan]);
