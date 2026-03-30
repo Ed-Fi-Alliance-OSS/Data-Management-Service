@@ -1,0 +1,5 @@
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Contracts complete
+decisions: FlatteningInput is backend-local and carries selected JsonNode body + op kind + target context + write plan + resolved refs; flattened output is a rooted write tree; unresolved create-time DocumentId/CollectionItemId use explicit markers; collection-aligned _ext 1:1 scopes only live in candidate-attached aligned scope data, not standalone rows
+files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteContractsTests.cs; tasks.json; progress.txt
+notes: repository wiring, target-context resolution, flattener implementation, terminal-stage default remain pending
