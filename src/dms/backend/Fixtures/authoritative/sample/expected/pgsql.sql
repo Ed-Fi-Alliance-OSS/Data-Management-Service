@@ -52900,6 +52900,9 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Notes" IS DISTINCT FROM NEW."Notes") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
