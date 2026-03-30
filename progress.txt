@@ -51,3 +51,9 @@ task: Flattening precomputed bindings complete
 decisions: flattener now does two-phase row materialization so non-precomputed bindings land first and key-unification plans fill canonical + synthetic presence bindings deterministically; scalar key-unification members reuse the same strict scalar conversion path as normal bindings, descriptor members resolve through the precompiled resolved-reference lookup, and lookup inventory now includes descriptor paths that exist only in key-unification plans
 files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 notes: collection/common-type candidates, root _ext child collections, collection-aligned _ext, seam integration coverage still pending
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Flattening collection/common-type candidates complete
+decisions: flattener now walks compiled base collection scopes from the selected body, emits unresolved CollectionItemId + ordinal + scalar/FK values for top-level and nested candidates, derives semantic identity directly from collection-merge binding indexes, and rejects duplicate semantic identities per stable parent before terminal handoff; extension child collections/aligned _ext scopes remain deferred to later tasks
+files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
+notes: root _ext child collections, collection-aligned _ext handling, seam integration coverage still pending

@@ -92,6 +92,217 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_top_level_collection_candidates_with_unresolved_keys_and_semantic_identity()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "addressLine1": "1 Main St"
+                    },
+                    {
+                      "addressType": "Work",
+                      "addressLine1": "2 State St"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.CollectionCandidates.Should().HaveCount(2);
+        result.RootRow.CollectionCandidates[0].OrdinalPath.Should().Equal(0);
+        result.RootRow.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        result
+            .RootRow.CollectionCandidates[0]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Home"),
+                new FlattenedWriteValue.Literal("1 Main St")
+            );
+        result.RootRow.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Home");
+
+        result.RootRow.CollectionCandidates[1].OrdinalPath.Should().Equal(1);
+        result.RootRow.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        result
+            .RootRow.CollectionCandidates[1]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(1),
+                new FlattenedWriteValue.Literal("Work"),
+                new FlattenedWriteValue.Literal("2 State St")
+            );
+        result.RootRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Work");
+    }
+
+    [Test]
+    public void It_emits_nested_collection_candidates_under_the_owning_parent_candidate()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "addressLine1": "1 Main St",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-20",
+                          "schoolReference": {
+                            "schoolId": 255901
+                          }
+                        },
+                        {
+                          "beginDate": "2027-08-20",
+                          "schoolReference": {
+                            "schoolId": 255902
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid)
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+
+        addressCandidate.CollectionCandidates.Should().HaveCount(2);
+        addressCandidate.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
+        addressCandidate.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        addressCandidate
+            .CollectionCandidates[0]
+            .SemanticIdentityValues.Should()
+            .Equal(new DateOnly(2026, 8, 20));
+        addressCandidate
+            .CollectionCandidates[0]
+            .Values[0]
+            .Should()
+            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        addressCandidate
+            .CollectionCandidates[0]
+            .Values[1]
+            .Should()
+            .BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        addressCandidate
+            .CollectionCandidates[0]
+            .Values[2]
+            .Should()
+            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        addressCandidate.CollectionCandidates[0].Values[3].Should().Be(new FlattenedWriteValue.Literal(0));
+        addressCandidate
+            .CollectionCandidates[0]
+            .Values[4]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(new DateOnly(2026, 8, 20)));
+        addressCandidate
+            .CollectionCandidates[0]
+            .Values[5]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(9901L));
+
+        addressCandidate.CollectionCandidates[1].OrdinalPath.Should().Equal(0, 1);
+        addressCandidate.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        addressCandidate
+            .CollectionCandidates[1]
+            .SemanticIdentityValues.Should()
+            .Equal(new DateOnly(2027, 8, 20));
+        addressCandidate.CollectionCandidates[1].Values[3].Should().Be(new FlattenedWriteValue.Literal(1));
+        addressCandidate
+            .CollectionCandidates[1]
+            .Values[4]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(new DateOnly(2027, 8, 20)));
+        addressCandidate
+            .CollectionCandidates[1]
+            .Values[5]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(9902L));
+    }
+
+    [Test]
+    public void It_preserves_request_sibling_order_for_collection_candidates()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Work"
+                    },
+                    {
+                      "addressType": "Home"
+                    },
+                    {
+                      "addressType": "Mailing"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Select(candidate =>
+                (candidate.RequestOrder, candidate.SemanticIdentityValues[0])
+            )
+            .Should()
+            .Equal((0, (object?)"Work"), (1, (object?)"Home"), (2, (object?)"Mailing"));
+    }
+
+    [Test]
+    public void It_rejects_duplicate_collection_semantic_identity_values_under_the_same_parent_scope()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home"
+                    },
+                    {
+                      "addressType": "Home"
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'. First ordinal path: [0]. Duplicate ordinal path: [1].*"
+            );
+    }
+
+    [Test]
     public void It_treats_the_selected_body_as_authoritative_input()
     {
         var originalBody = JsonNode.Parse(
@@ -445,13 +656,21 @@ public class Given_RelationalWriteFlattener
             var schoolResource = new QualifiedResourceName("Ed-Fi", "Student");
             var rootPlan = CreateRootPlan();
             var rootExtensionPlan = CreateRootExtensionPlan();
+            var addressPlan = CreateAddressPlan();
+            var addressPeriodPlan = CreateAddressPeriodPlan();
 
             var resourceModel = new RelationalResourceModel(
                 Resource: schoolResource,
                 PhysicalSchema: new DbSchemaName("edfi"),
                 StorageKind: ResourceStorageKind.RelationalTables,
                 Root: rootPlan.TableModel,
-                TablesInDependencyOrder: [rootPlan.TableModel, rootExtensionPlan.TableModel],
+                TablesInDependencyOrder:
+                [
+                    rootPlan.TableModel,
+                    rootExtensionPlan.TableModel,
+                    addressPlan.TableModel,
+                    addressPeriodPlan.TableModel,
+                ],
                 DocumentReferenceBindings:
                 [
                     new DocumentReferenceBinding(
@@ -465,13 +684,31 @@ public class Given_RelationalWriteFlattener
                         TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
                         IdentityBindings: []
                     ),
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: CreatePath(
+                            "$.addresses[*].periods[*].schoolReference",
+                            new JsonPathSegment.Property("addresses"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("periods"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("schoolReference")
+                        ),
+                        Table: addressPeriodPlan.TableModel.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                        IdentityBindings: []
+                    ),
                 ],
                 DescriptorEdgeSources: []
             );
 
             return new FlattenerFixture(
                 DocumentUuid: new DocumentUuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),
-                WritePlan: new ResourceWritePlan(resourceModel, [rootPlan, rootExtensionPlan]),
+                WritePlan: new ResourceWritePlan(
+                    resourceModel,
+                    [rootPlan, rootExtensionPlan, addressPlan, addressPeriodPlan]
+                ),
                 ResolvedReferences: CreateResolvedReferences()
             );
         }
@@ -512,6 +749,28 @@ public class Given_RelationalWriteFlattener
                         DocumentId: 901L,
                         ResourceKeyId: 21
                     ),
+                    [new JsonPath("$.addresses[0].periods[0].schoolReference")] =
+                        new ResolvedDocumentReference(
+                            new DocumentReference(
+                                schoolReference.ResourceInfo,
+                                schoolReference.DocumentIdentity,
+                                new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
+                                new JsonPath("$.addresses[0].periods[0].schoolReference")
+                            ),
+                            DocumentId: 9901L,
+                            ResourceKeyId: 21
+                        ),
+                    [new JsonPath("$.addresses[0].periods[1].schoolReference")] =
+                        new ResolvedDocumentReference(
+                            new DocumentReference(
+                                schoolReference.ResourceInfo,
+                                schoolReference.DocumentIdentity,
+                                new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
+                                new JsonPath("$.addresses[0].periods[1].schoolReference")
+                            ),
+                            DocumentId: 9902L,
+                            ResourceKeyId: 21
+                        ),
                 },
                 SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
                 {
@@ -836,6 +1095,240 @@ public class Given_RelationalWriteFlattener
                     ),
                 ],
                 KeyUnificationPlans: []
+            );
+        }
+
+        private static TableWritePlan CreateAddressPlan()
+        {
+            var tableModel = new DbTableModel(
+                Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
+                JsonScope: CreatePath(
+                    "$.addresses[*]",
+                    new JsonPathSegment.Property("addresses"),
+                    new JsonPathSegment.AnyArrayElement()
+                ),
+                Key: new TableKey(
+                    "PK_StudentAddress",
+                    [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                ),
+                Columns:
+                [
+                    CreateColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                    CreateColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                    CreateColumn(
+                        "AddressType",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                        isNullable: false,
+                        sourceJsonPath: CreatePath(
+                            "$.addressType",
+                            new JsonPathSegment.Property("addressType")
+                        )
+                    ),
+                    CreateColumn(
+                        "AddressLine1",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                        isNullable: true,
+                        sourceJsonPath: CreatePath(
+                            "$.addressLine1",
+                            new JsonPathSegment.Property("addressLine1")
+                        )
+                    ),
+                ],
+                Constraints: []
+            )
+            {
+                IdentityMetadata = new DbTableIdentityMetadata(
+                    TableKind: DbTableKind.Collection,
+                    PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                    RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    ImmediateParentScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionSemanticIdentityBinding(
+                            CreatePath("$.addressType", new JsonPathSegment.Property("addressType")),
+                            new DbColumnName("AddressType")
+                        ),
+                    ]
+                ),
+            };
+
+            return new TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "insert into edfi.\"StudentAddress\" values (@CollectionItemId, @Student_DocumentId, @Ordinal, @AddressType, @AddressLine1)",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings:
+                [
+                    new WriteColumnBinding(
+                        tableModel.Columns[0],
+                        new WriteValueSource.Precomputed(),
+                        "CollectionItemId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        new WriteValueSource.DocumentId(),
+                        "Student_DocumentId"
+                    ),
+                    new WriteColumnBinding(tableModel.Columns[2], new WriteValueSource.Ordinal(), "Ordinal"),
+                    new WriteColumnBinding(
+                        tableModel.Columns[3],
+                        new WriteValueSource.Scalar(
+                            CreatePath("$.addressType", new JsonPathSegment.Property("addressType")),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                        ),
+                        "AddressType"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[4],
+                        new WriteValueSource.Scalar(
+                            CreatePath("$.addressLine1", new JsonPathSegment.Property("addressLine1")),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                        ),
+                        "AddressLine1"
+                    ),
+                ],
+                KeyUnificationPlans: [],
+                CollectionMergePlan: new CollectionMergePlan(
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionMergeSemanticIdentityBinding(
+                            CreatePath("$.addressType", new JsonPathSegment.Property("addressType")),
+                            3
+                        ),
+                    ],
+                    StableRowIdentityBindingIndex: 0,
+                    UpdateByStableRowIdentitySql: "update edfi.\"StudentAddress\" set \"AddressType\" = @AddressType where \"CollectionItemId\" = @CollectionItemId",
+                    DeleteByStableRowIdentitySql: "delete from edfi.\"StudentAddress\" where \"CollectionItemId\" = @CollectionItemId",
+                    OrdinalBindingIndex: 2,
+                    CompareBindingIndexesInOrder: [3, 2]
+                ),
+                CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                    new DbColumnName("CollectionItemId"),
+                    0
+                )
+            );
+        }
+
+        private static TableWritePlan CreateAddressPeriodPlan()
+        {
+            var tableModel = new DbTableModel(
+                Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressPeriod"),
+                JsonScope: CreatePath(
+                    "$.addresses[*].periods[*]",
+                    new JsonPathSegment.Property("addresses"),
+                    new JsonPathSegment.AnyArrayElement(),
+                    new JsonPathSegment.Property("periods"),
+                    new JsonPathSegment.AnyArrayElement()
+                ),
+                Key: new TableKey(
+                    "PK_StudentAddressPeriod",
+                    [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                ),
+                Columns:
+                [
+                    CreateColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                    CreateColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn(
+                        "Address_CollectionItemId",
+                        ColumnKind.ParentKeyPart,
+                        null,
+                        isNullable: false
+                    ),
+                    CreateColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                    CreateColumn(
+                        "BeginDate",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.Date),
+                        isNullable: false,
+                        sourceJsonPath: CreatePath("$.beginDate", new JsonPathSegment.Property("beginDate"))
+                    ),
+                    CreateColumn(
+                        "School_DocumentId",
+                        ColumnKind.DocumentFk,
+                        null,
+                        isNullable: true,
+                        targetResource: new QualifiedResourceName("Ed-Fi", "School")
+                    ),
+                ],
+                Constraints: []
+            )
+            {
+                IdentityMetadata = new DbTableIdentityMetadata(
+                    TableKind: DbTableKind.Collection,
+                    PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                    RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    ImmediateParentScopeLocatorColumns: [new DbColumnName("Address_CollectionItemId")],
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionSemanticIdentityBinding(
+                            CreatePath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                            new DbColumnName("BeginDate")
+                        ),
+                    ]
+                ),
+            };
+
+            return new TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "insert into edfi.\"StudentAddressPeriod\" values (@CollectionItemId, @Student_DocumentId, @Address_CollectionItemId, @Ordinal, @BeginDate, @School_DocumentId)",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings:
+                [
+                    new WriteColumnBinding(
+                        tableModel.Columns[0],
+                        new WriteValueSource.Precomputed(),
+                        "CollectionItemId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        new WriteValueSource.DocumentId(),
+                        "Student_DocumentId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[2],
+                        new WriteValueSource.ParentKeyPart(0),
+                        "Address_CollectionItemId"
+                    ),
+                    new WriteColumnBinding(tableModel.Columns[3], new WriteValueSource.Ordinal(), "Ordinal"),
+                    new WriteColumnBinding(
+                        tableModel.Columns[4],
+                        new WriteValueSource.Scalar(
+                            CreatePath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                            new RelationalScalarType(ScalarKind.Date)
+                        ),
+                        "BeginDate"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[5],
+                        new WriteValueSource.DocumentReference(1),
+                        "School_DocumentId"
+                    ),
+                ],
+                KeyUnificationPlans: [],
+                CollectionMergePlan: new CollectionMergePlan(
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionMergeSemanticIdentityBinding(
+                            CreatePath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                            4
+                        ),
+                    ],
+                    StableRowIdentityBindingIndex: 0,
+                    UpdateByStableRowIdentitySql: "update edfi.\"StudentAddressPeriod\" set \"BeginDate\" = @BeginDate where \"CollectionItemId\" = @CollectionItemId",
+                    DeleteByStableRowIdentitySql: "delete from edfi.\"StudentAddressPeriod\" where \"CollectionItemId\" = @CollectionItemId",
+                    OrdinalBindingIndex: 3,
+                    CompareBindingIndexesInOrder: [4, 3]
+                ),
+                CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                    new DbColumnName("CollectionItemId"),
+                    0
+                )
             );
         }
 

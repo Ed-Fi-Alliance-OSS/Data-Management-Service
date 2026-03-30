@@ -80,7 +80,7 @@
       "Add backend/unit tests for top-level collections, nested collections, request sibling order preservation, and duplicate semantic-identity detection.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extensions",

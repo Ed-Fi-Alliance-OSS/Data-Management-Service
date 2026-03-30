@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
@@ -29,6 +30,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             flatteningInput.ResolvedReferences
         );
         var rootDocumentIdValue = ResolveRootDocumentIdValue(flatteningInput.TargetContext);
+        var collectionChildPlansByParentScope = BuildCollectionChildPlansByParentScope(writePlan);
 
         var rootRow = new RootWriteRowBuffer(
             tableWritePlan: rootTablePlan,
@@ -46,7 +48,15 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 rootDocumentIdValue
             ),
-            collectionCandidates: []
+            collectionCandidates: MaterializeCollectionCandidates(
+                flatteningInput,
+                collectionChildPlansByParentScope,
+                rootTablePlan.TableModel.JsonScope.Canonical,
+                flatteningInput.SelectedBody,
+                parentKeyParts: [],
+                parentOrdinalPath: [],
+                resolvedReferenceLookups
+            )
         );
 
         return new FlattenedWriteSet(rootRow);
@@ -73,6 +83,54 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 $"Write plan for resource '{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}' contains multiple root table plans."
             ),
         };
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<CollectionChildPlan>
+    > BuildCollectionChildPlansByParentScope(ResourceWritePlan writePlan)
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        Dictionary<string, List<CollectionChildPlan>> childPlansByParentScope = new(StringComparer.Ordinal);
+
+        foreach (
+            var tableWritePlan in writePlan.TablePlansInDependencyOrder.Where(static plan =>
+                plan.TableModel.IdentityMetadata.TableKind == DbTableKind.Collection
+            )
+        )
+        {
+            var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
+
+            if (
+                scopeSegments.Length < 2
+                || scopeSegments[^2] is not JsonPathSegment.Property
+                || scopeSegments[^1] is not JsonPathSegment.AnyArrayElement
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Collection table '{FormatTable(tableWritePlan)}' does not have a canonical collection scope."
+                );
+            }
+
+            var parentScopeSegments = scopeSegments[..^2];
+            var parentScopeCanonical = RestrictedJsonPath.BuildCanonical(parentScopeSegments);
+            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+
+            if (!childPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans))
+            {
+                childPlans = [];
+                childPlansByParentScope.Add(parentScopeCanonical, childPlans);
+            }
+
+            childPlans.Add(new CollectionChildPlan(tableWritePlan, [.. relativeScopeSegments]));
+        }
+
+        return childPlansByParentScope.ToDictionary(
+            static entry => entry.Key,
+            static entry => (IReadOnlyList<CollectionChildPlan>)entry.Value,
+            StringComparer.Ordinal
+        );
     }
 
     private static IEnumerable<StandaloneScopeWriteRowBuffer> MaterializeRootExtensionRows(
@@ -109,6 +167,96 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 collectionCandidates: []
             );
         }
+    }
+
+    private static IReadOnlyList<CollectionWriteCandidate> MaterializeCollectionCandidates(
+        FlatteningInput flatteningInput,
+        IReadOnlyDictionary<string, IReadOnlyList<CollectionChildPlan>> collectionChildPlansByParentScope,
+        string parentScopeCanonical,
+        JsonNode parentScopeNode,
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        ReadOnlySpan<int> parentOrdinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (
+            !collectionChildPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans)
+            || childPlans.Count == 0
+        )
+        {
+            return [];
+        }
+
+        List<CollectionWriteCandidate> collectionCandidates = [];
+
+        foreach (var childPlan in childPlans)
+        {
+            Dictionary<object?[], int[]> firstOrdinalPathBySemanticIdentity = new(
+                SemanticIdentityValueArrayComparer.Instance
+            );
+
+            foreach (
+                var collectionScopeInstance in EnumerateCollectionScopeInstances(parentScopeNode, childPlan)
+            )
+            {
+                var ordinalPath = AppendOrdinalPath(parentOrdinalPath, collectionScopeInstance.RequestOrder);
+                var values = MaterializeScopeNodeValues(
+                    flatteningInput,
+                    childPlan.TableWritePlan,
+                    collectionScopeInstance.ScopeNode,
+                    resolvedReferenceLookups,
+                    parentKeyParts,
+                    collectionScopeInstance.RequestOrder,
+                    ordinalPath
+                );
+                var semanticIdentityValues = MaterializeSemanticIdentityValues(
+                    childPlan.TableWritePlan,
+                    values
+                );
+
+                if (
+                    firstOrdinalPathBySemanticIdentity.TryGetValue(
+                        semanticIdentityValues,
+                        out var firstOrdinalPath
+                    )
+                )
+                {
+                    throw CreateDuplicateSemanticIdentityException(
+                        childPlan.TableWritePlan,
+                        parentScopeCanonical,
+                        firstOrdinalPath,
+                        ordinalPath,
+                        semanticIdentityValues
+                    );
+                }
+
+                firstOrdinalPathBySemanticIdentity.Add(semanticIdentityValues, ordinalPath);
+
+                var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
+                var nestedCollectionCandidates = MaterializeCollectionCandidates(
+                    flatteningInput,
+                    collectionChildPlansByParentScope,
+                    childPlan.TableWritePlan.TableModel.JsonScope.Canonical,
+                    collectionScopeInstance.ScopeNode,
+                    childParentKeyParts,
+                    ordinalPath,
+                    resolvedReferenceLookups
+                );
+
+                collectionCandidates.Add(
+                    new CollectionWriteCandidate(
+                        childPlan.TableWritePlan,
+                        ordinalPath,
+                        collectionScopeInstance.RequestOrder,
+                        values,
+                        semanticIdentityValues,
+                        collectionCandidates: nestedCollectionCandidates
+                    )
+                );
+            }
+        }
+
+        return collectionCandidates;
     }
 
     private static IReadOnlyList<FlattenedWriteValue> MaterializeValues(
@@ -155,6 +303,53 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return values;
     }
 
+    private static IReadOnlyList<FlattenedWriteValue> MaterializeScopeNodeValues(
+        FlatteningInput flatteningInput,
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        int ordinal,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        FlattenedWriteValue[] values = new FlattenedWriteValue[tableWritePlan.ColumnBindings.Length];
+        bool[] valueAssigned = new bool[tableWritePlan.ColumnBindings.Length];
+
+        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            if (tableWritePlan.ColumnBindings[bindingIndex].Source is WriteValueSource.Precomputed)
+            {
+                continue;
+            }
+
+            values[bindingIndex] = MaterializeScopeNodeValue(
+                flatteningInput,
+                tableWritePlan,
+                tableWritePlan.ColumnBindings[bindingIndex],
+                scopeNode,
+                resolvedReferenceLookups,
+                parentKeyParts,
+                ordinal,
+                ordinalPath
+            );
+            valueAssigned[bindingIndex] = true;
+        }
+
+        ApplyKeyUnificationValues(
+            tableWritePlan,
+            scopeNode,
+            resolvedReferenceLookups,
+            ordinalPath,
+            values,
+            valueAssigned
+        );
+        ApplyCollectionKeyPreallocationValue(tableWritePlan, values, valueAssigned);
+        EnsureAllBindingsAssigned(tableWritePlan, values, valueAssigned);
+
+        return values;
+    }
+
     private static void ApplyKeyUnificationValues(
         TableWritePlan tableWritePlan,
         SelectedBodyIndex selectedBodyIndex,
@@ -170,6 +365,42 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 tableWritePlan,
                 keyUnificationPlan,
                 selectedBodyIndex,
+                resolvedReferenceLookups,
+                ordinalPath,
+                values,
+                valueAssigned
+            );
+
+            values[keyUnificationPlan.CanonicalBindingIndex] = new FlattenedWriteValue.Literal(
+                canonicalValue
+            );
+            valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
+
+            ValidateKeyUnificationGuardrails(
+                tableWritePlan,
+                keyUnificationPlan,
+                canonicalValue,
+                values,
+                valueAssigned
+            );
+        }
+    }
+
+    private static void ApplyKeyUnificationValues(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath,
+        FlattenedWriteValue[] values,
+        bool[] valueAssigned
+    )
+    {
+        foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
+        {
+            var canonicalValue = EvaluateCanonicalValue(
+                tableWritePlan,
+                keyUnificationPlan,
+                scopeNode,
                 resolvedReferenceLookups,
                 ordinalPath,
                 values,
@@ -248,6 +479,63 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return canonicalValue;
     }
 
+    private static object? EvaluateCanonicalValue(
+        TableWritePlan tableWritePlan,
+        KeyUnificationWritePlan keyUnificationPlan,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath,
+        FlattenedWriteValue[] values,
+        bool[] valueAssigned
+    )
+    {
+        object? canonicalValue = null;
+        KeyUnificationMemberWritePlan? firstPresentMember = null;
+
+        foreach (var member in keyUnificationPlan.MembersInOrder)
+        {
+            var evaluation = EvaluateKeyUnificationMember(
+                tableWritePlan,
+                member,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
+            );
+
+            if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
+            {
+                values[presenceBindingIndex] = new FlattenedWriteValue.Literal(
+                    evaluation.IsPresent ? true : null
+                );
+                valueAssigned[presenceBindingIndex] = true;
+            }
+
+            if (!evaluation.IsPresent)
+            {
+                continue;
+            }
+
+            if (firstPresentMember is null)
+            {
+                canonicalValue = evaluation.Value;
+                firstPresentMember = member;
+                continue;
+            }
+
+            if (!Equals(canonicalValue, evaluation.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
+                        + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
+                        + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
+                        + $"resolved to {FormatLiteral(evaluation.Value)}."
+                );
+            }
+        }
+
+        return canonicalValue;
+    }
+
     private static KeyUnificationMemberEvaluation EvaluateKeyUnificationMember(
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan member,
@@ -262,6 +550,47 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
 
         if (!selectedBodyIndex.TryGetLeafNode(absolutePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
+        return member switch
+        {
+            KeyUnificationMemberWritePlan.ScalarMember scalarMember => EvaluateScalarKeyUnificationMember(
+                tableWritePlan,
+                scalarMember,
+                absolutePath,
+                memberNode
+            ),
+            KeyUnificationMemberWritePlan.DescriptorMember descriptorMember =>
+                EvaluateDescriptorKeyUnificationMember(
+                    tableWritePlan,
+                    descriptorMember,
+                    absolutePath,
+                    memberNode,
+                    resolvedReferenceLookups,
+                    ordinalPath
+                ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported key-unification member kind '{member.GetType().Name}' on table '{FormatTable(tableWritePlan)}'."
+            ),
+        };
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan member,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        var absolutePath = RestrictedJsonPath.CombineCanonical(
+            tableWritePlan.TableModel.JsonScope,
+            member.RelativePath
+        );
+
+        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
         {
             return KeyUnificationMemberEvaluation.Absent;
         }
@@ -477,6 +806,49 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         };
     }
 
+    private static FlattenedWriteValue MaterializeScopeNodeValue(
+        FlatteningInput flatteningInput,
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        int ordinal,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        return columnBinding.Source switch
+        {
+            WriteValueSource.DocumentId => ResolveRootDocumentIdValue(flatteningInput.TargetContext),
+            WriteValueSource.ParentKeyPart parentKeyPart => ResolveParentKeyPart(
+                tableWritePlan,
+                columnBinding,
+                parentKeyPart,
+                parentKeyParts
+            ),
+            WriteValueSource.Scalar scalar => ResolveScopeNodeScalarValue(
+                tableWritePlan,
+                columnBinding,
+                scalar,
+                scopeNode
+            ),
+            WriteValueSource.DocumentReference documentReference => new FlattenedWriteValue.Literal(
+                resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath)
+            ),
+            WriteValueSource.DescriptorReference descriptorReference => new FlattenedWriteValue.Literal(
+                resolvedReferenceLookups.GetDescriptorId(tableWritePlan, descriptorReference, ordinalPath)
+            ),
+            WriteValueSource.Ordinal => new FlattenedWriteValue.Literal(ordinal),
+            WriteValueSource.Precomputed => throw new InvalidOperationException(
+                $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' "
+                    + "was routed through non-precomputed materialization."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' uses unsupported write source '{columnBinding.Source.GetType().Name}'."
+            ),
+        };
+    }
+
     private static FlattenedWriteValue ResolveParentKeyPart(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
@@ -530,6 +902,255 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return new FlattenedWriteValue.Literal(
             ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
         );
+    }
+
+    private static FlattenedWriteValue ResolveScopeNodeScalarValue(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.Scalar scalar,
+        JsonNode scopeNode
+    )
+    {
+        var absolutePath = RestrictedJsonPath.CombineCanonical(
+            tableWritePlan.TableModel.JsonScope,
+            scalar.RelativePath
+        );
+
+        if (!TryGetRelativeLeafNode(scopeNode, scalar.RelativePath, out var scalarNode))
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        if (scalarNode is null)
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        if (scalarNode is not JsonValue jsonValue)
+        {
+            throw CreateInvalidScalarReadException(
+                tableWritePlan,
+                columnBinding,
+                absolutePath,
+                scalar.Type,
+                $"encountered non-scalar JSON node type '{scalarNode.GetType().Name}'"
+            );
+        }
+
+        return new FlattenedWriteValue.Literal(
+            ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
+        );
+    }
+
+    private static void ApplyCollectionKeyPreallocationValue(
+        TableWritePlan tableWritePlan,
+        FlattenedWriteValue[] values,
+        bool[] valueAssigned
+    )
+    {
+        if (tableWritePlan.CollectionKeyPreallocationPlan is not { } collectionKeyPreallocationPlan)
+        {
+            return;
+        }
+
+        values[collectionKeyPreallocationPlan.BindingIndex] = FlattenedWriteValue
+            .UnresolvedCollectionItemId
+            .Instance;
+        valueAssigned[collectionKeyPreallocationPlan.BindingIndex] = true;
+    }
+
+    private static object?[] MaterializeSemanticIdentityValues(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values
+    )
+    {
+        var collectionMergePlan =
+            tableWritePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
+            );
+
+        if (collectionMergePlan.SemanticIdentityBindings.IsDefaultOrEmpty)
+        {
+            throw new InvalidOperationException(
+                $"Collection table '{FormatTable(tableWritePlan)}' does not have compiled semantic-identity bindings."
+            );
+        }
+
+        object?[] semanticIdentityValues = new object?[collectionMergePlan.SemanticIdentityBindings.Length];
+
+        for (
+            var bindingIndex = 0;
+            bindingIndex < collectionMergePlan.SemanticIdentityBindings.Length;
+            bindingIndex++
+        )
+        {
+            var semanticIdentityBinding = collectionMergePlan.SemanticIdentityBindings[bindingIndex];
+
+            if (values[semanticIdentityBinding.BindingIndex] is not FlattenedWriteValue.Literal literalValue)
+            {
+                throw new InvalidOperationException(
+                    $"Collection semantic-identity binding '{semanticIdentityBinding.RelativePath.Canonical}' "
+                        + $"on table '{FormatTable(tableWritePlan)}' did not materialize as a literal value."
+                );
+            }
+
+            semanticIdentityValues[bindingIndex] = literalValue.Value;
+        }
+
+        return semanticIdentityValues;
+    }
+
+    private static IReadOnlyList<FlattenedWriteValue> GetPhysicalRowIdentityValues(
+        TableWritePlan tableWritePlan,
+        IReadOnlyList<FlattenedWriteValue> values
+    )
+    {
+        var physicalRowIdentityColumns = tableWritePlan
+            .TableModel
+            .IdentityMetadata
+            .PhysicalRowIdentityColumns;
+        FlattenedWriteValue[] physicalRowIdentityValues = new FlattenedWriteValue[
+            physicalRowIdentityColumns.Count
+        ];
+
+        for (var index = 0; index < physicalRowIdentityColumns.Count; index++)
+        {
+            physicalRowIdentityValues[index] = values[
+                FindBindingIndex(tableWritePlan, physicalRowIdentityColumns[index])
+            ];
+        }
+
+        return physicalRowIdentityValues;
+    }
+
+    private static IEnumerable<CollectionScopeInstance> EnumerateCollectionScopeInstances(
+        JsonNode parentScopeNode,
+        CollectionChildPlan childPlan
+    )
+    {
+        var relativeScopeSegments = childPlan.RelativeScopeSegments;
+
+        if (
+            relativeScopeSegments.IsDefaultOrEmpty
+            || relativeScopeSegments[^1] is not JsonPathSegment.AnyArrayElement
+        )
+        {
+            throw new InvalidOperationException(
+                $"Collection table '{FormatTable(childPlan.TableWritePlan)}' does not have a canonical immediate-child collection scope."
+            );
+        }
+
+        if (
+            !TryNavigateRelativeNode(
+                parentScopeNode,
+                relativeScopeSegments[..^1],
+                out var collectionArrayNode
+            ) || collectionArrayNode is null
+        )
+        {
+            yield break;
+        }
+
+        if (collectionArrayNode is not JsonArray collectionArray)
+        {
+            throw new InvalidOperationException(
+                $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected a JSON array at path "
+                    + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}'."
+            );
+        }
+
+        for (var index = 0; index < collectionArray.Count; index++)
+        {
+            if (collectionArray[index] is not JsonObject collectionItem)
+            {
+                throw new InvalidOperationException(
+                    $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected object items at path "
+                        + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}[{index}]'."
+                );
+            }
+
+            yield return new CollectionScopeInstance(index, collectionItem);
+        }
+    }
+
+    private static bool TryNavigateRelativeNode(
+        JsonNode scopeNode,
+        IReadOnlyList<JsonPathSegment> segments,
+        out JsonNode? resolvedNode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(scopeNode);
+        ArgumentNullException.ThrowIfNull(segments);
+
+        JsonNode? currentNode = scopeNode;
+
+        for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+        {
+            if (segments[segmentIndex] is not JsonPathSegment.Property property)
+            {
+                throw new InvalidOperationException(
+                    $"Scope-local traversal does not support JSONPath segment '{segments[segmentIndex].GetType().Name}'."
+                );
+            }
+
+            if (currentNode is not JsonObject jsonObject)
+            {
+                resolvedNode = null;
+                return false;
+            }
+
+            if (!jsonObject.TryGetPropertyValue(property.Name, out var childNode))
+            {
+                resolvedNode = null;
+                return false;
+            }
+
+            if (childNode is null)
+            {
+                resolvedNode = null;
+                return segmentIndex == segments.Count - 1;
+            }
+
+            currentNode = childNode;
+        }
+
+        resolvedNode = currentNode;
+        return true;
+    }
+
+    private static bool TryGetRelativeLeafNode(
+        JsonNode scopeNode,
+        JsonPathExpression relativePath,
+        out JsonNode? value
+    )
+    {
+        var segments = RestrictedJsonPath.GetSegments(relativePath);
+        return TryNavigateRelativeNode(scopeNode, segments, out value);
+    }
+
+    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
+    {
+        for (var index = 0; index < tableWritePlan.ColumnBindings.Length; index++)
+        {
+            if (tableWritePlan.ColumnBindings[index].Column.ColumnName.Equals(columnName))
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Table '{FormatTable(tableWritePlan)}' does not have a write binding for column '{columnName.Value}'."
+        );
+    }
+
+    private static int[] AppendOrdinalPath(ReadOnlySpan<int> parentOrdinalPath, int ordinal)
+    {
+        var ordinalPath = new int[parentOrdinalPath.Length + 1];
+        parentOrdinalPath.CopyTo(ordinalPath);
+        ordinalPath[^1] = ordinal;
+
+        return ordinalPath;
     }
 
     private static object ConvertScalarValue(
@@ -760,6 +1381,22 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    private static InvalidOperationException CreateDuplicateSemanticIdentityException(
+        TableWritePlan tableWritePlan,
+        string parentScopeCanonical,
+        IReadOnlyList<int> firstOrdinalPath,
+        IReadOnlyList<int> duplicateOrdinalPath,
+        IReadOnlyList<object?> semanticIdentityValues
+    )
+    {
+        return new InvalidOperationException(
+            $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
+                + $"{FormatSemanticIdentityValues(semanticIdentityValues)} under parent scope '{parentScopeCanonical}'. "
+                + $"First ordinal path: {FormatOrdinalPath(firstOrdinalPath)}. "
+                + $"Duplicate ordinal path: {FormatOrdinalPath(duplicateOrdinalPath)}."
+        );
+    }
+
     private static InvalidOperationException CreateInvalidScalarReadException(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
@@ -814,6 +1451,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         };
     }
 
+    private static string FormatSemanticIdentityValues(IReadOnlyList<object?> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return $"[{string.Join(", ", values.Select(FormatLiteral))}]";
+    }
+
+    private static string FormatOrdinalPath(IReadOnlyList<int> ordinalPath)
+    {
+        ArgumentNullException.ThrowIfNull(ordinalPath);
+        return $"[{string.Join(", ", ordinalPath)}]";
+    }
+
     private static string GetJsonValueKind(JsonNode node)
     {
         return node switch
@@ -836,6 +1485,56 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         public static KeyUnificationMemberEvaluation Present(object value)
         {
             return new(true, value);
+        }
+    }
+
+    private sealed record CollectionChildPlan(
+        TableWritePlan TableWritePlan,
+        ImmutableArray<JsonPathSegment> RelativeScopeSegments
+    );
+
+    private sealed record CollectionScopeInstance(int RequestOrder, JsonObject ScopeNode);
+
+    private sealed class SemanticIdentityValueArrayComparer : IEqualityComparer<object?[]>
+    {
+        public static SemanticIdentityValueArrayComparer Instance { get; } = new();
+
+        public bool Equals(object?[]? x, object?[]? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null || x.Length != y.Length)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < x.Length; index++)
+            {
+                if (!Equals(x[index], y[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(object?[] values)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+
+            HashCode hashCode = new();
+            hashCode.Add(values.Length);
+
+            for (var index = 0; index < values.Length; index++)
+            {
+                hashCode.Add(values[index]);
+            }
+
+            return hashCode.ToHashCode();
         }
     }
 
@@ -940,7 +1639,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return BuildCanonical(combinedSegments);
         }
 
-        private static IReadOnlyList<JsonPathSegment> GetSegments(JsonPathExpression path)
+        public static IReadOnlyList<JsonPathSegment> GetSegments(JsonPathExpression path)
         {
             if (path.Canonical == "$")
             {
@@ -1017,7 +1716,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 && canonicalPath[openBracketIndex + 2] == ']';
         }
 
-        private static string BuildCanonical(IReadOnlyList<JsonPathSegment> segments)
+        public static string BuildCanonical(IReadOnlyList<JsonPathSegment> segments)
         {
             ArgumentNullException.ThrowIfNull(segments);
 
