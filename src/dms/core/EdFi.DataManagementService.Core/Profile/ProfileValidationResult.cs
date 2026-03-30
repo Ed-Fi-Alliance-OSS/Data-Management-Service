@@ -47,6 +47,13 @@ public record ValidationFailure(
 /// - Warnings allow profile loading but log issues for monitoring
 /// - IsValid returns true only if no errors exist (warnings are allowed)
 /// - All failures include contextual information (profile, resource, member names)
+///
+/// This remains the current catalog-loading bridge surface while C2 still
+/// aggregates plain validation messages. When category-1
+/// <see cref="ProfileFailureCategory.InvalidProfileDefinition" /> failures are
+/// emitted, adapt them to this shape only at the validator/catalog boundary.
+/// DMS-1104 owns client-visible mapping for the shared
+/// <see cref="ProfileFailure" /> contract.
 /// </remarks>
 public record ProfileValidationResult
 {
