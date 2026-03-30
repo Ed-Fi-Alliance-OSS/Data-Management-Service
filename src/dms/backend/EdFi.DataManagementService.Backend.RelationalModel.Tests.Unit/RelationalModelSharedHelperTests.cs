@@ -117,7 +117,7 @@ public class Given_Relational_Model_Shared_Helpers
                 ("DocumentId", new RelationalScalarType(ScalarKind.Int64)),
                 ("CollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
                 ("ParentCollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
-                ("SchoolId", new RelationalScalarType(ScalarKind.Int32)),
+                ("SchoolId", new RelationalScalarType(ScalarKind.Int64)),
                 ("Ordinal", new RelationalScalarType(ScalarKind.Int32))
             );
     }

@@ -79,7 +79,7 @@ function Get-SmokeTestCredentials {
         $SysAdminId = "smoke-test-admin",
 
         [string]
-        $SysAdminSecret = "SmokeTest12!",
+        $SysAdminSecret = "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9",
 
         [string]
         $VendorName = "Smoke Test Vendor",
@@ -90,7 +90,7 @@ function Get-SmokeTestCredentials {
         [string]
         $ClaimSetName = "EdFiSandbox",
 
-        [int[]]
+        [long[]]
         $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000)
     )
 

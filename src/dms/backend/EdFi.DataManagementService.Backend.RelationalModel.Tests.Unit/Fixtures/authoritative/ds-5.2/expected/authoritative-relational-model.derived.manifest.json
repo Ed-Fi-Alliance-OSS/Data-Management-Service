@@ -115,7 +115,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -351,7 +351,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -767,7 +767,7 @@
                 "name": "AssessmentAdministration_AssigningEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
@@ -791,7 +791,7 @@
                 "name": "ParticipatingEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.participatingEducationOrganizationReference.educationOrganizationId",
@@ -964,7 +964,7 @@
                 "name": "AdministrationPointOfContactEducationOrganization_Ed_205063b290",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.administrationPointOfContacts[*].educationOrganizationReference.educationOrganizationId",
@@ -1210,7 +1210,7 @@
                 "name": "AssigningEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId",
@@ -3421,7 +3421,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -3445,7 +3445,7 @@
                 "name": "MandatingEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.contentStandard.mandatingEducationOrganizationReference.educationOrganizationId",
@@ -5072,7 +5072,7 @@
                 "name": "SectionOrProgramChoiceProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
@@ -5478,7 +5478,7 @@
                 "name": "SectionOrProgramChoiceSection_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.sections[*].sectionReference.schoolId",
@@ -6261,7 +6261,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -6474,7 +6474,7 @@
                 "name": "ClassPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
@@ -6948,7 +6948,7 @@
                 "name": "Calendar_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.calendarReference.schoolId",
@@ -7336,7 +7336,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -7780,7 +7780,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -8838,7 +8838,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -9224,7 +9224,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -9481,7 +9481,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
@@ -9740,7 +9740,7 @@
                 "name": "CommunityOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.communityOrganizationId",
@@ -11609,7 +11609,7 @@
                 "name": "CommunityProvider_CommunityProviderId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.communityProviderReference.communityProviderId",
@@ -11927,7 +11927,7 @@
                 "name": "CommunityOrganization_CommunityOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.communityOrganizationReference.communityOrganizationId",
@@ -11987,7 +11987,7 @@
                 "name": "CommunityProviderId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.communityProviderId",
@@ -14014,7 +14014,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -16876,7 +16876,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -16913,7 +16913,7 @@
                 "name": "Course_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.courseReference.educationOrganizationId",
@@ -16937,7 +16937,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -16963,7 +16963,7 @@
                 "name": "Session_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sessionReference.schoolId",
@@ -17724,7 +17724,7 @@
                 "name": "CourseCourse_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.courseReference.educationOrganizationId",
@@ -17748,7 +17748,7 @@
                 "name": "ExternalEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.externalEducationOrganizationReference.educationOrganizationId",
@@ -17797,7 +17797,7 @@
                 "name": "StudentAcademicRecord_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentAcademicRecordReference.educationOrganizationId",
@@ -18696,7 +18696,7 @@
                 "name": "CourseProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.coursePrograms[*].courseProgramReference.educationOrganizationId",
@@ -19376,7 +19376,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.sections[*].sectionReference.schoolId",
@@ -19804,7 +19804,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -22775,7 +22775,7 @@
                 "name": "AssignmentSchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.assignmentSchoolReference.schoolId",
@@ -22799,7 +22799,7 @@
                 "name": "ResponsibilitySchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.responsibilitySchoolReference.schoolId",
@@ -23430,7 +23430,7 @@
                 "name": "StudentDisciplineIncidentBehaviorAssociation_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.schoolId",
@@ -23735,7 +23735,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -26041,7 +26041,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -26065,7 +26065,7 @@
                 "name": "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.interventionPrescriptionReference.educationOrganizationId",
@@ -26267,7 +26267,7 @@
                 "name": "EducationOrganizationNetwork_EducationOrganizationNetworkId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationNetworkReference.educationOrganizationNetworkId",
@@ -26291,7 +26291,7 @@
                 "name": "MemberEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.memberEducationOrganizationReference.educationOrganizationId",
@@ -26489,7 +26489,7 @@
                 "name": "EducationOrganizationNetworkId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationNetworkId",
@@ -28387,7 +28387,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -28411,7 +28411,7 @@
                 "name": "PeerEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.peerEducationOrganizationReference.educationOrganizationId",
@@ -28594,7 +28594,7 @@
                 "name": "StateEducationAgency_StateEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.stateEducationAgencyReference.stateEducationAgencyId",
@@ -28618,7 +28618,7 @@
                 "name": "EducationServiceCenterId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationServiceCenterId",
@@ -30715,7 +30715,7 @@
                 "name": "ProgramEvaluationElement_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationElementReference.programEducationOrganizationId",
@@ -31139,7 +31139,7 @@
                 "name": "FeederSchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.feederSchoolReference.schoolId",
@@ -31163,7 +31163,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -31991,7 +31991,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": null,
@@ -32052,7 +32052,7 @@
                 "name": "GradingPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.gradingPeriodReference.schoolId",
@@ -32105,7 +32105,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.sectionReference.schoolId",
@@ -32726,7 +32726,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -32787,7 +32787,7 @@
                 "name": "GradingPeriodGradingPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.gradingPeriodReference.schoolId",
@@ -32852,7 +32852,7 @@
                 "name": "StudentSectionAssociation_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentSectionAssociationReference.schoolId",
@@ -33621,7 +33621,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -33920,7 +33920,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -35127,7 +35127,7 @@
                 "name": "CourseCourse_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.creditsByCourses[*].courses[*].courseReference.educationOrganizationId",
@@ -36013,7 +36013,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -37253,7 +37253,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -37277,7 +37277,7 @@
                 "name": "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.interventionPrescriptionReference.educationOrganizationId",
@@ -38814,7 +38814,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -39638,7 +39638,7 @@
                 "name": "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.interventionPrescriptions[*].interventionPrescriptionReference.educationOrganizationId",
@@ -40932,7 +40932,7 @@
                 "name": "MandatingEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.contentStandard.mandatingEducationOrganizationReference.educationOrganizationId",
@@ -42075,7 +42075,7 @@
                 "name": "ChartOfAccountChartOfAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.chartOfAccountReference.educationOrganizationId",
@@ -42113,7 +42113,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -42523,7 +42523,7 @@
                 "name": "LocalAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localAccountReference.educationOrganizationId",
@@ -42758,7 +42758,7 @@
                 "name": "LocalAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localAccountReference.educationOrganizationId",
@@ -42993,7 +42993,7 @@
                 "name": "LocalAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localAccountReference.educationOrganizationId",
@@ -43267,7 +43267,7 @@
                 "name": "EducationServiceCenter_EducationServiceCenterId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.educationServiceCenterReference.educationServiceCenterId",
@@ -43291,7 +43291,7 @@
                 "name": "ParentLocalEducationAgency_LocalEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.parentLocalEducationAgencyReference.localEducationAgencyId",
@@ -43315,7 +43315,7 @@
                 "name": "StateEducationAgency_StateEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.stateEducationAgencyReference.stateEducationAgencyId",
@@ -43363,7 +43363,7 @@
                 "name": "LocalEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localEducationAgencyId",
@@ -45864,7 +45864,7 @@
                 "name": "LocalAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localAccountReference.educationOrganizationId",
@@ -46099,7 +46099,7 @@
                 "name": "LocalAccount_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.localAccountReference.educationOrganizationId",
@@ -46394,7 +46394,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -48361,7 +48361,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -49299,7 +49299,7 @@
                 "name": "ParentEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.parentEducationOrganizationReference.educationOrganizationId",
@@ -49348,7 +49348,7 @@
                 "name": "OrganizationDepartmentId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.organizationDepartmentId",
@@ -51590,7 +51590,7 @@
                 "name": "PostSecondaryInstitution_PostSecondaryInstitutionId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.postSecondaryInstitutionReference.postSecondaryInstitutionId",
@@ -51890,7 +51890,7 @@
                 "name": "PostSecondaryInstitutionId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.postSecondaryInstitutionId",
@@ -54361,7 +54361,7 @@
                 "name": "ProgramEducationOrganizationId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -54460,7 +54460,7 @@
                 "name": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
@@ -54601,7 +54601,7 @@
                 "name": "ProgramEvaluation_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId",
@@ -55378,7 +55378,7 @@
                 "name": "ProgramEvaluation_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId",
@@ -55936,7 +55936,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -56498,7 +56498,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -57727,7 +57727,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -57776,7 +57776,7 @@
                 "name": "GradingPeriodGradingPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.gradingPeriodReference.schoolId",
@@ -58241,7 +58241,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": null,
@@ -58302,7 +58302,7 @@
                 "name": "Grade_GradingPeriodReferenceSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.grades[*].gradeReference.schoolId",
@@ -58353,7 +58353,7 @@
                 "name": "Grade_StudentSectionAssociationReferenceSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.grades[*].gradeReference.schoolId",
@@ -58697,7 +58697,7 @@
                 "name": "StudentCompetencyObjective_GradingPeriodSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodSchoolId",
@@ -58721,7 +58721,7 @@
                 "name": "StudentCompetencyObjective_ObjectiveEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveEducationOrganizationId",
@@ -58993,25 +58993,6 @@
               }
             },
             {
-              "endpoint_a_path": "$.grades[*].gradeReference.schoolId",
-              "endpoint_b_path": "$.gradingPeriodReference.schoolId",
-              "reason": "cross_table",
-              "endpoint_a_binding": {
-                "table": {
-                  "schema": "edfi",
-                  "name": "ReportCardGrade"
-                },
-                "column": "Grade_GradingPeriodReferenceSchoolId"
-              },
-              "endpoint_b_binding": {
-                "table": {
-                  "schema": "edfi",
-                  "name": "ReportCard"
-                },
-                "column": "GradingPeriodGradingPeriod_SchoolId"
-              }
-            },
-            {
               "endpoint_a_path": "$.grades[*].gradeReference.studentUniqueId",
               "endpoint_b_path": "$.studentReference.studentUniqueId",
               "reason": "cross_table",
@@ -59127,9 +59108,15 @@
             }
           ],
           "ignored_by_reason": {
-            "cross_table": 10
+            "cross_table": 9
           },
-          "skipped": []
+          "skipped": [
+            {
+              "source_path": "$.grades[*].gradeReference.gradingPeriodSchoolId",
+              "target_path": "$.gradingPeriodReference.schoolId",
+              "unresolved_endpoint": "source"
+            }
+          ]
         },
         "descriptor_edge_sources": [
           {
@@ -59377,7 +59364,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -59414,7 +59401,7 @@
                 "name": "DisciplineIncident_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.disciplineIncidentReference.schoolId",
@@ -59440,7 +59427,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -59722,7 +59709,7 @@
                 "name": "Program_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
@@ -60412,7 +60399,7 @@
                 "name": "LocalEducationAgency_LocalEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.localEducationAgencyReference.localEducationAgencyId",
@@ -60533,7 +60520,7 @@
                 "name": "SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolId",
@@ -62941,7 +62928,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -62990,7 +62977,7 @@
                 "name": "CalendarDate_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.calendarDateReference.schoolId",
@@ -63055,7 +63042,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sectionReference.schoolId",
@@ -63411,7 +63398,7 @@
                 "name": "SchoolId_U35501e03_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": null,
@@ -63423,7 +63410,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -63460,7 +63447,7 @@
                 "name": "CourseOffering_SchoolReferenceSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.courseOfferingReference.schoolId",
@@ -63474,7 +63461,7 @@
                 "name": "CourseOffering_SessionReferenceSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.courseOfferingReference.schoolId",
@@ -63538,7 +63525,7 @@
                 "name": "LocationLocation_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.locationReference.schoolId",
@@ -63564,7 +63551,7 @@
                 "name": "LocationSchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.locationSchoolReference.schoolId",
@@ -64186,7 +64173,7 @@
                 "name": "ClassPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
@@ -64608,7 +64595,7 @@
                 "name": "Program_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
@@ -65066,7 +65053,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -65318,7 +65305,7 @@
                 "name": "AcademicWeek_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.academicWeeks[*].academicWeekReference.schoolId",
@@ -65516,7 +65503,7 @@
                 "name": "GradingPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.schoolId",
@@ -66439,7 +66426,7 @@
                 "name": "Cohort_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.cohortReference.educationOrganizationId",
@@ -66679,7 +66666,7 @@
                 "name": "DisciplineIncident_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.disciplineIncidentReference.schoolId",
@@ -67064,7 +67051,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -67088,7 +67075,7 @@
                 "name": "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.educationOrganizationId",
@@ -67565,7 +67552,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -68448,7 +68435,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -69192,7 +69179,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -69465,7 +69452,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -69514,7 +69501,7 @@
                 "name": "Calendar_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.calendarReference.schoolId",
@@ -69580,7 +69567,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -70209,7 +70196,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sectionReference.schoolId",
@@ -74682,7 +74669,7 @@
                 "name": "StateEducationAgencyId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.stateEducationAgencyId",
@@ -76819,7 +76806,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -78504,7 +78491,7 @@
                 "name": "ReportCard_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.reportCards[*].reportCardReference.educationOrganizationId",
@@ -78541,7 +78528,7 @@
                 "name": "ReportCard_GradingPeriodSchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.reportCards[*].reportCardReference.gradingPeriodSchoolId",
@@ -78992,7 +78979,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -79429,7 +79416,7 @@
                 "name": "StudentAssessmentRegistration_AssigningEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentAssessmentRegistrationReference.assigningEducationOrganizationId",
@@ -79456,7 +79443,7 @@
                 "name": "StudentAssessmentRegistration_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentAssessmentRegistrationReference.educationOrganizationId",
@@ -79887,7 +79874,7 @@
                 "name": "AssessmentAdministration_AssigningEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
@@ -79911,7 +79898,7 @@
                 "name": "ReportingEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.reportingEducationOrganizationReference.educationOrganizationId",
@@ -79935,7 +79922,7 @@
                 "name": "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.educationOrganizationId",
@@ -79972,7 +79959,7 @@
                 "name": "StudentEducationOrganizationAssociation_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentEducationOrganizationAssociationReference.educationOrganizationId",
@@ -80023,7 +80010,7 @@
                 "name": "StudentSchoolAssociation_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentSchoolAssociationReference.schoolId",
@@ -80062,7 +80049,7 @@
                 "name": "TestingEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.testingEducationOrganizationReference.educationOrganizationId",
@@ -80776,7 +80763,7 @@
                 "name": "ReportedSchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.reportedSchoolReference.schoolId",
@@ -83127,7 +83114,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -83151,7 +83138,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -83982,7 +83969,7 @@
                 "name": "Cohort_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.cohortReference.educationOrganizationId",
@@ -84212,7 +84199,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.sections[*].sectionReference.schoolId",
@@ -84454,7 +84441,7 @@
                 "name": "GradingPeriodGradingPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.gradingPeriodReference.schoolId",
@@ -84490,7 +84477,7 @@
                 "name": "ObjectiveCompetencyObjective_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.objectiveCompetencyObjectiveReference.educationOrganizationId",
@@ -84846,7 +84833,7 @@
                 "name": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.educationOrganizationId",
@@ -84858,7 +84845,7 @@
                 "name": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programEducationOrganizationId",
@@ -85125,7 +85112,7 @@
                 "name": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.studentSectionAssociations[*].studentSectionAssociationReference.schoolId",
@@ -85779,7 +85766,7 @@
                 "name": "DisciplineIncident_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.disciplineIncidentReference.schoolId",
@@ -86337,7 +86324,7 @@
                 "name": "DisciplineIncident_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.disciplineIncidentReference.schoolId",
@@ -86672,7 +86659,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -87013,7 +87000,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -91224,7 +91211,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -91885,7 +91872,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -92697,7 +92684,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -92721,7 +92708,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -93539,7 +93526,7 @@
                 "name": "CohortCohort_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.cohortReference.educationOrganizationId",
@@ -93563,7 +93550,7 @@
                 "name": "Intervention_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.interventionReference.educationOrganizationId",
@@ -94110,7 +94097,7 @@
                 "name": "Intervention_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.interventionReference.educationOrganizationId",
@@ -94449,7 +94436,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -94473,7 +94460,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -95533,7 +95520,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -95557,7 +95544,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -96413,7 +96400,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -96437,7 +96424,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -97279,7 +97266,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -97303,7 +97290,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -98022,7 +98009,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -98046,7 +98033,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -98456,7 +98443,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -98517,7 +98504,7 @@
                 "name": "ProgramEvaluation_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId",
@@ -99080,7 +99067,7 @@
                 "name": "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEducationOrganizationId",
@@ -99440,7 +99427,7 @@
                 "name": "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEducationOrganizationId",
@@ -100161,7 +100148,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -100210,7 +100197,7 @@
                 "name": "Calendar_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.calendarReference.schoolId",
@@ -100274,7 +100261,7 @@
                 "name": "GraduationPlan_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.graduationPlanReference.educationOrganizationId",
@@ -100322,7 +100309,7 @@
                 "name": "NextYearSchool_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.nextYearSchoolReference.schoolId",
@@ -100372,7 +100359,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -101081,7 +101068,7 @@
                 "name": "AlternativeGraduationPlan_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
@@ -101572,7 +101559,7 @@
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": null,
@@ -101596,7 +101583,7 @@
                 "name": "School_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.schoolReference.schoolId",
@@ -101622,7 +101609,7 @@
                 "name": "Session_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sessionReference.schoolId",
@@ -102049,7 +102036,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -102073,7 +102060,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -102804,7 +102791,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -102828,7 +102815,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -103456,7 +103443,7 @@
                 "name": "DualCreditEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.dualCreditEducationOrganizationReference.educationOrganizationId",
@@ -103493,7 +103480,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sectionReference.schoolId",
@@ -103957,7 +103944,7 @@
                 "name": "Program_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.educationOrganizationId",
@@ -104242,7 +104229,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sectionReference.schoolId",
@@ -104627,7 +104614,7 @@
                 "name": "ClassPeriod_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.classPeriods[*].classPeriodReference.schoolId",
@@ -104834,7 +104821,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -104858,7 +104845,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -106552,7 +106539,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -106576,7 +106563,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -107161,7 +107148,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -107185,7 +107172,7 @@
                 "name": "ProgramProgram_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -107970,7 +107957,7 @@
                 "name": "TransportationEducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.transportationEducationOrganizationReference.educationOrganizationId",
@@ -110109,7 +110096,7 @@
                 "name": "Course_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.courseReference.educationOrganizationId",
@@ -110336,7 +110323,7 @@
                 "name": "Program_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.educationOrganizationId",
@@ -111932,7 +111919,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -112921,7 +112908,7 @@
                 "name": "Section_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.sectionReference.schoolId",
@@ -113200,7 +113187,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -114336,7 +114323,7 @@
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
@@ -114386,7 +114373,7 @@
                 "name": "Session_SchoolId",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Int32"
+                  "kind": "Int64"
                 },
                 "is_nullable": true,
                 "source_path": "$.sessionReference.schoolId",
