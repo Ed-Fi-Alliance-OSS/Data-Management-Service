@@ -559,3 +559,181 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+[TestFixture]
+public class Given_A_Reference_Bearing_Resource_Mssql
+{
+    private string _databaseName = null!;
+    private string _connectionString = null!;
+    private HydratedPage _result = null!;
+    private ResourceReadPlan _plan = null!;
+
+    private const string TestSchema = "hydref";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MSSQL connection string not configured.");
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydref') EXEC('CREATE SCHEMA [hydref]');
+
+            CREATE TABLE dms.Document (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+            );
+
+            CREATE TABLE hydref.StudentSchoolAssociation (
+                DocumentId bigint PRIMARY KEY,
+                School_DocumentId bigint NULL,
+                School_SchoolId bigint NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            VALUES
+                (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
+                (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
+                (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
+
+            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId)
+            VALUES
+                (401, 10, 255901),
+                (402, NULL, NULL),
+                (403, 20, 255902);
+            """
+        );
+
+        _plan = HydrationTestHelper.BuildStudentSchoolAssociationReadPlan(TestSchema, SqlDialect.Mssql);
+
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT DocumentId FROM hydref.StudentSchoolAssociation
+                ORDER BY DocumentId
+                OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                """,
+                TotalCountSql: null,
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        await using var hydrationConnection = new SqlConnection(_connectionString);
+        await hydrationConnection.OpenAsync();
+
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            _plan,
+            keyset,
+            SqlDialect.Mssql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_returns_all_three_documents()
+    {
+        _result.DocumentMetadata.Should().HaveCount(3);
+    }
+
+    [Test]
+    public void It_returns_root_rows_with_nullable_reference_columns()
+    {
+        var rootRows = _result.TableRowsInDependencyOrder[0];
+        rootRows.Rows.Should().HaveCount(3);
+
+        // Doc 401: School_DocumentId=10, School_SchoolId=255901
+        rootRows.Rows[0][1].Should().NotBeNull();
+        ((long)rootRows.Rows[0][1]!).Should().Be(10);
+        ((long)rootRows.Rows[0][2]!).Should().Be(255901);
+
+        // Doc 402: School_DocumentId=NULL, School_SchoolId=NULL
+        rootRows.Rows[1][1].Should().BeNull();
+        rootRows.Rows[1][2].Should().BeNull();
+
+        // Doc 403: School_DocumentId=20, School_SchoolId=255902
+        ((long)rootRows.Rows[2][1]!)
+            .Should()
+            .Be(20);
+        ((long)rootRows.Rows[2][2]!).Should().Be(255902);
+    }
+
+    [Test]
+    public void It_projects_reference_for_populated_documents()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().ContainKey(401L);
+        projections.Should().ContainKey(403L);
+
+        var doc401 = projections[401L];
+        doc401.Should().HaveCount(1);
+        doc401[0]
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255901L);
+
+        var doc403 = projections[403L];
+        doc403.Should().HaveCount(1);
+        doc403[0]
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255902L);
+    }
+
+    [Test]
+    public void It_does_not_project_reference_for_null_fk()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().NotContainKey(402L);
+    }
+
+    private static async Task ExecuteSql(SqlConnection connection, string sql)
+    {
+        await using var cmd = new SqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}

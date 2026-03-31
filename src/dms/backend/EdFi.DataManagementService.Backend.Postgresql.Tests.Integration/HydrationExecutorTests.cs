@@ -572,3 +572,183 @@ public class Given_A_Query_With_TotalCount_Requested
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+[TestFixture]
+public class Given_A_Reference_Bearing_Resource
+{
+    private NpgsqlDataSource _dataSource = null!;
+    private HydratedPage _result = null!;
+    private ResourceReadPlan _plan = null!;
+
+    private const string TestSchema = "hydref";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydref CASCADE;
+            CREATE SCHEMA hydref;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE hydref."StudentSchoolAssociation" (
+                "DocumentId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NULL,
+                "School_SchoolId" bigint NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402, 403);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            VALUES
+                (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
+                (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
+                (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
+
+            INSERT INTO hydref."StudentSchoolAssociation" ("DocumentId", "School_DocumentId", "School_SchoolId")
+            VALUES
+                (401, 10, 255901),
+                (402, NULL, NULL),
+                (403, 20, 255902);
+            """
+        );
+
+        _plan = HydrationTestHelper.BuildStudentSchoolAssociationReadPlan(TestSchema, SqlDialect.Pgsql);
+
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT "DocumentId" FROM hydref."StudentSchoolAssociation"
+                ORDER BY "DocumentId"
+                LIMIT @limit OFFSET @offset
+                """,
+                TotalCountSql: null,
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            _plan,
+            keyset,
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydref CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402, 403);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_all_three_documents()
+    {
+        _result.DocumentMetadata.Should().HaveCount(3);
+    }
+
+    [Test]
+    public void It_returns_root_rows_with_nullable_reference_columns()
+    {
+        var rootRows = _result.TableRowsInDependencyOrder[0];
+        rootRows.Rows.Should().HaveCount(3);
+
+        // Doc 401: School_DocumentId=10, School_SchoolId=255901
+        rootRows.Rows[0][1].Should().NotBeNull();
+        ((long)rootRows.Rows[0][1]!).Should().Be(10);
+        ((long)rootRows.Rows[0][2]!).Should().Be(255901);
+
+        // Doc 402: School_DocumentId=NULL, School_SchoolId=NULL
+        rootRows.Rows[1][1].Should().BeNull();
+        rootRows.Rows[1][2].Should().BeNull();
+
+        // Doc 403: School_DocumentId=20, School_SchoolId=255902
+        ((long)rootRows.Rows[2][1]!)
+            .Should()
+            .Be(20);
+        ((long)rootRows.Rows[2][2]!).Should().Be(255902);
+    }
+
+    [Test]
+    public void It_projects_reference_for_populated_documents()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().ContainKey(401L);
+        projections.Should().ContainKey(403L);
+
+        var doc401 = projections[401L];
+        doc401.Should().HaveCount(1);
+        doc401[0]
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255901L);
+
+        var doc403 = projections[403L];
+        doc403.Should().HaveCount(1);
+        doc403[0]
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255902L);
+    }
+
+    [Test]
+    public void It_does_not_project_reference_for_null_fk()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().NotContainKey(402L);
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
