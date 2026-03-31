@@ -126,6 +126,8 @@ public sealed class WritableRequestShaper(
                     memberValue,
                     ancestorItems,
                     scopeStates,
+                    collectionItems,
+                    validationFailures,
                     emittedScopes
                 );
                 if (shapedExt != null && shapedExt.Count > 0)
@@ -149,6 +151,8 @@ public sealed class WritableRequestShaper(
                     output,
                     memberName,
                     scopeStates,
+                    collectionItems,
+                    validationFailures,
                     emittedScopes
                 );
                 continue;
@@ -203,6 +207,8 @@ public sealed class WritableRequestShaper(
         JsonObject output,
         string memberName,
         List<RequestScopeState> scopeStates,
+        List<VisibleRequestCollectionItem> collectionItems,
+        List<WritableProfileValidationFailure> validationFailures,
         HashSet<string> emittedScopes
     )
     {
@@ -225,6 +231,8 @@ public sealed class WritableRequestShaper(
                         kvp.Value,
                         ancestorItems,
                         scopeStates,
+                        collectionItems,
+                        validationFailures,
                         emittedScopes
                     );
                     if (shapedExt != null && shapedExt.Count > 0)
@@ -332,6 +340,8 @@ public sealed class WritableRequestShaper(
                         itemMemberValue,
                         newAncestors,
                         scopeStates,
+                        collectionItems,
+                        validationFailures,
                         emittedScopes
                     );
                     if (shapedExt != null && shapedExt.Count > 0)
@@ -355,6 +365,8 @@ public sealed class WritableRequestShaper(
                         filteredItem,
                         itemMemberName,
                         scopeStates,
+                        collectionItems,
+                        validationFailures,
                         emittedScopes
                     );
                     continue;
@@ -395,13 +407,18 @@ public sealed class WritableRequestShaper(
     }
 
     /// <summary>
-    /// Shapes extensions under the _ext member of a scope.
+    /// Shapes extensions under the _ext member of a scope. Iterates extension
+    /// scope members the same way <see cref="ShapeScope"/> does — checking each
+    /// against the scope catalog for child collection/non-collection scopes and
+    /// delegating to <see cref="ShapeCollection"/> or <see cref="ShapeNonCollectionChild"/>.
     /// </summary>
     private JsonObject? ShapeExtensions(
         string parentScope,
         JsonNode? extNode,
         IReadOnlyList<AncestorItemContext> ancestorItems,
         List<RequestScopeState> scopeStates,
+        List<VisibleRequestCollectionItem> collectionItems,
+        List<WritableProfileValidationFailure> validationFailures,
         HashSet<string> emittedScopes
     )
     {
@@ -435,9 +452,58 @@ public sealed class WritableRequestShaper(
                 ScopeMemberFilter extFilter = classifier.GetMemberFilter(extScope);
                 var extChildOutput = new JsonObject();
 
-                foreach (var innerKvp in extData.AsObject().Where(kvp => IsMemberVisible(extFilter, kvp.Key)))
+                foreach (var innerKvp in extData.AsObject())
                 {
-                    extChildOutput[innerKvp.Key] = innerKvp.Value?.DeepClone();
+                    string memberName = innerKvp.Key;
+                    JsonNode? memberValue = innerKvp.Value;
+
+                    // Check if member is a non-collection scope
+                    string childNonCollectionScope = $"{extScope}.{memberName}";
+                    if (
+                        IsScopeKnown(childNonCollectionScope, out ScopeKind childKind)
+                        && childKind == ScopeKind.NonCollection
+                    )
+                    {
+                        ShapeNonCollectionChild(
+                            childNonCollectionScope,
+                            memberValue,
+                            ancestorItems,
+                            extChildOutput,
+                            memberName,
+                            scopeStates,
+                            collectionItems,
+                            validationFailures,
+                            emittedScopes
+                        );
+                        continue;
+                    }
+
+                    // Check if member is a collection scope
+                    string childCollectionScope = $"{extScope}.{memberName}[*]";
+                    if (
+                        IsScopeKnown(childCollectionScope, out ScopeKind collKind)
+                        && collKind == ScopeKind.Collection
+                    )
+                    {
+                        ShapeCollection(
+                            childCollectionScope,
+                            memberValue,
+                            ancestorItems,
+                            extChildOutput,
+                            memberName,
+                            scopeStates,
+                            collectionItems,
+                            validationFailures,
+                            emittedScopes
+                        );
+                        continue;
+                    }
+
+                    // Scalar member: apply member filter
+                    if (IsMemberVisible(extFilter, memberName))
+                    {
+                        extChildOutput[memberName] = memberValue?.DeepClone();
+                    }
                 }
 
                 extOutput[extName] = extChildOutput;

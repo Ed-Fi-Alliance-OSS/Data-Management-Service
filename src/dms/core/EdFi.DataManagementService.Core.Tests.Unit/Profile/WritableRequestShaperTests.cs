@@ -682,4 +682,242 @@ public abstract class WritableRequestShaperTests
                 );
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  9. Collection inside extension scope
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Inside_Extension_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildExtensionWithCollectionProfile(),
+                ProfileTestFixtures.ExtensionWithCollectionFixtureScopes
+            );
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": {
+                            "sampleField": "hello",
+                            "extActivities": [
+                                {
+                                    "activityName": "Activity1",
+                                    "activityDescription": "should be stripped"
+                                }
+                            ]
+                        }
+                    }
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_include_extension_collection_in_shaped_body()
+        {
+            var ext = _result.WritableRequestBody["_ext"]!["sample"]!.AsObject();
+            ext.ContainsKey("extActivities").Should().BeTrue();
+            ext["extActivities"]!.AsArray().Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_filter_extension_collection_item_members()
+        {
+            var item = _result.WritableRequestBody["_ext"]!["sample"]!["extActivities"]![0]!.AsObject();
+            item["activityName"]!.GetValue<string>().Should().Be("Activity1");
+            item.ContainsKey("activityDescription").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_visible_collection_item_for_extension_collection()
+        {
+            _result.VisibleRequestCollectionItems.Should().HaveCount(1);
+            _result
+                .VisibleRequestCollectionItems[0]
+                .Address.JsonScope.Should()
+                .Be("$._ext.sample.extActivities[*]");
+        }
+
+        [Test]
+        public void It_should_emit_extension_scope_state()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$._ext.sample"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  10. Hidden non-collection scope emits Hidden RequestScopeState
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Non_Collection_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include calendarReference → Hidden
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties:
+                [
+                    new PropertyRule("studentReference"),
+                    new PropertyRule("schoolReference"),
+                    new PropertyRule("entryDate"),
+                ],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_hidden_scope_state_for_calendarReference()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.calendarReference"
+                    && s.Visibility == ProfileVisibilityKind.Hidden
+                );
+        }
+
+        [Test]
+        public void It_should_not_include_calendarReference_in_shaped_body()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("calendarReference").Should().BeFalse();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  11. ExcludeOnly filter mode
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_ExcludeOnly_Profile : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // ExcludeOnly root that explicitly excludes entryTypeDescriptor
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.ExcludeOnly,
+                Properties: [new PropertyRule("entryTypeDescriptor")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Original",
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    },
+                    "classPeriods": [
+                        {
+                            "classPeriodName": "Period1",
+                            "officialAttendancePeriod": true
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_exclude_explicitly_excluded_root_members()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("entryTypeDescriptor").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_include_non_excluded_root_members()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body["studentReference"].Should().NotBeNull();
+            body["schoolReference"].Should().NotBeNull();
+            body["entryDate"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_include_child_scopes_not_in_exclude_list()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body["calendarReference"].Should().NotBeNull();
+            body["classPeriods"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_include_all_members_in_implicitly_visible_collection()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            var item = body["classPeriods"]![0]!.AsObject();
+            item["classPeriodName"].Should().NotBeNull();
+            item["officialAttendancePeriod"].Should().NotBeNull();
+        }
+    }
 }

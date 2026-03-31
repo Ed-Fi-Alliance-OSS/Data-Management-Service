@@ -217,4 +217,70 @@ internal static class ProfileTestFixtures
                 ),
             ]
         );
+
+    /// <summary>
+    /// Scope catalog with root-level extension scope containing a collection.
+    /// </summary>
+    public static IReadOnlyList<CompiledScopeDescriptor> ExtensionWithCollectionFixtureScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["studentReference.studentUniqueId", "entryDate"]
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["sampleField"]
+            ),
+            new(
+                JsonScope: "$._ext.sample.extActivities[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$._ext.sample",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["activityName"],
+                CanonicalScopeRelativeMemberPaths: ["activityName", "activityDescription"]
+            ),
+        ];
+
+    /// <summary>
+    /// IncludeOnly profile with root-level extension containing a collection.
+    /// Used for extension-collection shaping tests.
+    /// </summary>
+    public static ContentTypeDefinition BuildExtensionWithCollectionProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+            Objects: [],
+            Collections: [],
+            Extensions:
+            [
+                new ExtensionRule(
+                    Name: "sample",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("sampleField")],
+                    Objects: null,
+                    Collections:
+                    [
+                        new CollectionRule(
+                            Name: "extActivities",
+                            MemberSelection: MemberSelection.IncludeOnly,
+                            LogicalSchema: null,
+                            Properties: [new PropertyRule("activityName")],
+                            NestedObjects: null,
+                            NestedCollections: null,
+                            Extensions: null,
+                            ItemFilter: null
+                        ),
+                    ]
+                ),
+            ]
+        );
 }
