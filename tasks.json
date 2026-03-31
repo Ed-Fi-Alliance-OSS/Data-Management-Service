@@ -120,5 +120,45 @@
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Resolution",
+    "description": "Fail deterministically when a reference-bearing value is present in the selected write body but no matching `ResolvedReferenceSet` entry exists for the compiled binding and ordinal path. Acceptance: document-reference and descriptor-reference bindings distinguish `reference absent from body` from `reference present but missing from the resolved lookup set`; the missing-lookup case fails before terminal-stage handoff with a precise message that identifies the table or binding and path; the flattener no longer emits `Literal(null)` for a present reference solely because extraction, lookup adaptation, or ordinal-path matching missed it.",
+    "steps-to-verify": [
+      "Add backend/unit tests where the selected body contains a root document reference, a nested collection document reference, and a descriptor value, but the `ResolvedReferenceSet` omits the corresponding concrete path. Assert that flattening or repository orchestration fails deterministically instead of producing a nullable FK binding.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Narrow and simplify the DMS-983 standalone-scope contract so it matches the compiler shapes that can actually exist today. Acceptance: the branch no longer advertises generic base-resource non-collection row support when the current compiler cannot emit it; `StandaloneScopeWriteRowBuffer`, `NonCollectionRows`, related comments, and the DMS-983 design story are either explicitly root-extension-scoped or are generalized end-to-end with real coverage; no dead or misleading contract surface remains that implies support for unsupported separate-table 1:1 base scopes.",
+    "steps-to-verify": [
+      "Update backend contract tests and flattener tests to lock down the final supported scope inventory and reject or omit impossible shapes consistently.",
+      "Update the DMS-983 story text so its contract language matches the runtime contract checked into code.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Boundary",
+    "description": "Move `MappingSet` carriage back out of the public Core/backend repository request boundary and keep it backend-local. Acceptance: `EdFi.DataManagementService.Core.External` no longer references `EdFi.DataManagementService.Backend.External`; public `IUpsertRequest` and `IUpdateRequest` do not expose `MappingSet`; the relational path gets the resolved mapping set from an internal request type, internal adapter, or backend-local context instead of expanding the public request contract; legacy repository implementations and external consumers of `Core.External` do not need to take a backend-specific dependency to compile.",
+    "steps-to-verify": [
+      "Refactor the relational repository seam so only internal Core or backend-local request types carry the mapping-set dependency, then remove the `Core.External -> Backend.External` project reference.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Middleware",
+    "description": "Align missing-mapping-set behavior across middleware, handlers, and the relational repository. Acceptance: the code has one consistent contract for `MappingSet` absence: either the repository handles the case with a deterministic relational-path failure consistent with the middleware-owned 503 behavior, or the middleware and handler comments and tests stop claiming downstream code tolerates a null mapping set. No supported execution path should end in an uncaught `ArgumentNullException` because `MappingSet` was absent.",
+    "steps-to-verify": [
+      "Add or update unit tests so the agreed contract is enforced at the middleware and repository seam, including one case that proves the supported execution path does not rely on an uncaught null-argument exception.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~ResolveMappingSetMiddleware`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`"
+    ],
+    "completed": false
   }
 ]
