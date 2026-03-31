@@ -106,7 +106,7 @@ public sealed record FlattenedWriteSet
     }
 
     /// <summary>
-    /// The root table row plus all attached standalone scopes and collection candidates.
+    /// The root table row plus all attached root-extension rows and collection candidates.
     /// </summary>
     public RootWriteRowBuffer RootRow { get; init; }
 }
@@ -143,39 +143,77 @@ public abstract record FlattenedWriteValue
 }
 
 /// <summary>
-/// Root-scope row buffer plus its directly attached write tree.
+/// The root table row plus any directly attached root-extension rows and collection candidates.
 /// </summary>
-public sealed record RootWriteRowBuffer : RelationalWriteScopeBuffer
+public sealed record RootWriteRowBuffer
 {
     public RootWriteRowBuffer(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<StandaloneScopeWriteRowBuffer>? nonCollectionRows = null,
+        IEnumerable<RootExtensionWriteRowBuffer>? rootExtensionRows = null,
         IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
-        : base(tableWritePlan, values, nonCollectionRows, collectionCandidates)
     {
+        TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
+        Values = FlattenedWriteContractSupport.ToImmutableArray(values, nameof(values));
+        RootExtensionRows = FlattenedWriteContractSupport.ToImmutableArray(
+            rootExtensionRows ?? [],
+            nameof(rootExtensionRows)
+        );
+        CollectionCandidates = FlattenedWriteContractSupport.ToImmutableArray(
+            collectionCandidates ?? [],
+            nameof(collectionCandidates)
+        );
+
+        FlattenedWriteContractSupport.ValidateBindingCount(TableWritePlan, Values, nameof(values));
         FlattenedWriteContractSupport.ValidateTableKind(
             TableWritePlan,
             DbTableKind.Root,
             nameof(tableWritePlan)
         );
     }
+
+    /// <summary>
+    /// The compiled table plan whose binding order this row buffer follows.
+    /// </summary>
+    public TableWritePlan TableWritePlan { get; init; }
+
+    /// <summary>
+    /// Row values in authoritative <see cref="TableWritePlan.ColumnBindings" /> order.
+    /// </summary>
+    public ImmutableArray<FlattenedWriteValue> Values { get; init; }
+
+    /// <summary>
+    /// Root extension rows nested directly under the resource root.
+    /// </summary>
+    public ImmutableArray<RootExtensionWriteRowBuffer> RootExtensionRows { get; init; }
+
+    /// <summary>
+    /// Collection candidates nested directly under the resource root.
+    /// </summary>
+    public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
 }
 
 /// <summary>
-/// Standalone non-collection scope row buffer plus any nested scopes or collections under that scope.
+/// A root-scope extension row buffer plus any extension child collections under that extension site.
 /// </summary>
-public sealed record StandaloneScopeWriteRowBuffer : RelationalWriteScopeBuffer
+public sealed record RootExtensionWriteRowBuffer
 {
-    public StandaloneScopeWriteRowBuffer(
+    public RootExtensionWriteRowBuffer(
         TableWritePlan tableWritePlan,
         IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<StandaloneScopeWriteRowBuffer>? nonCollectionRows = null,
         IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
-        : base(tableWritePlan, values, nonCollectionRows, collectionCandidates)
     {
+        TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
+        Values = FlattenedWriteContractSupport.ToImmutableArray(values, nameof(values));
+        CollectionCandidates = FlattenedWriteContractSupport.ToImmutableArray(
+            collectionCandidates ?? [],
+            nameof(collectionCandidates)
+        );
+
+        FlattenedWriteContractSupport.ValidateBindingCount(TableWritePlan, Values, nameof(values));
+
         var tableKind = TableWritePlan.TableModel.IdentityMetadata.TableKind;
 
         if (tableKind is DbTableKind.RootExtension)
@@ -184,11 +222,26 @@ public sealed record StandaloneScopeWriteRowBuffer : RelationalWriteScopeBuffer
         }
 
         throw new ArgumentException(
-            $"{nameof(StandaloneScopeWriteRowBuffer)} requires a table kind of "
+            $"{nameof(RootExtensionWriteRowBuffer)} requires a table kind of "
                 + $"{nameof(DbTableKind.RootExtension)}. Actual value: {tableKind}.",
             nameof(tableWritePlan)
         );
     }
+
+    /// <summary>
+    /// The compiled table plan whose binding order this row buffer follows.
+    /// </summary>
+    public TableWritePlan TableWritePlan { get; init; }
+
+    /// <summary>
+    /// Row values in authoritative <see cref="TableWritePlan.ColumnBindings" /> order.
+    /// </summary>
+    public ImmutableArray<FlattenedWriteValue> Values { get; init; }
+
+    /// <summary>
+    /// Collection candidates nested directly under this root extension scope.
+    /// </summary>
+    public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
 }
 
 /// <summary>
@@ -416,52 +469,6 @@ public interface IRelationalWriteTerminalStage
 }
 
 /// <summary>
-/// Common row-buffer shape used by the root row and standalone non-collection scope rows.
-/// </summary>
-public abstract record RelationalWriteScopeBuffer
-{
-    protected RelationalWriteScopeBuffer(
-        TableWritePlan tableWritePlan,
-        IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<StandaloneScopeWriteRowBuffer>? nonCollectionRows,
-        IEnumerable<CollectionWriteCandidate>? collectionCandidates
-    )
-    {
-        TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
-        Values = FlattenedWriteContractSupport.ToImmutableArray(values, nameof(values));
-        NonCollectionRows = FlattenedWriteContractSupport.ToImmutableArray(
-            nonCollectionRows ?? [],
-            nameof(nonCollectionRows)
-        );
-        CollectionCandidates = FlattenedWriteContractSupport.ToImmutableArray(
-            collectionCandidates ?? [],
-            nameof(collectionCandidates)
-        );
-
-        FlattenedWriteContractSupport.ValidateBindingCount(TableWritePlan, Values, nameof(values));
-    }
-
-    /// <summary>
-    /// The compiled table plan whose binding order this row buffer follows.
-    /// </summary>
-    public TableWritePlan TableWritePlan { get; init; }
-
-    /// <summary>
-    /// Row values in authoritative <see cref="TableWritePlan.ColumnBindings" /> order.
-    /// </summary>
-    public ImmutableArray<FlattenedWriteValue> Values { get; init; }
-
-    /// <summary>
-    /// Standalone non-collection scopes nested directly under this scope.
-    /// </summary>
-    public ImmutableArray<StandaloneScopeWriteRowBuffer> NonCollectionRows { get; init; }
-
-    /// <summary>
-    /// Collection candidates nested directly under this scope.
-    /// </summary>
-    public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
-}
-
 internal static class FlattenedWriteContractSupport
 {
     public static ImmutableArray<T> ToImmutableArray<T>(IEnumerable<T> items, string parameterName)

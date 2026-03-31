@@ -46,7 +46,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 parentKeyParts: [],
                 ordinalPath: []
             ),
-            nonCollectionRows: MaterializeRootExtensionRows(
+            rootExtensionRows: MaterializeRootExtensionRows(
                 flatteningInput,
                 selectedBodyIndex,
                 resolvedReferenceLookups,
@@ -189,7 +189,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static IEnumerable<StandaloneScopeWriteRowBuffer> MaterializeRootExtensionRows(
+    private static IEnumerable<RootExtensionWriteRowBuffer> MaterializeRootExtensionRows(
         FlatteningInput flatteningInput,
         SelectedBodyIndex selectedBodyIndex,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
@@ -243,7 +243,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 continue;
             }
 
-            yield return new StandaloneScopeWriteRowBuffer(
+            yield return new RootExtensionWriteRowBuffer(
                 tableWritePlan,
                 MaterializeValues(
                     flatteningInput,
@@ -253,7 +253,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     rootParentKeyParts,
                     ordinalPath: []
                 ),
-                nonCollectionRows: [],
                 collectionCandidates: collectionCandidates
             );
         }

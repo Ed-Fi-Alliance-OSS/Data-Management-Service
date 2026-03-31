@@ -83,7 +83,7 @@ public class Given_Relational_Write_Seam
                 new FlattenedWriteValue.Literal(901L),
                 new FlattenedWriteValue.Literal(77L)
             );
-        request.FlattenedWriteSet.RootRow.NonCollectionRows.Should().ContainSingle();
+        request.FlattenedWriteSet.RootRow.RootExtensionRows.Should().ContainSingle();
         request.FlattenedWriteSet.RootRow.CollectionCandidates.Should().ContainSingle();
 
         var createdDocumentUuid = (
@@ -280,7 +280,7 @@ public class Given_Relational_Write_Seam
                 new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(null)
             );
-        request.FlattenedWriteSet.RootRow.NonCollectionRows.Should().BeEmpty();
+        request.FlattenedWriteSet.RootRow.RootExtensionRows.Should().BeEmpty();
     }
 
     [Test]
@@ -376,7 +376,7 @@ public class Given_Relational_Write_Seam
 
         var request = harness.TerminalStage.Requests.Single();
         var rootRow = request.FlattenedWriteSet.RootRow;
-        var rootExtensionRow = rootRow.NonCollectionRows.Single();
+        var rootExtensionRow = rootRow.RootExtensionRows.Single();
         var addressCandidate = rootRow.CollectionCandidates.Single();
         var alignedScope = addressCandidate.AttachedAlignedScopeData.Single();
 

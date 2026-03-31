@@ -141,7 +141,7 @@
       "Update the DMS-983 story text so its contract language matches the runtime contract checked into code.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Boundary",

@@ -115,7 +115,7 @@ public class Given_RelationalWriteContracts
             )
         );
 
-        writeSet.RootRow.NonCollectionRows.Should().BeEmpty();
+        writeSet.RootRow.RootExtensionRows.Should().BeEmpty();
         writeSet.RootRow.CollectionCandidates.Should().ContainSingle();
         writeSet.RootRow.CollectionCandidates[0].AttachedAlignedScopeData.Should().ContainSingle();
         writeSet
@@ -126,10 +126,10 @@ public class Given_RelationalWriteContracts
     }
 
     [Test]
-    public void It_rejects_collection_aligned_extension_scope_rows_as_standalone_non_collection_rows()
+    public void It_rejects_collection_aligned_extension_scope_rows_as_root_extension_rows()
     {
         var act = () =>
-            new StandaloneScopeWriteRowBuffer(
+            new RootExtensionWriteRowBuffer(
                 _fixture.CollectionExtensionScopePlan,
                 values:
                 [
@@ -140,7 +140,7 @@ public class Given_RelationalWriteContracts
 
         act.Should()
             .Throw<ArgumentException>()
-            .WithMessage("*StandaloneScopeWriteRowBuffer*RootExtension*CollectionExtensionScope*");
+            .WithMessage("*RootExtensionWriteRowBuffer*RootExtension*CollectionExtensionScope*");
     }
 
     private sealed record ContractFixture(

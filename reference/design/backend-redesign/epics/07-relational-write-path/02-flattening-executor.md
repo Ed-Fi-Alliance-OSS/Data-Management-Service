@@ -21,7 +21,7 @@ Implement `DMS-983` as the initial non-descriptor relational write seam behind `
 - The backend-local flattening input contract uses `JsonNode` for the selected request body, wrapped in a small request type so later callers can change the body source without redesigning the flattener contract.
 - The flattener consumes the existing `ResolvedReferenceSet` at the repository boundary and adapts it into flattener-local hot-loop lookups rather than introducing a second request-wide reference-resolution contract.
 - Traverse the selected JSON once, tracking request sibling order and ordinal path for nested scopes.
-- Emit a shaped flattened result aligned to `DMS-984`: root/non-collection row buffers plus collection/common-type candidates. Collection-aligned 1:1 scopes whose keys depend on unresolved base `CollectionItemId` values stay attached to the owning collection candidate instead of being emitted as fully bound standalone rows.
+- Emit a shaped flattened result aligned to `DMS-984`: the root row, root-extension rows, and collection/common-type candidates. Collection-aligned 1:1 scopes whose keys depend on unresolved base `CollectionItemId` values stay attached to the owning collection candidate instead of being emitted as fully bound standalone rows.
 - Populate scalar columns from strict JSON value reads, FK columns from resolved `DocumentId` and `DescriptorId` values, and all non-storage-assigned precomputed bindings, including key-unification values and synthetic presence flags. Storage-assigned root `DocumentId` values and new `CollectionItemId` values remain unresolved for create flows.
 - Compute deterministic semantic collection identities for persisted multi-item collection scopes without evaluating profile rules in backend, and reject duplicate submitted semantic identities under the same stable parent in this story.
 - Profile-applied request-body selection remains out of scope here and is deferred to follow-on story `DMS-1123` / `reference/design/backend-redesign/epics/07-relational-write-path/02b-profile-applied-request-flattening.md`.
@@ -37,7 +37,7 @@ This re-scope intentionally separates the initial relational seam and backend fl
 - `POST` performs real create-vs-existing target-context selection before flattening, and `PUT` resolves the existing-document target context before flattening, including existing `DocumentId` and `DocumentUuid` values when known.
 - Relational writes call the real `IReferenceResolver`, preserve existing reference-failure semantics, and short-circuit before flattening and terminal-stage handoff when reference resolution fails.
 - Authorization remains out of scope for `DMS-983`; the relational seam leaves room for future authorization checks after reference resolution and before persistence without reshaping the flattener contract.
-- Flattening produces deterministic root/non-collection row buffers and collection candidates that preserve request sibling order.
+- Flattening produces a deterministic root row, root-extension rows, and collection candidates that preserve request sibling order.
 - References inside nested collections are written to the correct child rows using concrete-path resolution plus ordinal-path mapping.
 - Collection candidates carry the scope, ordinal-path, request-order, semantic-identity, and candidate-attached aligned-scope data needed for later binding to existing or newly reserved `CollectionItemId` values, including root-level and collection-aligned extension child collections.
 - Collection-aligned 1:1 scopes such as `$.addresses[*]._ext.sample` remain attached to the owning base collection candidate until stable `CollectionItemId` binding exists.
@@ -69,7 +69,7 @@ Authorization is out of scope for this story, but the new repository seam should
 ## Tasks
 
 1. Add the exclusive `UseRelationalBackend` repository swap in host composition for PostgreSQL and SQL Server so the relational repository becomes the only `IDocumentStoreRepository` when the flag is on.
-2. Define the backend-local `DMS-983` write contracts: operation kind, target context, `FlatteningInput`, `FlattenedWriteSet`, root/non-collection row buffers, collection candidates, candidate-attached aligned-scope data, and `IRelationalWriteTerminalStage`.
+2. Define the backend-local `DMS-983` write contracts: operation kind, target context, `FlatteningInput`, `FlattenedWriteSet`, the root row, root-extension rows, collection candidates, candidate-attached aligned-scope data, and `IRelationalWriteTerminalStage`.
 3. Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository, with deterministic guard rails for unsupported operations, descriptor writes, and missing non-descriptor relational-plan prerequisites.
 4. Add target-context selection ahead of flattening for `POST` and `PUT`, including real create-vs-existing detection and propagation of existing `DocumentId` and `DocumentUuid` values when known.
 5. Integrate `IReferenceResolver` into the relational repository flow and short-circuit on missing or incompatible document and descriptor references using the existing failure semantics.

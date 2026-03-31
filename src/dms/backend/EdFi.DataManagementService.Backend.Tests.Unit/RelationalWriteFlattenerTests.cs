@@ -84,9 +84,9 @@ public class Given_RelationalWriteFlattener
                 new FlattenedWriteValue.Literal(77L)
             );
 
-        result.RootRow.NonCollectionRows.Should().ContainSingle();
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
         result
-            .RootRow.NonCollectionRows[0]
+            .RootRow.RootExtensionRows[0]
             .Values.Should()
             .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal("Green"));
     }
@@ -120,9 +120,9 @@ public class Given_RelationalWriteFlattener
         var result = _sut.Flatten(flatteningInput);
 
         result.RootRow.CollectionCandidates.Should().BeEmpty();
-        result.RootRow.NonCollectionRows.Should().ContainSingle();
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
 
-        var extensionRow = result.RootRow.NonCollectionRows[0];
+        var extensionRow = result.RootRow.RootExtensionRows[0];
         extensionRow
             .Values.Should()
             .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal(null));
@@ -183,7 +183,7 @@ public class Given_RelationalWriteFlattener
         var result = _sut.Flatten(flatteningInput);
         var addressCandidate = result.RootRow.CollectionCandidates.Single();
 
-        result.RootRow.NonCollectionRows.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().BeEmpty();
         addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
         addressCandidate.CollectionCandidates.Should().BeEmpty();
         addressCandidate
@@ -547,7 +547,7 @@ public class Given_RelationalWriteFlattener
         result.RootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal(null));
         result.RootRow.Values[8].Should().Be(new FlattenedWriteValue.Literal(null));
         result.RootRow.Values[9].Should().Be(new FlattenedWriteValue.Literal(null));
-        result.RootRow.NonCollectionRows.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().BeEmpty();
     }
 
     [Test]
@@ -657,7 +657,7 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
 
-        result.RootRow.NonCollectionRows.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().BeEmpty();
     }
 
     [Test]
