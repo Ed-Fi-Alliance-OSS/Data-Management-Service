@@ -194,6 +194,51 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
+    public async Task It_surfaces_missing_resolved_reference_lookups_before_terminal_handoff()
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
+            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
+                documentUuid
+            ),
+            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                documentUuid
+            ),
+            terminalStageResultFactory: _ =>
+                throw new AssertionException("Terminal stage should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "schoolYear": 2026,
+                  "schoolReference": {
+                    "schoolId": 255901
+                  }
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: true,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        requestInfo.FrontendResponse.Body!["error"]!
+            .GetValue<string>()
+            .Should()
+            .Contain("resolved lookup set did not contain a matching 'Ed-Fi.School' entry")
+            .And.Contain("$.schoolReference");
+        harness.TerminalStage.Requests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_treats_the_selected_body_as_the_authoritative_input_at_the_core_seam()
     {
         var harness = RelationalWriteSeamHarness.Create(
@@ -232,8 +277,8 @@ public class Given_Relational_Write_Seam
             .Equal(
                 FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
                 new FlattenedWriteValue.Literal(2030),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null)
             );
         request.FlattenedWriteSet.RootRow.NonCollectionRows.Should().BeEmpty();
     }

@@ -551,6 +551,92 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_fails_when_a_root_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 255901
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Column 'School_DocumentId' on table 'edfi.Student' had a document reference value at path '$.schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path []*"
+            );
+    }
+
+    [Test]
+    public void It_fails_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-20",
+                          "schoolReference": {
+                            "schoolId": 255901
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Column 'School_DocumentId' on table 'edfi.StudentAddressPeriod' had a document reference value at path '$.addresses[0].periods[0].schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path [0, 0]*"
+            );
+    }
+
+    [Test]
+    public void It_fails_when_a_descriptor_value_is_present_but_missing_from_the_resolved_lookup_set()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "programTypeDescriptor": "uri://ed-fi.org/programtypedescriptor#stem"
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Column 'ProgramTypeDescriptorId' on table 'edfi.Student' had a descriptor value at path '$.programTypeDescriptor'*resolved lookup set did not contain a matching 'Ed-Fi.ProgramTypeDescriptor' entry for ordinal path []*"
+            );
+    }
+
+    [Test]
     public void It_does_not_emit_root_extension_rows_for_empty_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(

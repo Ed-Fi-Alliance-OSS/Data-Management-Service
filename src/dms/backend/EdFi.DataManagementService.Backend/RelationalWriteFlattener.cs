@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -967,11 +968,21 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 scalar,
                 selectedBodyIndex
             ),
-            WriteValueSource.DocumentReference documentReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath)
+            WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
+                flatteningInput,
+                tableWritePlan,
+                columnBinding,
+                documentReference,
+                resolvedReferenceLookups,
+                ordinalPath
             ),
-            WriteValueSource.DescriptorReference descriptorReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDescriptorId(tableWritePlan, descriptorReference, ordinalPath)
+            WriteValueSource.DescriptorReference descriptorReference => ResolveDescriptorReferenceValue(
+                tableWritePlan,
+                columnBinding,
+                descriptorReference,
+                flatteningInput.SelectedBody,
+                resolvedReferenceLookups,
+                ordinalPath
             ),
             WriteValueSource.Ordinal => throw CreateUnsupportedValueSourceException(
                 tableWritePlan,
@@ -1014,12 +1025,24 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 scalar,
                 scopeNode
             ),
-            WriteValueSource.DocumentReference documentReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath)
+            WriteValueSource.DocumentReference documentReference => ResolveScopeNodeDocumentReferenceValue(
+                flatteningInput,
+                tableWritePlan,
+                columnBinding,
+                documentReference,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
             ),
-            WriteValueSource.DescriptorReference descriptorReference => new FlattenedWriteValue.Literal(
-                resolvedReferenceLookups.GetDescriptorId(tableWritePlan, descriptorReference, ordinalPath)
-            ),
+            WriteValueSource.DescriptorReference descriptorReference =>
+                ResolveScopeNodeDescriptorReferenceValue(
+                    tableWritePlan,
+                    columnBinding,
+                    descriptorReference,
+                    scopeNode,
+                    resolvedReferenceLookups,
+                    ordinalPath
+                ),
             WriteValueSource.Ordinal => new FlattenedWriteValue.Literal(ordinal),
             WriteValueSource.Precomputed => throw new InvalidOperationException(
                 $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' "
@@ -1045,6 +1068,177 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw new InvalidOperationException(
             $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' requested parent key part index {parentKeyPart.Index}, but only {parentKeyParts.Count} parent key part values were available."
+        );
+    }
+
+    private static FlattenedWriteValue ResolveDocumentReferenceValue(
+        FlatteningInput flatteningInput,
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.DocumentReference documentReference,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        var binding = GetDocumentReferenceBinding(flatteningInput.WritePlan, documentReference);
+
+        if (
+            !TryGetScopeNode(flatteningInput.SelectedBody, binding.ReferenceObjectPath, out var referenceNode)
+            || referenceNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        var documentId = resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath);
+
+        if (documentId is not null)
+        {
+            return new FlattenedWriteValue.Literal(documentId.Value);
+        }
+
+        throw CreateMissingDocumentReferenceLookupException(
+            tableWritePlan,
+            columnBinding,
+            binding.ReferenceObjectPath.Canonical,
+            ordinalPath,
+            binding.TargetResource
+        );
+    }
+
+    private static FlattenedWriteValue ResolveScopeNodeDocumentReferenceValue(
+        FlatteningInput flatteningInput,
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.DocumentReference documentReference,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        var binding = GetDocumentReferenceBinding(flatteningInput.WritePlan, documentReference);
+        var relativeReferencePath = GetRelativePathWithinScope(tableWritePlan, binding.ReferenceObjectPath);
+
+        if (
+            !TryNavigateRelativeNode(scopeNode, relativeReferencePath, out var referenceNode)
+            || referenceNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        var documentId = resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath);
+
+        if (documentId is not null)
+        {
+            return new FlattenedWriteValue.Literal(documentId.Value);
+        }
+
+        throw CreateMissingDocumentReferenceLookupException(
+            tableWritePlan,
+            columnBinding,
+            binding.ReferenceObjectPath.Canonical,
+            ordinalPath,
+            binding.TargetResource
+        );
+    }
+
+    private static FlattenedWriteValue ResolveDescriptorReferenceValue(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.DescriptorReference descriptorReference,
+        JsonNode selectedBody,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetScopeNode(selectedBody, tableWritePlan.TableModel.JsonScope, out var scopeNode)
+            || scopeNode is null
+            || !TryGetRelativeLeafNode(scopeNode, descriptorReference.RelativePath, out var descriptorNode)
+            || descriptorNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        EnsureDescriptorValueNode(tableWritePlan, columnBinding, descriptorReference, descriptorNode);
+
+        var descriptorId = resolvedReferenceLookups.GetDescriptorId(
+            tableWritePlan,
+            descriptorReference,
+            ordinalPath
+        );
+
+        if (descriptorId is not null)
+        {
+            return new FlattenedWriteValue.Literal(descriptorId.Value);
+        }
+
+        throw CreateMissingDescriptorReferenceLookupException(
+            tableWritePlan,
+            columnBinding,
+            GetDescriptorAbsolutePath(tableWritePlan, descriptorReference),
+            ordinalPath,
+            descriptorReference.DescriptorResource
+        );
+    }
+
+    private static FlattenedWriteValue ResolveScopeNodeDescriptorReferenceValue(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.DescriptorReference descriptorReference,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetRelativeLeafNode(scopeNode, descriptorReference.RelativePath, out var descriptorNode)
+            || descriptorNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        EnsureDescriptorValueNode(tableWritePlan, columnBinding, descriptorReference, descriptorNode);
+
+        var descriptorId = resolvedReferenceLookups.GetDescriptorId(
+            tableWritePlan,
+            descriptorReference,
+            ordinalPath
+        );
+
+        if (descriptorId is not null)
+        {
+            return new FlattenedWriteValue.Literal(descriptorId.Value);
+        }
+
+        throw CreateMissingDescriptorReferenceLookupException(
+            tableWritePlan,
+            columnBinding,
+            GetDescriptorAbsolutePath(tableWritePlan, descriptorReference),
+            ordinalPath,
+            descriptorReference.DescriptorResource
+        );
+    }
+
+    private static void EnsureDescriptorValueNode(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.DescriptorReference descriptorReference,
+        JsonNode descriptorNode
+    )
+    {
+        if (descriptorNode is JsonValue jsonValue && jsonValue.TryGetValue<string>(out _))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' expected a descriptor URI string at path "
+                + $"'{GetDescriptorAbsolutePath(tableWritePlan, descriptorReference)}', but encountered JSON value kind "
+                + $"'{GetJsonValueKind(descriptorNode)}'."
         );
     }
 
@@ -1334,6 +1528,34 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var scopeSegments = RestrictedJsonPath.GetSegments(scopePath);
         return TryNavigateRelativeNode(selectedBody, scopeSegments, out scopeNode);
+    }
+
+    private static IReadOnlyList<JsonPathSegment> GetRelativePathWithinScope(
+        TableWritePlan tableWritePlan,
+        JsonPathExpression absolutePath
+    )
+    {
+        var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
+        var absoluteSegments = RestrictedJsonPath.GetSegments(absolutePath).ToArray();
+
+        if (absoluteSegments.Length < scopeSegments.Length)
+        {
+            throw new InvalidOperationException(
+                $"Path '{absolutePath.Canonical}' cannot be resolved relative to table scope '{tableWritePlan.TableModel.JsonScope.Canonical}'."
+            );
+        }
+
+        for (var segmentIndex = 0; segmentIndex < scopeSegments.Length; segmentIndex++)
+        {
+            if (scopeSegments[segmentIndex] != absoluteSegments[segmentIndex])
+            {
+                throw new InvalidOperationException(
+                    $"Path '{absolutePath.Canonical}' is not rooted under table scope '{tableWritePlan.TableModel.JsonScope.Canonical}'."
+                );
+            }
+        }
+
+        return absoluteSegments[scopeSegments.Length..];
     }
 
     private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
@@ -1647,6 +1869,42 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    private static InvalidOperationException CreateMissingDocumentReferenceLookupException(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        string wildcardPath,
+        ReadOnlySpan<int> ordinalPath,
+        QualifiedResourceName targetResource
+    )
+    {
+        var concretePath = MaterializeConcretePath(wildcardPath, ordinalPath);
+
+        return new InvalidOperationException(
+            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' had a document reference value at path "
+                + $"'{concretePath}', but the resolved lookup set did not contain a matching "
+                + $"'{RelationalWriteSupport.FormatResource(targetResource)}' entry for ordinal path "
+                + $"{FormatOrdinalPath(ordinalPath)}."
+        );
+    }
+
+    private static InvalidOperationException CreateMissingDescriptorReferenceLookupException(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        string wildcardPath,
+        ReadOnlySpan<int> ordinalPath,
+        QualifiedResourceName descriptorResource
+    )
+    {
+        var concretePath = MaterializeConcretePath(wildcardPath, ordinalPath);
+
+        return new InvalidOperationException(
+            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' had a descriptor value at path "
+                + $"'{concretePath}', but the resolved lookup set did not contain a matching "
+                + $"'{RelationalWriteSupport.FormatResource(descriptorResource)}' entry for ordinal path "
+                + $"{FormatOrdinalPath(ordinalPath)}."
+        );
+    }
+
     private static string FormatLiteral(object? value)
     {
         return value switch
@@ -1670,6 +1928,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return $"[{string.Join(", ", ordinalPath)}]";
     }
 
+    private static string FormatOrdinalPath(ReadOnlySpan<int> ordinalPath)
+    {
+        return $"[{string.Join(", ", ordinalPath.ToArray())}]";
+    }
+
     private static string GetJsonValueKind(JsonNode node)
     {
         return node switch
@@ -1683,6 +1946,84 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
         return $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
+    }
+
+    private static string GetDescriptorAbsolutePath(
+        TableWritePlan tableWritePlan,
+        WriteValueSource.DescriptorReference descriptorReference
+    )
+    {
+        return descriptorReference.DescriptorValuePath?.Canonical
+            ?? RestrictedJsonPath.CombineCanonical(
+                tableWritePlan.TableModel.JsonScope,
+                descriptorReference.RelativePath
+            );
+    }
+
+    private static DocumentReferenceBinding GetDocumentReferenceBinding(
+        ResourceWritePlan writePlan,
+        WriteValueSource.DocumentReference documentReference
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(documentReference);
+
+        if (
+            documentReference.BindingIndex < 0
+            || documentReference.BindingIndex >= writePlan.Model.DocumentReferenceBindings.Count
+        )
+        {
+            throw new InvalidOperationException(
+                $"Document-reference binding index {documentReference.BindingIndex} is out of range for resource "
+                    + $"'{RelationalWriteSupport.FormatResource(writePlan.Model.Resource)}'."
+            );
+        }
+
+        return writePlan.Model.DocumentReferenceBindings[documentReference.BindingIndex];
+    }
+
+    private static string MaterializeConcretePath(string wildcardPath, ReadOnlySpan<int> ordinalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
+
+        StringBuilder concretePath = new(wildcardPath.Length + ordinalPath.Length * 3);
+        var ordinalIndex = 0;
+        var pathIndex = 0;
+
+        while (pathIndex < wildcardPath.Length)
+        {
+            if (
+                pathIndex <= wildcardPath.Length - 3
+                && wildcardPath[pathIndex] == '['
+                && wildcardPath[pathIndex + 1] == '*'
+                && wildcardPath[pathIndex + 2] == ']'
+            )
+            {
+                if (ordinalIndex >= ordinalPath.Length)
+                {
+                    throw new InvalidOperationException(
+                        $"Path '{wildcardPath}' requires more ordinal components than were supplied."
+                    );
+                }
+
+                concretePath.Append('[').Append(ordinalPath[ordinalIndex]).Append(']');
+                ordinalIndex++;
+                pathIndex += 3;
+                continue;
+            }
+
+            concretePath.Append(wildcardPath[pathIndex]);
+            pathIndex++;
+        }
+
+        if (ordinalIndex != ordinalPath.Length)
+        {
+            throw new InvalidOperationException(
+                $"Path '{wildcardPath}' received {ordinalPath.Length} ordinal components, but only {ordinalIndex} wildcards were available."
+            );
+        }
+
+        return concretePath.ToString();
     }
 
     private sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
