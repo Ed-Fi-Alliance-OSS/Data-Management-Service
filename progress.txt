@@ -63,3 +63,9 @@ task: Root _ext flattening complete
 decisions: flattener now treats root extension rows as parents for extension child collections by indexing ExtensionCollection plans alongside core collections; root extension rows materialize when scalar/ref data exists or when root-level extension child candidates exist, so child collections can anchor the parent row while empty `_ext` objects/arrays still emit nothing
 files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 notes: collection-aligned _ext handling, seam integration coverage still pending
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Collection-aligned _ext flattening complete
+decisions: flattener now indexes CollectionExtensionScope plans separately from collection tables, attaches aligned scope rows to owning collection candidates instead of standalone buffers, and materializes aligned scope rows only when scope-local scalar data exists or aligned extension child collections need a parent anchor; aligned extension child collections recurse with owner ordinal path + stable parent keys so sibling order and semantic identity stay deterministic
+files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
+notes: seam integration coverage still pending

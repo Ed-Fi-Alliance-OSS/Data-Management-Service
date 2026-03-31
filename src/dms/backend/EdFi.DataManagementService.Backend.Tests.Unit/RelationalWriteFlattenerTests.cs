@@ -156,6 +156,147 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_attaches_collection_aligned_extension_scope_rows_to_the_owning_collection_candidate()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "addressLine1": "1 Main St",
+                      "_ext": {
+                        "sample": {
+                          "favoriteColor": "Purple"
+                        }
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+
+        result.RootRow.NonCollectionRows.Should().BeEmpty();
+        addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
+        addressCandidate.CollectionCandidates.Should().BeEmpty();
+        addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal("Purple")
+            );
+        addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_emits_collection_aligned_extension_child_collection_candidates_under_the_attached_scope()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {
+                          "services": [
+                            {
+                              "serviceName": "Bus"
+                            },
+                            {
+                              "serviceName": "Meal"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var alignedScope = result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Single();
+
+        alignedScope
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(null)
+            );
+
+        alignedScope.CollectionCandidates.Should().HaveCount(2);
+        alignedScope.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
+        alignedScope.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        alignedScope
+            .CollectionCandidates[0]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Bus")
+            );
+        alignedScope.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Bus");
+
+        alignedScope.CollectionCandidates[1].OrdinalPath.Should().Equal(0, 1);
+        alignedScope.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        alignedScope
+            .CollectionCandidates[1]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(1),
+                new FlattenedWriteValue.Literal("Meal")
+            );
+        alignedScope.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Meal");
+    }
+
+    [Test]
+    public void It_does_not_emit_collection_aligned_extension_scope_rows_for_empty_extension_sites()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {
+                          "services": []
+                        }
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_emits_top_level_collection_candidates_with_unresolved_keys_and_semantic_identity()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -746,6 +887,8 @@ public class Given_RelationalWriteFlattener
             var rootExtensionPlan = CreateRootExtensionPlan();
             var rootExtensionInterventionPlan = CreateRootExtensionInterventionPlan();
             var addressPlan = CreateAddressPlan();
+            var addressExtensionPlan = CreateAddressExtensionPlan();
+            var addressExtensionServicePlan = CreateAddressExtensionServicePlan();
             var addressPeriodPlan = CreateAddressPeriodPlan();
 
             var resourceModel = new RelationalResourceModel(
@@ -759,6 +902,8 @@ public class Given_RelationalWriteFlattener
                     rootExtensionPlan.TableModel,
                     rootExtensionInterventionPlan.TableModel,
                     addressPlan.TableModel,
+                    addressExtensionPlan.TableModel,
+                    addressExtensionServicePlan.TableModel,
                     addressPeriodPlan.TableModel,
                 ],
                 DocumentReferenceBindings:
@@ -802,6 +947,8 @@ public class Given_RelationalWriteFlattener
                         rootExtensionPlan,
                         rootExtensionInterventionPlan,
                         addressPlan,
+                        addressExtensionPlan,
+                        addressExtensionServicePlan,
                         addressPeriodPlan,
                     ]
                 ),
@@ -1526,6 +1673,180 @@ public class Given_RelationalWriteFlattener
                     StableRowIdentityBindingIndex: 0,
                     UpdateByStableRowIdentitySql: "update edfi.\"StudentAddressPeriod\" set \"BeginDate\" = @BeginDate where \"CollectionItemId\" = @CollectionItemId",
                     DeleteByStableRowIdentitySql: "delete from edfi.\"StudentAddressPeriod\" where \"CollectionItemId\" = @CollectionItemId",
+                    OrdinalBindingIndex: 3,
+                    CompareBindingIndexesInOrder: [4, 3]
+                ),
+                CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                    new DbColumnName("CollectionItemId"),
+                    0
+                )
+            );
+        }
+
+        private static TableWritePlan CreateAddressExtensionPlan()
+        {
+            var tableModel = new DbTableModel(
+                Table: new DbTableName(new DbSchemaName("sample"), "StudentExtensionAddress"),
+                JsonScope: CreatePath(
+                    "$.addresses[*]._ext.sample",
+                    new JsonPathSegment.Property("addresses"),
+                    new JsonPathSegment.AnyArrayElement(),
+                    new JsonPathSegment.Property("_ext"),
+                    new JsonPathSegment.Property("sample")
+                ),
+                Key: new TableKey(
+                    "PK_StudentExtensionAddress",
+                    [new DbKeyColumn(new DbColumnName("BaseCollectionItemId"), ColumnKind.ParentKeyPart)]
+                ),
+                Columns:
+                [
+                    CreateColumn("BaseCollectionItemId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn(
+                        "FavoriteColor",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                        isNullable: true,
+                        sourceJsonPath: CreatePath(
+                            "$.favoriteColor",
+                            new JsonPathSegment.Property("favoriteColor")
+                        )
+                    ),
+                ],
+                Constraints: []
+            )
+            {
+                IdentityMetadata = new DbTableIdentityMetadata(
+                    TableKind: DbTableKind.CollectionExtensionScope,
+                    PhysicalRowIdentityColumns: [new DbColumnName("BaseCollectionItemId")],
+                    RootScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                    ImmediateParentScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                    SemanticIdentityBindings: []
+                ),
+            };
+
+            return new TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "insert into sample.\"StudentExtensionAddress\" values (@BaseCollectionItemId, @FavoriteColor)",
+                UpdateSql: "update sample.\"StudentExtensionAddress\" set \"FavoriteColor\" = @FavoriteColor where \"BaseCollectionItemId\" = @BaseCollectionItemId",
+                DeleteByParentSql: "delete from sample.\"StudentExtensionAddress\" where \"BaseCollectionItemId\" = @BaseCollectionItemId",
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings:
+                [
+                    new WriteColumnBinding(
+                        tableModel.Columns[0],
+                        new WriteValueSource.ParentKeyPart(0),
+                        "BaseCollectionItemId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        new WriteValueSource.Scalar(
+                            CreatePath("$.favoriteColor", new JsonPathSegment.Property("favoriteColor")),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                        ),
+                        "FavoriteColor"
+                    ),
+                ],
+                KeyUnificationPlans: []
+            );
+        }
+
+        private static TableWritePlan CreateAddressExtensionServicePlan()
+        {
+            var tableModel = new DbTableModel(
+                Table: new DbTableName(new DbSchemaName("sample"), "StudentExtensionAddressService"),
+                JsonScope: CreatePath(
+                    "$.addresses[*]._ext.sample.services[*]",
+                    new JsonPathSegment.Property("addresses"),
+                    new JsonPathSegment.AnyArrayElement(),
+                    new JsonPathSegment.Property("_ext"),
+                    new JsonPathSegment.Property("sample"),
+                    new JsonPathSegment.Property("services"),
+                    new JsonPathSegment.AnyArrayElement()
+                ),
+                Key: new TableKey(
+                    "PK_StudentExtensionAddressService",
+                    [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                ),
+                Columns:
+                [
+                    CreateColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                    CreateColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn("BaseCollectionItemId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                    CreateColumn(
+                        "ServiceName",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                        isNullable: false,
+                        sourceJsonPath: CreatePath(
+                            "$.serviceName",
+                            new JsonPathSegment.Property("serviceName")
+                        )
+                    ),
+                ],
+                Constraints: []
+            )
+            {
+                IdentityMetadata = new DbTableIdentityMetadata(
+                    TableKind: DbTableKind.ExtensionCollection,
+                    PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                    RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    ImmediateParentScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionSemanticIdentityBinding(
+                            CreatePath("$.serviceName", new JsonPathSegment.Property("serviceName")),
+                            new DbColumnName("ServiceName")
+                        ),
+                    ]
+                ),
+            };
+
+            return new TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "insert into sample.\"StudentExtensionAddressService\" values (@CollectionItemId, @Student_DocumentId, @BaseCollectionItemId, @Ordinal, @ServiceName)",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings:
+                [
+                    new WriteColumnBinding(
+                        tableModel.Columns[0],
+                        new WriteValueSource.Precomputed(),
+                        "CollectionItemId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        new WriteValueSource.DocumentId(),
+                        "Student_DocumentId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[2],
+                        new WriteValueSource.ParentKeyPart(0),
+                        "BaseCollectionItemId"
+                    ),
+                    new WriteColumnBinding(tableModel.Columns[3], new WriteValueSource.Ordinal(), "Ordinal"),
+                    new WriteColumnBinding(
+                        tableModel.Columns[4],
+                        new WriteValueSource.Scalar(
+                            CreatePath("$.serviceName", new JsonPathSegment.Property("serviceName")),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                        ),
+                        "ServiceName"
+                    ),
+                ],
+                KeyUnificationPlans: [],
+                CollectionMergePlan: new CollectionMergePlan(
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionMergeSemanticIdentityBinding(
+                            CreatePath("$.serviceName", new JsonPathSegment.Property("serviceName")),
+                            4
+                        ),
+                    ],
+                    StableRowIdentityBindingIndex: 0,
+                    UpdateByStableRowIdentitySql: "update sample.\"StudentExtensionAddressService\" set \"ServiceName\" = @ServiceName where \"CollectionItemId\" = @CollectionItemId",
+                    DeleteByStableRowIdentitySql: "delete from sample.\"StudentExtensionAddressService\" where \"CollectionItemId\" = @CollectionItemId",
                     OrdinalBindingIndex: 3,
                     CompareBindingIndexesInOrder: [4, 3]
                 ),

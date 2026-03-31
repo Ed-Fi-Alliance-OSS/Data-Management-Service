@@ -30,7 +30,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             flatteningInput.ResolvedReferences
         );
         var rootDocumentIdValue = ResolveRootDocumentIdValue(flatteningInput.TargetContext);
-        var collectionChildPlansByParentScope = BuildCollectionChildPlansByParentScope(writePlan);
+        var traversalPlans = new TraversalPlans(
+            BuildCollectionChildPlansByParentScope(writePlan),
+            BuildAttachedAlignedScopePlansByParentScope(writePlan)
+        );
 
         var rootRow = new RootWriteRowBuffer(
             tableWritePlan: rootTablePlan,
@@ -47,11 +50,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 selectedBodyIndex,
                 resolvedReferenceLookups,
                 rootDocumentIdValue,
-                collectionChildPlansByParentScope
+                traversalPlans
             ),
             collectionCandidates: MaterializeCollectionCandidates(
                 flatteningInput,
-                collectionChildPlansByParentScope,
+                traversalPlans,
                 rootTablePlan.TableModel.JsonScope.Canonical,
                 flatteningInput.SelectedBody,
                 parentKeyParts: [],
@@ -136,12 +139,61 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<AttachedAlignedScopePlan>
+    > BuildAttachedAlignedScopePlansByParentScope(ResourceWritePlan writePlan)
+    {
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        Dictionary<string, List<AttachedAlignedScopePlan>> plansByParentScope = new(StringComparer.Ordinal);
+
+        foreach (
+            var tableWritePlan in writePlan.TablePlansInDependencyOrder.Where(static plan =>
+                plan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope
+            )
+        )
+        {
+            var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
+
+            if (
+                scopeSegments.Length < 2
+                || scopeSegments[^2] is not JsonPathSegment.Property extensionMarker
+                || scopeSegments[^1] is not JsonPathSegment.Property
+                || !string.Equals(extensionMarker.Name, "_ext", StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Collection-aligned extension table '{FormatTable(tableWritePlan)}' does not have a canonical aligned scope."
+                );
+            }
+
+            var parentScopeSegments = scopeSegments[..^2];
+            var parentScopeCanonical = RestrictedJsonPath.BuildCanonical(parentScopeSegments);
+            var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
+
+            if (!plansByParentScope.TryGetValue(parentScopeCanonical, out var plans))
+            {
+                plans = [];
+                plansByParentScope.Add(parentScopeCanonical, plans);
+            }
+
+            plans.Add(new AttachedAlignedScopePlan(tableWritePlan, [.. relativeScopeSegments]));
+        }
+
+        return plansByParentScope.ToDictionary(
+            static entry => entry.Key,
+            static entry => (IReadOnlyList<AttachedAlignedScopePlan>)entry.Value,
+            StringComparer.Ordinal
+        );
+    }
+
     private static IEnumerable<StandaloneScopeWriteRowBuffer> MaterializeRootExtensionRows(
         FlatteningInput flatteningInput,
         SelectedBodyIndex selectedBodyIndex,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         FlattenedWriteValue rootDocumentIdValue,
-        IReadOnlyDictionary<string, IReadOnlyList<CollectionChildPlan>> collectionChildPlansByParentScope
+        TraversalPlans traversalPlans
     )
     {
         var rootParentKeyParts = new[] { rootDocumentIdValue };
@@ -174,7 +226,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             var collectionCandidates = MaterializeCollectionCandidates(
                 flatteningInput,
-                collectionChildPlansByParentScope,
+                traversalPlans,
                 tableWritePlan.TableModel.JsonScope.Canonical,
                 scopeObject,
                 rootParentKeyParts,
@@ -208,7 +260,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private static IReadOnlyList<CollectionWriteCandidate> MaterializeCollectionCandidates(
         FlatteningInput flatteningInput,
-        IReadOnlyDictionary<string, IReadOnlyList<CollectionChildPlan>> collectionChildPlansByParentScope,
+        TraversalPlans traversalPlans,
         string parentScopeCanonical,
         JsonNode parentScopeNode,
         IReadOnlyList<FlattenedWriteValue> parentKeyParts,
@@ -217,7 +269,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     )
     {
         if (
-            !collectionChildPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans)
+            !traversalPlans.CollectionChildPlansByParentScope.TryGetValue(
+                parentScopeCanonical,
+                out var childPlans
+            )
             || childPlans.Count == 0
         )
         {
@@ -272,7 +327,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 var childParentKeyParts = GetPhysicalRowIdentityValues(childPlan.TableWritePlan, values);
                 var nestedCollectionCandidates = MaterializeCollectionCandidates(
                     flatteningInput,
-                    collectionChildPlansByParentScope,
+                    traversalPlans,
+                    childPlan.TableWritePlan.TableModel.JsonScope.Canonical,
+                    collectionScopeInstance.ScopeNode,
+                    childParentKeyParts,
+                    ordinalPath,
+                    resolvedReferenceLookups
+                );
+                var attachedAlignedScopeData = MaterializeAttachedAlignedScopeData(
+                    flatteningInput,
+                    traversalPlans,
                     childPlan.TableWritePlan.TableModel.JsonScope.Canonical,
                     collectionScopeInstance.ScopeNode,
                     childParentKeyParts,
@@ -287,6 +351,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         collectionScopeInstance.RequestOrder,
                         values,
                         semanticIdentityValues,
+                        attachedAlignedScopeData,
                         collectionCandidates: nestedCollectionCandidates
                     )
                 );
@@ -294,6 +359,86 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return collectionCandidates;
+    }
+
+    private static IReadOnlyList<CandidateAttachedAlignedScopeData> MaterializeAttachedAlignedScopeData(
+        FlatteningInput flatteningInput,
+        TraversalPlans traversalPlans,
+        string parentScopeCanonical,
+        JsonNode parentScopeNode,
+        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
+        ReadOnlySpan<int> parentOrdinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (
+            !traversalPlans.AttachedAlignedScopePlansByParentScope.TryGetValue(
+                parentScopeCanonical,
+                out var attachedScopePlans
+            )
+            || attachedScopePlans.Count == 0
+        )
+        {
+            return [];
+        }
+
+        List<CandidateAttachedAlignedScopeData> attachedScopeData = [];
+
+        foreach (var attachedScopePlan in attachedScopePlans)
+        {
+            if (
+                !TryNavigateRelativeNode(
+                    parentScopeNode,
+                    attachedScopePlan.RelativeScopeSegments,
+                    out var scopeNode
+                ) || scopeNode is null
+            )
+            {
+                continue;
+            }
+
+            if (scopeNode is not JsonObject scopeObject)
+            {
+                throw new InvalidOperationException(
+                    $"Collection-aligned extension table '{FormatTable(attachedScopePlan.TableWritePlan)}' expected a JSON object at path "
+                        + $"'{attachedScopePlan.TableWritePlan.TableModel.JsonScope.Canonical}', but encountered "
+                        + $"'{scopeNode.GetType().Name}'."
+                );
+            }
+
+            var childCollectionCandidates = MaterializeCollectionCandidates(
+                flatteningInput,
+                traversalPlans,
+                attachedScopePlan.TableWritePlan.TableModel.JsonScope.Canonical,
+                scopeObject,
+                parentKeyParts,
+                parentOrdinalPath,
+                resolvedReferenceLookups
+            );
+
+            if (!HasBoundScopeData(scopeObject) && childCollectionCandidates.Count == 0)
+            {
+                continue;
+            }
+
+            attachedScopeData.Add(
+                new CandidateAttachedAlignedScopeData(
+                    attachedScopePlan.TableWritePlan,
+                    MaterializeScopeNodeValues(
+                        flatteningInput,
+                        attachedScopePlan.TableWritePlan,
+                        scopeObject,
+                        resolvedReferenceLookups,
+                        parentKeyParts,
+                        ordinal: 0,
+                        ordinalPath: parentOrdinalPath
+                    ),
+                    childCollectionCandidates
+                )
+            );
+        }
+
+        return attachedScopeData;
     }
 
     private static IReadOnlyList<FlattenedWriteValue> MaterializeValues(
@@ -1166,6 +1311,21 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return TryNavigateRelativeNode(scopeNode, segments, out value);
     }
 
+    private static bool HasBoundScopeData(JsonNode scopeNode)
+    {
+        ArgumentNullException.ThrowIfNull(scopeNode);
+
+        return scopeNode switch
+        {
+            JsonObject jsonObject => jsonObject.Any(static property =>
+                property.Value is not JsonArray
+                && (property.Value is null || HasBoundScopeData(property.Value))
+            ),
+            JsonArray => false,
+            _ => true,
+        };
+    }
+
     private static bool TryGetScopeNode(
         JsonNode selectedBody,
         JsonPathExpression scopePath,
@@ -1538,6 +1698,19 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     private sealed record CollectionChildPlan(
         TableWritePlan TableWritePlan,
         ImmutableArray<JsonPathSegment> RelativeScopeSegments
+    );
+
+    private sealed record AttachedAlignedScopePlan(
+        TableWritePlan TableWritePlan,
+        ImmutableArray<JsonPathSegment> RelativeScopeSegments
+    );
+
+    private sealed record TraversalPlans(
+        IReadOnlyDictionary<string, IReadOnlyList<CollectionChildPlan>> CollectionChildPlansByParentScope,
+        IReadOnlyDictionary<
+            string,
+            IReadOnlyList<AttachedAlignedScopePlan>
+        > AttachedAlignedScopePlansByParentScope
     );
 
     private sealed record CollectionScopeInstance(int RequestOrder, JsonObject ScopeNode);
