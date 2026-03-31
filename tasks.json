@@ -19,7 +19,7 @@
   },
   {
     "category": "Repository",
-    "description": "Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository. Acceptance: POST and PUT for non-descriptor resources enter the relational seam; GET and DELETE fail fast with `UnknownFailure` and precise not-implemented messages; descriptor POST and PUT also fail fast with precise not-implemented messages; missing non-descriptor `ResourceWritePlan` and unsupported relational gaps return deterministic `UnknownFailure` messages; missing `MappingSet` remains owned by the existing middleware-level 503 behavior instead of being remapped inside the repository; no legacy fallback path is used anywhere.",
+    "description": "Implement `RelationalDocumentStoreRepository` as the exclusive opt-in write repository. Acceptance: POST and PUT for non-descriptor resources enter the relational seam; GET and DELETE fail fast with `UnknownFailure` and precise not-implemented messages; descriptor POST and PUT also fail fast with precise not-implemented messages; missing non-descriptor `ResourceWritePlan` and unsupported relational gaps return deterministic `UnknownFailure` messages; no legacy fallback path is used anywhere.",
     "steps-to-verify": [
       "Add backend/unit tests for unsupported operations, descriptor writes, and missing-plan guard rails.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
@@ -56,7 +56,7 @@
   },
   {
     "category": "Flattening",
-    "description": "Implement the initial flattener walker for the root table and non-collection scopes. Acceptance: traversal reads the selected body once, emits deterministic row buffers in `TableWritePlan.ColumnBindings` order for the root table and present non-collection scopes, treats the selected body as authoritative input, performs strict scalar reading against compiled types, and does not invoke a general-purpose JSONPath engine in the hot loop.",
+    "description": "Implement the initial flattener walker for the root table and the DMS-983-supported extension scopes. Acceptance: traversal reads the selected body once, emits deterministic values in `TableWritePlan.ColumnBindings` order for the root table and present root-extension scopes, treats the selected body as authoritative input, performs strict scalar reading against compiled types, and does not invoke a general-purpose JSONPath engine in the hot loop.",
     "steps-to-verify": [
       "Add backend/unit fixture tests for root and non-collection row emission, including a supplied-body-is-authoritative case.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
@@ -103,7 +103,7 @@
   },
   {
     "category": "Terminal Stage",
-    "description": "Implement `IRelationalWriteTerminalStage` orchestration and a production default stage for DMS-983. Acceptance: after successful plan selection, authorization, reference resolution, and flattening, the repository invokes the terminal stage with operation kind, target context, `ResourceWritePlan`, selected body, `ResolvedReferenceSet`, flattened output, and trace or diagnostic identifiers; the default production stage returns `UnknownFailure` with a precise not-implemented message; tests can substitute a capturing fake without changing repository logic.",
+    "description": "Implement `IRelationalWriteTerminalStage` orchestration and a production default stage for DMS-983. Acceptance: after successful plan selection, target-context resolution, reference resolution, and flattening, the repository invokes the terminal stage with operation kind, target context, `ResourceWritePlan`, selected body, `ResolvedReferenceSet`, flattened output, and trace or diagnostic identifiers; the default production stage returns `UnknownFailure` with a precise not-implemented message; tests can substitute a capturing fake without changing repository logic.",
     "steps-to-verify": [
       "Add backend/unit tests for terminal-stage invocation, default not-implemented behavior, and capture-stage substitution.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
@@ -153,9 +153,9 @@
   },
   {
     "category": "Middleware",
-    "description": "Align missing-mapping-set behavior across middleware, handlers, and the relational repository. Acceptance: the code has one consistent contract for `MappingSet` absence: either the repository handles the case with a deterministic relational-path failure consistent with the middleware-owned 503 behavior, or the middleware and handler comments and tests stop claiming downstream code tolerates a null mapping set. No supported execution path should end in an uncaught `ArgumentNullException` because `MappingSet` was absent.",
+    "description": "Clarify and align the missing-`MappingSet` contract across middleware, handlers, repository tests, and comments. Acceptance: missing `MappingSet` remains middleware-owned for supported execution paths; middleware, handler, and repository-seam comments no longer claim null-tolerant downstream behavior if that is not actually supported; seam tests prove the supported relational path does not rely on an uncaught `ArgumentNullException`; no supported execution path ends in an uncaught `ArgumentNullException` because `MappingSet` was absent.",
     "steps-to-verify": [
-      "Add or update unit tests so the agreed contract is enforced at the middleware and repository seam, including one case that proves the supported execution path does not rely on an uncaught null-argument exception.",
+      "Add or update unit tests and comments so the middleware-owned contract is explicit and the supported execution path does not rely on an uncaught null-argument exception.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~ResolveMappingSetMiddleware`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`"
     ],
