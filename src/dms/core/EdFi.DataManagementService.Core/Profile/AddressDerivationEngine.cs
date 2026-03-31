@@ -125,6 +125,15 @@ public class AddressDerivationEngine(IReadOnlyList<CompiledScopeDescriptor> scop
         return new ScopeInstanceAddress(parentJsonScope, combined);
     }
 
+    /// <summary>
+    /// Returns whether the specified scope has collection ancestors in its traversal path.
+    /// Scopes with collection ancestors require concrete ancestor item context for address
+    /// derivation and cannot be addressed with an empty ancestor list.
+    /// </summary>
+    public bool HasCollectionAncestors(string jsonScope) =>
+        _scopesByJsonScope.TryGetValue(jsonScope, out var descriptor)
+        && !descriptor.CollectionAncestorsInOrder.IsEmpty;
+
     private CompiledScopeDescriptor ResolveDescriptor(string jsonScope)
     {
         if (!_scopesByJsonScope.TryGetValue(jsonScope, out var descriptor))
