@@ -23,7 +23,8 @@ internal record UpdateRequest(
     /// </summary>
     DocumentInfo DocumentInfo,
     /// <summary>
-    /// The resolved runtime mapping set for the active request.
+    /// The resolved runtime mapping set for the active request when relational
+    /// request handling is enabled.
     /// </summary>
     MappingSet? MappingSet,
     /// <summary>

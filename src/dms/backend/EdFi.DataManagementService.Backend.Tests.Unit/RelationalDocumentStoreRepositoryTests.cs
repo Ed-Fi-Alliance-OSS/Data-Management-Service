@@ -16,7 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
-public class Given_RelationalDocumentStoreRepository
+public class Given_RelationalDocumentStoreRepositoryTests
 {
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(

@@ -315,7 +315,7 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public void It_allows_missing_mapping_set_exceptions_to_escape_the_handler()
+    public void It_keeps_missing_mapping_set_as_a_defensive_invariant_for_direct_handler_calls()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,

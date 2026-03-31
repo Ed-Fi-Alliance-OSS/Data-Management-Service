@@ -208,9 +208,9 @@ public class ResolveMappingSetMiddlewareTests
         }
 
         [Test]
-        public void It_calls_next()
+        public void It_does_not_call_next()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
         }
 
         [Test]
@@ -223,6 +223,23 @@ public class ResolveMappingSetMiddlewareTests
         public void It_does_not_set_mapping_set_on_request_info()
         {
             _requestInfo.MappingSet.Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_a_mapping_set_unavailable_response()
+        {
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Mapping Set Unavailable");
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Database fingerprint was not resolved before mapping set resolution");
         }
     }
 

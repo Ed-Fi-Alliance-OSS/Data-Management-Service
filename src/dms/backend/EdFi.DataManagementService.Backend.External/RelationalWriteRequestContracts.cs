@@ -15,7 +15,8 @@ public interface IRelationalWriteRequest
 {
     /// <summary>
     /// The resolved runtime mapping set for the active request.
-    /// Null when relational backend resolution is disabled or short-circuited earlier in the pipeline.
+    /// Supported relational middleware-owned execution paths populate this before repository
+    /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
     /// </summary>
     MappingSet? MappingSet { get; }
 }

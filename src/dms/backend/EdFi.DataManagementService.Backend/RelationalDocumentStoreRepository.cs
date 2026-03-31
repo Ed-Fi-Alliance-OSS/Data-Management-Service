@@ -37,6 +37,8 @@ public sealed class RelationalDocumentStoreRepository(
             upsertRequest,
             nameof(upsertRequest)
         );
+        var mappingSet = relationalUpsertRequest.MappingSet;
+        ArgumentNullException.ThrowIfNull(mappingSet);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",
@@ -46,7 +48,7 @@ public sealed class RelationalDocumentStoreRepository(
         return ExecuteWriteGuardRails<UpsertResult>(
             requestBody: relationalUpsertRequest.EdfiDoc,
             traceId: relationalUpsertRequest.TraceId,
-            relationalUpsertRequest.MappingSet,
+            mappingSet,
             relationalUpsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
@@ -103,6 +105,8 @@ public sealed class RelationalDocumentStoreRepository(
             updateRequest,
             nameof(updateRequest)
         );
+        var mappingSet = relationalUpdateRequest.MappingSet;
+        ArgumentNullException.ThrowIfNull(mappingSet);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpdateDocumentById - {TraceId}",
@@ -112,7 +116,7 @@ public sealed class RelationalDocumentStoreRepository(
         return ExecuteWriteGuardRails<UpdateResult>(
             requestBody: relationalUpdateRequest.EdfiDoc,
             traceId: relationalUpdateRequest.TraceId,
-            relationalUpdateRequest.MappingSet,
+            mappingSet,
             relationalUpdateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
@@ -176,7 +180,7 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
         System.Text.Json.Nodes.JsonNode requestBody,
         TraceId traceId,
-        MappingSet? mappingSet,
+        MappingSet mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
         IReadOnlyList<DocumentReference> documentReferences,
@@ -195,7 +199,6 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
         ArgumentNullException.ThrowIfNull(terminalResultProjector);
-        ArgumentNullException.ThrowIfNull(mappingSet);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
 
