@@ -10,7 +10,7 @@
   },
   {
     "category": "Contracts",
-    "description": "Define the backend-local DMS-983 write contracts: relational operation kind, target context, `FlatteningInput`, `FlattenedWriteSet`, root/non-collection row buffers, collection candidates, candidate-attached aligned-scope data, and `IRelationalWriteTerminalStage`. Acceptance: contracts use the selected `JsonNode` body rather than Core profile types, root `DocumentId` and new `CollectionItemId` remain unresolved for create flows, and collection-aligned 1:1 scopes such as `$.addresses[*]._ext.sample` remain attached to the owning collection candidate instead of being emitted as standalone bound rows.",
+    "description": "Define the backend-local DMS-983 write contracts actually supported in this branch: relational operation kind, target context, `FlatteningInput`, `FlattenedWriteSet`, root row buffer, root-extension rows, collection candidates, candidate-attached aligned-scope data, and `IRelationalWriteTerminalStage`. Acceptance: contracts use the selected `JsonNode` body rather than Core profile types, root `DocumentId` and new `CollectionItemId` remain unresolved for create flows, and collection-aligned 1:1 scopes such as `$.addresses[*]._ext.sample` remain attached to the owning collection candidate instead of being emitted as standalone bound rows.",
     "steps-to-verify": [
       "Add backend/unit contract tests that lock down the unresolved-key and candidate-attached-scope behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
@@ -132,7 +132,7 @@
   },
   {
     "category": "Contracts",
-    "description": "Narrow and simplify the DMS-983 standalone-scope contract so it matches the compiler shapes that can actually exist today. Acceptance: the branch no longer advertises generic base-resource non-collection row support when the current compiler cannot emit it; `StandaloneScopeWriteRowBuffer`, `NonCollectionRows`, related comments, and the DMS-983 design story are either explicitly root-extension-scoped or are generalized end-to-end with real coverage; no dead or misleading contract surface remains that implies support for unsupported separate-table 1:1 base scopes.",
+    "description": "Narrow and simplify the DMS-983 standalone-scope contract so it matches the compiler shapes that can actually exist today. Acceptance: the branch no longer advertises generic base-resource non-collection row support when the current compiler cannot emit it; `StandaloneScopeWriteRowBuffer`, `NonCollectionRows`, related comments, and the DMS-983 design story are explicitly root-extension-scoped; no dead or misleading contract surface remains that implies support for unsupported separate-table 1:1 base scopes.",
     "steps-to-verify": [
       "Update backend contract tests and flattener tests to lock down the final supported scope inventory and reject or omit impossible shapes consistently.",
       "Update the DMS-983 story text so its contract language matches the runtime contract checked into code.",
@@ -153,7 +153,7 @@
   },
   {
     "category": "Middleware",
-    "description": "Clarify and align the missing-`MappingSet` contract across middleware, handlers, repository tests, and comments. Acceptance: missing `MappingSet` remains middleware-owned for supported execution paths; middleware, handler, and repository-seam comments no longer claim null-tolerant downstream behavior if that is not actually supported; seam tests prove the supported relational path does not rely on an uncaught `ArgumentNullException`; no supported execution path ends in an uncaught `ArgumentNullException` because `MappingSet` was absent.",
+    "description": "Clarify and align the missing-`MappingSet` contract across middleware, handlers, repository tests, and comments. Acceptance: missing `MappingSet` remains middleware-owned for supported execution paths and surfaces as a deterministic 503 before repository execution; middleware, handler, and repository-seam comments no longer claim null-tolerant downstream behavior if that is not actually supported; seam tests prove the supported relational path does not rely on an uncaught `ArgumentNullException`; the repository may keep null-argument checks as defensive invariants for unsupported direct-call scenarios, but no supported execution path ends in an uncaught `ArgumentNullException` because `MappingSet` was absent.",
     "steps-to-verify": [
       "Add or update unit tests and comments so the middleware-owned contract is explicit and the supported execution path does not rely on an uncaught null-argument exception.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~ResolveMappingSetMiddleware`",
