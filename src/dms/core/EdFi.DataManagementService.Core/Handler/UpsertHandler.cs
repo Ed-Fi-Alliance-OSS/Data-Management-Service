@@ -155,6 +155,10 @@ internal class UpsertHandler(
                 ),
                 Headers: []
             ),
+            UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            ),
             UnknownFailure failure => new(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

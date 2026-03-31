@@ -239,6 +239,103 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
+    public async Task It_surfaces_duplicate_semantic_identity_failures_as_data_validation_before_terminal_handoff()
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
+            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
+                documentUuid
+            ),
+            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                documentUuid
+            ),
+            terminalStageResultFactory: _ =>
+                throw new AssertionException("Terminal stage should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home"
+                    },
+                    {
+                      "addressType": "Home"
+                    }
+                  ]
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.addresses[1]"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("duplicate semantic identity values ['Home']");
+        harness.TerminalStage.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_surfaces_scalar_read_failures_as_data_validation_before_terminal_handoff()
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            resolvedReferences: _fixture.ResolvedReferences,
+            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
+                documentUuid
+            ),
+            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                documentUuid
+            ),
+            terminalStageResultFactory: _ =>
+                throw new AssertionException("Terminal stage should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "schoolYear": "2026"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.schoolYear"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("expected scalar kind 'Int32'");
+        harness.TerminalStage.Requests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_treats_the_selected_body_as_the_authoritative_input_at_the_core_seam()
     {
         var harness = RelationalWriteSeamHarness.Create(

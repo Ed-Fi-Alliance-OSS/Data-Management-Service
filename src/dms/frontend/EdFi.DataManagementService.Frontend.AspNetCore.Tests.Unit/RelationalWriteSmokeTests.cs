@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -314,6 +315,41 @@ public class Given_A_Host_Using_The_Relational_Backend
             .Be("Smoke Widget");
     }
 
+    [Test]
+    public async Task It_returns_bad_request_when_the_relational_flattener_reports_request_validation_failure()
+    {
+        _flattener.FailureToThrow = RelationalWriteRequestValidationException.ForPath(
+            "$.widgetName",
+            "Widget name failed a relational write validation guard rail."
+        );
+
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":101,"widgetName":"Smoke Widget"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var body = JsonNode.Parse(responseBody)!.AsObject();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["validationErrors"]!["$.widgetName"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Be("Widget name failed a relational write validation guard rail.");
+        _flattener.Inputs.Should().ContainSingle();
+        _terminalStage.Requests.Should().BeEmpty();
+    }
+
     private sealed class EffectiveSchemaFingerprintReader(
         IEffectiveSchemaSetProvider effectiveSchemaSetProvider
     ) : IDatabaseFingerprintReader
@@ -344,10 +380,16 @@ public class Given_A_Host_Using_The_Relational_Backend
     private sealed class CapturingRelationalWriteFlattener : IRelationalWriteFlattener
     {
         public List<FlatteningInput> Inputs { get; } = [];
+        public Exception? FailureToThrow { get; set; }
 
         public FlattenedWriteSet Flatten(FlatteningInput flatteningInput)
         {
             Inputs.Add(flatteningInput);
+
+            if (FailureToThrow is not null)
+            {
+                throw FailureToThrow;
+            }
 
             var rootPlan = flatteningInput.WritePlan.TablePlansInDependencyOrder.Single(plan =>
                 plan.TableModel.IdentityMetadata.TableKind == DbTableKind.Root

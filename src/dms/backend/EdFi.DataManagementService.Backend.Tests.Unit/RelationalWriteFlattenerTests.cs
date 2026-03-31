@@ -500,10 +500,15 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'. First ordinal path: [0]. Duplicate ordinal path: [1].*"
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
             );
     }
 
@@ -677,11 +682,14 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32' at path '$.schoolYear'*"
-            );
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32'");
     }
 
     [Test]
@@ -743,10 +751,15 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Key-unification conflict for canonical column 'PrimarySchoolTypeDescriptor_Unified_DescriptorId'*"
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.secondarySchoolTypeDescriptor");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Key-unification conflict for canonical column 'PrimarySchoolTypeDescriptor_Unified_DescriptorId'"
             );
     }
 

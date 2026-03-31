@@ -163,5 +163,42 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalDocumentStoreRepositoryTests`"
     ],
     "completed": true
+  },
+  {
+    "category": "Error Mapping",
+    "description": "Replace the relational write seam's broad `InvalidOperationException`/`NotSupportedException` remap to `UnknownFailure` with typed request-validation or guard-rail classification for request-scoped flattening failures. Acceptance: duplicate submitted semantic identities, strict scalar-read failures caused by request payload shape/type mismatches, and other request-scoped flattener guard rails that represent client data or request-contract violations fail deterministically before terminal-stage handoff and surface through the relational/Core boundary as 400 `Data validation failed` responses instead of HTTP 500; `UnknownFailure` remains reserved for genuine unexpected server-side faults; descriptor-write and unsupported-operation guard rails that are intentionally not implemented remain explicit deterministic guard rails with their existing non-validation messaging.",
+    "steps-to-verify": [
+      "Introduce a typed relational write failure/result path that distinguishes request-validation failures from unexpected runtime failures, and thread it through `RelationalDocumentStoreRepository`, the Core write handlers, and any helper contracts needed to preserve current reference-failure behavior.",
+      "Add backend and Core seam tests proving duplicate semantic identities under the same stable parent, present-but-request-invalid scalar values, and comparable request-scoped flattening guard rails fail before terminal-stage invocation and no longer become `UnknownFailure`/HTTP 500.",
+      "Add handler or smoke-level tests proving the HTTP surface for these classified failures is 400 with the existing `Data validation failed. See 'validationErrors' for details.` shape, while unsupported relational operations and descriptor writes keep their explicit deterministic guard-rail messages.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Relational_Write_Seam`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~Given_A_Host_Using_The_Relational_Backend`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Flattening",
+    "description": "Tighten relational write scalar parsing so the flattener's type reads are strict for every compiled scalar kind, not just `Date`. Acceptance: `DateTime` and `Time` parsing use deterministic formats aligned to the compiled relational scalar contract instead of permissive culture-influenced parsing; invalid request values that survive upstream validation fail with the same typed request-validation path as other flattener scalar-read failures; existing valid fixture coverage for `Date`, `DateTime`, and `Time` continues to pass without relying on permissive parser behavior.",
+    "steps-to-verify": [
+      "Replace permissive `DateTime.TryParse`/`TimeOnly.TryParse` handling in `RelationalWriteFlattener` with exact format parsing that matches the supported API/body contract for compiled `ScalarKind.DateTime` and `ScalarKind.Time` values.",
+      "Add backend/unit tests covering valid ISO-formatted `DateTime` and `Time` values, plus invalid but previously-permissive values that must now fail deterministically as scalar-read validation errors.",
+      "Add or update seam tests proving strict scalar-read failures still short-circuit before terminal-stage invocation and participate in the typed 400 validation path instead of surfacing as HTTP 500.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalWriteFlattenerTests`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~RelationalWriteSeam`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Refactor the DMS-983 flattener so it meets the story's single-traversal seam more literally and removes the duplicated root/body-index versus scope-local materialization paths. Acceptance: the selected request body is traversed through one structured walker that emits the root row, root-extension rows, collection candidates, and attached aligned scopes without a separate whole-body leaf index plus later collection re-walk; root-level and scope-local value materialization share one binding-evaluation path instead of maintaining duplicated `SelectedBodyIndex` and scope-node variants; the hot loop still avoids a general-purpose JSONPath engine and preserves the current deterministic request-order, ordinal-path, reference-lookup, and `_ext` behaviors.",
+    "steps-to-verify": [
+      "Collapse the duplicated root/scope materialization and key-unification evaluation paths in `RelationalWriteFlattener` into a single traversal-oriented implementation, removing dead or redundant helper paths introduced by the split design as part of the same refactor.",
+      "Add backend/unit regression coverage that locks down current behavior for nested collections, root and collection-aligned `_ext`, semantic-identity extraction, reference binding by ordinal path, and the supplied-body-is-authoritative seam while exercising the refactored single-walker path.",
+      "Add a targeted test or instrumentation assertion proving arrays are not skipped in an indexing pre-pass and then re-walked later as the primary execution model.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalWriteFlattenerTests`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~RelationalWriteSeam`"
+    ],
+    "completed": false
   }
 ]

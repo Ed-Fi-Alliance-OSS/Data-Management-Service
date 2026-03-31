@@ -218,7 +218,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             if (scopeNode is not JsonObject scopeObject)
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    tableWritePlan.TableModel.JsonScope.Canonical,
                     $"Root extension table '{FormatTable(tableWritePlan)}' expected a JSON object at path "
                         + $"'{tableWritePlan.TableModel.JsonScope.Canonical}', but encountered "
                         + $"'{scopeNode.GetType().Name}'."
@@ -399,7 +400,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             if (scopeNode is not JsonObject scopeObject)
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    attachedScopePlan.TableWritePlan.TableModel.JsonScope.Canonical,
                     $"Collection-aligned extension table '{FormatTable(attachedScopePlan.TableWritePlan)}' expected a JSON object at path "
                         + $"'{attachedScopePlan.TableWritePlan.TableModel.JsonScope.Canonical}', but encountered "
                         + $"'{scopeNode.GetType().Name}'."
@@ -649,7 +651,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             if (!Equals(canonicalValue, evaluation.Value))
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    RestrictedJsonPath.CombineCanonical(
+                        tableWritePlan.TableModel.JsonScope,
+                        member.RelativePath
+                    ),
                     $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
                         + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
                         + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
@@ -706,7 +712,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             if (!Equals(canonicalValue, evaluation.Value))
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    RestrictedJsonPath.CombineCanonical(
+                        tableWritePlan.TableModel.JsonScope,
+                        member.RelativePath
+                    ),
                     $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
                         + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
                         + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
@@ -839,7 +849,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         if (memberNode is not JsonValue jsonValue || !jsonValue.TryGetValue<string>(out _))
         {
-            throw new InvalidOperationException(
+            throw CreateRequestShapeValidationException(
+                absolutePath,
                 $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
                     + $"expected a descriptor URI string at path '{absolutePath}', but encountered "
                     + $"JSON value kind '{GetJsonValueKind(memberNode)}'."
@@ -1429,7 +1440,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         if (collectionArrayNode is not JsonArray collectionArray)
         {
-            throw new InvalidOperationException(
+            throw CreateRequestShapeValidationException(
+                childPlan.TableWritePlan.TableModel.JsonScope.Canonical,
                 $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected a JSON array at path "
                     + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}'."
             );
@@ -1439,7 +1451,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         {
             if (collectionArray[index] is not JsonObject collectionItem)
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    MaterializeConcretePath(childPlan.TableWritePlan.TableModel.JsonScope.Canonical, [index]),
                     $"Collection table '{FormatTable(childPlan.TableWritePlan)}' expected object items at path "
                         + $"'{childPlan.TableWritePlan.TableModel.JsonScope.Canonical}[{index}]'."
                 );
@@ -1809,7 +1822,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static InvalidOperationException CreateDuplicateSemanticIdentityException(
+    private static RelationalWriteRequestValidationException CreateDuplicateSemanticIdentityException(
         TableWritePlan tableWritePlan,
         string parentScopeCanonical,
         IReadOnlyList<int> firstOrdinalPath,
@@ -1817,7 +1830,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         IReadOnlyList<object?> semanticIdentityValues
     )
     {
-        return new InvalidOperationException(
+        var duplicatePath = MaterializeConcretePath(
+            tableWritePlan.TableModel.JsonScope.Canonical,
+            [.. duplicateOrdinalPath]
+        );
+
+        return CreateRequestShapeValidationException(
+            duplicatePath,
             $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
                 + $"{FormatSemanticIdentityValues(semanticIdentityValues)} under parent scope '{parentScopeCanonical}'. "
                 + $"First ordinal path: {FormatOrdinalPath(firstOrdinalPath)}. "
@@ -1825,7 +1844,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static InvalidOperationException CreateInvalidScalarReadException(
+    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
         string absolutePath,
@@ -1842,7 +1861,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static InvalidOperationException CreateInvalidScalarReadException(
+    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
         string absolutePath,
@@ -1850,22 +1869,32 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         string reason
     )
     {
-        return new InvalidOperationException(
+        return CreateRequestShapeValidationException(
+            absolutePath,
             $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind '{scalarType.Kind}' at path '{absolutePath}', but {reason}."
         );
     }
 
-    private static InvalidOperationException CreateInvalidKeyUnificationScalarReadException(
+    private static RelationalWriteRequestValidationException CreateInvalidKeyUnificationScalarReadException(
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan.ScalarMember member,
         string absolutePath,
         string reason
     )
     {
-        return new InvalidOperationException(
+        return CreateRequestShapeValidationException(
+            absolutePath,
             $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
                 + $"expected scalar kind '{member.ScalarType.Kind}' at path '{absolutePath}', but {reason}."
         );
+    }
+
+    private static RelationalWriteRequestValidationException CreateRequestShapeValidationException(
+        string path,
+        string message
+    )
+    {
+        return RelationalWriteRequestValidationException.ForPath(path, message);
     }
 
     private static InvalidOperationException CreateMissingDocumentReferenceLookupException(
@@ -2119,7 +2148,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
             if (selectedBody is not JsonObject rootObject)
             {
-                throw new InvalidOperationException(
+                throw CreateRequestShapeValidationException(
+                    "$",
                     $"Selected write body must be a JSON object, but found '{selectedBody.GetType().Name}'."
                 );
             }

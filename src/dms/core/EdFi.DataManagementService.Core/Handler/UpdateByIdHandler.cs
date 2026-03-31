@@ -170,6 +170,10 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
+            UpdateFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

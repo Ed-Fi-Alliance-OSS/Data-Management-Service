@@ -54,6 +54,7 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
+            static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpsertResult.UpsertFailureReference(
                     invalidDocumentReferences,
@@ -122,6 +123,7 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
+            static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpdateResult.UpdateFailureReference(
                     invalidDocumentReferences,
@@ -186,6 +188,7 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
+        Func<WriteValidationFailure[], TResult> validationFailureFactory,
         Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
         Func<MappingSet, QualifiedResourceName, Task<RelationalWriteTargetContext>> resolveTargetContextAsync,
         Func<RelationalWriteTerminalStageResult, TResult> terminalResultProjector
@@ -196,6 +199,7 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
+        ArgumentNullException.ThrowIfNull(validationFailureFactory);
         ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
         ArgumentNullException.ThrowIfNull(terminalResultProjector);
@@ -241,6 +245,10 @@ public sealed class RelationalDocumentStoreRepository(
                 .ConfigureAwait(false);
 
             return terminalResultProjector(terminalStageResult);
+        }
+        catch (RelationalWriteRequestValidationException ex)
+        {
+            return validationFailureFactory(ex.ValidationFailures);
         }
         catch (Exception ex)
             when (ex is NotSupportedException or InvalidOperationException or KeyNotFoundException)

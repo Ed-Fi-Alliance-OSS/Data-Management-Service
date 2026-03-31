@@ -79,6 +79,16 @@ internal static class ValidationErrorFactory
                 )
         );
 
+    public static Dictionary<string, string[]> BuildWriteValidationErrors(
+        IEnumerable<WriteValidationFailure> validationFailures
+    ) =>
+        BuildValidationErrors(
+            validationFailures.Select(failure => new KeyValuePair<string, string>(
+                failure.Path.Value,
+                failure.Message
+            ))
+        );
+
     /// <summary>
     /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
     /// </summary>
