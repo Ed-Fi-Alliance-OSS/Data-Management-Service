@@ -344,6 +344,14 @@ public abstract class WritableRequestShaperTests
         }
 
         [Test]
+        public void It_should_have_rooted_request_json_path_in_failure()
+        {
+            var failure = (ForbiddenSubmittedDataWritableProfileValidationFailure)
+                _result.ValidationFailures[0];
+            failure.RequestJsonPaths.Should().ContainSingle().Which.Should().Be("$.addresses[0]");
+        }
+
+        [Test]
         public void It_should_exclude_failing_item_from_output()
         {
             var body = _result.WritableRequestBody.AsObject();

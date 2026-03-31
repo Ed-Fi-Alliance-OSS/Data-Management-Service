@@ -113,6 +113,7 @@ public sealed class WritableRequestShaper(
             jsonScope,
             source,
             ancestorItems,
+            "$",
             scopeStates,
             collectionItems,
             validationFailures,
@@ -130,6 +131,7 @@ public sealed class WritableRequestShaper(
         string jsonScope,
         JsonObject source,
         IReadOnlyList<AncestorItemContext> ancestorItems,
+        string requestJsonPath,
         List<RequestScopeState> scopeStates,
         List<VisibleRequestCollectionItem> collectionItems,
         List<WritableProfileValidationFailure> validationFailures,
@@ -152,6 +154,7 @@ public sealed class WritableRequestShaper(
                     jsonScope,
                     memberValue,
                     ancestorItems,
+                    requestJsonPath,
                     scopeStates,
                     collectionItems,
                     validationFailures,
@@ -177,6 +180,7 @@ public sealed class WritableRequestShaper(
                     childNonCollectionScope,
                     memberValue,
                     ancestorItems,
+                    $"{requestJsonPath}.{memberName}",
                     output,
                     memberName,
                     scopeStates,
@@ -198,6 +202,7 @@ public sealed class WritableRequestShaper(
                     childCollectionScope,
                     memberValue,
                     ancestorItems,
+                    requestJsonPath,
                     output,
                     memberName,
                     scopeStates,
@@ -231,6 +236,7 @@ public sealed class WritableRequestShaper(
         string jsonScope,
         JsonNode? scopeData,
         IReadOnlyList<AncestorItemContext> ancestorItems,
+        string requestJsonPath,
         JsonObject output,
         string memberName,
         List<RequestScopeState> scopeStates,
@@ -250,6 +256,7 @@ public sealed class WritableRequestShaper(
                 jsonScope,
                 scopeData.AsObject(),
                 ancestorItems,
+                requestJsonPath,
                 scopeStates,
                 collectionItems,
                 validationFailures,
@@ -275,6 +282,7 @@ public sealed class WritableRequestShaper(
         string jsonScope,
         JsonNode? scopeData,
         IReadOnlyList<AncestorItemContext> ancestorItems,
+        string requestJsonPath,
         JsonObject output,
         string memberName,
         List<RequestScopeState> scopeStates,
@@ -318,7 +326,7 @@ public sealed class WritableRequestShaper(
                         operation: operation,
                         jsonScope: jsonScope,
                         scopeKind: ScopeKind.Collection,
-                        requestJsonPaths: [$"{memberName}[{i}]"],
+                        requestJsonPaths: [$"{requestJsonPath}.{memberName}[{i}]"],
                         forbiddenCanonicalMemberPaths: []
                     )
                 );
@@ -340,6 +348,9 @@ public sealed class WritableRequestShaper(
             // Build ancestor context for potential nested scopes
             var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
 
+            // Concrete document path for this collection item
+            string itemRequestJsonPath = $"{requestJsonPath}.{memberName}[{i}]";
+
             // Track which child non-collection scopes are handled for this item
             HashSet<string> itemHandledChildScopes = [];
 
@@ -355,6 +366,7 @@ public sealed class WritableRequestShaper(
                         jsonScope,
                         itemMemberValue,
                         newAncestors,
+                        itemRequestJsonPath,
                         scopeStates,
                         collectionItems,
                         validationFailures,
@@ -380,6 +392,7 @@ public sealed class WritableRequestShaper(
                         nestedNonCollScope,
                         itemMemberValue,
                         newAncestors,
+                        $"{itemRequestJsonPath}.{itemMemberName}",
                         filteredItem,
                         itemMemberName,
                         scopeStates,
@@ -401,6 +414,7 @@ public sealed class WritableRequestShaper(
                         nestedCollScope,
                         itemMemberValue,
                         newAncestors,
+                        itemRequestJsonPath,
                         filteredItem,
                         itemMemberName,
                         scopeStates,
@@ -444,6 +458,7 @@ public sealed class WritableRequestShaper(
         string parentScope,
         JsonNode? extNode,
         IReadOnlyList<AncestorItemContext> ancestorItems,
+        string requestJsonPath,
         List<RequestScopeState> scopeStates,
         List<VisibleRequestCollectionItem> collectionItems,
         List<WritableProfileValidationFailure> validationFailures,
@@ -484,6 +499,7 @@ public sealed class WritableRequestShaper(
                     extScope,
                     extData.AsObject(),
                     ancestorItems,
+                    $"{requestJsonPath}._ext.{extName}",
                     scopeStates,
                     collectionItems,
                     validationFailures,
