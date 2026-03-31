@@ -230,9 +230,9 @@
       "Review and update the direct flattener strictness test names or nearby comments so they explicitly describe backend-local strict parsing against the supplied selected body.",
       "Keep or add assertions that invalid non-ISO `DateTime` and `Time` values throw `RelationalWriteRequestValidationException` with the existing path-specific validation messages.",
       "Keep the valid ISO `DateTime` and `Time` parsing test coverage so the boundary is documented from both the success and failure directions.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~RelationalWriteFlattenerTests`"
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~Given_RelationalWriteFlattener`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",

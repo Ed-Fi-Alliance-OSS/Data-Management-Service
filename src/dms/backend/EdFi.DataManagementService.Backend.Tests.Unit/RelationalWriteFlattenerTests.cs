@@ -703,8 +703,9 @@ public class Given_RelationalWriteFlattener
             .Contain("Column 'SchoolYear' on table 'edfi.Student' expected scalar kind 'Int32'");
     }
 
+    // Direct flattener tests bypass Core normalization and assert backend-local parsing against the supplied selected body.
     [Test]
-    public void It_reads_iso_datetime_offsets_and_iso_time_values_deterministically()
+    public void It_reads_iso_datetime_offsets_and_iso_time_values_from_the_supplied_selected_body_deterministically()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -731,7 +732,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_rejects_non_iso_datetime_values_that_were_previously_permissive()
+    public void It_rejects_non_iso_datetime_values_from_an_unnormalized_selected_body()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -760,7 +761,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_rejects_non_iso_time_values_that_were_previously_permissive()
+    public void It_rejects_non_iso_time_values_from_an_unnormalized_selected_body()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
