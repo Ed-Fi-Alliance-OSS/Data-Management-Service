@@ -344,6 +344,57 @@ public class ResolveMappingSetMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Next_Throws_After_Mapping_Set_Resolution : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(CreateTestMappingSet());
+
+            _act = () => middleware.Execute(_requestInfo, () => throw new InvalidOperationException("boom"));
+        }
+
+        [Test]
+        public async Task It_propagates_the_downstream_exception()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+        }
+
+        [Test]
+        public async Task It_still_attaches_the_mapping_set_before_next_runs()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+
+            _requestInfo.MappingSet.Should().NotBeNull();
+        }
+
+        [Test]
+        public async Task It_does_not_translate_the_downstream_exception_into_a_503()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Provider_Throws_MappingSetUnavailableException : ResolveMappingSetMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

@@ -96,7 +96,6 @@ internal class ResolveMappingSetMiddleware(
             // future per-request token could be threaded here to let disconnected clients
             // stop waiting for an in-flight compilation.
             requestInfo.MappingSet = await mappingSetProvider.GetOrCreateAsync(key, CancellationToken.None);
-            await next();
         }
         catch (MappingSetUnavailableException ex)
         {
@@ -121,6 +120,8 @@ internal class ResolveMappingSetMiddleware(
                 ),
                 Headers: []
             );
+
+            return;
         }
         catch (Exception ex)
         {
@@ -146,6 +147,10 @@ internal class ResolveMappingSetMiddleware(
                 ),
                 Headers: []
             );
+
+            return;
         }
+
+        await next();
     }
 }
