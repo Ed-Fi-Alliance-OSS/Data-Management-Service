@@ -12,76 +12,12 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 
 public abstract class ProfileVisibilityClassifierTests
 {
-    // -----------------------------------------------------------------------
-    //  Shared scope catalog (StudentSchoolAssociation-like fixture)
-    // -----------------------------------------------------------------------
-
-    /// <summary>
-    /// Compiled scope descriptors for the shared reference fixture.
-    /// Matches the delivery plan's StudentSchoolAssociation example.
-    /// </summary>
+    // Shared scope catalogs from ProfileTestFixtures
     protected static IReadOnlyList<CompiledScopeDescriptor> SharedFixtureScopes =>
-        [
-            new(
-                JsonScope: "$",
-                ScopeKind: ScopeKind.Root,
-                ImmediateParentJsonScope: null,
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths:
-                [
-                    "studentReference.studentUniqueId",
-                    "schoolReference.schoolId",
-                    "entryDate",
-                    "entryTypeDescriptor",
-                ]
-            ),
-            new(
-                JsonScope: "$.calendarReference",
-                ScopeKind: ScopeKind.NonCollection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["calendarCode", "calendarTypeDescriptor"]
-            ),
-            new(
-                JsonScope: "$.classPeriods[*]",
-                ScopeKind: ScopeKind.Collection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
-                CanonicalScopeRelativeMemberPaths: ["classPeriodName", "officialAttendancePeriod"]
-            ),
-        ];
+        ProfileTestFixtures.SharedFixtureScopes;
 
-    /// <summary>
-    /// Scope catalog that includes an addresses collection with a CollectionItemFilter.
-    /// Used for value-filter tests.
-    /// </summary>
     protected static IReadOnlyList<CompiledScopeDescriptor> AddressesFixtureScopes =>
-        [
-            new(
-                JsonScope: "$",
-                ScopeKind: ScopeKind.Root,
-                ImmediateParentJsonScope: null,
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["field1"]
-            ),
-            new(
-                JsonScope: "$.addresses[*]",
-                ScopeKind: ScopeKind.Collection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["addressTypeDescriptor"],
-                CanonicalScopeRelativeMemberPaths:
-                [
-                    "addressTypeDescriptor",
-                    "city",
-                    "stateAbbreviationDescriptor",
-                ]
-            ),
-        ];
+        ProfileTestFixtures.AddressesFixtureScopes;
 
     // -----------------------------------------------------------------------
     //  Profile builder helpers
@@ -170,17 +106,8 @@ public abstract class ProfileVisibilityClassifierTests
             Extensions: []
         );
 
-    /// <summary>
-    /// Builds an IncludeAll profile with no explicit rules.
-    /// </summary>
     protected static ContentTypeDefinition BuildIncludeAllProfile() =>
-        new(
-            MemberSelection: MemberSelection.IncludeAll,
-            Properties: [],
-            Objects: [],
-            Collections: [],
-            Extensions: []
-        );
+        ProfileTestFixtures.BuildIncludeAllProfile();
 
     /// <summary>
     /// Builds an IncludeOnly profile for the addresses collection

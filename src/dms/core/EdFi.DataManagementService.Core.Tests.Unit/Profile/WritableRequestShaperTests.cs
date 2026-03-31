@@ -23,79 +23,22 @@ public abstract class WritableRequestShaperTests
     {
         var classifier = new ProfileVisibilityClassifier(writeContent, scopes);
         var addressEngine = new AddressDerivationEngine(scopes);
-        return new WritableRequestShaper(classifier, addressEngine);
+        return new WritableRequestShaper(
+            classifier,
+            addressEngine,
+            profileName: "TestProfile",
+            resourceName: "TestResource",
+            method: "POST",
+            operation: "write"
+        );
     }
 
-    // -----------------------------------------------------------------------
-    //  Shared scope catalogs
-    // -----------------------------------------------------------------------
-
-    /// <summary>
-    /// Compiled scope descriptors for the shared reference fixture.
-    /// Matches the delivery plan's StudentSchoolAssociation example.
-    /// </summary>
+    // Shared scope catalogs from ProfileTestFixtures
     protected static IReadOnlyList<CompiledScopeDescriptor> SharedFixtureScopes =>
-        [
-            new(
-                JsonScope: "$",
-                ScopeKind: ScopeKind.Root,
-                ImmediateParentJsonScope: null,
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths:
-                [
-                    "studentReference.studentUniqueId",
-                    "schoolReference.schoolId",
-                    "entryDate",
-                    "entryTypeDescriptor",
-                ]
-            ),
-            new(
-                JsonScope: "$.calendarReference",
-                ScopeKind: ScopeKind.NonCollection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["calendarCode", "calendarTypeDescriptor"]
-            ),
-            new(
-                JsonScope: "$.classPeriods[*]",
-                ScopeKind: ScopeKind.Collection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
-                CanonicalScopeRelativeMemberPaths: ["classPeriodName", "officialAttendancePeriod"]
-            ),
-        ];
+        ProfileTestFixtures.SharedFixtureScopes;
 
-    /// <summary>
-    /// Scope catalog that includes an addresses collection with a CollectionItemFilter.
-    /// Used for value-filter tests.
-    /// </summary>
     protected static IReadOnlyList<CompiledScopeDescriptor> AddressesFixtureScopes =>
-        [
-            new(
-                JsonScope: "$",
-                ScopeKind: ScopeKind.Root,
-                ImmediateParentJsonScope: null,
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["field1"]
-            ),
-            new(
-                JsonScope: "$.addresses[*]",
-                ScopeKind: ScopeKind.Collection,
-                ImmediateParentJsonScope: "$",
-                CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["addressTypeDescriptor"],
-                CanonicalScopeRelativeMemberPaths:
-                [
-                    "addressTypeDescriptor",
-                    "city",
-                    "stateAbbreviationDescriptor",
-                ]
-            ),
-        ];
+        ProfileTestFixtures.AddressesFixtureScopes;
 
     // -----------------------------------------------------------------------
     //  Profile builder helpers
@@ -147,17 +90,8 @@ public abstract class WritableRequestShaperTests
             Extensions: []
         );
 
-    /// <summary>
-    /// Builds an IncludeAll profile with no explicit rules.
-    /// </summary>
     protected static ContentTypeDefinition BuildIncludeAllProfile() =>
-        new(
-            MemberSelection: MemberSelection.IncludeAll,
-            Properties: [],
-            Objects: [],
-            Collections: [],
-            Extensions: []
-        );
+        ProfileTestFixtures.BuildIncludeAllProfile();
 
     /// <summary>
     /// Builds an IncludeAll profile for addresses with an IncludeOnly item filter
@@ -537,6 +471,215 @@ public abstract class WritableRequestShaperTests
             _result.VisibleRequestCollectionItems.Should().HaveCount(1);
             _result.VisibleRequestCollectionItems[0].Address.JsonScope.Should().Be("$.addresses[*]");
             _result.VisibleRequestCollectionItems[0].Creatable.Should().BeFalse();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  6. Root-level extension scope shaping
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Root_Extension_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildExtensionProfile(),
+                ProfileTestFixtures.ExtensionFixtureScopes
+            );
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": {
+                            "sampleField": "hello",
+                            "hiddenField": "should be stripped"
+                        }
+                    },
+                    "classPeriods": [
+                        {
+                            "classPeriodName": "Period1"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_include_ext_in_shaped_body()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("_ext").Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_include_visible_extension_members()
+        {
+            var ext = _result.WritableRequestBody["_ext"]!["sample"]!.AsObject();
+            ext["sampleField"]!.GetValue<string>().Should().Be("hello");
+        }
+
+        [Test]
+        public void It_should_exclude_hidden_extension_members()
+        {
+            var ext = _result.WritableRequestBody["_ext"]!["sample"]!.AsObject();
+            ext.ContainsKey("hiddenField").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_extension_scope_state_as_VisiblePresent()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$._ext.sample"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  7. Extension scope within collection item
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Extension_Within_Collection_Item : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildExtensionProfile(),
+                ProfileTestFixtures.ExtensionFixtureScopes
+            );
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "classPeriods": [
+                        {
+                            "classPeriodName": "Period1",
+                            "_ext": {
+                                "sample": {
+                                    "extraField": "ext-value",
+                                    "hiddenExtField": "should be stripped"
+                                }
+                            }
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_include_ext_in_collection_item()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            var classPeriods = body["classPeriods"]!.AsArray();
+            classPeriods.Should().HaveCount(1);
+            var item = classPeriods[0]!.AsObject();
+            item.ContainsKey("_ext").Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_include_visible_extension_members_in_collection_item()
+        {
+            var item = _result.WritableRequestBody["classPeriods"]![0]!;
+            var ext = item["_ext"]!["sample"]!.AsObject();
+            ext["extraField"]!.GetValue<string>().Should().Be("ext-value");
+        }
+
+        [Test]
+        public void It_should_exclude_hidden_extension_members_in_collection_item()
+        {
+            var item = _result.WritableRequestBody["classPeriods"]![0]!;
+            var ext = item["_ext"]!["sample"]!.AsObject();
+            ext.ContainsKey("hiddenExtField").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_collection_ext_scope_state_as_VisiblePresent()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  8. Nested non-collection scope inside collection does not throw when
+    //     collection is absent (regression test for EmitMissingScopeStates)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Absent_Collection_With_Nested_Non_Collection_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                ProfileTestFixtures.NestedNonCollectionInsideCollectionScopes
+            );
+
+            // Request body does not include the addresses collection at all
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1"
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_not_throw()
+        {
+            // The fact that Setup completed without throwing is the assertion.
+            // EmitMissingScopeStates must skip $.addresses[*].period since it
+            // has collection ancestors and no ancestor context is available.
+            _result.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_not_emit_scope_state_for_nested_non_collection_inside_collection()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .NotContain(s => s.Address.JsonScope == "$.addresses[*].period");
+        }
+
+        [Test]
+        public void It_should_emit_root_scope_state()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$" && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
         }
     }
 }

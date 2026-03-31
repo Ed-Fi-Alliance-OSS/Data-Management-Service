@@ -104,17 +104,8 @@ public abstract class ProfileTreeNavigatorTests
             ]
         );
 
-    /// <summary>
-    /// Builds an IncludeAll root definition with no explicit rules.
-    /// </summary>
     protected static ContentTypeDefinition BuildIncludeAllProfile() =>
-        new(
-            MemberSelection: MemberSelection.IncludeAll,
-            Properties: [],
-            Objects: [],
-            Collections: [],
-            Extensions: []
-        );
+        ProfileTestFixtures.BuildIncludeAllProfile();
 
     // -----------------------------------------------------------------------
     //  Given_Root_Scope

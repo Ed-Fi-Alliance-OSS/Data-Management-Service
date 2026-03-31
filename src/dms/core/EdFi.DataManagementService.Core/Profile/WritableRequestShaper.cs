@@ -41,7 +41,11 @@ public sealed record WritableRequestShapingResult(
 /// </summary>
 public sealed class WritableRequestShaper(
     ProfileVisibilityClassifier classifier,
-    AddressDerivationEngine addressEngine
+    AddressDerivationEngine addressEngine,
+    string profileName,
+    string resourceName,
+    string method,
+    string operation
 )
 {
     // -----------------------------------------------------------------------
@@ -183,9 +187,15 @@ public sealed class WritableRequestShaper(
 
     /// <summary>
     /// Shapes a non-collection child scope. Classifies visibility, derives
-    /// address, emits RequestScopeState. If VisiblePresent, recurses into
-    /// the child scope.
+    /// address, emits RequestScopeState. If VisiblePresent, filters members
+    /// and handles _ext extensions.
     /// </summary>
+    /// <remarks>
+    /// Does not recursively shape nested non-collection or collection sub-scopes
+    /// within the child. In the current Ed-Fi resource model, 1:1 reference objects
+    /// are flat (no nested sub-scopes). If this changes, this method should delegate
+    /// to <see cref="ShapeScope"/> instead of flat member filtering.
+    /// </remarks>
     private void ShapeNonCollectionChild(
         string jsonScope,
         JsonNode? scopeData,
@@ -206,9 +216,28 @@ public sealed class WritableRequestShaper(
             ScopeMemberFilter childFilter = classifier.GetMemberFilter(jsonScope);
             var childOutput = new JsonObject();
 
-            foreach (var kvp in scopeData.AsObject().Where(kvp => IsMemberVisible(childFilter, kvp.Key)))
+            foreach (var kvp in scopeData.AsObject())
             {
-                childOutput[kvp.Key] = kvp.Value?.DeepClone();
+                if (kvp.Key == "_ext")
+                {
+                    JsonObject? shapedExt = ShapeExtensions(
+                        jsonScope,
+                        kvp.Value,
+                        ancestorItems,
+                        scopeStates,
+                        emittedScopes
+                    );
+                    if (shapedExt != null && shapedExt.Count > 0)
+                    {
+                        childOutput["_ext"] = shapedExt;
+                    }
+                    continue;
+                }
+
+                if (IsMemberVisible(childFilter, kvp.Key))
+                {
+                    childOutput[kvp.Key] = kvp.Value?.DeepClone();
+                }
             }
 
             output[memberName] = childOutput;
@@ -262,10 +291,10 @@ public sealed class WritableRequestShaper(
                 // Item fails value filter — create ForbiddenSubmittedData failure
                 validationFailures.Add(
                     ProfileFailures.ForbiddenSubmittedData(
-                        profileName: "placeholder",
-                        resourceName: "placeholder",
-                        method: "placeholder",
-                        operation: "placeholder",
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
                         jsonScope: jsonScope,
                         scopeKind: ScopeKind.Collection,
                         requestJsonPaths: [$"{memberName}[{i}]"],
@@ -294,6 +323,23 @@ public sealed class WritableRequestShaper(
             {
                 string itemMemberName = kvp.Key;
                 JsonNode? itemMemberValue = kvp.Value;
+
+                // Handle _ext (extensions within collection items)
+                if (itemMemberName == "_ext")
+                {
+                    JsonObject? shapedExt = ShapeExtensions(
+                        jsonScope,
+                        itemMemberValue,
+                        newAncestors,
+                        scopeStates,
+                        emittedScopes
+                    );
+                    if (shapedExt != null && shapedExt.Count > 0)
+                    {
+                        filteredItem["_ext"] = shapedExt;
+                    }
+                    continue;
+                }
 
                 // Check for nested non-collection scope
                 string nestedNonCollScope = $"{jsonScope}.{itemMemberName}";
@@ -410,6 +456,13 @@ public sealed class WritableRequestShaper(
     /// in the classifier's catalog that was not encountered during the walk.
     /// These are VisibleAbsent or Hidden depending on the classifier.
     /// </summary>
+    /// <remarks>
+    /// Scopes nested inside collections (those with collection ancestors) are skipped
+    /// because their addresses require concrete ancestor item context that is only
+    /// available during the collection item walk. If they were not emitted during the
+    /// walk, it means the parent collection was absent or empty — there are no instances
+    /// to address.
+    /// </remarks>
     private void EmitMissingScopeStates(List<RequestScopeState> scopeStates, HashSet<string> emittedScopes)
     {
         foreach (string jsonScope in classifier.AllScopeJsonScopes)
@@ -422,8 +475,13 @@ public sealed class WritableRequestShaper(
             ScopeKind kind = classifier.GetScopeKind(jsonScope);
             if (kind == ScopeKind.Collection)
             {
-                // Collection scopes that were missed get VisibleAbsent classification
-                // but are not emitted as RequestScopeState (they don't have a non-collection address)
+                continue;
+            }
+
+            // Scopes nested inside collections require ancestor item context for address
+            // derivation. They should have been emitted during the collection item walk.
+            if (addressEngine.HasCollectionAncestors(jsonScope))
+            {
                 continue;
             }
 
