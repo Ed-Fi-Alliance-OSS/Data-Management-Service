@@ -507,7 +507,11 @@ public class Given_MappingSetLookupExtensions
                     [multiDescriptorProjectionResource] = multiDescriptorProjectionReadPlan,
                 },
                 ResourceKeyIdByResource: resourceKeyIdByResource,
-                ResourceKeyById: resourceKeyById
+                ResourceKeyById: resourceKeyById,
+                SecurableElementColumnPathsByResource: new Dictionary<
+                    QualifiedResourceName,
+                    IReadOnlyList<ResolvedSecurableElementPath>
+                >()
             ),
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,

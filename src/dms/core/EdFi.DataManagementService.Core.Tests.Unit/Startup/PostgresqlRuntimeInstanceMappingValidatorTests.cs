@@ -70,7 +70,11 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKeyEntry.ResourceKeyId] = resourceKeyEntry,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 

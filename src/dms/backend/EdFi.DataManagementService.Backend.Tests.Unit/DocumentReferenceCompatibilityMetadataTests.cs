@@ -217,7 +217,11 @@ public class Given_MappingSetDocumentReferenceCompatibilityExtensions
                     WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
                     ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
                     ResourceKeyIdByResource: resourceKeyIdByResource,
-                    ResourceKeyById: resourceKeyById
+                    ResourceKeyById: resourceKeyById,
+                    SecurableElementColumnPathsByResource: new Dictionary<
+                        QualifiedResourceName,
+                        IReadOnlyList<ResolvedSecurableElementPath>
+                    >()
                 ),
                 SchoolResource: schoolResource,
                 DescriptorResource: descriptorResource,
