@@ -848,4 +848,757 @@ public abstract class CreatabilityAnalyzerTests
                 .Contain(d => d.DependencyKind == ProfileCreatabilityDependencyKind.ImmediateVisibleParent);
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  10. Three-level chain creatability: root → parent scope → child scope → nested child scope
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Three_Level_Chain_With_All_New_Descendants : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Four non-collection scopes forming a three-level chain:
+            //   $                               (Root)
+            //   $.parentObject                  (NonCollection, parent: $)
+            //   $.parentObject._ext.project     (NonCollection, parent: $.parentObject)
+            //   $.parentObject._ext.project.detail (NonCollection, parent: $.parentObject._ext.project)
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["schoolReference"]
+                ),
+                new(
+                    JsonScope: "$.parentObject",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["parentField"]
+                ),
+                new(
+                    JsonScope: "$.parentObject._ext.project",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.parentObject",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["projectCode"]
+                ),
+                new(
+                    JsonScope: "$.parentObject._ext.project.detail",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.parentObject._ext.project",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["detailField"]
+                ),
+            ];
+
+            // IncludeAll profile: all members visible at every scope
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeAll,
+                Properties: [],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "parentObject",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects:
+                        [
+                            new ObjectRule(
+                                Name: "detail",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                NestedObjects: null,
+                                Collections: null,
+                                Extensions: null
+                            ),
+                        ],
+                        Collections: null,
+                        Extensions:
+                        [
+                            new ExtensionRule(
+                                Name: "project",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                Objects:
+                                [
+                                    new ObjectRule(
+                                        Name: "detail",
+                                        MemberSelection: MemberSelection.IncludeAll,
+                                        LogicalSchema: null,
+                                        Properties: [],
+                                        NestedObjects: null,
+                                        Collections: null,
+                                        Extensions: null
+                                    ),
+                                ],
+                                Collections: null
+                            ),
+                        ]
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            // Root scope state (existing resource, update path). All child scopes are new.
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(MakeAddress("$.parentObject"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.parentObject._ext.project"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                new(
+                    MakeAddress("$.parentObject._ext.project.detail"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // No stored scopes for any child → all are new creates
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["schoolReference"],
+                ["$.parentObject"] = ["parentField"],
+                ["$.parentObject._ext.project"] = ["projectCode"],
+                ["$.parentObject._ext.project.detail"] = ["detailField"],
+            };
+
+            _result = analyzer.Analyze(scopeStates, [], existenceLookup, isCreate: false, effectiveRequired);
+        }
+
+        [Test]
+        public void It_should_report_root_as_non_creatable()
+        {
+            // Root is existing (isCreate=false) so it is on the update path
+            _result.RootResourceCreatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_mark_parent_scope_as_creatable()
+        {
+            // New non-collection scope with all required members visible, parent root exists
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.parentObject" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_extension_scope_as_creatable()
+        {
+            // New extension scope with all required visible, parent scope is creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.parentObject._ext.project" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_nested_child_scope_as_creatable()
+        {
+            // New nested scope with all required visible, parent ext scope is creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.parentObject._ext.project.detail" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_have_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  11. Update-allowed: existing scope matched in stored state → non-creatable, no failure
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Update_Allowed_For_Existing_Scope : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.calendarReference",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["calendarCode", "schoolYear"]
+                ),
+            ];
+
+            // IncludeOnly profile that exposes calendarCode but NOT schoolYear (required)
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "calendarReference",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("calendarCode")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.calendarReference"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // Scope EXISTS in stored state → update path, not a create
+            var existenceLookup = new TestExistenceLookup(existingScopeJsonScopes: ["$.calendarReference"]);
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                [],
+                existenceLookup,
+                isCreate: false,
+                new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["$"] = ["field1"],
+                    ["$.calendarReference"] = ["calendarCode", "schoolYear"],
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_mark_scope_as_non_creatable()
+        {
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.calendarReference" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_have_no_failures()
+        {
+            // Existing scope → update path → no creatability failure even though
+            // the profile hides a required member (schoolYear)
+            _result.Failures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  12. Create-denied: new scope with hidden required member → non-creatable, failure
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_Denied_For_New_Scope_With_Hidden_Required : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.calendarReference",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["calendarCode", "schoolYear"]
+                ),
+            ];
+
+            // IncludeOnly profile that exposes calendarCode but NOT schoolYear (required)
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "calendarReference",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("calendarCode")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.calendarReference"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // Scope does NOT exist in stored state → attempted create
+            var existenceLookup = new TestExistenceLookup();
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                [],
+                existenceLookup,
+                isCreate: false,
+                new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["$"] = ["field1"],
+                    ["$.calendarReference"] = ["calendarCode", "schoolYear"],
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_mark_scope_as_non_creatable()
+        {
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.calendarReference" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_have_one_category_4_failure()
+        {
+            _result.Failures.Should().HaveCount(1);
+            _result
+                .Failures[0]
+                .Should()
+                .BeOfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>();
+        }
+
+        [Test]
+        public void It_should_report_schoolYear_as_hidden_in_failure()
+        {
+            var failure = (VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure)
+                _result.Failures[0];
+            failure.HiddenCreationRequiredMemberPaths.Should().Contain("schoolYear");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  13. Bottom-up descendant blocks parent (not yet implemented)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    [Ignore("Bottom-up co-creation propagation not yet implemented")]
+    public class Given_Descendant_Blocks_Parent_Bottom_Up : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Parent non-collection scope is new, child extension scope is also new
+            // but has hidden required members. Bottom-up rule says parent should also
+            // be non-creatable because its required descendant can't be created.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.parentObject",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["parentField"]
+                ),
+                new(
+                    JsonScope: "$.parentObject._ext.sample",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.parentObject",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["extField", "hiddenExtField"]
+                ),
+            ];
+
+            // Parent has all members visible; child extension hides hiddenExtField
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "parentObject",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("parentField")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions:
+                        [
+                            new ExtensionRule(
+                                Name: "sample",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties: [new PropertyRule("extField")],
+                                Objects: null,
+                                Collections: null
+                            ),
+                        ]
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(MakeAddress("$.parentObject"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.parentObject._ext.sample"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // Neither scope exists in stored state (both are new creates)
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.parentObject"] = ["parentField"],
+                ["$.parentObject._ext.sample"] = ["extField", "hiddenExtField"],
+            };
+
+            _result = analyzer.Analyze(scopeStates, [], existenceLookup, isCreate: true, effectiveRequired);
+        }
+
+        [Test]
+        public void It_should_mark_child_extension_scope_as_non_creatable()
+        {
+            // Child has hidden required member → non-creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.parentObject._ext.sample" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_parent_scope_as_non_creatable_due_to_descendant()
+        {
+            // Bottom-up propagation: parent demoted because required descendant is non-creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.parentObject" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_include_descendant_dependency_in_parent_failure()
+        {
+            var parentFailures = _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Where(f => f.JsonScope == "$.parentObject");
+
+            parentFailures.Should().HaveCount(1);
+            var parentFailure = parentFailures.First();
+            parentFailure
+                .Dependencies.Should()
+                .Contain(d =>
+                    d.DependencyKind == ProfileCreatabilityDependencyKind.RequiredVisibleDescendant
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  14. Storage-managed values excluded from creatability checks
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Storage_Managed_Values_In_Required : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["id", "studentReference", "_etag"]
+                ),
+            ];
+
+            // IncludeOnly profile that only includes studentReference
+            // (id and _etag are NOT in the profile, but they are storage-managed)
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference")],
+                Objects: [],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ];
+
+            // effectiveSchemaRequired includes id, studentReference, and _etag
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["id", "studentReference", "_etag"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                [],
+                new TestExistenceLookup(),
+                isCreate: true,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_report_root_as_creatable()
+        {
+            // id and _etag are storage-managed, excluded from creation-required
+            // studentReference is visible → root is creatable
+            _result.RootResourceCreatable.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_enrich_root_scope_as_creatable()
+        {
+            _result.EnrichedScopeStates.Should().Contain(s => s.Address.JsonScope == "$" && s.Creatable);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  15. Duplicate detection integration with CreatabilityAnalyzer output
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Duplicate_Items_From_Analyzer_Output : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _analyzerResult = null!;
+        private ImmutableArray<WritableProfileValidationFailure> _duplicateResult;
+
+        [SetUp]
+        public void Setup()
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.classPeriods[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                    CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+                ),
+            ];
+
+            var classifier = new ProfileVisibilityClassifier(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                scopes
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            // Two items with the SAME semantic identity in the same collection
+            var item1 = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
+                Creatable: false
+            );
+            var item2 = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
+                Creatable: false
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ];
+
+            ImmutableArray<VisibleRequestCollectionItem> items = [item1, item2];
+
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.classPeriods[*]"] = ["classPeriodName"],
+            };
+
+            _analyzerResult = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: true,
+                effectiveRequired
+            );
+
+            // Run DuplicateCollectionItemDetector on the analyzer's enriched output
+            _duplicateResult = DuplicateCollectionItemDetector.Detect(
+                _analyzerResult.EnrichedCollectionItems,
+                profileName: "TestProfile",
+                resourceName: "Resource",
+                method: "POST",
+                operation: "Create"
+            );
+        }
+
+        [Test]
+        public void It_should_produce_enriched_collection_items()
+        {
+            _analyzerResult.EnrichedCollectionItems.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_should_detect_one_duplicate_collision()
+        {
+            _duplicateResult.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_return_correct_failure_type()
+        {
+            _duplicateResult[0]
+                .Should()
+                .BeOfType<DuplicateVisibleCollectionItemCollisionWritableProfileValidationFailure>();
+        }
+
+        [Test]
+        public void It_should_report_correct_scope_in_duplicate_failure()
+        {
+            var failure = (DuplicateVisibleCollectionItemCollisionWritableProfileValidationFailure)
+                _duplicateResult[0];
+            failure.JsonScope.Should().Be("$.classPeriods[*]");
+        }
+    }
 }
