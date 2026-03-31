@@ -218,6 +218,22 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
+            else if (memberValue != null)
+            {
+                // Client submitted a hidden scalar member — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: classifier.GetScopeKind(jsonScope),
+                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
+                        forbiddenCanonicalMemberPaths: [memberName]
+                    )
+                );
+            }
         }
 
         // Emit states for child non-collection scopes not encountered during the walk
@@ -265,6 +281,22 @@ public sealed class WritableRequestShaper(
         }
         else
         {
+            if (visibility == ProfileVisibilityKind.Hidden && scopeData != null)
+            {
+                // Client submitted data for a hidden scope — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: ScopeKind.NonCollection,
+                        requestJsonPaths: [$"{requestJsonPath}"],
+                        forbiddenCanonicalMemberPaths: []
+                    )
+                );
+            }
             // Scope is absent or hidden — recursively emit states for descendant
             // non-collection scopes that cannot be encountered during the walk.
             EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
@@ -430,6 +462,21 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
+                else if (itemMemberValue != null)
+                {
+                    validationFailures.Add(
+                        ProfileFailures.ForbiddenSubmittedData(
+                            profileName: profileName,
+                            resourceName: resourceName,
+                            method: method,
+                            operation: operation,
+                            jsonScope: jsonScope,
+                            scopeKind: ScopeKind.Collection,
+                            requestJsonPaths: [$"{itemRequestJsonPath}.{itemMemberName}"],
+                            forbiddenCanonicalMemberPaths: [itemMemberName]
+                        )
+                    );
+                }
             }
 
             // Emit states for child non-collection scopes absent from this item
@@ -508,6 +555,21 @@ public sealed class WritableRequestShaper(
             }
             else
             {
+                if (visibility == ProfileVisibilityKind.Hidden && extData != null)
+                {
+                    validationFailures.Add(
+                        ProfileFailures.ForbiddenSubmittedData(
+                            profileName: profileName,
+                            resourceName: resourceName,
+                            method: method,
+                            operation: operation,
+                            jsonScope: extScope,
+                            scopeKind: ScopeKind.NonCollection,
+                            requestJsonPaths: [$"{requestJsonPath}._ext.{extName}"],
+                            forbiddenCanonicalMemberPaths: []
+                        )
+                    );
+                }
                 // Extension scope is absent or hidden — emit descendant states
                 EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }
