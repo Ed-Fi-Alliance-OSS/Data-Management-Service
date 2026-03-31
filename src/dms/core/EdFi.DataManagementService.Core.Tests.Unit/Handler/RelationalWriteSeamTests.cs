@@ -340,7 +340,7 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public async Task It_surfaces_strict_datetime_parse_failures_as_data_validation_before_terminal_handoff()
+    public async Task It_surfaces_backend_local_strict_datetime_parse_failures_for_an_unnormalized_selected_body_before_terminal_handoff()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
@@ -744,6 +744,7 @@ public class Given_Relational_Write_Seam
                 RouteQualifiers: []
             );
 
+            // Seam tests inject ParsedBody directly, so they bypass the normal HTTP parse/coercion middleware.
             return new RequestInfo(frontendRequest, method, _serviceProvider)
             {
                 ResourceInfo = _resourceInfo,

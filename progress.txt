@@ -117,3 +117,9 @@ task: Strict DateTime/Time parsing complete
 decisions: flattener now accepts exact ISO date-time strings only as `yyyy-MM-ddTHH:mm:ssZ` or `yyyy-MM-ddTHH:mm:ss+/-HH:mm`, and exact time strings only as `HH:mm:ss`; offset date-times normalize to UTC before storage; added nullable DateTime/Time columns to the Core seam fixture so strict scalar-read failures still prove the typed 400 path; backend verify filter in tasks.json matched zero tests, so actual verify used FullyQualifiedName~Given_RelationalWriteFlattener
 files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamFixture.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
 notes: all tasks in tasks.json complete
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Boundary complete
+decisions: renamed strict datetime handler-seam test to say backend-local unnormalized selected body, not HTTP contract; added seam harness comment that ParsedBody injection bypasses parse/coercion middleware; corrected task verify filter to FullyQualifiedName~Given_Relational_Write_Seam because old filter matched zero tests
+files: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
+notes: relational HTTP normalization smoke, direct flattener boundary wording, branch-local review text remain pending
