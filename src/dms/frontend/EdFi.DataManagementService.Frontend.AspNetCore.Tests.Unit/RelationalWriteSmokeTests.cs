@@ -64,7 +64,9 @@ public class Given_A_Host_Using_The_Relational_Backend
                 "booleanJsonPaths": [],
                 "numericJsonPaths": [],
                 "dateJsonPaths": [],
-                "dateTimeJsonPaths": [],
+                "dateTimeJsonPaths": [
+                  "$.submittedAt"
+                ],
                 "identityJsonPaths": [
                   "$.widgetId"
                 ],
@@ -81,6 +83,13 @@ public class Given_A_Host_Using_The_Relational_Backend
                     "isReference": false,
                     "isRequired": true,
                     "path": "$.widgetName",
+                    "type": "string"
+                  },
+                  "SubmittedAt": {
+                    "isPartOfIdentity": false,
+                    "isReference": false,
+                    "isRequired": false,
+                    "path": "$.submittedAt",
                     "type": "string"
                   }
                 },
@@ -105,6 +114,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                     "widgetName": {
                       "type": "string",
                       "maxLength": 75
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
                     }
                   },
                   "required": [
@@ -313,6 +326,35 @@ public class Given_A_Host_Using_The_Relational_Backend
             .GetValue<string>()
             .Should()
             .Be("Smoke Widget");
+    }
+
+    [Test]
+    public async Task It_normalizes_permissive_datetime_input_before_the_relational_flattener_sees_the_selected_body()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":102,"widgetName":"Normalized Widget","submittedAt":"5/7/2009 2:15:30 PM"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
+        _flattener.Inputs.Should().ContainSingle();
+        _terminalStage.Requests.Should().ContainSingle();
+        _flattener.Inputs[0].SelectedBody["submittedAt"]!
+            .GetValue<string>()
+            .Should()
+            .Be("2009-05-07T14:15:30Z");
+        _terminalStage.Requests[0].FlatteningInput.SelectedBody["submittedAt"]!
+            .GetValue<string>()
+            .Should()
+            .Be("2009-05-07T14:15:30Z");
     }
 
     [Test]

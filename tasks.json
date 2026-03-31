@@ -221,7 +221,7 @@
       "Assert the HTTP response still indicates the relational write seam executed successfully so the test proves normalization and seam routing together.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~Given_A_Host_Using_The_Relational_Backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
