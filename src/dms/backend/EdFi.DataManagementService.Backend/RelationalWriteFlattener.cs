@@ -46,7 +46,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 flatteningInput,
                 selectedBodyIndex,
                 resolvedReferenceLookups,
-                rootDocumentIdValue
+                rootDocumentIdValue,
+                collectionChildPlansByParentScope
             ),
             collectionCandidates: MaterializeCollectionCandidates(
                 flatteningInput,
@@ -96,7 +97,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (
             var tableWritePlan in writePlan.TablePlansInDependencyOrder.Where(static plan =>
-                plan.TableModel.IdentityMetadata.TableKind == DbTableKind.Collection
+                plan.TableModel.IdentityMetadata.TableKind
+                    is DbTableKind.Collection
+                        or DbTableKind.ExtensionCollection
             )
         )
         {
@@ -137,7 +140,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningInput flatteningInput,
         SelectedBodyIndex selectedBodyIndex,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        FlattenedWriteValue rootDocumentIdValue
+        FlattenedWriteValue rootDocumentIdValue,
+        IReadOnlyDictionary<string, IReadOnlyList<CollectionChildPlan>> collectionChildPlansByParentScope
     )
     {
         var rootParentKeyParts = new[] { rootDocumentIdValue };
@@ -148,7 +152,40 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
         )
         {
-            if (!selectedBodyIndex.HasBoundDataForScope(tableWritePlan.TableModel.JsonScope.Canonical))
+            if (
+                !TryGetScopeNode(
+                    flatteningInput.SelectedBody,
+                    tableWritePlan.TableModel.JsonScope,
+                    out var scopeNode
+                ) || scopeNode is null
+            )
+            {
+                continue;
+            }
+
+            if (scopeNode is not JsonObject scopeObject)
+            {
+                throw new InvalidOperationException(
+                    $"Root extension table '{FormatTable(tableWritePlan)}' expected a JSON object at path "
+                        + $"'{tableWritePlan.TableModel.JsonScope.Canonical}', but encountered "
+                        + $"'{scopeNode.GetType().Name}'."
+                );
+            }
+
+            var collectionCandidates = MaterializeCollectionCandidates(
+                flatteningInput,
+                collectionChildPlansByParentScope,
+                tableWritePlan.TableModel.JsonScope.Canonical,
+                scopeObject,
+                rootParentKeyParts,
+                parentOrdinalPath: [],
+                resolvedReferenceLookups
+            );
+
+            if (
+                !selectedBodyIndex.HasBoundDataForScope(tableWritePlan.TableModel.JsonScope.Canonical)
+                && collectionCandidates.Count == 0
+            )
             {
                 continue;
             }
@@ -164,7 +201,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     ordinalPath: []
                 ),
                 nonCollectionRows: [],
-                collectionCandidates: []
+                collectionCandidates: collectionCandidates
             );
         }
     }
@@ -1127,6 +1164,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var segments = RestrictedJsonPath.GetSegments(relativePath);
         return TryNavigateRelativeNode(scopeNode, segments, out value);
+    }
+
+    private static bool TryGetScopeNode(
+        JsonNode selectedBody,
+        JsonPathExpression scopePath,
+        out JsonNode? scopeNode
+    )
+    {
+        var scopeSegments = RestrictedJsonPath.GetSegments(scopePath);
+        return TryNavigateRelativeNode(selectedBody, scopeSegments, out scopeNode);
     }
 
     private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)

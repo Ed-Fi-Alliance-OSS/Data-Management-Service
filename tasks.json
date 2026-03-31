@@ -89,7 +89,7 @@
       "Add backend/unit tests for root `_ext` row emission and root-level extension child collections.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extensions",

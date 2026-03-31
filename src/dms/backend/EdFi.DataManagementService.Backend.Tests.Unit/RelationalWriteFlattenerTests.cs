@@ -92,6 +92,70 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_root_extension_child_collection_candidates_under_the_root_extension_row()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {
+                      "interventions": [
+                        {
+                          "interventionCode": "Attendance"
+                        },
+                        {
+                          "interventionCode": "Behavior"
+                        }
+                      ]
+                    }
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.CollectionCandidates.Should().BeEmpty();
+        result.RootRow.NonCollectionRows.Should().ContainSingle();
+
+        var extensionRow = result.RootRow.NonCollectionRows[0];
+        extensionRow
+            .Values.Should()
+            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal(null));
+
+        extensionRow.CollectionCandidates.Should().HaveCount(2);
+        extensionRow.CollectionCandidates[0].OrdinalPath.Should().Equal(0);
+        extensionRow.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        extensionRow
+            .CollectionCandidates[0]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Attendance")
+            );
+        extensionRow.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Attendance");
+
+        extensionRow.CollectionCandidates[1].OrdinalPath.Should().Equal(1);
+        extensionRow.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        extensionRow
+            .CollectionCandidates[1]
+            .Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(1),
+                new FlattenedWriteValue.Literal("Behavior")
+            );
+        extensionRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Behavior");
+    }
+
+    [Test]
     public void It_emits_top_level_collection_candidates_with_unresolved_keys_and_semantic_identity()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -342,6 +406,30 @@ public class Given_RelationalWriteFlattener
         result.RootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal(null));
         result.RootRow.Values[8].Should().Be(new FlattenedWriteValue.Literal(null));
         result.RootRow.Values[9].Should().Be(new FlattenedWriteValue.Literal(null));
+        result.RootRow.NonCollectionRows.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_emit_root_extension_rows_for_empty_extension_sites()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {
+                      "interventions": []
+                    }
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
         result.RootRow.NonCollectionRows.Should().BeEmpty();
     }
 
@@ -656,6 +744,7 @@ public class Given_RelationalWriteFlattener
             var schoolResource = new QualifiedResourceName("Ed-Fi", "Student");
             var rootPlan = CreateRootPlan();
             var rootExtensionPlan = CreateRootExtensionPlan();
+            var rootExtensionInterventionPlan = CreateRootExtensionInterventionPlan();
             var addressPlan = CreateAddressPlan();
             var addressPeriodPlan = CreateAddressPeriodPlan();
 
@@ -668,6 +757,7 @@ public class Given_RelationalWriteFlattener
                 [
                     rootPlan.TableModel,
                     rootExtensionPlan.TableModel,
+                    rootExtensionInterventionPlan.TableModel,
                     addressPlan.TableModel,
                     addressPeriodPlan.TableModel,
                 ],
@@ -707,7 +797,13 @@ public class Given_RelationalWriteFlattener
                 DocumentUuid: new DocumentUuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")),
                 WritePlan: new ResourceWritePlan(
                     resourceModel,
-                    [rootPlan, rootExtensionPlan, addressPlan, addressPeriodPlan]
+                    [
+                        rootPlan,
+                        rootExtensionPlan,
+                        rootExtensionInterventionPlan,
+                        addressPlan,
+                        addressPeriodPlan,
+                    ]
                 ),
                 ResolvedReferences: CreateResolvedReferences()
             );
@@ -1095,6 +1191,114 @@ public class Given_RelationalWriteFlattener
                     ),
                 ],
                 KeyUnificationPlans: []
+            );
+        }
+
+        private static TableWritePlan CreateRootExtensionInterventionPlan()
+        {
+            var tableModel = new DbTableModel(
+                Table: new DbTableName(new DbSchemaName("sample"), "StudentExtensionIntervention"),
+                JsonScope: CreatePath(
+                    "$._ext.sample.interventions[*]",
+                    new JsonPathSegment.Property("_ext"),
+                    new JsonPathSegment.Property("sample"),
+                    new JsonPathSegment.Property("interventions"),
+                    new JsonPathSegment.AnyArrayElement()
+                ),
+                Key: new TableKey(
+                    "PK_StudentExtensionIntervention",
+                    [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                ),
+                Columns:
+                [
+                    CreateColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                    CreateColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                    CreateColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                    CreateColumn(
+                        "InterventionCode",
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                        isNullable: false,
+                        sourceJsonPath: CreatePath(
+                            "$.interventionCode",
+                            new JsonPathSegment.Property("interventionCode")
+                        )
+                    ),
+                ],
+                Constraints: []
+            )
+            {
+                IdentityMetadata = new DbTableIdentityMetadata(
+                    TableKind: DbTableKind.ExtensionCollection,
+                    PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                    RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    ImmediateParentScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionSemanticIdentityBinding(
+                            CreatePath(
+                                "$.interventionCode",
+                                new JsonPathSegment.Property("interventionCode")
+                            ),
+                            new DbColumnName("InterventionCode")
+                        ),
+                    ]
+                ),
+            };
+
+            return new TableWritePlan(
+                TableModel: tableModel,
+                InsertSql: "insert into sample.\"StudentExtensionIntervention\" values (...)",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings:
+                [
+                    new WriteColumnBinding(
+                        tableModel.Columns[0],
+                        new WriteValueSource.Precomputed(),
+                        "CollectionItemId"
+                    ),
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        new WriteValueSource.DocumentId(),
+                        "Student_DocumentId"
+                    ),
+                    new WriteColumnBinding(tableModel.Columns[2], new WriteValueSource.Ordinal(), "Ordinal"),
+                    new WriteColumnBinding(
+                        tableModel.Columns[3],
+                        new WriteValueSource.Scalar(
+                            CreatePath(
+                                "$.interventionCode",
+                                new JsonPathSegment.Property("interventionCode")
+                            ),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                        ),
+                        "InterventionCode"
+                    ),
+                ],
+                KeyUnificationPlans: [],
+                CollectionMergePlan: new CollectionMergePlan(
+                    SemanticIdentityBindings:
+                    [
+                        new CollectionMergeSemanticIdentityBinding(
+                            CreatePath(
+                                "$.interventionCode",
+                                new JsonPathSegment.Property("interventionCode")
+                            ),
+                            3
+                        ),
+                    ],
+                    StableRowIdentityBindingIndex: 0,
+                    UpdateByStableRowIdentitySql: "update sample.\"StudentExtensionIntervention\" set \"InterventionCode\" = @InterventionCode where \"CollectionItemId\" = @CollectionItemId",
+                    DeleteByStableRowIdentitySql: "delete from sample.\"StudentExtensionIntervention\" where \"CollectionItemId\" = @CollectionItemId",
+                    OrdinalBindingIndex: 2,
+                    CompareBindingIndexesInOrder: [3, 2]
+                ),
+                CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                    new DbColumnName("CollectionItemId"),
+                    0
+                )
             );
         }
 
