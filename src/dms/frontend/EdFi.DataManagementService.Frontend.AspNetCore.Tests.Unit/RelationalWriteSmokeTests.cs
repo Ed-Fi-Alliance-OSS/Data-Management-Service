@@ -574,7 +574,11 @@ public class Given_A_Host_Using_The_Relational_Backend
                 },
                 ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
                 ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short> { [resource] = 1 },
-                ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [1] = resourceKey }
+                ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [1] = resourceKey },
+                SecurableElementColumnPathsByResource: new Dictionary<
+                    QualifiedResourceName,
+                    IReadOnlyList<ResolvedSecurableElementPath>
+                >()
             );
         }
 

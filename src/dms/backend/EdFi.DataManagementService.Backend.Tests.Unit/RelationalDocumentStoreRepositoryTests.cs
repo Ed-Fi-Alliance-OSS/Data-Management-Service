@@ -729,7 +729,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 
@@ -755,7 +759,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 
@@ -781,7 +789,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 

@@ -235,7 +235,11 @@ internal sealed record RelationalWriteSeamFixture(
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 
@@ -255,7 +259,11 @@ internal sealed record RelationalWriteSeamFixture(
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKey.ResourceKeyId] = resourceKey,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 
