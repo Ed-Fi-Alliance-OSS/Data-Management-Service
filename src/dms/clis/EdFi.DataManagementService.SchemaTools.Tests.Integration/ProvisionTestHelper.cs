@@ -43,7 +43,7 @@ internal static partial class ProvisionTestHelper
             "ddl",
             "provision",
             "--schema",
-            ..schemaPaths,
+            .. schemaPaths,
             "--connection-string",
             connectionString,
             "--dialect",
@@ -130,21 +130,23 @@ internal static partial class ProvisionTestHelper
     internal static void AssertJournalRowOnInsert(DbConnection connection, string dialect)
     {
         using var getResourceKeyCommand = connection.CreateCommand();
-        getResourceKeyCommand.CommandText = $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
+        getResourceKeyCommand.CommandText =
+            $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
         var resourceKeyId = Convert.ToInt16(getResourceKeyCommand.ExecuteScalar());
 
         using var insertCommand = connection.CreateCommand();
-        insertCommand.CommandText = dialect == "pgsql"
-            ? """
-              INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-              VALUES (@uuid, @resourceKeyId)
-              RETURNING "DocumentId";
-              """
-            : """
-              INSERT INTO dms.Document (DocumentUuid, ResourceKeyId)
-              VALUES (@uuid, @resourceKeyId);
-              SELECT SCOPE_IDENTITY();
-              """;
+        insertCommand.CommandText =
+            dialect == "pgsql"
+                ? """
+                    INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
+                    VALUES (@uuid, @resourceKeyId)
+                    RETURNING "DocumentId";
+                    """
+                : """
+                    INSERT INTO dms.Document (DocumentUuid, ResourceKeyId)
+                    VALUES (@uuid, @resourceKeyId);
+                    SELECT SCOPE_IDENTITY();
+                    """;
         var uuidParam = insertCommand.CreateParameter();
         uuidParam.ParameterName = "uuid";
         uuidParam.Value = Guid.NewGuid();
@@ -156,9 +158,11 @@ internal static partial class ProvisionTestHelper
         var documentId = Convert.ToInt64(insertCommand.ExecuteScalar());
 
         using var queryCommand = connection.CreateCommand();
-        queryCommand.CommandText =
-            $"""
-            SELECT {Quote(dialect, "ChangeVersion")}, {Quote(dialect, "DocumentId")}, {Quote(dialect, "ResourceKeyId")}
+        queryCommand.CommandText = $"""
+            SELECT {Quote(dialect, "ChangeVersion")}, {Quote(dialect, "DocumentId")}, {Quote(
+                dialect,
+                "ResourceKeyId"
+            )}
             FROM {QualifyTable(dialect, "dms", "DocumentChangeEvent")}
             WHERE {Quote(dialect, "DocumentId")} = @documentId;
             """;
@@ -176,24 +180,26 @@ internal static partial class ProvisionTestHelper
     internal static void AssertDistinctChangeVersionsOnMultiRowUpdate(DbConnection connection, string dialect)
     {
         using var resourceKeyCommand = connection.CreateCommand();
-        resourceKeyCommand.CommandText = $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
+        resourceKeyCommand.CommandText =
+            $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
         var resourceKeyId = Convert.ToInt16(resourceKeyCommand.ExecuteScalar());
 
         var documentIds = new long[3];
         for (int i = 0; i < 3; i++)
         {
             using var insertCommand = connection.CreateCommand();
-            insertCommand.CommandText = dialect == "pgsql"
-                ? """
-                  INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-                  VALUES (@uuid, @resourceKeyId)
-                  RETURNING "DocumentId";
-                  """
-                : """
-                  INSERT INTO dms.Document (DocumentUuid, ResourceKeyId)
-                  VALUES (@uuid, @resourceKeyId);
-                  SELECT SCOPE_IDENTITY();
-                  """;
+            insertCommand.CommandText =
+                dialect == "pgsql"
+                    ? """
+                        INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
+                        VALUES (@uuid, @resourceKeyId)
+                        RETURNING "DocumentId";
+                        """
+                    : """
+                        INSERT INTO dms.Document (DocumentUuid, ResourceKeyId)
+                        VALUES (@uuid, @resourceKeyId);
+                        SELECT SCOPE_IDENTITY();
+                        """;
             var uuidParam = insertCommand.CreateParameter();
             uuidParam.ParameterName = "uuid";
             uuidParam.Value = Guid.NewGuid();
@@ -206,8 +212,7 @@ internal static partial class ProvisionTestHelper
         }
 
         using var deleteCommand = connection.CreateCommand();
-        deleteCommand.CommandText =
-            $"""
+        deleteCommand.CommandText = $"""
             DELETE FROM {QualifyTable(dialect, "dms", "DocumentChangeEvent")}
             WHERE {Quote(dialect, "DocumentId")} IN (@id0, @id1, @id2);
             """;
@@ -215,11 +220,11 @@ internal static partial class ProvisionTestHelper
         deleteCommand.ExecuteNonQuery();
 
         using var updateCommand = connection.CreateCommand();
-        var seqExpr = dialect == "pgsql"
-            ? """nextval('"dms"."ChangeVersionSequence"')"""
-            : "NEXT VALUE FOR dms.ChangeVersionSequence";
-        updateCommand.CommandText =
-            $"""
+        var seqExpr =
+            dialect == "pgsql"
+                ? """nextval('"dms"."ChangeVersionSequence"')"""
+                : "NEXT VALUE FOR dms.ChangeVersionSequence";
+        updateCommand.CommandText = $"""
             UPDATE {QualifyTable(dialect, "dms", "Document")}
             SET {Quote(dialect, "ContentVersion")} = {seqExpr}
             WHERE {Quote(dialect, "DocumentId")} IN (@id0, @id1, @id2);
@@ -228,8 +233,7 @@ internal static partial class ProvisionTestHelper
         updateCommand.ExecuteNonQuery();
 
         using var queryCommand = connection.CreateCommand();
-        queryCommand.CommandText =
-            $"""
+        queryCommand.CommandText = $"""
             SELECT {Quote(dialect, "ChangeVersion")}, {Quote(dialect, "DocumentId")}
             FROM {QualifyTable(dialect, "dms", "DocumentChangeEvent")}
             WHERE {Quote(dialect, "DocumentId")} IN (@id0, @id1, @id2);
@@ -309,10 +313,7 @@ internal static partial class ProvisionTestHelper
         while (reader.Read())
         {
             var name = reader.GetString(0);
-            if (
-                !systemSchemas.Contains(name)
-                && !name.StartsWith("db_", StringComparison.OrdinalIgnoreCase)
-            )
+            if (!systemSchemas.Contains(name) && !name.StartsWith("db_", StringComparison.OrdinalIgnoreCase))
             {
                 schemas.Add(name);
             }
@@ -332,7 +333,7 @@ internal static partial class ProvisionTestHelper
             "ddl",
             "emit",
             "--schema",
-            ..schemaPaths,
+            .. schemaPaths,
             "--output",
             outputDir,
             "--dialect",
@@ -350,12 +351,18 @@ internal static partial class ProvisionTestHelper
 
         var args = new List<string>
         {
-            "-h", builder.Host!,
-            "-p", builder.Port.ToString(),
-            "-U", builder.Username!,
-            "-d", builder.Database!,
-            "-v", "ON_ERROR_STOP=1",
-            "-f", sqlFilePath,
+            "-h",
+            builder.Host!,
+            "-p",
+            builder.Port.ToString(),
+            "-U",
+            builder.Username!,
+            "-d",
+            builder.Database!,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-f",
+            sqlFilePath,
         };
 
         var env = new Dictionary<string, string> { ["PGPASSWORD"] = builder.Password! };
@@ -372,12 +379,18 @@ internal static partial class ProvisionTestHelper
 
         var args = new List<string>
         {
-            "-S", builder.DataSource,
-            "-U", builder.UserID,
-            "-P", builder.Password,
-            "-d", builder.InitialCatalog,
+            "-S",
+            builder.DataSource,
+            "-U",
+            builder.UserID,
+            "-P",
+            builder.Password,
+            "-d",
+            builder.InitialCatalog,
             "-b",
-            "-i", sqlFilePath,
+            "-I",
+            "-i",
+            sqlFilePath,
         };
 
         return CliTestHelper.RunProcess("sqlcmd", args);

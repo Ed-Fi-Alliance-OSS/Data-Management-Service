@@ -310,6 +310,22 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("DEFAULT now()");
     }
 
+    [Test]
+    public void It_should_keep_document_defaults_available_for_root_insert_initialization()
+    {
+        _ddl.Should().Contain("nextval('\"dms\".\"ChangeVersionSequence\"')");
+        _ddl.Should().Contain("DEFAULT now()");
+        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
+    }
+
+    [Test]
+    public void It_should_keep_document_journaling_trigger_compatible_with_default_seeded_insert_flow()
+    {
+        _ddl.Should()
+            .Contain("VALUES (NEW.\"ContentVersion\", NEW.\"DocumentId\", NEW.\"ResourceKeyId\", now());");
+        _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\" ON \"dms\".\"Document\"");
+    }
+
     // ── Primary keys ────────────────────────────────────────────────
 
     [Test]
@@ -817,6 +833,30 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_use_sysutcdatetime_for_timestamp_defaults()
     {
         _ddl.Should().Contain("DEFAULT (sysutcdatetime())");
+    }
+
+    [Test]
+    public void It_should_keep_document_defaults_compatible_with_later_same_transaction_restamping()
+    {
+        _ddl.Should()
+            .Contain(
+                "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
+            );
+        _ddl.Should()
+            .Contain(
+                "CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
+            );
+        _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())");
+        _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
+    }
+
+    [Test]
+    public void It_should_keep_document_journaling_trigger_compatible_with_default_then_restamp_flow()
+    {
+        _ddl.Should().Contain("IF UPDATE([ContentVersion]) OR NOT EXISTS (SELECT 1 FROM deleted)");
+        _ddl.Should()
+            .Contain("SELECT i.[ContentVersion], i.[DocumentId], i.[ResourceKeyId], sysutcdatetime()");
+        _ddl.Should().Contain("FROM inserted i;");
     }
 
     // ── MSSQL named default constraints ─────────────────────────────

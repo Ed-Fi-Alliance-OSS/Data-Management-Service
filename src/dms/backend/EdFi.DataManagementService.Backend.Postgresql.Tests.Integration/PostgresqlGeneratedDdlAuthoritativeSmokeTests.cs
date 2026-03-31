@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using Npgsql;
@@ -13,6 +14,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 internal sealed record AuthoritativeSampleSmokeSeedData(
     long SchoolDocumentId,
+    long StudentDocumentId,
+    long OtherStudentDocumentId,
     long StudentEducationOrganizationAssociationDocumentId,
     long OtherStudentEducationOrganizationAssociationDocumentId,
     long AlternateTermDescriptorDocumentId,
@@ -20,6 +23,13 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long StudentEducationOrganizationAssociationAddressCollectionItemId,
     long StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictCollectionItemId,
     long StudentEducationOrganizationAssociationExtensionAddressTermCollectionItemId
+);
+
+internal sealed record DocumentStampState(
+    long ContentVersion,
+    long IdentityVersion,
+    DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset IdentityLastModifiedAt
 );
 
 [TestFixture]
@@ -455,6 +465,336 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             .Be(1);
     }
 
+    [Test]
+    public async Task It_should_stamp_content_only_root_changes_without_touching_identity_stamps()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "FirstName" = @firstName
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("firstName", "Jordan"),
+            new NpgsqlParameter("documentId", _seedData.StudentDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_stamp_child_representation_changes_without_touching_identity_stamps()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociationAddress"
+            SET "StreetNumberName" = @streetNumberName
+            WHERE "CollectionItemId" = @collectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("streetNumberName", "101 Congress Ave"),
+            new NpgsqlParameter(
+                "collectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_stamp_child_inserts_without_touching_identity_stamps()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:AddressTypeDescriptor",
+            "Home"
+        );
+        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:StateAbbreviationDescriptor",
+            "TX"
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await InsertStudentEducationOrganizationAssociationAddressAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId,
+            2,
+            addressTypeDescriptorDocumentId,
+            stateAbbreviationDescriptorDocumentId,
+            "Austin",
+            "78702",
+            "200 Congress Ave"
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_successful_no_op_child_updates()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociationAddress"
+            SET "StreetNumberName" = "StreetNumberName"
+            WHERE "CollectionItemId" = @collectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter(
+                "collectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.Should().Be(before);
+    }
+
+    [Test]
+    public async Task It_should_stamp_extension_scope_representation_changes_without_touching_identity_stamps()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."StudentEducationOrganizationAssociationExtensionAddress"
+            SET "Complex" = @complex
+            WHERE "BaseCollectionItemId" = @baseCollectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("complex", "Complex-Updated"),
+            new NpgsqlParameter(
+                "baseCollectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_successful_no_op_extension_scope_updates()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "sample"."StudentEducationOrganizationAssociationExtensionAddress"
+            SET "Complex" = "Complex"
+            WHERE "BaseCollectionItemId" = @baseCollectionItemId
+              AND "StudentEducationOrganizationAssociation_DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter(
+                "baseCollectionItemId",
+                _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
+            ),
+            new NpgsqlParameter("documentId", _seedData.StudentEducationOrganizationAssociationDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.Should().Be(before);
+    }
+
+    [Test]
+    public async Task It_should_stamp_root_extension_inserts_without_touching_identity_stamps()
+    {
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("12121212-1212-1212-1212-121212121212"),
+            schoolResourceKeyId
+        );
+        await InsertSchoolAsync(documentId, 101, "Beta Academy");
+
+        var before = await GetDocumentStampStateAsync(documentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await InsertSchoolExtensionAsync(documentId);
+
+        var after = await GetDocumentStampStateAsync(documentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_identity_for_content_only_updates_on_identity_propagation_tables()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "NameOfInstitution" = @nameOfInstitution
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("nameOfInstitution", "Alpha Academy Updated"),
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_stamp_root_identity_changes_as_both_content_and_identity_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = @schoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("schoolId", 101),
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().BeAfter(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_stamp_successful_no_op_root_updates()
+    {
+        var before = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "FirstName" = "FirstName"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", _seedData.StudentDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+
+        after.Should().Be(before);
+    }
+
+    [Test]
+    public async Task It_should_stamp_indirect_identity_propagation_changes_via_postgresql_cascade()
+    {
+        var before = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = @schoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("schoolId", 101),
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        after.IdentityLastModifiedAt.Should().BeAfter(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_allocate_distinct_content_versions_for_multi_row_root_updates()
+    {
+        var beforeStudent = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var beforeOtherStudent = await GetDocumentStampStateAsync(_seedData.OtherStudentDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."Student"
+            SET "FirstName" = "FirstName" || ' Updated'
+            WHERE "DocumentId" IN (@firstDocumentId, @secondDocumentId);
+            """,
+            new NpgsqlParameter("firstDocumentId", _seedData.StudentDocumentId),
+            new NpgsqlParameter("secondDocumentId", _seedData.OtherStudentDocumentId)
+        );
+
+        var afterStudent = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var afterOtherStudent = await GetDocumentStampStateAsync(_seedData.OtherStudentDocumentId);
+
+        afterStudent.ContentVersion.Should().BeGreaterThan(beforeStudent.ContentVersion);
+        afterOtherStudent.ContentVersion.Should().BeGreaterThan(beforeOtherStudent.ContentVersion);
+        afterStudent.ContentVersion.Should().NotBe(afterOtherStudent.ContentVersion);
+        afterStudent.IdentityVersion.Should().Be(beforeStudent.IdentityVersion);
+        afterOtherStudent.IdentityVersion.Should().Be(beforeOtherStudent.IdentityVersion);
+    }
+
     private async Task<AuthoritativeSampleSmokeSeedData> SeedSmokeRowsAsync()
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
@@ -591,6 +931,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         return new(
             schoolDocumentId,
+            studentDocumentId,
+            otherStudentDocumentId,
             studentEducationOrganizationAssociationDocumentId,
             otherStudentEducationOrganizationAssociationDocumentId,
             alternateTermDescriptorDocumentId,
@@ -612,6 +954,20 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             """,
             new NpgsqlParameter("projectName", projectName),
             new NpgsqlParameter("resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> GetDescriptorDocumentIdAsync(string discriminator, string codeValue)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "dms"."Descriptor"
+            WHERE "Discriminator" = @discriminator
+              AND "CodeValue" = @codeValue;
+            """,
+            new NpgsqlParameter("discriminator", discriminator),
+            new NpgsqlParameter("codeValue", codeValue)
         );
     }
 
@@ -922,6 +1278,53 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     private async Task<long> CountRowsAsync(string sql, params NpgsqlParameter[] parameters)
     {
         return await _database.ExecuteScalarAsync<long>(sql, parameters);
+    }
+
+    private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT
+                    "ContentVersion",
+                    "IdentityVersion",
+                    "ContentLastModifiedAt",
+                    "IdentityLastModifiedAt"
+                FROM "dms"."Document"
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
+            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+        );
+    }
+
+    private async Task DelayForDistinctTimestampsAsync()
+    {
+        await _database.ExecuteNonQueryAsync("""SELECT pg_sleep(0.02);""");
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
+            ),
+        };
     }
 
     private static async Task AssertForeignKeyViolationAsync(Func<Task> act)

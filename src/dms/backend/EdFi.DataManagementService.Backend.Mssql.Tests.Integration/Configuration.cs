@@ -31,5 +31,7 @@ public static class Configuration
         return _configuration;
     }
 
-    public static string? MssqlAdminConnectionString => Config().GetConnectionString("MssqlAdmin");
+    public static string? MssqlAdminConnectionString =>
+        Environment.GetEnvironmentVariable("ConnectionStrings__MssqlAdmin")
+        ?? Config().GetConnectionString("MssqlAdmin");
 }
