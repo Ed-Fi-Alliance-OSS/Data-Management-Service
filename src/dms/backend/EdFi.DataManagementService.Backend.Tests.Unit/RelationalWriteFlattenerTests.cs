@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -34,6 +35,16 @@ public class Given_RelationalWriteFlattener
     {
         _sut = new RelationalWriteFlattener();
         _fixture = FlattenerFixture.Create();
+    }
+
+    [Test]
+    public void It_does_not_keep_the_selected_body_index_prepass_type()
+    {
+        typeof(RelationalWriteFlattener)
+            .GetNestedTypes(BindingFlags.NonPublic)
+            .Select(static nestedType => nestedType.Name)
+            .Should()
+            .NotContain("SelectedBodyIndex");
     }
 
     [Test]

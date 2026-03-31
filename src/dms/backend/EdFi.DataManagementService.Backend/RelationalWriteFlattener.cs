@@ -25,7 +25,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         var writePlan = flatteningInput.WritePlan;
         var rootTablePlan = GetRootTablePlan(writePlan);
-        var selectedBodyIndex = SelectedBodyIndex.Create(flatteningInput.SelectedBody);
+        var rootScopeNode = GetRootScopeNode(flatteningInput.SelectedBody);
         var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
             flatteningInput.ResolvedReferences
@@ -41,14 +41,15 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             values: MaterializeValues(
                 flatteningInput,
                 rootTablePlan,
-                selectedBodyIndex,
+                rootScopeNode,
                 resolvedReferenceLookups,
                 parentKeyParts: [],
+                ordinal: 0,
                 ordinalPath: []
             ),
             rootExtensionRows: MaterializeRootExtensionRows(
                 flatteningInput,
-                selectedBodyIndex,
+                rootScopeNode,
                 resolvedReferenceLookups,
                 rootDocumentIdValue,
                 traversalPlans
@@ -57,7 +58,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 flatteningInput,
                 traversalPlans,
                 rootTablePlan.TableModel.JsonScope.Canonical,
-                flatteningInput.SelectedBody,
+                rootScopeNode,
                 parentKeyParts: [],
                 parentOrdinalPath: [],
                 resolvedReferenceLookups
@@ -65,6 +66,21 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
 
         return new FlattenedWriteSet(rootRow);
+    }
+
+    private static JsonObject GetRootScopeNode(JsonNode selectedBody)
+    {
+        ArgumentNullException.ThrowIfNull(selectedBody);
+
+        if (selectedBody is JsonObject rootScopeNode)
+        {
+            return rootScopeNode;
+        }
+
+        throw CreateRequestShapeValidationException(
+            "$",
+            $"Selected write body must be a JSON object, but found '{selectedBody.GetType().Name}'."
+        );
     }
 
     private static TableWritePlan GetRootTablePlan(ResourceWritePlan writePlan)
@@ -191,7 +207,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private static IEnumerable<RootExtensionWriteRowBuffer> MaterializeRootExtensionRows(
         FlatteningInput flatteningInput,
-        SelectedBodyIndex selectedBodyIndex,
+        JsonObject rootScopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         FlattenedWriteValue rootDocumentIdValue,
         TraversalPlans traversalPlans
@@ -206,11 +222,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         )
         {
             if (
-                !TryGetScopeNode(
-                    flatteningInput.SelectedBody,
-                    tableWritePlan.TableModel.JsonScope,
-                    out var scopeNode
-                ) || scopeNode is null
+                !TryGetScopeNode(rootScopeNode, tableWritePlan.TableModel.JsonScope, out var scopeNode)
+                || scopeNode is null
             )
             {
                 continue;
@@ -236,10 +249,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (
-                !selectedBodyIndex.HasBoundDataForScope(tableWritePlan.TableModel.JsonScope.Canonical)
-                && collectionCandidates.Count == 0
-            )
+            if (!HasBoundScopeData(scopeObject) && collectionCandidates.Count == 0)
             {
                 continue;
             }
@@ -249,9 +259,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 MaterializeValues(
                     flatteningInput,
                     tableWritePlan,
-                    selectedBodyIndex,
+                    scopeObject,
                     resolvedReferenceLookups,
                     rootParentKeyParts,
+                    ordinal: 0,
                     ordinalPath: []
                 ),
                 collectionCandidates: collectionCandidates
@@ -293,7 +304,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
             {
                 var ordinalPath = AppendOrdinalPath(parentOrdinalPath, collectionScopeInstance.RequestOrder);
-                var values = MaterializeScopeNodeValues(
+                var values = MaterializeValues(
                     flatteningInput,
                     childPlan.TableWritePlan,
                     collectionScopeInstance.ScopeNode,
@@ -426,7 +437,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             attachedScopeData.Add(
                 new CandidateAttachedAlignedScopeData(
                     attachedScopePlan.TableWritePlan,
-                    MaterializeScopeNodeValues(
+                    MaterializeValues(
                         flatteningInput,
                         attachedScopePlan.TableWritePlan,
                         scopeObject,
@@ -446,50 +457,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     private static IReadOnlyList<FlattenedWriteValue> MaterializeValues(
         FlatteningInput flatteningInput,
         TableWritePlan tableWritePlan,
-        SelectedBodyIndex selectedBodyIndex,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
-        ReadOnlySpan<int> ordinalPath
-    )
-    {
-        FlattenedWriteValue[] values = new FlattenedWriteValue[tableWritePlan.ColumnBindings.Length];
-        bool[] valueAssigned = new bool[tableWritePlan.ColumnBindings.Length];
-
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            if (tableWritePlan.ColumnBindings[bindingIndex].Source is WriteValueSource.Precomputed)
-            {
-                continue;
-            }
-
-            values[bindingIndex] = MaterializeValue(
-                flatteningInput,
-                tableWritePlan,
-                tableWritePlan.ColumnBindings[bindingIndex],
-                selectedBodyIndex,
-                resolvedReferenceLookups,
-                parentKeyParts,
-                ordinalPath
-            );
-            valueAssigned[bindingIndex] = true;
-        }
-
-        ApplyKeyUnificationValues(
-            tableWritePlan,
-            selectedBodyIndex,
-            resolvedReferenceLookups,
-            ordinalPath,
-            values,
-            valueAssigned
-        );
-        EnsureAllBindingsAssigned(tableWritePlan, values, valueAssigned);
-
-        return values;
-    }
-
-    private static IReadOnlyList<FlattenedWriteValue> MaterializeScopeNodeValues(
-        FlatteningInput flatteningInput,
-        TableWritePlan tableWritePlan,
         JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         IReadOnlyList<FlattenedWriteValue> parentKeyParts,
@@ -507,7 +474,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 continue;
             }
 
-            values[bindingIndex] = MaterializeScopeNodeValue(
+            values[bindingIndex] = MaterializeValue(
                 flatteningInput,
                 tableWritePlan,
                 tableWritePlan.ColumnBindings[bindingIndex],
@@ -536,42 +503,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private static void ApplyKeyUnificationValues(
         TableWritePlan tableWritePlan,
-        SelectedBodyIndex selectedBodyIndex,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath,
-        FlattenedWriteValue[] values,
-        bool[] valueAssigned
-    )
-    {
-        foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
-        {
-            var canonicalValue = EvaluateCanonicalValue(
-                tableWritePlan,
-                keyUnificationPlan,
-                selectedBodyIndex,
-                resolvedReferenceLookups,
-                ordinalPath,
-                values,
-                valueAssigned
-            );
-
-            values[keyUnificationPlan.CanonicalBindingIndex] = new FlattenedWriteValue.Literal(
-                canonicalValue
-            );
-            valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
-
-            ValidateKeyUnificationGuardrails(
-                tableWritePlan,
-                keyUnificationPlan,
-                canonicalValue,
-                values,
-                valueAssigned
-            );
-        }
-    }
-
-    private static void ApplyKeyUnificationValues(
-        TableWritePlan tableWritePlan,
         JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ReadOnlySpan<int> ordinalPath,
@@ -604,67 +535,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 valueAssigned
             );
         }
-    }
-
-    private static object? EvaluateCanonicalValue(
-        TableWritePlan tableWritePlan,
-        KeyUnificationWritePlan keyUnificationPlan,
-        SelectedBodyIndex selectedBodyIndex,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath,
-        FlattenedWriteValue[] values,
-        bool[] valueAssigned
-    )
-    {
-        object? canonicalValue = null;
-        KeyUnificationMemberWritePlan? firstPresentMember = null;
-
-        foreach (var member in keyUnificationPlan.MembersInOrder)
-        {
-            var evaluation = EvaluateKeyUnificationMember(
-                tableWritePlan,
-                member,
-                selectedBodyIndex,
-                resolvedReferenceLookups,
-                ordinalPath
-            );
-
-            if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
-            {
-                values[presenceBindingIndex] = new FlattenedWriteValue.Literal(
-                    evaluation.IsPresent ? true : null
-                );
-                valueAssigned[presenceBindingIndex] = true;
-            }
-
-            if (!evaluation.IsPresent)
-            {
-                continue;
-            }
-
-            if (firstPresentMember is null)
-            {
-                canonicalValue = evaluation.Value;
-                firstPresentMember = member;
-                continue;
-            }
-
-            if (!Equals(canonicalValue, evaluation.Value))
-            {
-                throw CreateRequestShapeValidationException(
-                    RestrictedJsonPath.CombineCanonical(
-                        tableWritePlan.TableModel.JsonScope,
-                        member.RelativePath
-                    ),
-                    $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
-                        + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
-                        + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
-                        + $"resolved to {FormatLiteral(evaluation.Value)}."
-                );
-            }
-        }
-
-        return canonicalValue;
     }
 
     private static object? EvaluateCanonicalValue(
@@ -726,47 +596,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return canonicalValue;
-    }
-
-    private static KeyUnificationMemberEvaluation EvaluateKeyUnificationMember(
-        TableWritePlan tableWritePlan,
-        KeyUnificationMemberWritePlan member,
-        SelectedBodyIndex selectedBodyIndex,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath
-    )
-    {
-        var absolutePath = RestrictedJsonPath.CombineCanonical(
-            tableWritePlan.TableModel.JsonScope,
-            member.RelativePath
-        );
-
-        if (!selectedBodyIndex.TryGetLeafNode(absolutePath, out var memberNode) || memberNode is null)
-        {
-            return KeyUnificationMemberEvaluation.Absent;
-        }
-
-        return member switch
-        {
-            KeyUnificationMemberWritePlan.ScalarMember scalarMember => EvaluateScalarKeyUnificationMember(
-                tableWritePlan,
-                scalarMember,
-                absolutePath,
-                memberNode
-            ),
-            KeyUnificationMemberWritePlan.DescriptorMember descriptorMember =>
-                EvaluateDescriptorKeyUnificationMember(
-                    tableWritePlan,
-                    descriptorMember,
-                    absolutePath,
-                    memberNode,
-                    resolvedReferenceLookups,
-                    ordinalPath
-                ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported key-unification member kind '{member.GetType().Name}' on table '{FormatTable(tableWritePlan)}'."
-            ),
-        };
     }
 
     private static KeyUnificationMemberEvaluation EvaluateKeyUnificationMember(
@@ -957,62 +786,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         FlatteningInput flatteningInput,
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
-        SelectedBodyIndex selectedBodyIndex,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        IReadOnlyList<FlattenedWriteValue> parentKeyParts,
-        ReadOnlySpan<int> ordinalPath
-    )
-    {
-        return columnBinding.Source switch
-        {
-            WriteValueSource.DocumentId => ResolveRootDocumentIdValue(flatteningInput.TargetContext),
-            WriteValueSource.ParentKeyPart parentKeyPart => ResolveParentKeyPart(
-                tableWritePlan,
-                columnBinding,
-                parentKeyPart,
-                parentKeyParts
-            ),
-            WriteValueSource.Scalar scalar => ResolveScalarValue(
-                tableWritePlan,
-                columnBinding,
-                scalar,
-                selectedBodyIndex
-            ),
-            WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
-                flatteningInput,
-                tableWritePlan,
-                columnBinding,
-                documentReference,
-                resolvedReferenceLookups,
-                ordinalPath
-            ),
-            WriteValueSource.DescriptorReference descriptorReference => ResolveDescriptorReferenceValue(
-                tableWritePlan,
-                columnBinding,
-                descriptorReference,
-                flatteningInput.SelectedBody,
-                resolvedReferenceLookups,
-                ordinalPath
-            ),
-            WriteValueSource.Ordinal => throw CreateUnsupportedValueSourceException(
-                tableWritePlan,
-                columnBinding,
-                "collection ordinals"
-            ),
-            WriteValueSource.Precomputed => throw new InvalidOperationException(
-                $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' "
-                    + "was routed through non-precomputed materialization."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' uses unsupported write source '{columnBinding.Source.GetType().Name}'."
-            ),
-        };
-    }
-
-    private static FlattenedWriteValue MaterializeScopeNodeValue(
-        FlatteningInput flatteningInput,
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
         JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         IReadOnlyList<FlattenedWriteValue> parentKeyParts,
@@ -1029,13 +802,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 parentKeyPart,
                 parentKeyParts
             ),
-            WriteValueSource.Scalar scalar => ResolveScopeNodeScalarValue(
+            WriteValueSource.Scalar scalar => ResolveScalarValue(
                 tableWritePlan,
                 columnBinding,
                 scalar,
                 scopeNode
             ),
-            WriteValueSource.DocumentReference documentReference => ResolveScopeNodeDocumentReferenceValue(
+            WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
                 flatteningInput,
                 tableWritePlan,
                 columnBinding,
@@ -1044,16 +817,15 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups,
                 ordinalPath
             ),
-            WriteValueSource.DescriptorReference descriptorReference =>
-                ResolveScopeNodeDescriptorReferenceValue(
-                    tableWritePlan,
-                    columnBinding,
-                    descriptorReference,
-                    scopeNode,
-                    resolvedReferenceLookups,
-                    ordinalPath
-                ),
-            WriteValueSource.Ordinal => new FlattenedWriteValue.Literal(ordinal),
+            WriteValueSource.DescriptorReference descriptorReference => ResolveDescriptorReferenceValue(
+                tableWritePlan,
+                columnBinding,
+                descriptorReference,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
+            ),
+            WriteValueSource.Ordinal => ResolveOrdinalValue(tableWritePlan, columnBinding, ordinal),
             WriteValueSource.Precomputed => throw new InvalidOperationException(
                 $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' "
                     + "was routed through non-precomputed materialization."
@@ -1081,42 +853,21 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static FlattenedWriteValue ResolveDocumentReferenceValue(
-        FlatteningInput flatteningInput,
+    private static FlattenedWriteValue ResolveOrdinalValue(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
-        WriteValueSource.DocumentReference documentReference,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath
+        int ordinal
     )
     {
-        var binding = GetDocumentReferenceBinding(flatteningInput.WritePlan, documentReference);
-
-        if (
-            !TryGetScopeNode(flatteningInput.SelectedBody, binding.ReferenceObjectPath, out var referenceNode)
-            || referenceNode is null
-        )
+        if (tableWritePlan.CollectionMergePlan is not null)
         {
-            return new FlattenedWriteValue.Literal(null);
+            return new FlattenedWriteValue.Literal(ordinal);
         }
 
-        var documentId = resolvedReferenceLookups.GetDocumentId(documentReference.BindingIndex, ordinalPath);
-
-        if (documentId is not null)
-        {
-            return new FlattenedWriteValue.Literal(documentId.Value);
-        }
-
-        throw CreateMissingDocumentReferenceLookupException(
-            tableWritePlan,
-            columnBinding,
-            binding.ReferenceObjectPath.Canonical,
-            ordinalPath,
-            binding.TargetResource
-        );
+        throw CreateUnsupportedValueSourceException(tableWritePlan, columnBinding, "collection ordinals");
     }
 
-    private static FlattenedWriteValue ResolveScopeNodeDocumentReferenceValue(
+    private static FlattenedWriteValue ResolveDocumentReferenceValue(
         FlatteningInput flatteningInput,
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
@@ -1154,47 +905,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     }
 
     private static FlattenedWriteValue ResolveDescriptorReferenceValue(
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        WriteValueSource.DescriptorReference descriptorReference,
-        JsonNode selectedBody,
-        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
-        ReadOnlySpan<int> ordinalPath
-    )
-    {
-        if (
-            !TryGetScopeNode(selectedBody, tableWritePlan.TableModel.JsonScope, out var scopeNode)
-            || scopeNode is null
-            || !TryGetRelativeLeafNode(scopeNode, descriptorReference.RelativePath, out var descriptorNode)
-            || descriptorNode is null
-        )
-        {
-            return new FlattenedWriteValue.Literal(null);
-        }
-
-        EnsureDescriptorValueNode(tableWritePlan, columnBinding, descriptorReference, descriptorNode);
-
-        var descriptorId = resolvedReferenceLookups.GetDescriptorId(
-            tableWritePlan,
-            descriptorReference,
-            ordinalPath
-        );
-
-        if (descriptorId is not null)
-        {
-            return new FlattenedWriteValue.Literal(descriptorId.Value);
-        }
-
-        throw CreateMissingDescriptorReferenceLookupException(
-            tableWritePlan,
-            columnBinding,
-            GetDescriptorAbsolutePath(tableWritePlan, descriptorReference),
-            ordinalPath,
-            descriptorReference.DescriptorResource
-        );
-    }
-
-    private static FlattenedWriteValue ResolveScopeNodeDescriptorReferenceValue(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
         WriteValueSource.DescriptorReference descriptorReference,
@@ -1253,44 +963,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     }
 
     private static FlattenedWriteValue ResolveScalarValue(
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        WriteValueSource.Scalar scalar,
-        SelectedBodyIndex selectedBodyIndex
-    )
-    {
-        var absolutePath = RestrictedJsonPath.CombineCanonical(
-            tableWritePlan.TableModel.JsonScope,
-            scalar.RelativePath
-        );
-
-        if (!selectedBodyIndex.TryGetLeafNode(absolutePath, out var scalarNode))
-        {
-            return new FlattenedWriteValue.Literal(null);
-        }
-
-        if (scalarNode is null)
-        {
-            return new FlattenedWriteValue.Literal(null);
-        }
-
-        if (scalarNode is not JsonValue jsonValue)
-        {
-            throw CreateInvalidScalarReadException(
-                tableWritePlan,
-                columnBinding,
-                absolutePath,
-                scalar.Type,
-                $"encountered non-scalar JSON node type '{scalarNode.GetType().Name}'"
-            );
-        }
-
-        return new FlattenedWriteValue.Literal(
-            ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
-        );
-    }
-
-    private static FlattenedWriteValue ResolveScopeNodeScalarValue(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
         WriteValueSource.Scalar scalar,
@@ -2124,99 +1796,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             return hashCode.ToHashCode();
-        }
-    }
-
-    private sealed class SelectedBodyIndex
-    {
-        private readonly Dictionary<string, JsonNode?> _leafNodesByPath;
-        private readonly HashSet<string> _scopesWithBoundData;
-
-        private SelectedBodyIndex(
-            Dictionary<string, JsonNode?> leafNodesByPath,
-            HashSet<string> scopesWithBoundData
-        )
-        {
-            _leafNodesByPath = leafNodesByPath ?? throw new ArgumentNullException(nameof(leafNodesByPath));
-            _scopesWithBoundData =
-                scopesWithBoundData ?? throw new ArgumentNullException(nameof(scopesWithBoundData));
-        }
-
-        public static SelectedBodyIndex Create(JsonNode selectedBody)
-        {
-            ArgumentNullException.ThrowIfNull(selectedBody);
-
-            if (selectedBody is not JsonObject rootObject)
-            {
-                throw CreateRequestShapeValidationException(
-                    "$",
-                    $"Selected write body must be a JSON object, but found '{selectedBody.GetType().Name}'."
-                );
-            }
-
-            Dictionary<string, JsonNode?> leafNodesByPath = new(StringComparer.Ordinal);
-            HashSet<string> scopesWithBoundData = ["$"];
-
-            VisitObject(rootObject, "$", leafNodesByPath, scopesWithBoundData);
-
-            return new SelectedBodyIndex(leafNodesByPath, scopesWithBoundData);
-        }
-
-        public bool TryGetLeafNode(string absolutePath, out JsonNode? value)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(absolutePath);
-            return _leafNodesByPath.TryGetValue(absolutePath, out value);
-        }
-
-        public bool HasBoundDataForScope(string scopePath)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(scopePath);
-            return _scopesWithBoundData.Contains(scopePath);
-        }
-
-        private static void VisitObject(
-            JsonObject jsonObject,
-            string currentPath,
-            Dictionary<string, JsonNode?> leafNodesByPath,
-            HashSet<string> scopesWithBoundData
-        )
-        {
-            foreach (var property in jsonObject)
-            {
-                var propertyPath = $"{currentPath}.{property.Key}";
-
-                switch (property.Value)
-                {
-                    case JsonObject childObject:
-                        VisitObject(childObject, propertyPath, leafNodesByPath, scopesWithBoundData);
-                        break;
-                    case JsonArray:
-                        break;
-                    default:
-                        leafNodesByPath[propertyPath] = property.Value;
-                        MarkAncestorScopes(propertyPath, scopesWithBoundData);
-                        break;
-                }
-            }
-        }
-
-        private static void MarkAncestorScopes(string leafPath, HashSet<string> scopesWithBoundData)
-        {
-            var currentPath = leafPath;
-
-            while (true)
-            {
-                var lastDotIndex = currentPath.LastIndexOf('.');
-
-                if (lastDotIndex <= 0)
-                {
-                    scopesWithBoundData.Add("$");
-                    return;
-                }
-
-                currentPath = currentPath[..lastDotIndex];
-                scopesWithBoundData.Add(currentPath);
-            }
         }
     }
 
