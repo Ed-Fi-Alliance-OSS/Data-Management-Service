@@ -243,6 +243,6 @@
       "If any docs or committed progress notes in this branch reference the earlier review framing, update them to match the accepted boundary.",
       "Run: `git diff -- tasks.json src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs progress.txt`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

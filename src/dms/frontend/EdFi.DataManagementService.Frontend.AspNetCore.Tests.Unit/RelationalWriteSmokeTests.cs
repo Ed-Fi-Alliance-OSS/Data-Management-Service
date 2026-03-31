@@ -328,8 +328,10 @@ public class Given_A_Host_Using_The_Relational_Backend
             .Be("Smoke Widget");
     }
 
+    // The public HTTP path still relies on Core normalization; backend-local strict parsing only applies
+    // when a caller bypasses that middleware and supplies an unnormalized selected body directly.
     [Test]
-    public async Task It_normalizes_permissive_datetime_input_before_the_relational_flattener_sees_the_selected_body()
+    public async Task It_normalizes_permissive_datetime_input_on_the_public_http_path_before_the_relational_flattener_sees_the_selected_body()
     {
         using var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");

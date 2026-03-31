@@ -114,7 +114,7 @@ notes: strict DateTime/Time parsing remains pending
 
 DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
 task: Strict DateTime/Time parsing complete
-decisions: flattener now accepts exact ISO date-time strings only as `yyyy-MM-ddTHH:mm:ssZ` or `yyyy-MM-ddTHH:mm:ss+/-HH:mm`, and exact time strings only as `HH:mm:ss`; offset date-times normalize to UTC before storage; added nullable DateTime/Time columns to the Core seam fixture so strict scalar-read failures still prove the typed 400 path; backend verify filter in tasks.json matched zero tests, so actual verify used FullyQualifiedName~Given_RelationalWriteFlattener
+decisions: flattener now accepts exact ISO date-time strings only as `yyyy-MM-ddTHH:mm:ssZ` or `yyyy-MM-ddTHH:mm:ss+/-HH:mm`, and exact time strings only as `HH:mm:ss` when callers hand backend an already-selected body; offset date-times normalize to UTC before storage; public HTTP normalization still belongs to Core before this seam; added nullable DateTime/Time columns to the Core seam fixture so strict scalar-read failures still prove the typed 400 path; backend verify filter in tasks.json matched zero tests, so actual verify used FullyQualifiedName~Given_RelationalWriteFlattener
 files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamFixture.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
 notes: all tasks in tasks.json complete
 
@@ -135,3 +135,9 @@ task: Direct flattener boundary wording complete
 decisions: renamed direct flattener DateTime/Time strictness tests to say they operate on an unnormalized supplied selected body; added one nearby comment that these tests bypass Core normalization so reviewers do not read them as HTTP-contract changes; corrected the task verify filter to the real fixture name
 files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 notes: branch-local review text remains pending
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Documentation complete
+decisions: added one review-facing smoke-test comment and story acceptance wording that say Core still owns public HTTP date-time normalization while backend strict readers only validate the selected body they receive; updated the strict parsing progress note to match the same boundary
+files: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs; reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md; progress.txt; tasks.json
+notes: all tasks in tasks.json complete

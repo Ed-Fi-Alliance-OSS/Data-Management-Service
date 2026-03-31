@@ -44,7 +44,7 @@ This re-scope intentionally separates the initial relational seam and backend fl
 - Root and nested `_ext` rows/candidates are emitted only when extension values exist for the scope.
 - Flattening populates all non-storage-assigned precomputed bindings required by the compiled write plan, including key-unification values and synthetic presence flags; storage-assigned root and collection identities remain unresolved for create flows.
 - Duplicate submitted semantic identities under the same stable parent are detected in `DMS-983` and fail deterministically before terminal handoff.
-- Backend scalar reading is strict against compiled types and does not reimplement Core-side coercion.
+- Backend scalar reading is strict against compiled types and does not reimplement Core-side coercion. On the supported public HTTP path, Core still owns permissive request normalization/coercion before the selected body reaches the backend seam.
 - No general-purpose JSONPath engine is invoked per value in the hot loop.
 - After successful plan selection, target-context resolution, reference resolution, and flattening, the repository invokes a narrow `IRelationalWriteTerminalStage` contract with operation kind, target context, `ResourceWritePlan`, selected body, `ResolvedReferenceSet`, flattened output, and trace or diagnostic identifiers.
 - The default production terminal stage returns an explicit not-yet-implemented failure, while tests can substitute a capturing fake without changing repository logic.
