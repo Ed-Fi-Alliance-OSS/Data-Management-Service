@@ -603,7 +603,9 @@ public class Given_A_Reference_Bearing_Resource_Mssql
             CREATE TABLE hydref.StudentSchoolAssociation (
                 DocumentId bigint PRIMARY KEY,
                 School_DocumentId bigint NULL,
-                School_SchoolId bigint NULL
+                School_SchoolId bigint NULL,
+                Calendar_DocumentId bigint NULL,
+                Calendar_CalendarCode varchar(60) NULL
             );
             """
         );
@@ -617,11 +619,11 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
                 (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
 
-            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId)
+            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId, Calendar_DocumentId, Calendar_CalendarCode)
             VALUES
-                (401, 10, 255901),
-                (402, NULL, NULL),
-                (403, 20, 255902);
+                (401, 10, 255901, 50, 'CAL-101'),
+                (402, NULL, NULL, NULL, NULL),
+                (403, 20, 255902, 60, 'CAL-202');
             """
         );
 
@@ -678,24 +680,30 @@ public class Given_A_Reference_Bearing_Resource_Mssql
         var rootRows = _result.TableRowsInDependencyOrder[0];
         rootRows.Rows.Should().HaveCount(3);
 
-        // Doc 401: School_DocumentId=10, School_SchoolId=255901
+        // Doc 401: School_DocumentId=10, School_SchoolId=255901, Calendar_DocumentId=50, Calendar_CalendarCode='CAL-101'
         rootRows.Rows[0][1].Should().NotBeNull();
         ((long)rootRows.Rows[0][1]!).Should().Be(10);
         ((long)rootRows.Rows[0][2]!).Should().Be(255901);
+        ((long)rootRows.Rows[0][3]!).Should().Be(50);
+        ((string)rootRows.Rows[0][4]!).Should().Be("CAL-101");
 
-        // Doc 402: School_DocumentId=NULL, School_SchoolId=NULL
+        // Doc 402: all reference columns NULL
         rootRows.Rows[1][1].Should().BeNull();
         rootRows.Rows[1][2].Should().BeNull();
+        rootRows.Rows[1][3].Should().BeNull();
+        rootRows.Rows[1][4].Should().BeNull();
 
-        // Doc 403: School_DocumentId=20, School_SchoolId=255902
+        // Doc 403: School_DocumentId=20, School_SchoolId=255902, Calendar_DocumentId=60, Calendar_CalendarCode='CAL-202'
         ((long)rootRows.Rows[2][1]!)
             .Should()
             .Be(20);
         ((long)rootRows.Rows[2][2]!).Should().Be(255902);
+        ((long)rootRows.Rows[2][3]!).Should().Be(60);
+        ((string)rootRows.Rows[2][4]!).Should().Be("CAL-202");
     }
 
     [Test]
-    public void It_projects_reference_for_populated_documents()
+    public void It_projects_identity_component_reference_for_populated_documents()
     {
         var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
         var hydratedRows = _result.TableRowsInDependencyOrder[0];
@@ -705,23 +713,50 @@ public class Given_A_Reference_Bearing_Resource_Mssql
         projections.Should().ContainKey(401L);
         projections.Should().ContainKey(403L);
 
-        var doc401 = projections[401L];
-        doc401.Should().HaveCount(1);
-        doc401[0]
+        var doc401School = projections[401L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
+        doc401School.IsIdentityComponent.Should().BeTrue();
+        doc401School.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        doc401School
             .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
             .Value.Should()
             .Be(255901L);
 
-        var doc403 = projections[403L];
-        doc403.Should().HaveCount(1);
-        doc403[0]
+        var doc403School = projections[403L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
+        doc403School
             .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
             .Value.Should()
             .Be(255902L);
     }
 
     [Test]
-    public void It_does_not_project_reference_for_null_fk()
+    public void It_projects_non_identity_reference_for_populated_documents()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        var doc401Calendar = projections[401L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.calendarReference");
+        doc401Calendar.IsIdentityComponent.Should().BeFalse();
+        doc401Calendar.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "Calendar"));
+        doc401Calendar
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarReference.calendarCode")
+            .Value.Should()
+            .Be("CAL-101");
+
+        var doc403Calendar = projections[403L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.calendarReference");
+        doc403Calendar
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarReference.calendarCode")
+            .Value.Should()
+            .Be("CAL-202");
+    }
+
+    [Test]
+    public void It_does_not_project_any_reference_for_null_fk()
     {
         var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
         var hydratedRows = _result.TableRowsInDependencyOrder[0];

@@ -227,7 +227,8 @@ public static class HydrationTestHelper
 
     /// <summary>
     /// Builds a <see cref="ResourceReadPlan"/> for a StudentSchoolAssociation resource with a
-    /// nullable School reference (FK + propagated identity column) in the given schema.
+    /// nullable School reference (identity-component, FK + propagated identity column) and a
+    /// nullable Calendar reference (non-identity, FK + propagated identity column) in the given schema.
     /// </summary>
     public static ResourceReadPlan BuildStudentSchoolAssociationReadPlan(
         string schemaName,
@@ -242,6 +243,16 @@ public static class HydrationTestHelper
         var schoolIdJsonPath = new JsonPathExpression(
             "$.schoolReference.schoolId",
             [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+
+        var calendarReferencePath = new JsonPathExpression(
+            "$.calendarReference",
+            [new JsonPathSegment.Property("calendarReference")]
+        );
+
+        var calendarCodeJsonPath = new JsonPathExpression(
+            "$.calendarReference.calendarCode",
+            [new JsonPathSegment.Property("calendarReference"), new JsonPathSegment.Property("calendarCode")]
         );
 
         var rootTable = new DbTableModel(
@@ -277,6 +288,22 @@ public static class HydrationTestHelper
                     SourceJsonPath: schoolIdJsonPath,
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: calendarReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_CalendarCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    IsNullable: true,
+                    SourceJsonPath: calendarCodeJsonPath,
+                    TargetResource: null
+                ),
             ],
             Constraints: []
         )
@@ -309,6 +336,20 @@ public static class HydrationTestHelper
                         new ReferenceIdentityBinding(
                             ReferenceJsonPath: schoolIdJsonPath,
                             Column: new DbColumnName("School_SchoolId")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: calendarReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Calendar_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: calendarCodeJsonPath,
+                            Column: new DbColumnName("Calendar_CalendarCode")
                         ),
                     ]
                 ),
