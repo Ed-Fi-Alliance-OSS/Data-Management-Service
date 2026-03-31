@@ -33,7 +33,8 @@ public static class Configuration
     }
 
     public static string DatabaseConnectionString =>
-        Config().GetConnectionString("DatabaseConnection")
+        Environment.GetEnvironmentVariable("ConnectionStrings__DatabaseConnection")
+        ?? Config().GetConnectionString("DatabaseConnection")
         ?? throw new InvalidOperationException(
             "DatabaseConnection connection string is not configured in appsettings.json"
         );
