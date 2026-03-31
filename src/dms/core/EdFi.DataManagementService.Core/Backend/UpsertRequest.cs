@@ -76,4 +76,4 @@ internal record UpsertRequest(
         ResourceAuthorizationHandler,
         ResourceAuthorizationPathways
     ),
-        IUpsertRequest;
+        IRelationalUpsertRequest;

@@ -189,7 +189,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo)
@@ -293,7 +293,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var updateRequest = A.Fake<IUpdateRequest>();
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo)
@@ -362,7 +362,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
@@ -400,7 +400,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo)
@@ -434,7 +434,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var updateRequest = A.Fake<IUpdateRequest>();
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo([documentReference]));
@@ -467,7 +467,7 @@ public class Given_RelationalDocumentStoreRepository
                 )
             );
 
-        var updateRequest = A.Fake<IUpdateRequest>();
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo)
@@ -490,7 +490,7 @@ public class Given_RelationalDocumentStoreRepository
     [Test]
     public async Task It_returns_the_descriptor_write_path_guard_rail_for_post_requests()
     {
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -513,7 +513,7 @@ public class Given_RelationalDocumentStoreRepository
     [Test]
     public async Task It_returns_the_descriptor_write_path_guard_rail_for_put_requests()
     {
-        var updateRequest = A.Fake<IUpdateRequest>();
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
@@ -536,7 +536,7 @@ public class Given_RelationalDocumentStoreRepository
     [Test]
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet)
             .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
@@ -559,7 +559,7 @@ public class Given_RelationalDocumentStoreRepository
     [Test]
     public void It_does_not_remap_missing_mapping_sets_inside_the_repository()
     {
-        var upsertRequest = A.Fake<IUpsertRequest>();
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(null);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());

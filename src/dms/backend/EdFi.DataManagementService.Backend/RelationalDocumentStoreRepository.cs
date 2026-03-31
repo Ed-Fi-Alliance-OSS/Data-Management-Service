@@ -33,20 +33,24 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
+        var relationalUpsertRequest = RequireRelationalRequest<IRelationalUpsertRequest>(
+            upsertRequest,
+            nameof(upsertRequest)
+        );
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",
-            upsertRequest.TraceId.Value
+            relationalUpsertRequest.TraceId.Value
         );
 
         return ExecuteWriteGuardRails<UpsertResult>(
-            requestBody: upsertRequest.EdfiDoc,
-            traceId: upsertRequest.TraceId,
-            upsertRequest.MappingSet,
-            upsertRequest.ResourceInfo,
+            requestBody: relationalUpsertRequest.EdfiDoc,
+            traceId: relationalUpsertRequest.TraceId,
+            relationalUpsertRequest.MappingSet,
+            relationalUpsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
-            upsertRequest.DocumentInfo.DocumentReferences,
-            upsertRequest.DocumentInfo.DescriptorReferences,
+            relationalUpsertRequest.DocumentInfo.DocumentReferences,
+            relationalUpsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpsertResult.UpsertFailureReference(
@@ -58,8 +62,8 @@ public sealed class RelationalDocumentStoreRepository(
                     .ResolveForPostAsync(
                         mappingSet,
                         resource,
-                        upsertRequest.DocumentInfo.ReferentialId,
-                        upsertRequest.DocumentUuid
+                        relationalUpsertRequest.DocumentInfo.ReferentialId,
+                        relationalUpsertRequest.DocumentUuid
                     )
                     .ConfigureAwait(false),
             static terminalStageResult =>
@@ -95,20 +99,24 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         ArgumentNullException.ThrowIfNull(updateRequest);
+        var relationalUpdateRequest = RequireRelationalRequest<IRelationalUpdateRequest>(
+            updateRequest,
+            nameof(updateRequest)
+        );
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.UpdateDocumentById - {TraceId}",
-            updateRequest.TraceId.Value
+            relationalUpdateRequest.TraceId.Value
         );
 
         return ExecuteWriteGuardRails<UpdateResult>(
-            requestBody: updateRequest.EdfiDoc,
-            traceId: updateRequest.TraceId,
-            updateRequest.MappingSet,
-            updateRequest.ResourceInfo,
+            requestBody: relationalUpdateRequest.EdfiDoc,
+            traceId: relationalUpdateRequest.TraceId,
+            relationalUpdateRequest.MappingSet,
+            relationalUpdateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
-            updateRequest.DocumentInfo.DocumentReferences,
-            updateRequest.DocumentInfo.DescriptorReferences,
+            relationalUpdateRequest.DocumentInfo.DocumentReferences,
+            relationalUpdateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpdateResult.UpdateFailureReference(
@@ -117,7 +125,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
             async (mappingSet, resource) =>
                 await _targetContextResolver
-                    .ResolveForPutAsync(mappingSet, resource, updateRequest.DocumentUuid)
+                    .ResolveForPutAsync(mappingSet, resource, relationalUpdateRequest.DocumentUuid)
                     .ConfigureAwait(false),
             static terminalStageResult =>
                 terminalStageResult switch
@@ -240,4 +248,17 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
+
+    private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
+        object request,
+        string paramName
+    )
+        where TRelationalRequest : class, IRelationalWriteRequest
+    {
+        return request as TRelationalRequest
+            ?? throw new ArgumentException(
+                $"Relational repository requires requests that implement {typeof(TRelationalRequest).Name}.",
+                paramName
+            );
+    }
 }

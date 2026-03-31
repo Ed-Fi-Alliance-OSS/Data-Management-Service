@@ -21,7 +21,4 @@
         <PackageReference Include="Sandwych.QuickGraph.Core" />
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
-    <ItemGroup>
-        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
-    </ItemGroup>
 </Project>
