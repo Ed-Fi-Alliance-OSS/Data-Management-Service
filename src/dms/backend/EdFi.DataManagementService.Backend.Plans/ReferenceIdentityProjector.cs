@@ -121,19 +121,23 @@ public static class ReferenceIdentityProjector
         ArgumentNullException.ThrowIfNull(hydratedRows);
         ArgumentNullException.ThrowIfNull(projectionPlan);
 
-        var rootScopeLocatorColumns = hydratedRows.TableModel.IdentityMetadata.RootScopeLocatorColumns;
-
-        if (rootScopeLocatorColumns.Count == 0)
+        if (!projectionPlan.Table.Equals(hydratedRows.TableModel.Table))
         {
             throw new InvalidOperationException(
-                $"Cannot project references for table '{hydratedRows.TableModel.Table}': "
-                    + "RootScopeLocatorColumns is empty."
+                $"Cannot project references: projection plan table '{projectionPlan.Table}' "
+                    + $"does not match hydrated rows table '{hydratedRows.TableModel.Table}'."
             );
         }
 
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                hydratedRows.TableModel,
+                "reference identity projection"
+            );
+
         var rootScopeOrdinal = ProjectionMetadataResolver.ResolveTableColumnOrdinalOrThrow(
             hydratedRows.TableModel,
-            rootScopeLocatorColumns[0],
+            rootScopeLocatorColumn,
             missingColumn => new InvalidOperationException(
                 $"Cannot project references for table '{hydratedRows.TableModel.Table}': "
                     + $"root scope locator column '{missingColumn.Value}' not found in table columns."

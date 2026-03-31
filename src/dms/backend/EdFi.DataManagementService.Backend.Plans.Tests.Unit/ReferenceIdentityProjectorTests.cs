@@ -553,6 +553,8 @@ public class Given_ReferenceIdentityProjector_ProjectTable_With_Empty_RootScopeL
 
         var act = () => ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*RootScopeLocatorColumns is empty*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*expected exactly one explicit root-scope locator column*");
     }
 }
