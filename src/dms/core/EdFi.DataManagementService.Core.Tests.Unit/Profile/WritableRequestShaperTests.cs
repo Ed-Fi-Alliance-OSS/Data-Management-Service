@@ -841,7 +841,295 @@ public abstract class WritableRequestShaperTests
     }
 
     // -----------------------------------------------------------------------
-    //  11. ExcludeOnly filter mode
+    //  11. Recursive shaping of nested non-collection scope inside non-collection scope
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Nested_NonCollection_Inside_NonCollection_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildNestedNonCollectionProfile(),
+                ProfileTestFixtures.NestedNonCollectionInNonCollectionScopes
+            );
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "parentObject": {
+                        "parentField": "pValue",
+                        "sharedField": "should-be-hidden",
+                        "nestedCommonType": {
+                            "nestedField": "nValue",
+                            "hiddenNestedField": "should-be-hidden"
+                        }
+                    }
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_include_nested_common_type_in_shaped_body()
+        {
+            var parent = _result.WritableRequestBody["parentObject"]!.AsObject();
+            parent.ContainsKey("nestedCommonType").Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_include_visible_nested_members()
+        {
+            var nested = _result.WritableRequestBody["parentObject"]!["nestedCommonType"]!.AsObject();
+            nested["nestedField"]!.GetValue<string>().Should().Be("nValue");
+        }
+
+        [Test]
+        public void It_should_exclude_hidden_nested_members()
+        {
+            var nested = _result.WritableRequestBody["parentObject"]!["nestedCommonType"]!.AsObject();
+            nested.ContainsKey("hiddenNestedField").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_exclude_hidden_parent_members()
+        {
+            var parent = _result.WritableRequestBody["parentObject"]!.AsObject();
+            parent.ContainsKey("sharedField").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_nested_common_type()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.parentObject.nestedCommonType"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_parent_object()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.parentObject"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  12. Absent nested non-collection scope inside non-collection scope
+    //      emits VisibleAbsent state
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Absent_Nested_NonCollection_Inside_Present_NonCollection : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildNestedNonCollectionProfile(),
+                ProfileTestFixtures.NestedNonCollectionInNonCollectionScopes
+            );
+
+            // parentObject is present but nestedCommonType is absent
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "parentObject": {
+                        "parentField": "pValue"
+                    }
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_VisibleAbsent_for_nested_common_type()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.parentObject.nestedCommonType"
+                    && s.Visibility == ProfileVisibilityKind.VisibleAbsent
+                );
+        }
+
+        [Test]
+        public void It_should_emit_VisiblePresent_for_parent_object()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.parentObject"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  13. Absent nested non-collection scope inside a present collection item
+    //      emits VisibleAbsent state per item (Finding 3)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Present_Collection_Item_With_Absent_Nested_Scope : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildIncludeAllProfile(),
+                ProfileTestFixtures.NestedNonCollectionInsideCollectionScopes
+            );
+
+            // Two address items: first has period, second does not
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "addresses": [
+                        {
+                            "addressTypeDescriptor": "Physical",
+                            "city": "Austin",
+                            "period": {
+                                "beginDate": "2024-01-01",
+                                "endDate": "2024-12-31"
+                            }
+                        },
+                        {
+                            "addressTypeDescriptor": "Mailing",
+                            "city": "Houston"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_VisiblePresent_for_first_item_period()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.addresses[*].period"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+
+        [Test]
+        public void It_should_emit_VisibleAbsent_for_second_item_period()
+        {
+            // There should be two scope states for $.addresses[*].period:
+            // one VisiblePresent (first item) and one VisibleAbsent (second item)
+            var periodStates = _result
+                .RequestScopeStates.Where(s => s.Address.JsonScope == "$.addresses[*].period")
+                .ToList();
+
+            periodStates.Should().HaveCount(2);
+            periodStates.Should().Contain(s => s.Visibility == ProfileVisibilityKind.VisiblePresent);
+            periodStates.Should().Contain(s => s.Visibility == ProfileVisibilityKind.VisibleAbsent);
+        }
+
+        [Test]
+        public void It_should_include_period_in_first_item_shaped_body()
+        {
+            var firstItem = _result.WritableRequestBody["addresses"]![0]!.AsObject();
+            firstItem.ContainsKey("period").Should().BeTrue();
+            firstItem["period"]!["beginDate"]!.GetValue<string>().Should().Be("2024-01-01");
+        }
+
+        [Test]
+        public void It_should_not_include_period_in_second_item_shaped_body()
+        {
+            var secondItem = _result.WritableRequestBody["addresses"]![1]!.AsObject();
+            secondItem.ContainsKey("period").Should().BeFalse();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  14. Absent extension scope inside a present collection item
+    //      emits VisibleAbsent state
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Present_Collection_Item_Without_Extension : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var shaper = BuildShaper(
+                ProfileTestFixtures.BuildExtensionProfile(),
+                ProfileTestFixtures.ExtensionFixtureScopes
+            );
+
+            // Collection item present but _ext is absent
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": { "sampleField": "hello" }
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_VisibleAbsent_for_collection_item_ext_scope()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+                    && s.Visibility == ProfileVisibilityKind.VisibleAbsent
+                );
+        }
+
+        [Test]
+        public void It_should_emit_VisiblePresent_for_root_ext_scope()
+        {
+            _result
+                .RequestScopeStates.Should()
+                .Contain(s =>
+                    s.Address.JsonScope == "$._ext.sample"
+                    && s.Visibility == ProfileVisibilityKind.VisiblePresent
+                );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  15. ExcludeOnly filter mode
     // -----------------------------------------------------------------------
 
     [TestFixture]

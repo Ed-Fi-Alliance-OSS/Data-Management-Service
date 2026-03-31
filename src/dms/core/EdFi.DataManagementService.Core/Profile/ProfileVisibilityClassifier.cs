@@ -50,6 +50,7 @@ public sealed class ProfileVisibilityClassifier
 
     private readonly Dictionary<string, CachedScopeEntry> _cache;
     private readonly Dictionary<string, ScopeKind> _scopeKinds;
+    private readonly Dictionary<string, List<string>> _childNonCollectionScopes;
 
     // -----------------------------------------------------------------------
     //  Constructor
@@ -78,6 +79,7 @@ public sealed class ProfileVisibilityClassifier
 
         _cache = new Dictionary<string, CachedScopeEntry>(scopeCatalog.Count);
         _scopeKinds = new Dictionary<string, ScopeKind>(scopeCatalog.Count);
+        _childNonCollectionScopes = [];
 
         foreach (CompiledScopeDescriptor scope in scopeCatalog)
         {
@@ -93,6 +95,22 @@ public sealed class ProfileVisibilityClassifier
             }
 
             _cache[scope.JsonScope] = new CachedScopeEntry(isHidden, node, itemFilter);
+
+            // Build parent → child non-collection scope lookup
+            if (scope.ScopeKind == ScopeKind.NonCollection && scope.ImmediateParentJsonScope != null)
+            {
+                if (
+                    !_childNonCollectionScopes.TryGetValue(
+                        scope.ImmediateParentJsonScope,
+                        out List<string>? children
+                    )
+                )
+                {
+                    children = [];
+                    _childNonCollectionScopes[scope.ImmediateParentJsonScope] = children;
+                }
+                children.Add(scope.JsonScope);
+            }
         }
     }
 
@@ -214,6 +232,16 @@ public sealed class ProfileVisibilityClassifier
     /// Thrown when <paramref name="jsonScope"/> is not in the scope catalog.
     /// </exception>
     public ScopeKind GetScopeKind(string jsonScope) => _scopeKinds[jsonScope];
+
+    /// <summary>
+    /// Returns the non-collection child scopes whose immediate parent is the
+    /// specified scope. Used by the shaper to emit absent-child scope states
+    /// for non-collection scopes not encountered during the JSON walk.
+    /// </summary>
+    public IReadOnlyList<string> GetChildNonCollectionScopes(string parentJsonScope) =>
+        _childNonCollectionScopes.TryGetValue(parentJsonScope, out List<string>? children)
+            ? children
+            : (IReadOnlyList<string>)[];
 
     // -----------------------------------------------------------------------
     //  ItemFilter resolution

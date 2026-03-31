@@ -250,6 +250,73 @@ internal static class ProfileTestFixtures
         ];
 
     /// <summary>
+    /// Scope catalog with a non-collection scope nested inside another non-collection scope.
+    /// Used to test recursive shaping of embedded/common-type scopes per C3 acceptance criteria.
+    /// </summary>
+    public static IReadOnlyList<CompiledScopeDescriptor> NestedNonCollectionInNonCollectionScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["field1"]
+            ),
+            new(
+                JsonScope: "$.parentObject",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["parentField", "sharedField"]
+            ),
+            new(
+                JsonScope: "$.parentObject.nestedCommonType",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.parentObject",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["nestedField", "hiddenNestedField"]
+            ),
+        ];
+
+    /// <summary>
+    /// IncludeOnly profile exposing parentObject with an IncludeOnly nested common type.
+    /// Used for recursive non-collection scope shaping tests.
+    /// </summary>
+    public static ContentTypeDefinition BuildNestedNonCollectionProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [new PropertyRule("field1")],
+            Objects:
+            [
+                new ObjectRule(
+                    Name: "parentObject",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("parentField")],
+                    NestedObjects:
+                    [
+                        new ObjectRule(
+                            Name: "nestedCommonType",
+                            MemberSelection: MemberSelection.IncludeOnly,
+                            LogicalSchema: null,
+                            Properties: [new PropertyRule("nestedField")],
+                            NestedObjects: null,
+                            Collections: null,
+                            Extensions: null
+                        ),
+                    ],
+                    Collections: null,
+                    Extensions: null
+                ),
+            ],
+            Collections: [],
+            Extensions: []
+        );
+
+    /// <summary>
     /// IncludeOnly profile with root-level extension containing a collection.
     /// Used for extension-collection shaping tests.
     /// </summary>

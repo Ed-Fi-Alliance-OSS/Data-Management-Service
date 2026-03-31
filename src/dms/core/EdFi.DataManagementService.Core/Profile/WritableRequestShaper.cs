@@ -89,8 +89,9 @@ public sealed class WritableRequestShaper(
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// Shapes a single scope (root or non-collection child) and emits its
-    /// RequestScopeState.
+    /// Shapes a single scope (root or non-collection child) by classifying
+    /// visibility, emitting its RequestScopeState, and delegating member
+    /// walking to <see cref="ShapeScopeMembers"/>.
     /// </summary>
     private JsonObject ShapeScope(
         string jsonScope,
@@ -108,10 +109,36 @@ public sealed class WritableRequestShaper(
         scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
         emittedScopes.Add(jsonScope);
 
-        // Get member filter for this scope
-        ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
+        return ShapeScopeMembers(
+            jsonScope,
+            source,
+            ancestorItems,
+            scopeStates,
+            collectionItems,
+            validationFailures,
+            emittedScopes
+        );
+    }
 
+    /// <summary>
+    /// Walks the members of a scope's JSON object, recursively handling
+    /// non-collection child scopes, collection child scopes, extensions,
+    /// and scalar members. After the walk, emits absent-child scope states
+    /// for any known child non-collection scopes not encountered.
+    /// </summary>
+    private JsonObject ShapeScopeMembers(
+        string jsonScope,
+        JsonObject source,
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        List<RequestScopeState> scopeStates,
+        List<VisibleRequestCollectionItem> collectionItems,
+        List<WritableProfileValidationFailure> validationFailures,
+        HashSet<string> emittedScopes
+    )
+    {
+        ScopeMemberFilter memberFilter = classifier.GetMemberFilter(jsonScope);
         var output = new JsonObject();
+        HashSet<string> handledChildScopes = [];
 
         foreach (var kvp in source)
         {
@@ -128,7 +155,8 @@ public sealed class WritableRequestShaper(
                     scopeStates,
                     collectionItems,
                     validationFailures,
-                    emittedScopes
+                    emittedScopes,
+                    handledChildScopes
                 );
                 if (shapedExt != null && shapedExt.Count > 0)
                 {
@@ -144,6 +172,7 @@ public sealed class WritableRequestShaper(
                 && childKind == ScopeKind.NonCollection
             )
             {
+                handledChildScopes.Add(childNonCollectionScope);
                 ShapeNonCollectionChild(
                     childNonCollectionScope,
                     memberValue,
@@ -186,20 +215,18 @@ public sealed class WritableRequestShaper(
             }
         }
 
+        // Emit states for child non-collection scopes not encountered during the walk
+        EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, handledChildScopes);
+
         return output;
     }
 
     /// <summary>
     /// Shapes a non-collection child scope. Classifies visibility, derives
-    /// address, emits RequestScopeState. If VisiblePresent, filters members
-    /// and handles _ext extensions.
+    /// address, emits RequestScopeState. If VisiblePresent, delegates to
+    /// <see cref="ShapeScopeMembers"/> for recursive member handling. If
+    /// absent or hidden, recursively emits states for descendant scopes.
     /// </summary>
-    /// <remarks>
-    /// Does not recursively shape nested non-collection or collection sub-scopes
-    /// within the child. In the current Ed-Fi resource model, 1:1 reference objects
-    /// are flat (no nested sub-scopes). If this changes, this method should delegate
-    /// to <see cref="ShapeScope"/> instead of flat member filtering.
-    /// </remarks>
     private void ShapeNonCollectionChild(
         string jsonScope,
         JsonNode? scopeData,
@@ -219,36 +246,21 @@ public sealed class WritableRequestShaper(
 
         if (visibility == ProfileVisibilityKind.VisiblePresent && scopeData != null)
         {
-            ScopeMemberFilter childFilter = classifier.GetMemberFilter(jsonScope);
-            var childOutput = new JsonObject();
-
-            foreach (var kvp in scopeData.AsObject())
-            {
-                if (kvp.Key == "_ext")
-                {
-                    JsonObject? shapedExt = ShapeExtensions(
-                        jsonScope,
-                        kvp.Value,
-                        ancestorItems,
-                        scopeStates,
-                        collectionItems,
-                        validationFailures,
-                        emittedScopes
-                    );
-                    if (shapedExt != null && shapedExt.Count > 0)
-                    {
-                        childOutput["_ext"] = shapedExt;
-                    }
-                    continue;
-                }
-
-                if (IsMemberVisible(childFilter, kvp.Key))
-                {
-                    childOutput[kvp.Key] = kvp.Value?.DeepClone();
-                }
-            }
-
-            output[memberName] = childOutput;
+            output[memberName] = ShapeScopeMembers(
+                jsonScope,
+                scopeData.AsObject(),
+                ancestorItems,
+                scopeStates,
+                collectionItems,
+                validationFailures,
+                emittedScopes
+            );
+        }
+        else
+        {
+            // Scope is absent or hidden — recursively emit states for descendant
+            // non-collection scopes that cannot be encountered during the walk.
+            EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
         }
     }
 
@@ -256,7 +268,8 @@ public sealed class WritableRequestShaper(
     /// Shapes a collection scope. Classifies visibility. If VisiblePresent,
     /// iterates items, checking value filters, emitting
     /// VisibleRequestCollectionItem for passing items and failures for failing
-    /// items.
+    /// items. After each item's member walk, emits states for absent child
+    /// non-collection scopes.
     /// </summary>
     private void ShapeCollection(
         string jsonScope,
@@ -327,6 +340,9 @@ public sealed class WritableRequestShaper(
             // Build ancestor context for potential nested scopes
             var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
 
+            // Track which child non-collection scopes are handled for this item
+            HashSet<string> itemHandledChildScopes = [];
+
             foreach (var kvp in itemObj)
             {
                 string itemMemberName = kvp.Key;
@@ -342,7 +358,8 @@ public sealed class WritableRequestShaper(
                         scopeStates,
                         collectionItems,
                         validationFailures,
-                        emittedScopes
+                        emittedScopes,
+                        itemHandledChildScopes
                     );
                     if (shapedExt != null && shapedExt.Count > 0)
                     {
@@ -358,6 +375,7 @@ public sealed class WritableRequestShaper(
                     && nestedKind == ScopeKind.NonCollection
                 )
                 {
+                    itemHandledChildScopes.Add(nestedNonCollScope);
                     ShapeNonCollectionChild(
                         nestedNonCollScope,
                         itemMemberValue,
@@ -400,6 +418,15 @@ public sealed class WritableRequestShaper(
                 }
             }
 
+            // Emit states for child non-collection scopes absent from this item
+            EmitAbsentChildScopeStates(
+                jsonScope,
+                newAncestors,
+                scopeStates,
+                emittedScopes,
+                itemHandledChildScopes
+            );
+
             outputArray.Add(filteredItem);
         }
 
@@ -408,9 +435,10 @@ public sealed class WritableRequestShaper(
 
     /// <summary>
     /// Shapes extensions under the _ext member of a scope. Iterates extension
-    /// scope members the same way <see cref="ShapeScope"/> does — checking each
-    /// against the scope catalog for child collection/non-collection scopes and
-    /// delegating to <see cref="ShapeCollection"/> or <see cref="ShapeNonCollectionChild"/>.
+    /// scope members, classifying and emitting scope state for each. When
+    /// VisiblePresent, delegates to <see cref="ShapeScopeMembers"/> for
+    /// recursive inner member handling. When absent or hidden, recursively
+    /// emits descendant states.
     /// </summary>
     private JsonObject? ShapeExtensions(
         string parentScope,
@@ -419,7 +447,8 @@ public sealed class WritableRequestShaper(
         List<RequestScopeState> scopeStates,
         List<VisibleRequestCollectionItem> collectionItems,
         List<WritableProfileValidationFailure> validationFailures,
-        HashSet<string> emittedScopes
+        HashSet<string> emittedScopes,
+        HashSet<string> handledChildScopes
     )
     {
         if (extNode == null)
@@ -442,6 +471,8 @@ public sealed class WritableRequestShaper(
                 continue;
             }
 
+            handledChildScopes.Add(extScope);
+
             ProfileVisibilityKind visibility = classifier.ClassifyScope(extScope, extData);
             ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(extScope, ancestorItems);
             scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
@@ -449,64 +480,20 @@ public sealed class WritableRequestShaper(
 
             if (visibility == ProfileVisibilityKind.VisiblePresent && extData != null)
             {
-                ScopeMemberFilter extFilter = classifier.GetMemberFilter(extScope);
-                var extChildOutput = new JsonObject();
-
-                foreach (var innerKvp in extData.AsObject())
-                {
-                    string memberName = innerKvp.Key;
-                    JsonNode? memberValue = innerKvp.Value;
-
-                    // Check if member is a non-collection scope
-                    string childNonCollectionScope = $"{extScope}.{memberName}";
-                    if (
-                        IsScopeKnown(childNonCollectionScope, out ScopeKind childKind)
-                        && childKind == ScopeKind.NonCollection
-                    )
-                    {
-                        ShapeNonCollectionChild(
-                            childNonCollectionScope,
-                            memberValue,
-                            ancestorItems,
-                            extChildOutput,
-                            memberName,
-                            scopeStates,
-                            collectionItems,
-                            validationFailures,
-                            emittedScopes
-                        );
-                        continue;
-                    }
-
-                    // Check if member is a collection scope
-                    string childCollectionScope = $"{extScope}.{memberName}[*]";
-                    if (
-                        IsScopeKnown(childCollectionScope, out ScopeKind collKind)
-                        && collKind == ScopeKind.Collection
-                    )
-                    {
-                        ShapeCollection(
-                            childCollectionScope,
-                            memberValue,
-                            ancestorItems,
-                            extChildOutput,
-                            memberName,
-                            scopeStates,
-                            collectionItems,
-                            validationFailures,
-                            emittedScopes
-                        );
-                        continue;
-                    }
-
-                    // Scalar member: apply member filter
-                    if (IsMemberVisible(extFilter, memberName))
-                    {
-                        extChildOutput[memberName] = memberValue?.DeepClone();
-                    }
-                }
-
-                extOutput[extName] = extChildOutput;
+                extOutput[extName] = ShapeScopeMembers(
+                    extScope,
+                    extData.AsObject(),
+                    ancestorItems,
+                    scopeStates,
+                    collectionItems,
+                    validationFailures,
+                    emittedScopes
+                );
+            }
+            else
+            {
+                // Extension scope is absent or hidden — emit descendant states
+                EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }
         }
 
@@ -516,6 +503,39 @@ public sealed class WritableRequestShaper(
     // -----------------------------------------------------------------------
     //  Missing scope state emission
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Emits RequestScopeState for child non-collection scopes of the given
+    /// parent scope that were not encountered during the JSON walk. Recurses
+    /// into each absent child to emit descendant states.
+    /// </summary>
+    private void EmitAbsentChildScopeStates(
+        string parentScope,
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        List<RequestScopeState> scopeStates,
+        HashSet<string> emittedScopes,
+        HashSet<string> handledChildScopes
+    )
+    {
+        foreach (string childScope in classifier.GetChildNonCollectionScopes(parentScope))
+        {
+            if (handledChildScopes.Contains(childScope))
+            {
+                continue;
+            }
+
+            ProfileVisibilityKind visibility = classifier.ClassifyScope(childScope, null);
+            ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(
+                childScope,
+                ancestorItems
+            );
+            scopeStates.Add(new RequestScopeState(address, visibility, Creatable: false));
+            emittedScopes.Add(childScope);
+
+            // Recursively emit for this absent scope's own children
+            EmitAbsentChildScopeStates(childScope, ancestorItems, scopeStates, emittedScopes, []);
+        }
+    }
 
     /// <summary>
     /// After the walk, emits RequestScopeState for any non-collection scope
