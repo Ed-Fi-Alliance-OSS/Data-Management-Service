@@ -111,3 +111,9 @@ task: Single-walker refactor complete
 decisions: removed SelectedBodyIndex whole-body prepass and validate root body as JsonObject once; root/root-extension/collection/aligned-scope rows now all use one MaterializeValues path plus one key-unification evaluation path over the current scope node; kept recursive collection/_ext traversal and added a regression test that locks out the old prepass helper type; verify used full backend/core unit projects because the task.json filters still match zero tests, and backend needed sequential rerun after a parallel MSBuild ref-assembly file lock
 files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 notes: strict DateTime/Time parsing remains pending
+
+DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+task: Strict DateTime/Time parsing complete
+decisions: flattener now accepts exact ISO date-time strings only as `yyyy-MM-ddTHH:mm:ssZ` or `yyyy-MM-ddTHH:mm:ss+/-HH:mm`, and exact time strings only as `HH:mm:ss`; offset date-times normalize to UTC before storage; added nullable DateTime/Time columns to the Core seam fixture so strict scalar-read failures still prove the typed 400 path; backend verify filter in tasks.json matched zero tests, so actual verify used FullyQualifiedName~Given_RelationalWriteFlattener
+files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamFixture.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
+notes: all tasks in tasks.json complete

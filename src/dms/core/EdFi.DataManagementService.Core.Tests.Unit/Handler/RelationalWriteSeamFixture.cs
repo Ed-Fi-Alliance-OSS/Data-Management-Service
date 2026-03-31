@@ -509,6 +509,20 @@ internal sealed record RelationalWriteSeamFixture(
                     CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear"))
                 ),
                 CreateColumn(
+                    "LastModified",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    true,
+                    CreatePath("$.lastModified", new JsonPathSegment.Property("lastModified"))
+                ),
+                CreateColumn(
+                    "MeetingTime",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Time),
+                    true,
+                    CreatePath("$.meetingTime", new JsonPathSegment.Property("meetingTime"))
+                ),
+                CreateColumn(
                     "School_DocumentId",
                     ColumnKind.DocumentFk,
                     null,
@@ -558,11 +572,27 @@ internal sealed record RelationalWriteSeamFixture(
                 ),
                 new WriteColumnBinding(
                     tableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        CreatePath("$.lastModified", new JsonPathSegment.Property("lastModified")),
+                        new RelationalScalarType(ScalarKind.DateTime)
+                    ),
+                    "LastModified"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        CreatePath("$.meetingTime", new JsonPathSegment.Property("meetingTime")),
+                        new RelationalScalarType(ScalarKind.Time)
+                    ),
+                    "MeetingTime"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
                     new WriteValueSource.DocumentReference(0),
                     "School_DocumentId"
                 ),
                 new WriteColumnBinding(
-                    tableModel.Columns[3],
+                    tableModel.Columns[5],
                     new WriteValueSource.DescriptorReference(
                         _programTypeDescriptorResource,
                         CreatePath(

@@ -80,6 +80,8 @@ public class Given_Relational_Write_Seam
             .Equal(
                 FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
                 new FlattenedWriteValue.Literal(2026),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(901L),
                 new FlattenedWriteValue.Literal(77L)
             );
@@ -138,6 +140,8 @@ public class Given_Relational_Write_Seam
             .Equal(
                 new FlattenedWriteValue.Literal(345L),
                 new FlattenedWriteValue.Literal(2026),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(901L),
                 new FlattenedWriteValue.Literal(77L)
             );
@@ -336,6 +340,52 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
+    public async Task It_surfaces_strict_datetime_parse_failures_as_data_validation_before_terminal_handoff()
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            resolvedReferences: _fixture.ResolvedReferences,
+            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
+                documentUuid
+            ),
+            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                documentUuid
+            ),
+            terminalStageResultFactory: _ =>
+                throw new AssertionException("Terminal stage should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "schoolYear": 2026,
+                  "lastModified": "2026-08-19 16:30:45"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.lastModified"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("expected scalar kind 'DateTime'");
+        harness.TerminalStage.Requests.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_treats_the_selected_body_as_the_authoritative_input_at_the_core_seam()
     {
         var harness = RelationalWriteSeamHarness.Create(
@@ -374,6 +424,8 @@ public class Given_Relational_Write_Seam
             .Equal(
                 FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
                 new FlattenedWriteValue.Literal(2030),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(null)
             );
@@ -482,6 +534,8 @@ public class Given_Relational_Write_Seam
             .Equal(
                 new FlattenedWriteValue.Literal(345L),
                 new FlattenedWriteValue.Literal(2026),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
                 new FlattenedWriteValue.Literal(901L),
                 new FlattenedWriteValue.Literal(77L)
             );

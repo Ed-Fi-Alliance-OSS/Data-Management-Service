@@ -704,6 +704,91 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_reads_iso_datetime_offsets_and_iso_time_values_deterministically()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "details": {
+                    "lastModified": "2026-08-19T11:30:45-05:00",
+                    "meetingTime": "14:05:07"
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values[6]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(new DateTime(2026, 8, 19, 16, 30, 45, DateTimeKind.Utc)));
+        result.RootRow.Values[7].Should().Be(new FlattenedWriteValue.Literal(new TimeOnly(14, 5, 7)));
+    }
+
+    [Test]
+    public void It_rejects_non_iso_datetime_values_that_were_previously_permissive()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "details": {
+                    "lastModified": "2026-08-19 16:30:45"
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.details.lastModified");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("Column 'LastModified' on table 'edfi.Student' expected scalar kind 'DateTime'");
+    }
+
+    [Test]
+    public void It_rejects_non_iso_time_values_that_were_previously_permissive()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "details": {
+                    "meetingTime": "2:05 PM"
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.details.meetingTime");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("Column 'MeetingTime' on table 'edfi.Student' expected scalar kind 'Time'");
+    }
+
+    [Test]
     public void It_populates_key_unification_precomputed_values_and_presence_flags()
     {
         var writePlan = CreatePresenceGateExampleWritePlan();
