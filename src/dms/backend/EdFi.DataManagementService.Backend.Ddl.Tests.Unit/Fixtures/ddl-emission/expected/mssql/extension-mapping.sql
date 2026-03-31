@@ -107,7 +107,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
@@ -130,7 +140,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId] AND del.[AddressOrdinal] = i.[AddressOrdinal]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId] AND i.[AddressOrdinal] = del.[AddressOrdinal]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
@@ -144,7 +164,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId] AND del.[AddressOrdinal] = i.[AddressOrdinal]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[AddressExtensionData] <> del.[AddressExtensionData] OR (i.[AddressExtensionData] IS NULL AND del.[AddressExtensionData] IS NOT NULL) OR (i.[AddressExtensionData] IS NOT NULL AND del.[AddressExtensionData] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId] AND i.[AddressOrdinal] = del.[AddressOrdinal]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[AddressExtensionData] <> del.[AddressExtensionData] OR (i.[AddressExtensionData] IS NULL AND del.[AddressExtensionData] IS NOT NULL) OR (i.[AddressExtensionData] IS NOT NULL AND del.[AddressExtensionData] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
@@ -158,7 +188,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ExtensionData] <> del.[ExtensionData] OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ExtensionData] <> del.[ExtensionData] OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d

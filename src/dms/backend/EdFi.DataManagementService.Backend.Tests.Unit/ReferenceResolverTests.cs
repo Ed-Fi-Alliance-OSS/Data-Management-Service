@@ -972,7 +972,11 @@ public class Given_ReferenceResolver
             ResourceKeyById: effectiveSchema.ResourceKeysInIdOrder.ToDictionary(
                 entry => entry.ResourceKeyId,
                 entry => entry
-            )
+            ),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 

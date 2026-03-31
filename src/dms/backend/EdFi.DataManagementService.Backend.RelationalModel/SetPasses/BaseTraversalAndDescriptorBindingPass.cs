@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -76,12 +77,20 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
             context.RegisterResourceBuilderContext(resourceKey, builderContext);
             var resourceKeyEntry = context.GetResourceKeyEntry(resourceKey);
 
+            var securableElements = SecurableElementsExtractor.ExtractSecurableElements(
+                resourceContext.ResourceSchema,
+                resourceKey
+            );
+
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(
                     resourceKeyEntry,
                     result.ResourceModel.StorageKind,
                     result.ResourceModel
                 )
+                {
+                    SecurableElements = securableElements,
+                }
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);
         }

@@ -501,7 +501,11 @@ internal static class RelationalAccessTestData
             ResourceKeyById: effectiveSchema.ResourceKeysInIdOrder.ToDictionary(
                 entry => entry.ResourceKeyId,
                 entry => entry
-            )
+            ),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 

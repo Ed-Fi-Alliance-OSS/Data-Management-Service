@@ -220,17 +220,36 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 "foreign keys"
             );
 
-            var localColumns = new List<DbColumnName>(1 + mappedIdentityColumns.LocalColumns.Count)
+            // For MSSQL, when identity propagation is handled by INSTEAD OF triggers
+            // (abstract targets or concrete targets with AllowIdentityUpdates), the FK must
+            // reference only DocumentId. Including identity columns in the FK causes violations
+            // inside the trigger: neither children-first nor parent-first ordering can satisfy
+            // ON UPDATE NO ACTION when both sides of the composite FK change.
+            bool mssqlTriggerHandlesPropagation =
+                context.SetContext.Dialect == SqlDialect.Mssql
+                && (targetInfo.IsAbstract || targetInfo.AllowIdentityUpdates);
+
+            var localColumns = new List<DbColumnName>(
+                1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.LocalColumns.Count)
+            )
             {
                 localReferenceFkColumn,
             };
-            localColumns.AddRange(mappedIdentityColumns.LocalColumns);
+            if (!mssqlTriggerHandlesPropagation)
+            {
+                localColumns.AddRange(mappedIdentityColumns.LocalColumns);
+            }
 
-            var targetColumns = new List<DbColumnName>(1 + mappedIdentityColumns.TargetColumns.Count)
+            var targetColumns = new List<DbColumnName>(
+                1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.TargetColumns.Count)
+            )
             {
                 targetDocumentIdColumn,
             };
-            targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
+            if (!mssqlTriggerHandlesPropagation)
+            {
+                targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
+            }
 
             var onUpdate =
                 context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction

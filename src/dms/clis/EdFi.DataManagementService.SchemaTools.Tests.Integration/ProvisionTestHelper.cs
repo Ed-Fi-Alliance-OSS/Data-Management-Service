@@ -43,7 +43,7 @@ internal static partial class ProvisionTestHelper
             "ddl",
             "provision",
             "--schema",
-            ..schemaPaths,
+            .. schemaPaths,
             "--connection-string",
             connectionString,
             "--dialect",
@@ -169,10 +169,7 @@ internal static partial class ProvisionTestHelper
         while (reader.Read())
         {
             var name = reader.GetString(0);
-            if (
-                !systemSchemas.Contains(name)
-                && !name.StartsWith("db_", StringComparison.OrdinalIgnoreCase)
-            )
+            if (!systemSchemas.Contains(name) && !name.StartsWith("db_", StringComparison.OrdinalIgnoreCase))
             {
                 schemas.Add(name);
             }
@@ -192,7 +189,7 @@ internal static partial class ProvisionTestHelper
             "ddl",
             "emit",
             "--schema",
-            ..schemaPaths,
+            .. schemaPaths,
             "--output",
             outputDir,
             "--dialect",
@@ -210,12 +207,18 @@ internal static partial class ProvisionTestHelper
 
         var args = new List<string>
         {
-            "-h", builder.Host!,
-            "-p", builder.Port.ToString(),
-            "-U", builder.Username!,
-            "-d", builder.Database!,
-            "-v", "ON_ERROR_STOP=1",
-            "-f", sqlFilePath,
+            "-h",
+            builder.Host!,
+            "-p",
+            builder.Port.ToString(),
+            "-U",
+            builder.Username!,
+            "-d",
+            builder.Database!,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-f",
+            sqlFilePath,
         };
 
         var env = new Dictionary<string, string> { ["PGPASSWORD"] = builder.Password! };
@@ -232,12 +235,18 @@ internal static partial class ProvisionTestHelper
 
         var args = new List<string>
         {
-            "-S", builder.DataSource,
-            "-U", builder.UserID,
-            "-P", builder.Password,
-            "-d", builder.InitialCatalog,
+            "-S",
+            builder.DataSource,
+            "-U",
+            builder.UserID,
+            "-P",
+            builder.Password,
+            "-d",
+            builder.InitialCatalog,
             "-b",
-            "-i", sqlFilePath,
+            "-I",
+            "-i",
+            sqlFilePath,
         };
 
         return CliTestHelper.RunProcess("sqlcmd", args);

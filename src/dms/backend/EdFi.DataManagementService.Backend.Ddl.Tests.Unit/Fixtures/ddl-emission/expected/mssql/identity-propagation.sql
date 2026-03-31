@@ -36,7 +36,7 @@ ON UPDATE NO ACTION;
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
 ON [edfi].[School]
-AFTER UPDATE
+INSTEAD OF UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -47,9 +47,15 @@ BEGIN
         FROM [edfi].[StudentSchoolAssociation] r
         INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]
         INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
+        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
+        AND ((r.[SchoolId] = d.[SchoolId]) OR (r.[SchoolId] IS NULL AND d.[SchoolId] IS NULL));
 
     END
+
+    UPDATE t
+    SET t.[SchoolId] = i.[SchoolId]
+    FROM [edfi].[School] t
+    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
 END;
 GO
 
@@ -89,7 +95,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
@@ -142,7 +158,17 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[EntryDate] <> del.[EntryDate] OR (i.[EntryDate] IS NULL AND del.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND del.[EntryDate] IS NULL)) OR (i.[EntryTimestamp] <> del.[EntryTimestamp] OR (i.[EntryTimestamp] IS NULL AND del.[EntryTimestamp] IS NOT NULL) OR (i.[EntryTimestamp] IS NOT NULL AND del.[EntryTimestamp] IS NULL)) OR (i.[IsActive] <> del.[IsActive] OR (i.[IsActive] IS NULL AND del.[IsActive] IS NOT NULL) OR (i.[IsActive] IS NOT NULL AND del.[IsActive] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[EntryDate] <> del.[EntryDate] OR (i.[EntryDate] IS NULL AND del.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND del.[EntryDate] IS NULL)) OR (i.[EntryTimestamp] <> del.[EntryTimestamp] OR (i.[EntryTimestamp] IS NULL AND del.[EntryTimestamp] IS NOT NULL) OR (i.[EntryTimestamp] IS NOT NULL AND del.[EntryTimestamp] IS NULL)) OR (i.[IsActive] <> del.[IsActive] OR (i.[IsActive] IS NULL AND del.[IsActive] IS NOT NULL) OR (i.[IsActive] IS NOT NULL AND del.[IsActive] IS NULL))
+    )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
