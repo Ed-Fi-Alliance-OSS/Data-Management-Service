@@ -310,7 +310,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_SchoolReference_DocumentId_SchoolReference_SchoolId",
+      "name": "IX_StudentSchoolAssociation_SchoolReference_DocumentId",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -318,8 +318,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "SchoolReference_DocumentId",
-        "SchoolReference_SchoolId"
+        "SchoolReference_DocumentId"
       ]
     },
     {
@@ -909,18 +908,16 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_SchoolReference_RefKey",
+              "name": "FK_StudentSchoolAssociation_SchoolReference",
               "columns": [
-                "SchoolReference_DocumentId",
-                "SchoolReference_SchoolId"
+                "SchoolReference_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "School"
               },
               "target_columns": [
-                "DocumentId",
-                "SchoolId"
+                "DocumentId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
