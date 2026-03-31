@@ -21,8 +21,8 @@ public class Given_ReferenceIdentityProjector_With_Concrete_Reference
     );
 
     private static readonly JsonPathExpression _schoolIdPath = new(
-        "$.schoolId",
-        [new JsonPathSegment.Property("schoolId")]
+        "$.schoolReference.schoolId",
+        [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
     );
 
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
@@ -80,7 +80,9 @@ public class Given_ReferenceIdentityProjector_With_Concrete_Reference
         var present = (ReferenceProjectionResult.Present)_result;
         present.FieldsInOrder.Should().HaveCount(1);
 
-        var field = present.FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolId");
+        var field = present.FieldsInOrder.Single(f =>
+            f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId"
+        );
         field.Value.Should().Be(255901L);
     }
 }
@@ -96,8 +98,11 @@ public class Given_ReferenceIdentityProjector_With_Abstract_Reference
     );
 
     private static readonly JsonPathExpression _educationOrgIdPath = new(
-        "$.educationOrganizationId",
-        [new JsonPathSegment.Property("educationOrganizationId")]
+        "$.educationOrganizationReference.educationOrganizationId",
+        [
+            new JsonPathSegment.Property("educationOrganizationReference"),
+            new JsonPathSegment.Property("educationOrganizationId"),
+        ]
     );
 
     private static readonly QualifiedResourceName _abstractResource = new("Ed-Fi", "EducationOrganization");
@@ -140,7 +145,7 @@ public class Given_ReferenceIdentityProjector_With_Abstract_Reference
     {
         var present = (ReferenceProjectionResult.Present)_result;
         var field = present.FieldsInOrder.Single(f =>
-            f.ReferenceJsonPath.Canonical == "$.educationOrganizationId"
+            f.ReferenceJsonPath.Canonical == "$.educationOrganizationReference.educationOrganizationId"
         );
         field.Value.Should().Be(100L);
     }
@@ -165,7 +170,13 @@ public class Given_ReferenceIdentityProjector_With_Null_Fk
             IdentityFieldOrdinalsInOrder:
             [
                 new ReferenceIdentityProjectionFieldOrdinal(
-                    new("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    new(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
                     ColumnOrdinal: 2
                 ),
             ]
@@ -211,7 +222,13 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
             IdentityFieldOrdinalsInOrder:
             [
                 new ReferenceIdentityProjectionFieldOrdinal(
-                    new("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    new(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
                     ColumnOrdinal: 2
                 ),
             ]
@@ -225,7 +242,13 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
             IdentityFieldOrdinalsInOrder:
             [
                 new ReferenceIdentityProjectionFieldOrdinal(
-                    new("$.calendarCode", [new JsonPathSegment.Property("calendarCode")]),
+                    new(
+                        "$.calendarReference.calendarCode",
+                        [
+                            new JsonPathSegment.Property("calendarReference"),
+                            new JsonPathSegment.Property("calendarCode"),
+                        ]
+                    ),
                     ColumnOrdinal: 4
                 ),
             ]
@@ -243,7 +266,7 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
         var present = (ReferenceProjectionResult.Present)_schoolResult;
         present.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
         present
-            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolId")
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
             .Value.Should()
             .Be(255901L);
     }
@@ -256,7 +279,7 @@ public class Given_ReferenceIdentityProjector_With_Multiple_References_On_Same_R
         var present = (ReferenceProjectionResult.Present)_calendarResult;
         present.ReferenceObjectPath.Canonical.Should().Be("$.calendarReference");
         present
-            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarCode")
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarReference.calendarCode")
             .Value.Should()
             .Be("CAL1");
     }
@@ -273,18 +296,18 @@ public class Given_ReferenceIdentityProjector_With_Multiple_Identity_Fields
     );
 
     private static readonly JsonPathExpression _schoolIdPath = new(
-        "$.schoolId",
-        [new JsonPathSegment.Property("schoolId")]
+        "$.sessionReference.schoolId",
+        [new JsonPathSegment.Property("sessionReference"), new JsonPathSegment.Property("schoolId")]
     );
 
     private static readonly JsonPathExpression _schoolYearPath = new(
-        "$.schoolYear",
-        [new JsonPathSegment.Property("schoolYear")]
+        "$.sessionReference.schoolYear",
+        [new JsonPathSegment.Property("sessionReference"), new JsonPathSegment.Property("schoolYear")]
     );
 
     private static readonly JsonPathExpression _sessionNamePath = new(
-        "$.sessionName",
-        [new JsonPathSegment.Property("sessionName")]
+        "$.sessionReference.sessionName",
+        [new JsonPathSegment.Property("sessionReference"), new JsonPathSegment.Property("sessionName")]
     );
 
     [SetUp]
@@ -321,13 +344,13 @@ public class Given_ReferenceIdentityProjector_With_Multiple_Identity_Fields
         var present = (ReferenceProjectionResult.Present)_result;
         present.FieldsInOrder.Should().HaveCount(3);
 
-        present.FieldsInOrder[0].ReferenceJsonPath.Canonical.Should().Be("$.schoolId");
+        present.FieldsInOrder[0].ReferenceJsonPath.Canonical.Should().Be("$.sessionReference.schoolId");
         present.FieldsInOrder[0].Value.Should().Be(255901L);
 
-        present.FieldsInOrder[1].ReferenceJsonPath.Canonical.Should().Be("$.schoolYear");
+        present.FieldsInOrder[1].ReferenceJsonPath.Canonical.Should().Be("$.sessionReference.schoolYear");
         present.FieldsInOrder[1].Value.Should().Be(2025);
 
-        present.FieldsInOrder[2].ReferenceJsonPath.Canonical.Should().Be("$.sessionName");
+        present.FieldsInOrder[2].ReferenceJsonPath.Canonical.Should().Be("$.sessionReference.sessionName");
         present.FieldsInOrder[2].Value.Should().Be("Fall");
     }
 }
@@ -348,8 +371,8 @@ public class Given_ReferenceIdentityProjector_ProjectTable_With_Grouped_Results
     );
 
     private static readonly JsonPathExpression _schoolIdPath = new(
-        "$.schoolId",
-        [new JsonPathSegment.Property("schoolId")]
+        "$.schoolReference.schoolId",
+        [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
     );
 
     [SetUp]
@@ -453,7 +476,7 @@ public class Given_ReferenceIdentityProjector_ProjectTable_With_Grouped_Results
 
         var present = projections.Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
         present
-            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolId")
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
             .Value.Should()
             .Be(255901L);
     }
@@ -466,8 +489,70 @@ public class Given_ReferenceIdentityProjector_ProjectTable_With_Grouped_Results
 
         var present = projections.Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
         present
-            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolId")
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
             .Value.Should()
             .Be(255902L);
+    }
+}
+
+[TestFixture]
+public class Given_ReferenceIdentityProjector_ProjectTable_With_Empty_RootScopeLocatorColumns
+{
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "Orphan");
+
+    [Test]
+    public void It_should_throw_with_descriptive_message()
+    {
+        var tableModel = new DbTableModel(
+            _tableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Orphan",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var hydratedRows = new HydratedTableRows(tableModel, [new object?[] { 1L }]);
+
+        var projectionPlan = new ReferenceIdentityProjectionTablePlan(
+            _tableName,
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: new(
+                        "$.schoolReference",
+                        [new JsonPathSegment.Property("schoolReference")]
+                    ),
+                    TargetResource: new("Ed-Fi", "School"),
+                    FkColumnOrdinal: 0,
+                    IdentityFieldOrdinalsInOrder: []
+                ),
+            ]
+        );
+
+        var act = () => ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*RootScopeLocatorColumns is empty*");
     }
 }

@@ -26,7 +26,10 @@ public abstract record ReferenceProjectionResult
     /// <summary>
     /// The reference FK column was null — the reference is absent and should not be emitted.
     /// </summary>
-    public sealed record Absent : ReferenceProjectionResult;
+    public sealed record Absent : ReferenceProjectionResult
+    {
+        public static readonly Absent Instance = new();
+    }
 
     /// <summary>
     /// The reference is present. Carries the reference object path, target resource,
@@ -70,7 +73,7 @@ public static class ReferenceIdentityProjector
 
         if (row[binding.FkColumnOrdinal] is null)
         {
-            return new ReferenceProjectionResult.Absent();
+            return ReferenceProjectionResult.Absent.Instance;
         }
 
         var fields = new ProjectedReferenceField[binding.IdentityFieldOrdinalsInOrder.Length];
@@ -78,10 +81,14 @@ public static class ReferenceIdentityProjector
         for (var i = 0; i < binding.IdentityFieldOrdinalsInOrder.Length; i++)
         {
             var fieldOrdinal = binding.IdentityFieldOrdinalsInOrder[i];
-            fields[i] = new ProjectedReferenceField(
-                fieldOrdinal.ReferenceJsonPath,
-                row[fieldOrdinal.ColumnOrdinal]!
-            );
+            var value =
+                row[fieldOrdinal.ColumnOrdinal]
+                ?? throw new InvalidOperationException(
+                    $"Identity field at ordinal {fieldOrdinal.ColumnOrdinal} "
+                        + $"(path '{fieldOrdinal.ReferenceJsonPath.Canonical}') is null "
+                        + "but FK column is non-null — CHECK constraint may be violated."
+                );
+            fields[i] = new ProjectedReferenceField(fieldOrdinal.ReferenceJsonPath, value);
         }
 
         return new ReferenceProjectionResult.Present(

@@ -47,10 +47,12 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydtest.School (
@@ -308,10 +310,12 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydsingle.School (
@@ -458,10 +462,12 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydcount.School (
@@ -594,10 +600,12 @@ public class Given_A_Reference_Bearing_Resource_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydref.StudentSchoolAssociation (
