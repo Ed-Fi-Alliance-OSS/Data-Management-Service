@@ -620,8 +620,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterSurvey.ContentVersion.Should().BeGreaterThan(beforeSurvey.ContentVersion);
         afterSurvey.ContentLastModifiedAt.Should().BeAfter(beforeSurvey.ContentLastModifiedAt);
-        afterSurvey.IdentityVersion.Should().BeGreaterThan(beforeSurvey.IdentityVersion);
-        afterSurvey.IdentityLastModifiedAt.Should().BeAfter(beforeSurvey.IdentityLastModifiedAt);
+        // Survey's identity is Namespace + SurveyIdentifier only; Session_SessionName is a reference
+        // field, not part of Survey's identity, so IdentityVersion must not change here.
+        afterSurvey.IdentityVersion.Should().Be(beforeSurvey.IdentityVersion);
+        afterSurvey.IdentityLastModifiedAt.Should().Be(beforeSurvey.IdentityLastModifiedAt);
     }
 
     [Test]
