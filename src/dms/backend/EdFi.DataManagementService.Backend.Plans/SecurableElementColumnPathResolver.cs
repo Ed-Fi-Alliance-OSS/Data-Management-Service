@@ -33,6 +33,7 @@ internal static class SecurableElementColumnPathResolver
 
         var results = new List<ResolvedSecurableElementPath>();
         var unresolvedPaths = new List<string>();
+        var skippedArrayNestedPaths = new List<string>();
 
         foreach (var edOrg in securableElements.EducationOrganization)
         {
@@ -40,6 +41,7 @@ internal static class SecurableElementColumnPathResolver
             // which is not yet supported; skip them from fail-fast validation.
             if (IsArrayNestedPath(edOrg.JsonPath))
             {
+                skippedArrayNestedPaths.Add(edOrg.JsonPath);
                 continue;
             }
 
@@ -60,6 +62,7 @@ internal static class SecurableElementColumnPathResolver
         {
             if (IsArrayNestedPath(ns))
             {
+                skippedArrayNestedPaths.Add(ns);
                 continue;
             }
 
@@ -83,7 +86,8 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Student,
             resourceLookup,
             results,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedArrayNestedPaths
         );
         ResolvePersonPaths(
             subjectResource,
@@ -92,7 +96,8 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Contact,
             resourceLookup,
             results,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedArrayNestedPaths
         );
         ResolvePersonPaths(
             subjectResource,
@@ -101,7 +106,8 @@ internal static class SecurableElementColumnPathResolver
             SecurableElementKind.Staff,
             resourceLookup,
             results,
-            unresolvedPaths
+            unresolvedPaths,
+            skippedArrayNestedPaths
         );
 
         if (unresolvedPaths.Count > 0)
@@ -111,6 +117,17 @@ internal static class SecurableElementColumnPathResolver
                 $"Failed to resolve securable element column paths for resource "
                     + $"'{resource.ProjectName}.{resource.ResourceName}': "
                     + $"unresolved paths: {string.Join(", ", unresolvedPaths)}"
+            );
+        }
+
+        if (results.Count == 0 && skippedArrayNestedPaths.Count > 0)
+        {
+            var resource = subjectResource.RelationalModel.Resource;
+            throw new InvalidOperationException(
+                $"Failed to resolve securable element column paths for resource "
+                    + $"'{resource.ProjectName}.{resource.ResourceName}': "
+                    + $"all paths require unsupported child-table traversal (array-nested): "
+                    + $"{string.Join(", ", skippedArrayNestedPaths)}"
             );
         }
 
@@ -185,7 +202,8 @@ internal static class SecurableElementColumnPathResolver
         SecurableElementKind kind,
         Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
         List<ResolvedSecurableElementPath> results,
-        List<string> unresolvedPaths
+        List<string> unresolvedPaths,
+        List<string> skippedArrayNestedPaths
     )
     {
         if (personPaths.Count == 0)
@@ -194,7 +212,19 @@ internal static class SecurableElementColumnPathResolver
         }
 
         // Filter out array-nested paths; the resolver only handles root-table paths.
-        var rootLevelPaths = personPaths.Where(p => !IsArrayNestedPath(p)).ToList();
+        var rootLevelPaths = new List<string>();
+        foreach (var p in personPaths)
+        {
+            if (IsArrayNestedPath(p))
+            {
+                skippedArrayNestedPaths.Add(p);
+            }
+            else
+            {
+                rootLevelPaths.Add(p);
+            }
+        }
+
         if (rootLevelPaths.Count == 0)
         {
             return;

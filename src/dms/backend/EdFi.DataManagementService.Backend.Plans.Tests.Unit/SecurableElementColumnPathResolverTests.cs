@@ -801,6 +801,117 @@ public class Given_SecurableElementColumnPathResolver
     }
 
     [TestFixture]
+    public class Given_array_nested_securable_element_paths
+    {
+        [Test]
+        public void It_should_throw_when_all_paths_are_array_nested()
+        {
+            // Resource has only array-nested securable elements — no root-level paths
+            // to resolve. Should throw indicating unsupported child-table traversal.
+            var rootTable = CreateRootTable(Table("TestResource"));
+            var model = CreateModel("Ed-Fi", "TestResource", rootTable);
+
+            var securableElements = new ResourceSecurableElements(
+                [new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId")],
+                [],
+                [],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
+
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Ed-Fi.TestResource*")
+                .WithMessage("*unsupported child-table traversal*")
+                .WithMessage("*$.classPeriods[*].classPeriodReference.schoolId*");
+        }
+
+        [Test]
+        public void It_should_resolve_root_level_and_skip_array_nested()
+        {
+            // Resource has both root-level and array-nested EdOrg paths.
+            // Only the root-level path should resolve; the array-nested one is skipped.
+            var rootTable = CreateRootTable(
+                Table("TestResource"),
+                [
+                    new DbColumnModel(
+                        Col("SchoolReference_SchoolId"),
+                        ColumnKind.Scalar,
+                        null,
+                        false,
+                        Path("$.schoolReference.schoolId"),
+                        null
+                    ),
+                ]
+            );
+
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.schoolReference"),
+                rootTable.Table,
+                Col("SchoolReference_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "School"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.schoolReference.schoolId"),
+                        Col("SchoolReference_SchoolId")
+                    ),
+                ]
+            );
+
+            var model = CreateModel("Ed-Fi", "TestResource", rootTable, [binding]);
+
+            var securableElements = new ResourceSecurableElements(
+                [
+                    new EdOrgSecurableElement("$.schoolReference.schoolId", "SchoolId"),
+                    new EdOrgSecurableElement("$.classPeriods[*].classPeriodReference.schoolId", "SchoolId"),
+                ],
+                [],
+                [],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+        }
+
+        [Test]
+        public void It_should_throw_when_all_person_paths_are_array_nested()
+        {
+            // Resource has only array-nested Student paths — should throw.
+            var rootTable = CreateRootTable(Table("TestResource"));
+            var model = CreateModel("Ed-Fi", "TestResource", rootTable);
+
+            var securableElements = new ResourceSecurableElements(
+                [],
+                [],
+                ["$.students[*].studentReference.studentUniqueId"],
+                [],
+                []
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "TestResource", model, securableElements);
+
+            var act = () => SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Ed-Fi.TestResource*")
+                .WithMessage("*unsupported child-table traversal*")
+                .WithMessage("*$.students[*].studentReference.studentUniqueId*");
+        }
+    }
+
+    [TestFixture]
     public class Given_unresolvable_securable_element
     {
         [Test]
