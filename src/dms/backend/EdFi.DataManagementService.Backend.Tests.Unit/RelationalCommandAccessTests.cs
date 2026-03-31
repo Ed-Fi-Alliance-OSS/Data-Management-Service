@@ -504,7 +504,7 @@ internal static class RelationalAccessTestData
             ),
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }

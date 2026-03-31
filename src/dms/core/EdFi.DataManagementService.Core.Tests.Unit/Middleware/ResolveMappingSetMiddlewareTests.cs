@@ -129,7 +129,7 @@ public class ResolveMappingSetMiddlewareTests
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }

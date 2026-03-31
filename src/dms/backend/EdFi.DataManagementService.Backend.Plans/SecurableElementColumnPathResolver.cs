@@ -18,9 +18,9 @@ internal static class SecurableElementColumnPathResolver
 
     /// <summary>
     /// Resolves all securable element column paths for a single concrete resource.
-    /// Returns a list of column path chains, one per securable element path.
+    /// Returns a list of resolved paths, each carrying the element kind and the column path chain.
     /// </summary>
-    public static IReadOnlyList<IReadOnlyList<ColumnPathStep>> ResolveAll(
+    public static IReadOnlyList<ResolvedSecurableElementPath> ResolveAll(
         ConcreteResourceModel subjectResource,
         IReadOnlyList<ConcreteResourceModel> allResources
     )
@@ -31,7 +31,7 @@ internal static class SecurableElementColumnPathResolver
             return [];
         }
 
-        var results = new List<IReadOnlyList<ColumnPathStep>>();
+        var results = new List<ResolvedSecurableElementPath>();
         var unresolvedPaths = new List<string>();
 
         foreach (var edOrg in securableElements.EducationOrganization)
@@ -46,7 +46,9 @@ internal static class SecurableElementColumnPathResolver
             var path = ResolveEdOrgOrNamespacePath(subjectResource, edOrg.JsonPath);
             if (path is not null)
             {
-                results.Add([path]);
+                results.Add(
+                    new ResolvedSecurableElementPath(SecurableElementKind.EducationOrganization, [path])
+                );
             }
             else
             {
@@ -64,7 +66,7 @@ internal static class SecurableElementColumnPathResolver
             var path = ResolveEdOrgOrNamespacePath(subjectResource, ns);
             if (path is not null)
             {
-                results.Add([path]);
+                results.Add(new ResolvedSecurableElementPath(SecurableElementKind.Namespace, [path]));
             }
             else
             {
@@ -78,6 +80,7 @@ internal static class SecurableElementColumnPathResolver
             subjectResource,
             securableElements.Student,
             "Student",
+            SecurableElementKind.Student,
             resourceLookup,
             results,
             unresolvedPaths
@@ -86,6 +89,7 @@ internal static class SecurableElementColumnPathResolver
             subjectResource,
             securableElements.Contact,
             "Contact",
+            SecurableElementKind.Contact,
             resourceLookup,
             results,
             unresolvedPaths
@@ -94,6 +98,7 @@ internal static class SecurableElementColumnPathResolver
             subjectResource,
             securableElements.Staff,
             "Staff",
+            SecurableElementKind.Staff,
             resourceLookup,
             results,
             unresolvedPaths
@@ -177,8 +182,9 @@ internal static class SecurableElementColumnPathResolver
         ConcreteResourceModel subjectResource,
         IReadOnlyList<string> personPaths,
         string personResourceName,
+        SecurableElementKind kind,
         Dictionary<QualifiedResourceName, ConcreteResourceModel> resourceLookup,
-        List<IReadOnlyList<ColumnPathStep>> results,
+        List<ResolvedSecurableElementPath> results,
         List<string> unresolvedPaths
     )
     {
@@ -255,7 +261,7 @@ internal static class SecurableElementColumnPathResolver
 
         if (shortestPath is not null)
         {
-            results.Add(shortestPath);
+            results.Add(new ResolvedSecurableElementPath(kind, shortestPath));
         }
         else if (!IsPersonResource(subjectResource.RelationalModel.Resource, personResourceName))
         {

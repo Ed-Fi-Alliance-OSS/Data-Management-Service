@@ -69,7 +69,7 @@ public sealed class MappingSetCompiler
         }
 
         var securableElementPathsByResource =
-            new Dictionary<QualifiedResourceName, IReadOnlyList<IReadOnlyList<ColumnPathStep>>>();
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>();
 
         foreach (var concreteResource in modelSet.ConcreteResourcesInNameOrder)
         {

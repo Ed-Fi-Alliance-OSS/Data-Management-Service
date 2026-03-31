@@ -6,6 +6,18 @@
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
+/// Identifies the kind of securable element a resolved column path represents.
+/// </summary>
+public enum SecurableElementKind
+{
+    EducationOrganization,
+    Namespace,
+    Student,
+    Contact,
+    Staff,
+}
+
+/// <summary>
 /// A single step in the column path chain used to resolve securable element authorization
 /// columns. For EdOrg/Namespace elements, only one step is returned (with null target).
 /// For person elements, one or more steps describe the join chain.
@@ -19,6 +31,16 @@ public sealed record ColumnPathStep(
     DbColumnName SourceColumnName,
     DbTableName? TargetTable,
     DbColumnName? TargetColumnName
+);
+
+/// <summary>
+/// A resolved securable element column path with its element kind.
+/// </summary>
+/// <param name="Kind">The kind of securable element this path represents.</param>
+/// <param name="Steps">The chain of column path steps to reach the authorization column.</param>
+public sealed record ResolvedSecurableElementPath(
+    SecurableElementKind Kind,
+    IReadOnlyList<ColumnPathStep> Steps
 );
 
 /// <summary>

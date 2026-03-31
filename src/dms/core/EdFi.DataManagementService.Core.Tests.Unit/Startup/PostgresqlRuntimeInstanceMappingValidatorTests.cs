@@ -73,7 +73,7 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
             },
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }

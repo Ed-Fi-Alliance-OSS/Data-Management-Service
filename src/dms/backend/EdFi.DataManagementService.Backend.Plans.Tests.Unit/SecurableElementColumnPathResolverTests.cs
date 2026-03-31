@@ -12,10 +12,10 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_SecurableElementColumnPathResolver
 {
-    private static readonly DbSchemaName s_edfiSchema = new("edfi");
-    private static readonly DbColumnName s_documentId = new("DocumentId");
+    private static readonly DbSchemaName _edfiSchema = new("edfi");
+    private static readonly DbColumnName _documentId = new("DocumentId");
 
-    private static DbTableName Table(string name) => new(s_edfiSchema, name);
+    private static DbTableName Table(string name) => new(_edfiSchema, name);
 
     private static DbColumnName Col(string name) => new(name);
 
@@ -31,7 +31,7 @@ public class Given_SecurableElementColumnPathResolver
         new(
             table,
             Path("$"),
-            new TableKey("PK_Test", [new DbKeyColumn(s_documentId, ColumnKind.Scalar)]),
+            new TableKey("PK_Test", [new DbKeyColumn(_documentId, ColumnKind.Scalar)]),
             columns ?? [],
             []
         );
@@ -44,7 +44,7 @@ public class Given_SecurableElementColumnPathResolver
     ) =>
         new(
             new QualifiedResourceName(project, resource),
-            s_edfiSchema,
+            _edfiSchema,
             ResourceStorageKind.RelationalTables,
             root,
             [root],
@@ -121,11 +121,12 @@ public class Given_SecurableElementColumnPathResolver
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(1);
-            results[0][0].SourceTable.Should().Be(Table("StudentSchoolAssociation"));
-            results[0][0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
-            results[0][0].TargetTable.Should().BeNull();
-            results[0][0].TargetColumnName.Should().BeNull();
+            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(Table("StudentSchoolAssociation"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("SchoolReference_SchoolId"));
+            results[0].Steps[0].TargetTable.Should().BeNull();
+            results[0].Steps[0].TargetColumnName.Should().BeNull();
         }
 
         [Test]
@@ -183,8 +184,9 @@ public class Given_SecurableElementColumnPathResolver
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
             results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.EducationOrganization);
             // Should use canonical column, not the alias
-            results[0][0].SourceColumnName.Should().Be(Col("School_EducationOrganizationId"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("School_EducationOrganizationId"));
         }
     }
 
@@ -243,11 +245,12 @@ public class Given_SecurableElementColumnPathResolver
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(1);
-            results[0][0].SourceTable.Should().Be(Table("StudentAssessmentRegistration"));
-            results[0][0].SourceColumnName.Should().Be(Col("AssessmentAdministration_Namespace"));
-            results[0][0].TargetTable.Should().BeNull();
-            results[0][0].TargetColumnName.Should().BeNull();
+            results[0].Kind.Should().Be(SecurableElementKind.Namespace);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(Table("StudentAssessmentRegistration"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("AssessmentAdministration_Namespace"));
+            results[0].Steps[0].TargetTable.Should().BeNull();
+            results[0].Steps[0].TargetColumnName.Should().BeNull();
         }
 
         [Test]
@@ -279,11 +282,12 @@ public class Given_SecurableElementColumnPathResolver
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(1);
-            results[0][0].SourceTable.Should().Be(Table("AcademicWeek"));
-            results[0][0].SourceColumnName.Should().Be(Col("Namespace"));
-            results[0][0].TargetTable.Should().BeNull();
-            results[0][0].TargetColumnName.Should().BeNull();
+            results[0].Kind.Should().Be(SecurableElementKind.Namespace);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(Table("AcademicWeek"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Namespace"));
+            results[0].Steps[0].TargetTable.Should().BeNull();
+            results[0].Steps[0].TargetColumnName.Should().BeNull();
         }
     }
 
@@ -350,11 +354,12 @@ public class Given_SecurableElementColumnPathResolver
             );
 
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(1);
-            results[0][0].SourceTable.Should().Be(Table("StudentSchoolAssociation"));
-            results[0][0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
-            results[0][0].TargetTable.Should().Be(Table("Student"));
-            results[0][0].TargetColumnName.Should().Be(Col("DocumentId"));
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(Table("StudentSchoolAssociation"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Student"));
+            results[0].Steps[0].TargetColumnName.Should().Be(Col("DocumentId"));
         }
 
         [Test]
@@ -416,8 +421,9 @@ public class Given_SecurableElementColumnPathResolver
             );
 
             results.Should().HaveCount(1);
-            results[0][0].SourceColumnName.Should().Be(Col("Contact_DocumentId"));
-            results[0][0].TargetTable.Should().Be(Table("Contact"));
+            results[0].Kind.Should().Be(SecurableElementKind.Contact);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Contact_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Contact"));
         }
     }
 
@@ -509,19 +515,20 @@ public class Given_SecurableElementColumnPathResolver
             );
 
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(2);
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps.Should().HaveCount(2);
 
             // First hop: CourseTranscript -> StudentAcademicRecord
-            results[0][0].SourceTable.Should().Be(Table("CourseTranscript"));
-            results[0][0].SourceColumnName.Should().Be(Col("StudentAcademicRecord_DocumentId"));
-            results[0][0].TargetTable.Should().Be(Table("StudentAcademicRecord"));
-            results[0][0].TargetColumnName.Should().Be(Col("DocumentId"));
+            results[0].Steps[0].SourceTable.Should().Be(Table("CourseTranscript"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("StudentAcademicRecord_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("StudentAcademicRecord"));
+            results[0].Steps[0].TargetColumnName.Should().Be(Col("DocumentId"));
 
             // Second hop: StudentAcademicRecord -> Student
-            results[0][1].SourceTable.Should().Be(Table("StudentAcademicRecord"));
-            results[0][1].SourceColumnName.Should().Be(Col("Student_DocumentId"));
-            results[0][1].TargetTable.Should().Be(Table("Student"));
-            results[0][1].TargetColumnName.Should().Be(Col("DocumentId"));
+            results[0].Steps[1].SourceTable.Should().Be(Table("StudentAcademicRecord"));
+            results[0].Steps[1].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Steps[1].TargetTable.Should().Be(Table("Student"));
+            results[0].Steps[1].TargetColumnName.Should().Be(Col("DocumentId"));
         }
 
         [Test]
@@ -639,8 +646,9 @@ public class Given_SecurableElementColumnPathResolver
 
             // Should pick the shortest path (direct, 1 hop) over the indirect (2 hops)
             results.Should().HaveCount(1);
-            results[0].Should().HaveCount(1);
-            results[0][0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
+            results[0].Kind.Should().Be(SecurableElementKind.Student);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Student_DocumentId"));
         }
     }
 
@@ -657,6 +665,68 @@ public class Given_SecurableElementColumnPathResolver
             var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete]);
 
             results.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_staff_direct_person_reference
+    {
+        [Test]
+        public void It_should_resolve_staff_direct_reference()
+        {
+            var root = CreateRootTable(
+                Table("StaffSchoolAssociation"),
+                [
+                    new DbColumnModel(
+                        Col("Staff_DocumentId"),
+                        ColumnKind.DocumentFk,
+                        null,
+                        false,
+                        null,
+                        new QualifiedResourceName("Ed-Fi", "Staff")
+                    ),
+                ]
+            );
+
+            var staffRoot = CreateRootTable(Table("Staff"));
+
+            var binding = new DocumentReferenceBinding(
+                true,
+                Path("$.staffReference"),
+                root.Table,
+                Col("Staff_DocumentId"),
+                new QualifiedResourceName("Ed-Fi", "Staff"),
+                [
+                    new ReferenceIdentityBinding(
+                        Path("$.staffReference.staffUniqueId"),
+                        Col("Staff_StaffUniqueId")
+                    ),
+                ]
+            );
+
+            var model = CreateModel("Ed-Fi", "StaffSchoolAssociation", root, [binding]);
+            var staffModel = CreateModel("Ed-Fi", "Staff", staffRoot);
+
+            var securableElements = new ResourceSecurableElements(
+                [],
+                [],
+                [],
+                [],
+                ["$.staffReference.staffUniqueId"]
+            );
+
+            var concrete = CreateConcrete(1, "Ed-Fi", "StaffSchoolAssociation", model, securableElements);
+            var staffConcrete = CreateConcrete(2, "Ed-Fi", "Staff", staffModel);
+
+            var results = SecurableElementColumnPathResolver.ResolveAll(concrete, [concrete, staffConcrete]);
+
+            results.Should().HaveCount(1);
+            results[0].Kind.Should().Be(SecurableElementKind.Staff);
+            results[0].Steps.Should().HaveCount(1);
+            results[0].Steps[0].SourceTable.Should().Be(Table("StaffSchoolAssociation"));
+            results[0].Steps[0].SourceColumnName.Should().Be(Col("Staff_DocumentId"));
+            results[0].Steps[0].TargetTable.Should().Be(Table("Staff"));
+            results[0].Steps[0].TargetColumnName.Should().Be(Col("DocumentId"));
         }
     }
 

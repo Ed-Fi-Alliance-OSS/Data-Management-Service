@@ -19,8 +19,6 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
     private const string Ds52FixturePath =
         "../Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json";
 
-    private static readonly DbColumnName s_documentId = new("DocumentId");
-
     private DerivedRelationalModelSet _modelSet = null!;
     private MappingSet _mappingSet = null!;
 
@@ -59,11 +57,12 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
         var allPaths = _mappingSet.SecurableElementColumnPathsByResource[resource];
         allPaths.Should().NotBeEmpty();
 
-        // Find the EdOrg path (single step with null target)
-        var edOrgPath = allPaths.FirstOrDefault(p => p.Count == 1 && p[0].TargetTable is null);
+        // Find the EdOrg path by kind
+        var edOrgPath = allPaths.FirstOrDefault(p => p.Kind == SecurableElementKind.EducationOrganization);
         edOrgPath.Should().NotBeNull("StudentSchoolAssociation should have an EdOrg column path");
-        edOrgPath![0].SourceTable.Schema.Value.Should().Be("edfi");
-        edOrgPath[0].SourceTable.Name.Should().Be("StudentSchoolAssociation");
+        edOrgPath!.Steps.Should().HaveCount(1);
+        edOrgPath.Steps[0].SourceTable.Schema.Value.Should().Be("edfi");
+        edOrgPath.Steps[0].SourceTable.Name.Should().Be("StudentSchoolAssociation");
     }
 
     [Test]
@@ -74,12 +73,11 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
 
         var allPaths = _mappingSet.SecurableElementColumnPathsByResource[resource];
 
-        // Find the Student path (single step with target table)
-        var studentPath = allPaths.FirstOrDefault(p =>
-            p.Count == 1 && p[0].TargetTable is not null && p[0].TargetColumnName == s_documentId
-        );
+        // Find the Student path by kind
+        var studentPath = allPaths.FirstOrDefault(p => p.Kind == SecurableElementKind.Student);
         studentPath.Should().NotBeNull("StudentSchoolAssociation should have a direct Student path");
-        studentPath![0].TargetTable!.Value.Name.Should().Be("Student");
+        studentPath!.Steps.Should().HaveCount(1);
+        studentPath.Steps[0].TargetTable!.Value.Name.Should().Be("Student");
     }
 
     [Test]
@@ -91,9 +89,9 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
 
         // Verify that all column names in resolved paths correspond to actual columns
         // in the derived relational model
-        foreach (var path in allPaths)
+        foreach (var resolvedPath in allPaths)
         {
-            foreach (var step in path)
+            foreach (var step in resolvedPath.Steps)
             {
                 var sourceTable = _modelSet
                     .ConcreteResourcesInNameOrder.SelectMany(r => r.RelationalModel.TablesInDependencyOrder)
@@ -129,10 +127,19 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
         {
             if (_mappingSet.SecurableElementColumnPathsByResource.TryGetValue(descriptor, out var paths))
             {
-                foreach (var path in paths)
+                foreach (var resolvedPath in paths)
                 {
-                    path.Should().HaveCount(1, $"Descriptor {descriptor} paths should be single-step");
-                    path[0]
+                    resolvedPath
+                        .Kind.Should()
+                        .Be(
+                            SecurableElementKind.Namespace,
+                            $"Descriptor {descriptor} should be Namespace kind"
+                        );
+                    resolvedPath
+                        .Steps.Should()
+                        .HaveCount(1, $"Descriptor {descriptor} paths should be single-step");
+                    resolvedPath
+                        .Steps[0]
                         .TargetTable.Should()
                         .BeNull($"Descriptor {descriptor} should have null target (namespace-style)");
                 }

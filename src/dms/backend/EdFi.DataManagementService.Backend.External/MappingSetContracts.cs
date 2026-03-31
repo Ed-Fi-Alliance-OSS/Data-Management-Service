@@ -30,8 +30,8 @@ public readonly record struct MappingSetKey(
 /// <param name="ResourceKeyById">Resource key entries keyed by resource key id.</param>
 /// <param name="SecurableElementColumnPathsByResource">
 /// Precomputed securable element authorization column paths keyed by qualified resource name.
-/// Each value is a list of <see cref="ColumnPathStep"/> chains representing the join path
-/// to reach the authorization column.
+/// Each value is a list of <see cref="ResolvedSecurableElementPath"/> entries carrying
+/// the element kind and the join path to reach the authorization column.
 /// </param>
 public sealed record MappingSet(
     MappingSetKey Key,
@@ -42,7 +42,7 @@ public sealed record MappingSet(
     IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById,
     IReadOnlyDictionary<
         QualifiedResourceName,
-        IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+        IReadOnlyList<ResolvedSecurableElementPath>
     > SecurableElementColumnPathsByResource
 )
 {

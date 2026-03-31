@@ -975,7 +975,7 @@ public class Given_ReferenceResolver
             ),
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }

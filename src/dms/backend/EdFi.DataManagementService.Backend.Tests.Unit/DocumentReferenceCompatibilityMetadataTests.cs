@@ -220,7 +220,7 @@ public class Given_MappingSetDocumentReferenceCompatibilityExtensions
                     ResourceKeyById: resourceKeyById,
                     SecurableElementColumnPathsByResource: new Dictionary<
                         QualifiedResourceName,
-                        IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                        IReadOnlyList<ResolvedSecurableElementPath>
                     >()
                 ),
                 SchoolResource: schoolResource,

@@ -510,7 +510,7 @@ public class Given_MappingSetLookupExtensions
                 ResourceKeyById: resourceKeyById,
                 SecurableElementColumnPathsByResource: new Dictionary<
                     QualifiedResourceName,
-                    IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                    IReadOnlyList<ResolvedSecurableElementPath>
                 >()
             ),
             SupportedResource: supportedResource,

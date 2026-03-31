@@ -309,7 +309,7 @@ public sealed class ReferenceResolverIntegrationFixture
             ResourceKeyById: resourceKeyById,
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }

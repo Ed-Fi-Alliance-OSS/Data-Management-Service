@@ -276,7 +276,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
             },
             SecurableElementColumnPathsByResource: new Dictionary<
                 QualifiedResourceName,
-                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+                IReadOnlyList<ResolvedSecurableElementPath>
             >()
         );
     }
