@@ -60,6 +60,8 @@ internal static class SemanticIdentityCompatibilityValidator
             return [];
         }
 
+        var navigator = new ProfileTreeNavigator(writeContent);
+
         List<HiddenSemanticIdentityMembersProfileDefinitionFailure>? failures = null;
 
         foreach (CompiledScopeDescriptor scope in compiledScopes)
@@ -74,15 +76,22 @@ internal static class SemanticIdentityCompatibilityValidator
                 continue;
             }
 
-            CollectionLookupResult lookup = FindCollectionInProfile(writeContent, scope.JsonScope);
+            ProfileTreeNode? node = navigator.Navigate(scope.JsonScope);
 
-            if (lookup.Visibility != CollectionVisibility.VisibleWithExplicitRules)
+            // Scope is hidden by the profile — skip it
+            if (node == null)
+            {
+                continue;
+            }
+
+            // All members visible — no identity members can be hidden
+            if (node.Value.MemberSelection == MemberSelection.IncludeAll)
             {
                 continue;
             }
 
             ImmutableArray<string> hiddenMembers = GetHiddenSemanticIdentityMembers(
-                lookup.Rule!,
+                node.Value,
                 scope.SemanticIdentityRelativePathsInOrder
             );
 
@@ -104,191 +113,15 @@ internal static class SemanticIdentityCompatibilityValidator
     }
 
     // -----------------------------------------------------------------------
-    //  Profile tree navigation
-    // -----------------------------------------------------------------------
-
-    private enum CollectionVisibility
-    {
-        Hidden,
-        VisibleAllMembers,
-        VisibleWithExplicitRules,
-    }
-
-    private sealed record CollectionLookupResult(CollectionVisibility Visibility, CollectionRule? Rule);
-
-    private static readonly CollectionLookupResult _hidden = new(CollectionVisibility.Hidden, null);
-
-    private static readonly CollectionLookupResult _visibleAllMembers = new(
-        CollectionVisibility.VisibleAllMembers,
-        null
-    );
-
-    /// <summary>
-    /// Navigates the profile definition tree to find the CollectionRule for a
-    /// compiled <paramref name="jsonScope"/>. Returns the visibility status and
-    /// rule (if the collection has explicit member filtering).
-    /// </summary>
-    private static CollectionLookupResult FindCollectionInProfile(
-        ContentTypeDefinition writeContent,
-        string jsonScope
-    )
-    {
-        string[] segments = jsonScope.Split('.');
-        int startIndex = segments[0] == "$" ? 1 : 0;
-
-        return Navigate(ProfileTreeNode.From(writeContent), segments, startIndex);
-    }
-
-    private static CollectionLookupResult Navigate(ProfileTreeNode node, string[] segments, int index)
-    {
-        if (index >= segments.Length)
-        {
-            return _hidden;
-        }
-
-        // Last segment must be the target collection
-        if (index == segments.Length - 1)
-        {
-            string collectionName = StripArraySuffix(segments[index]);
-            return LookupCollection(node, collectionName);
-        }
-
-        string segment = segments[index];
-
-        // Extension: _ext followed by extension name
-        if (segment == "_ext")
-        {
-            if (index + 1 >= segments.Length)
-            {
-                return _hidden;
-            }
-
-            return NavigateExtension(node, segments[index + 1], segments, index + 2);
-        }
-
-        // Intermediate collection (e.g., "addresses[*]" in "$.addresses[*].periods[*]")
-        if (segment.EndsWith("[*]", StringComparison.Ordinal))
-        {
-            return NavigateIntermediateCollection(node, StripArraySuffix(segment), segments, index + 1);
-        }
-
-        // Intermediate object
-        return NavigateObject(node, segment, segments, index + 1);
-    }
-
-    private static CollectionLookupResult LookupCollection(ProfileTreeNode node, string name)
-    {
-        return node.MemberSelection switch
-        {
-            MemberSelection.IncludeOnly => node.Collections.TryGetValue(name, out CollectionRule? rule)
-                ? new(CollectionVisibility.VisibleWithExplicitRules, rule)
-                : _hidden,
-
-            MemberSelection.ExcludeOnly => node.Collections.TryGetValue(name, out CollectionRule? exRule)
-                ? new(CollectionVisibility.VisibleWithExplicitRules, exRule)
-                : _visibleAllMembers,
-
-            MemberSelection.IncludeAll => node.Collections.TryGetValue(name, out CollectionRule? rule)
-                ? new(CollectionVisibility.VisibleWithExplicitRules, rule)
-                : _visibleAllMembers,
-
-            _ => _hidden,
-        };
-    }
-
-    private static CollectionLookupResult NavigateIntermediateCollection(
-        ProfileTreeNode node,
-        string name,
-        string[] segments,
-        int nextIndex
-    )
-    {
-        return node.MemberSelection switch
-        {
-            MemberSelection.IncludeOnly => node.Collections.TryGetValue(name, out CollectionRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _hidden,
-
-            MemberSelection.ExcludeOnly => node.Collections.TryGetValue(name, out CollectionRule? exRule)
-                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            MemberSelection.IncludeAll => node.Collections.TryGetValue(name, out CollectionRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            _ => _hidden,
-        };
-    }
-
-    private static CollectionLookupResult NavigateObject(
-        ProfileTreeNode node,
-        string name,
-        string[] segments,
-        int nextIndex
-    )
-    {
-        return node.MemberSelection switch
-        {
-            MemberSelection.IncludeOnly => node.Objects.TryGetValue(name, out ObjectRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _hidden,
-
-            MemberSelection.ExcludeOnly => node.Objects.TryGetValue(name, out ObjectRule? exRule)
-                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            MemberSelection.IncludeAll => node.Objects.TryGetValue(name, out ObjectRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            _ => _hidden,
-        };
-    }
-
-    private static CollectionLookupResult NavigateExtension(
-        ProfileTreeNode node,
-        string extensionName,
-        string[] segments,
-        int nextIndex
-    )
-    {
-        if (node.Extensions == null)
-        {
-            return node.MemberSelection == MemberSelection.IncludeOnly ? _hidden : _visibleAllMembers;
-        }
-
-        return node.MemberSelection switch
-        {
-            MemberSelection.IncludeOnly => node.Extensions.TryGetValue(extensionName, out ExtensionRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _hidden,
-
-            MemberSelection.ExcludeOnly => node.Extensions.TryGetValue(
-                extensionName,
-                out ExtensionRule? exRule
-            )
-                ? Navigate(ProfileTreeNode.From(exRule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            MemberSelection.IncludeAll => node.Extensions.TryGetValue(extensionName, out ExtensionRule? rule)
-                ? Navigate(ProfileTreeNode.From(rule), segments, nextIndex)
-                : _visibleAllMembers,
-
-            _ => _hidden,
-        };
-    }
-
-    // -----------------------------------------------------------------------
     //  Member visibility
     // -----------------------------------------------------------------------
 
     /// <summary>
     /// Returns the subset of semantic identity paths that are hidden by the
-    /// collection rule's member selection.
+    /// profile tree node's member selection.
     /// </summary>
     private static ImmutableArray<string> GetHiddenSemanticIdentityMembers(
-        CollectionRule rule,
+        ProfileTreeNode node,
         ImmutableArray<string> semanticIdentityPaths
     )
     {
@@ -298,14 +131,14 @@ internal static class SemanticIdentityCompatibilityValidator
         {
             // For reference-backed paths like "schoolReference.schoolId", the
             // top-level member name ("schoolReference") is what appears in the
-            // collection rule's PropertyNameSet. Including the reference member
+            // collection rule's ExplicitPropertyNames. Including the reference member
             // includes all its descendant properties.
             string memberName = ExtractTopLevelMember(path);
 
-            bool isHidden = rule.MemberSelection switch
+            bool isHidden = node.MemberSelection switch
             {
-                MemberSelection.IncludeOnly => !rule.PropertyNameSet.Contains(memberName),
-                MemberSelection.ExcludeOnly => rule.PropertyNameSet.Contains(memberName),
+                MemberSelection.IncludeOnly => !node.ExplicitPropertyNames.Contains(memberName),
+                MemberSelection.ExcludeOnly => node.ExplicitPropertyNames.Contains(memberName),
                 MemberSelection.IncludeAll => false,
                 _ => false,
             };
@@ -324,9 +157,6 @@ internal static class SemanticIdentityCompatibilityValidator
     //  Helpers
     // -----------------------------------------------------------------------
 
-    private static string StripArraySuffix(string segment) =>
-        segment.EndsWith("[*]", StringComparison.Ordinal) ? segment[..^3] : segment;
-
     /// <summary>
     /// Extracts the top-level member name from a scope-relative path.
     /// For dotted paths like "schoolReference.schoolId", returns "schoolReference".
@@ -336,45 +166,5 @@ internal static class SemanticIdentityCompatibilityValidator
     {
         int dotIndex = path.IndexOf('.');
         return dotIndex >= 0 ? path[..dotIndex] : path;
-    }
-
-    /// <summary>
-    /// Normalized view of a profile tree node for navigation. Adapts the
-    /// differing property names across ContentTypeDefinition, CollectionRule,
-    /// ObjectRule, and ExtensionRule into a uniform lookup surface.
-    /// </summary>
-    private readonly struct ProfileTreeNode(
-        MemberSelection memberSelection,
-        IReadOnlyDictionary<string, CollectionRule> collections,
-        IReadOnlyDictionary<string, ObjectRule> objects,
-        IReadOnlyDictionary<string, ExtensionRule>? extensions
-    )
-    {
-        public MemberSelection MemberSelection => memberSelection;
-        public IReadOnlyDictionary<string, CollectionRule> Collections => collections;
-        public IReadOnlyDictionary<string, ObjectRule> Objects => objects;
-        public IReadOnlyDictionary<string, ExtensionRule>? Extensions => extensions;
-
-        public static ProfileTreeNode From(ContentTypeDefinition c) =>
-            new(c.MemberSelection, c.CollectionRulesByName, c.ObjectRulesByName, c.ExtensionRulesByName);
-
-        public static ProfileTreeNode From(CollectionRule c) =>
-            new(
-                c.MemberSelection,
-                c.NestedCollectionRulesByName,
-                c.NestedObjectRulesByName,
-                c.ExtensionRulesByName
-            );
-
-        public static ProfileTreeNode From(ObjectRule o) =>
-            new(
-                o.MemberSelection,
-                o.CollectionRulesByName,
-                o.NestedObjectRulesByName,
-                o.ExtensionRulesByName
-            );
-
-        public static ProfileTreeNode From(ExtensionRule e) =>
-            new(e.MemberSelection, e.CollectionRulesByName, e.ObjectRulesByName, null);
     }
 }
