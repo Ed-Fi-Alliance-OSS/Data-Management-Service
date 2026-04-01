@@ -339,6 +339,27 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_skips_top_level_collection_candidates_when_the_selected_body_contains_an_empty_array()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": []
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.CollectionCandidates.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_emits_top_level_collection_candidates_with_unresolved_keys_and_semantic_identity()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(

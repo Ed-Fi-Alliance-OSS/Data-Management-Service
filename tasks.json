@@ -4,9 +4,9 @@
     "description": "Add relational flattener coverage for empty collection-array input. Acceptance: add a backend unit test proving that when the selected body contains an explicitly empty persisted collection array such as `\"addresses\": []`, the flattener produces zero `CollectionWriteCandidate` entries for that scope, does not throw, and does not emit unrelated extension or child collection rows. The test should exercise the real `RelationalWriteFlattener` seam input directly rather than relying on Core canonicalization to prune the array first.",
     "steps-to-verify": [
       "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs` that builds a `FlatteningInput` with `\"addresses\": []` and asserts `result.RootRow.CollectionCandidates` is empty.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattenerTests\"`"
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_RelationalWriteFlattener\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
