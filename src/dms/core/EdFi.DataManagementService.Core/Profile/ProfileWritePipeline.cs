@@ -134,9 +134,6 @@ internal static class ProfileWritePipeline
     /// <param name="effectiveSchemaRequiredMembersByScope">
     /// Schema-required members by scope for creatability analysis.
     /// </param>
-    /// <param name="storedStateProjector">
-    /// Optional C6 stored-state projector for update/upsert flows.
-    /// </param>
     /// <returns>
     /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
     /// optional stored context, or typed failures.
@@ -152,8 +149,7 @@ internal static class ProfileWritePipeline
         string resourceName,
         string method,
         string operation,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
-        IStoredStateProjector? storedStateProjector = null
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
     )
     {
         // ------------------------------------------------------------------
@@ -285,15 +281,10 @@ internal static class ProfileWritePipeline
         // ------------------------------------------------------------------
         ProfileAppliedWriteContext? context = null;
 
-        if (!isCreate && storedDocument != null && storedStateProjector != null)
+        if (!isCreate && storedDocument != null)
         {
-            context = storedStateProjector.ProjectStoredState(
-                storedDocument,
-                scopeCatalog,
-                writeContentType!,
-                request,
-                existenceLookupResult
-            );
+            var projector = new StoredStateProjector(storedDocument, classifier);
+            context = projector.ProjectStoredState(request, existenceLookupResult);
         }
 
         return ProfileWritePipelineResult.Success(request, context);

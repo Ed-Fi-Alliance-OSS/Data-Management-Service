@@ -337,6 +337,167 @@ public abstract class ProfileWritePipelineTests
         {
             _result.Failures.Should().BeEmpty();
         }
+
+        [Test]
+        public void It_should_have_context_for_update_flow()
+        {
+            _result.Context.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_have_visible_stored_body_with_all_fields()
+        {
+            // IncludeAll profile: stored body includes everything
+            _result.Context!.VisibleStoredBody["entryDate"]!
+                .GetValue<string>()
+                .Should()
+                .Be("2024-08-01");
+        }
+
+        [Test]
+        public void It_should_have_stored_scope_states()
+        {
+            _result.Context!.StoredScopeStates.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_should_have_visible_stored_collection_rows()
+        {
+            _result.Context!.VisibleStoredCollectionRows.Should().NotBeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  4b. Given_Update_With_Filtering_Profile — end-to-end C6 with hidden members
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Update_With_Filtering_Profile : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        /// <summary>
+        /// IncludeOnly profile: root includes studentReference, schoolReference only.
+        /// classPeriods includes classPeriodName only (officialAttendancePeriod is hidden).
+        /// entryDate, entryTypeDescriptor, calendarReference are hidden.
+        /// </summary>
+        private static ContentTypeDefinition BuildFilteringProfile() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // Request body only contains visible fields (no forbidden data)
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            // Stored document has all fields including hidden ones
+            JsonNode storedDocument = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Original",
+                    "calendarReference": { "calendarCode": "2024-01" },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1", "officialAttendancePeriod": true }
+                    ]
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildFilteringProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: storedDocument,
+                isCreate: false,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "write",
+                effectiveSchemaRequiredMembersByScope: new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["$"] = ["studentReference", "schoolReference"],
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_context()
+        {
+            _result.Context.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_have_visible_stored_body_with_only_visible_members()
+        {
+            _result.Context!.VisibleStoredBody["studentReference"].Should().NotBeNull();
+            _result.Context!.VisibleStoredBody["schoolReference"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_strip_hidden_members_from_visible_stored_body()
+        {
+            _result.Context!.VisibleStoredBody["entryDate"].Should().BeNull();
+            _result.Context!.VisibleStoredBody["entryTypeDescriptor"].Should().BeNull();
+            _result.Context!.VisibleStoredBody["calendarReference"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_strip_hidden_collection_item_members()
+        {
+            var item = _result.Context!.VisibleStoredBody["classPeriods"]!.AsArray()[0]!;
+            item["classPeriodName"]!.GetValue<string>().Should().Be("Period1");
+            item["officialAttendancePeriod"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_have_stored_scope_states_from_existence_lookup()
+        {
+            _result.Context!.StoredScopeStates.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_should_have_visible_stored_collection_rows_from_existence_lookup()
+        {
+            _result.Context!.VisibleStoredCollectionRows.Should().NotBeEmpty();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -521,115 +682,13 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  6. Given_C6_Stub_Invoked_For_Update_Flow — mock projector called
+    //  6. Given_Upsert_With_No_Stored_Document — C6 not invoked
     // -----------------------------------------------------------------------
 
     [TestFixture]
-    public class Given_C6_Stub_Invoked_For_Update_Flow : ProfileWritePipelineTests
+    public class Given_Upsert_With_No_Stored_Document : ProfileWritePipelineTests
     {
         private ProfileWritePipelineResult _result = null!;
-        private MockStoredStateProjector _mockProjector = null!;
-
-        private sealed class MockStoredStateProjector : IStoredStateProjector
-        {
-            public bool WasCalled { get; private set; }
-
-            public ProfileAppliedWriteContext ProjectStoredState(
-                JsonNode? storedDocument,
-                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
-                ContentTypeDefinition writeContentType,
-                ProfileAppliedWriteRequest request,
-                StoredSideExistenceLookupResult existenceLookupResult
-            )
-            {
-                WasCalled = true;
-                return new ProfileAppliedWriteContext(request, JsonNode.Parse("{}")!, [], []);
-            }
-        }
-
-        [SetUp]
-        public void Setup()
-        {
-            _mockProjector = new MockStoredStateProjector();
-
-            JsonNode storedDocument = JsonNode.Parse(
-                """
-                {
-                    "studentReference": { "studentUniqueId": "S001" },
-                    "schoolReference": { "schoolId": 100 },
-                    "entryDate": "2024-08-01",
-                    "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Original",
-                    "calendarReference": { "calendarCode": "2024-01" },
-                    "classPeriods": [
-                        { "classPeriodName": "Period1", "officialAttendancePeriod": true }
-                    ]
-                }
-                """
-            )!;
-
-            _result = ProfileWritePipeline.Execute(
-                canonicalizedRequestBody: BuildStandardRequestBody(),
-                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
-                resolvedContentType: ProfileContentType.Write,
-                scopeCatalog: SharedFixtureScopes,
-                storedDocument: storedDocument,
-                isCreate: false,
-                profileName: ProfileName,
-                resourceName: ResourceName,
-                method: "PUT",
-                operation: "write",
-                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
-                storedStateProjector: _mockProjector
-            );
-        }
-
-        [Test]
-        public void It_should_invoke_the_projector()
-        {
-            _mockProjector.WasCalled.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_should_have_a_context()
-        {
-            _result.Context.Should().NotBeNull();
-        }
-
-        [Test]
-        public void It_should_succeed()
-        {
-            _result.IsSuccess.Should().BeTrue();
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    //  7. Given_C6_Not_Invoked_When_Upsert_Misses_Stored_Document —
-    //     PUT/upsert with isCreate=false but no stored document must NOT invoke C6
-    // -----------------------------------------------------------------------
-
-    [TestFixture]
-    public class Given_C6_Not_Invoked_When_Upsert_Misses_Stored_Document : ProfileWritePipelineTests
-    {
-        private ProfileWritePipelineResult _result = null!;
-
-        /// <summary>
-        /// Projector that throws if called, making any accidental invocation an immediate failure.
-        /// </summary>
-        private sealed class ThrowingStoredStateProjector : IStoredStateProjector
-        {
-            public ProfileAppliedWriteContext ProjectStoredState(
-                JsonNode? storedDocument,
-                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
-                ContentTypeDefinition writeContentType,
-                ProfileAppliedWriteRequest request,
-                StoredSideExistenceLookupResult existenceLookupResult
-            )
-            {
-                throw new InvalidOperationException(
-                    "C6 projector must not be called when storedDocument is null."
-                );
-            }
-        }
 
         [SetUp]
         public void Setup()
@@ -647,82 +706,12 @@ public abstract class ProfileWritePipelineTests
                 resourceName: ResourceName,
                 method: "PUT",
                 operation: "write",
-                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
-                storedStateProjector: new ThrowingStoredStateProjector()
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers
             );
         }
 
         [Test]
-        public void It_should_not_invoke_the_projector()
-        {
-            // If the guard is wrong the ThrowingStoredStateProjector would have thrown,
-            // causing Setup to fail before this assertion is ever reached.
-            _result.Context.Should().BeNull();
-        }
-
-        [Test]
-        public void It_should_succeed()
-        {
-            _result.IsSuccess.Should().BeTrue();
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    //  8. Given_C6_Not_Invoked_For_Create_Flow — mock projector not called
-    // -----------------------------------------------------------------------
-
-    [TestFixture]
-    public class Given_C6_Not_Invoked_For_Create_Flow : ProfileWritePipelineTests
-    {
-        private ProfileWritePipelineResult _result = null!;
-        private MockStoredStateProjector _mockProjector = null!;
-
-        private sealed class MockStoredStateProjector : IStoredStateProjector
-        {
-            public bool WasCalled { get; private set; }
-
-            public ProfileAppliedWriteContext ProjectStoredState(
-                JsonNode? storedDocument,
-                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
-                ContentTypeDefinition writeContentType,
-                ProfileAppliedWriteRequest request,
-                StoredSideExistenceLookupResult existenceLookupResult
-            )
-            {
-                WasCalled = true;
-                return new ProfileAppliedWriteContext(request, JsonNode.Parse("{}")!, [], []);
-            }
-        }
-
-        [SetUp]
-        public void Setup()
-        {
-            _mockProjector = new MockStoredStateProjector();
-
-            _result = ProfileWritePipeline.Execute(
-                canonicalizedRequestBody: BuildStandardRequestBody(),
-                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
-                resolvedContentType: ProfileContentType.Write,
-                scopeCatalog: SharedFixtureScopes,
-                storedDocument: null,
-                isCreate: true,
-                profileName: ProfileName,
-                resourceName: ResourceName,
-                method: Method,
-                operation: Operation,
-                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
-                storedStateProjector: _mockProjector
-            );
-        }
-
-        [Test]
-        public void It_should_not_invoke_the_projector()
-        {
-            _mockProjector.WasCalled.Should().BeFalse();
-        }
-
-        [Test]
-        public void It_should_have_no_context()
+        public void It_should_not_have_context()
         {
             _result.Context.Should().BeNull();
         }
