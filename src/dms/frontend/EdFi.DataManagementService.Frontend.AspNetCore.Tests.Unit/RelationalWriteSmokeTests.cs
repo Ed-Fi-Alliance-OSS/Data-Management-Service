@@ -91,6 +91,13 @@ public class Given_A_Host_Using_The_Relational_Backend
                     "isRequired": false,
                     "path": "$.submittedAt",
                     "type": "string"
+                  },
+                  "WidgetCount": {
+                    "isPartOfIdentity": false,
+                    "isReference": false,
+                    "isRequired": false,
+                    "path": "$.widgetCount",
+                    "type": "string"
                   }
                 },
                 "securableElements": {
@@ -118,6 +125,9 @@ public class Given_A_Host_Using_The_Relational_Backend
                     "submittedAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "widgetCount": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -152,9 +162,131 @@ public class Given_A_Host_Using_The_Relational_Backend
 
         _terminalStage = new CapturingRelationalWriteTerminalStage();
         _flattener = new CapturingRelationalWriteFlattener();
+        _factory = CreateFactory(
+            _flattener,
+            new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetMappingSet),
+            _terminalStage
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _factory.Dispose();
+
+        if (Directory.Exists(_schemaDirectory))
+        {
+            Directory.Delete(_schemaDirectory, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task It_routes_http_post_requests_into_the_relational_write_seam()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":101,"widgetName":"Smoke Widget"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
+        response.Headers.Location.Should().NotBeNull();
+        response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
+        _flattener.Inputs.Should().ContainSingle();
+        _terminalStage.Requests.Should().ContainSingle();
+        _terminalStage
+            .Requests[0]
+            .FlatteningInput.WritePlan.Model.Resource.Should()
+            .Be(new QualifiedResourceName("TestProject", "Widget"));
+        _terminalStage.Requests[0].FlatteningInput.SelectedBody["widgetName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Smoke Widget");
+    }
+
+    // The public HTTP path still relies on Core normalization; backend-local strict parsing only applies
+    // when a caller bypasses that middleware and supplies an unnormalized selected body directly.
+    [Test]
+    public async Task It_normalizes_permissive_datetime_input_on_the_public_http_path_before_the_relational_flattener_sees_the_selected_body()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":102,"widgetName":"Normalized Widget","submittedAt":"5/7/2009 2:15:30 PM"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
+        _flattener.Inputs.Should().ContainSingle();
+        _terminalStage.Requests.Should().ContainSingle();
+        _flattener.Inputs[0].SelectedBody["submittedAt"]!
+            .GetValue<string>()
+            .Should()
+            .Be("2009-05-07T14:15:30Z");
+        _terminalStage.Requests[0].FlatteningInput.SelectedBody["submittedAt"]!
+            .GetValue<string>()
+            .Should()
+            .Be("2009-05-07T14:15:30Z");
+    }
+
+    [Test]
+    public async Task It_returns_bad_request_when_the_real_relational_flattener_rejects_an_invalid_scalar_value()
+    {
+        var terminalStage = new CapturingRelationalWriteTerminalStage();
+
+        using var factory = CreateFactory(
+            new RelationalWriteFlattener(),
+            new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetCountValidationMappingSet),
+            terminalStage
+        );
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":101,"widgetName":"Smoke Widget","widgetCount":"not-an-integer"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var body = JsonNode.Parse(responseBody)!.AsObject();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["validationErrors"]!["$.widgetCount"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Column 'WidgetCount' on table 'testproject.Widget' expected scalar kind 'Int32'");
+        terminalStage.Requests.Should().BeEmpty();
+    }
+
+    private WebApplicationFactory<Program> CreateFactory(
+        IRelationalWriteFlattener flattener,
+        IMappingSetProvider mappingSetProvider,
+        CapturingRelationalWriteTerminalStage terminalStage
+    )
+    {
         var claimSetProvider = new AllowAllWidgetClaimSetProvider();
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(
@@ -277,121 +409,13 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);
-                services.AddSingleton<IMappingSetProvider, WidgetMappingSetProvider>();
+                services.AddSingleton(mappingSetProvider);
                 services.AddSingleton(targetContextResolver);
                 services.AddSingleton(referenceResolver);
-                services.AddSingleton<IRelationalWriteFlattener>(_flattener);
-                services.AddSingleton<IRelationalWriteTerminalStage>(_terminalStage);
+                services.AddSingleton(flattener);
+                services.AddSingleton<IRelationalWriteTerminalStage>(terminalStage);
             });
         });
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        _factory.Dispose();
-
-        if (Directory.Exists(_schemaDirectory))
-        {
-            Directory.Delete(_schemaDirectory, recursive: true);
-        }
-    }
-
-    [Test]
-    public async Task It_routes_http_post_requests_into_the_relational_write_seam()
-    {
-        using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
-
-        using var response = await client.PostAsync(
-            "/data/testproject/widgets",
-            new StringContent(
-                """{"widgetId":101,"widgetName":"Smoke Widget"}""",
-                Encoding.UTF8,
-                "application/json"
-            )
-        );
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
-        response.Headers.Location.Should().NotBeNull();
-        response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
-        _flattener.Inputs.Should().ContainSingle();
-        _terminalStage.Requests.Should().ContainSingle();
-        _terminalStage
-            .Requests[0]
-            .FlatteningInput.WritePlan.Model.Resource.Should()
-            .Be(new QualifiedResourceName("TestProject", "Widget"));
-        _terminalStage.Requests[0].FlatteningInput.SelectedBody["widgetName"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Smoke Widget");
-    }
-
-    // The public HTTP path still relies on Core normalization; backend-local strict parsing only applies
-    // when a caller bypasses that middleware and supplies an unnormalized selected body directly.
-    [Test]
-    public async Task It_normalizes_permissive_datetime_input_on_the_public_http_path_before_the_relational_flattener_sees_the_selected_body()
-    {
-        using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
-
-        using var response = await client.PostAsync(
-            "/data/testproject/widgets",
-            new StringContent(
-                """{"widgetId":102,"widgetName":"Normalized Widget","submittedAt":"5/7/2009 2:15:30 PM"}""",
-                Encoding.UTF8,
-                "application/json"
-            )
-        );
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
-        _flattener.Inputs.Should().ContainSingle();
-        _terminalStage.Requests.Should().ContainSingle();
-        _flattener.Inputs[0].SelectedBody["submittedAt"]!
-            .GetValue<string>()
-            .Should()
-            .Be("2009-05-07T14:15:30Z");
-        _terminalStage.Requests[0].FlatteningInput.SelectedBody["submittedAt"]!
-            .GetValue<string>()
-            .Should()
-            .Be("2009-05-07T14:15:30Z");
-    }
-
-    [Test]
-    public async Task It_returns_bad_request_when_the_relational_flattener_reports_request_validation_failure()
-    {
-        _flattener.FailureToThrow = RelationalWriteRequestValidationException.ForPath(
-            "$.widgetName",
-            "Widget name failed a relational write validation guard rail."
-        );
-
-        using var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
-
-        using var response = await client.PostAsync(
-            "/data/testproject/widgets",
-            new StringContent(
-                """{"widgetId":101,"widgetName":"Smoke Widget"}""",
-                Encoding.UTF8,
-                "application/json"
-            )
-        );
-        var responseBody = await response.Content.ReadAsStringAsync();
-        var body = JsonNode.Parse(responseBody)!.AsObject();
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
-        body["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Data validation failed. See 'validationErrors' for details.");
-        body["validationErrors"]!["$.widgetName"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Be("Widget name failed a relational write validation guard rail.");
-        _flattener.Inputs.Should().ContainSingle();
-        _terminalStage.Requests.Should().BeEmpty();
     }
 
     private sealed class EffectiveSchemaFingerprintReader(
@@ -415,25 +439,27 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class WidgetMappingSetProvider : IMappingSetProvider
     {
+        private readonly Func<MappingSetKey, MappingSet> _mappingSetFactory;
+
+        public WidgetMappingSetProvider(Func<MappingSetKey, MappingSet> mappingSetFactory)
+        {
+            _mappingSetFactory =
+                mappingSetFactory ?? throw new ArgumentNullException(nameof(mappingSetFactory));
+        }
+
         public Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken cancellationToken)
         {
-            return Task.FromResult(RelationalWriteSmokeSupport.CreateWidgetMappingSet(key));
+            return Task.FromResult(_mappingSetFactory(key));
         }
     }
 
     private sealed class CapturingRelationalWriteFlattener : IRelationalWriteFlattener
     {
         public List<FlatteningInput> Inputs { get; } = [];
-        public Exception? FailureToThrow { get; set; }
 
         public FlattenedWriteSet Flatten(FlatteningInput flatteningInput)
         {
             Inputs.Add(flatteningInput);
-
-            if (FailureToThrow is not null)
-            {
-                throw FailureToThrow;
-            }
 
             var rootPlan = flatteningInput.WritePlan.TablePlansInDependencyOrder.Single(plan =>
                 plan.TableModel.IdentityMetadata.TableKind == DbTableKind.Root
@@ -513,7 +539,41 @@ public class Given_A_Host_Using_The_Relational_Backend
             var resource = new QualifiedResourceName("TestProject", "Widget");
             var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
             var rootPlan = CreateRootPlan();
-            var resourceModel = new RelationalResourceModel(
+            var resourceModel = CreateWidgetResourceModel(resource, rootPlan);
+
+            return CreateMappingSet(key, resource, resourceKey, resourceModel, rootPlan);
+        }
+
+        public static MappingSet CreateWidgetCountValidationMappingSet(MappingSetKey key)
+        {
+            var resource = new QualifiedResourceName("TestProject", "Widget");
+            var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+            var rootPlan = CreateRootPlan(
+                additionalColumn: new DbColumnModel(
+                    ColumnName: new DbColumnName("WidgetCount"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath("$.widgetCount", new JsonPathSegment.Property("widgetCount")),
+                    TargetResource: null
+                ),
+                additionalValueSource: new WriteValueSource.Scalar(
+                    CreatePath("$.widgetCount", new JsonPathSegment.Property("widgetCount")),
+                    new RelationalScalarType(ScalarKind.Int32)
+                ),
+                additionalParameterName: "WidgetCount"
+            );
+            var resourceModel = CreateWidgetResourceModel(resource, rootPlan);
+
+            return CreateMappingSet(key, resource, resourceKey, resourceModel, rootPlan);
+        }
+
+        private static RelationalResourceModel CreateWidgetResourceModel(
+            QualifiedResourceName resource,
+            TableWritePlan rootPlan
+        )
+        {
+            return new RelationalResourceModel(
                 Resource: resource,
                 PhysicalSchema: new DbSchemaName("testproject"),
                 StorageKind: ResourceStorageKind.RelationalTables,
@@ -522,7 +582,16 @@ public class Given_A_Host_Using_The_Relational_Backend
                 DocumentReferenceBindings: [],
                 DescriptorEdgeSources: []
             );
+        }
 
+        private static MappingSet CreateMappingSet(
+            MappingSetKey key,
+            QualifiedResourceName resource,
+            ResourceKeyEntry resourceKey,
+            RelationalResourceModel resourceModel,
+            TableWritePlan rootPlan
+        )
+        {
             return new MappingSet(
                 Key: key,
                 Model: new DerivedRelationalModelSet(
@@ -582,8 +651,30 @@ public class Given_A_Host_Using_The_Relational_Backend
             );
         }
 
-        private static TableWritePlan CreateRootPlan()
+        private static TableWritePlan CreateRootPlan(
+            DbColumnModel? additionalColumn = null,
+            WriteValueSource? additionalValueSource = null,
+            string? additionalParameterName = null
+        )
         {
+            List<DbColumnModel> columns =
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: null,
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null,
+                    Storage: new ColumnStorage.Stored()
+                ),
+            ];
+
+            if (additionalColumn is not null)
+            {
+                columns.Add(additionalColumn);
+            }
+
             var tableModel = new DbTableModel(
                 Table: new DbTableName(new DbSchemaName("testproject"), "Widget"),
                 JsonScope: new JsonPathExpression("$", []),
@@ -591,18 +682,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                     ConstraintName: "PK_Widget",
                     Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
                 ),
-                Columns:
-                [
-                    new DbColumnModel(
-                        ColumnName: new DbColumnName("DocumentId"),
-                        Kind: ColumnKind.ParentKeyPart,
-                        ScalarType: null,
-                        IsNullable: false,
-                        SourceJsonPath: null,
-                        TargetResource: null,
-                        Storage: new ColumnStorage.Stored()
-                    ),
-                ],
+                Columns: columns,
                 Constraints: []
             )
             {
@@ -615,22 +695,44 @@ public class Given_A_Host_Using_The_Relational_Backend
                 ),
             };
 
+            List<WriteColumnBinding> columnBindings =
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+            ];
+
+            if (
+                additionalValueSource is not null
+                && additionalParameterName is not null
+                && tableModel.Columns.Count > 1
+            )
+            {
+                columnBindings.Add(
+                    new WriteColumnBinding(
+                        tableModel.Columns[1],
+                        additionalValueSource,
+                        additionalParameterName
+                    )
+                );
+            }
+
             return new TableWritePlan(
                 TableModel: tableModel,
                 InsertSql: "insert into testproject.\"Widget\" values (...)",
                 UpdateSql: "update testproject.\"Widget\" set ...",
                 DeleteByParentSql: null,
-                BulkInsertBatching: new BulkInsertBatchingInfo(100, 1, 1000),
-                ColumnBindings:
-                [
-                    new WriteColumnBinding(
-                        tableModel.Columns[0],
-                        new WriteValueSource.DocumentId(),
-                        "DocumentId"
-                    ),
-                ],
+                BulkInsertBatching: new BulkInsertBatchingInfo(100, tableModel.Columns.Count, 1000),
+                ColumnBindings: columnBindings,
                 KeyUnificationPlans: []
             );
+        }
+
+        private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
+        {
+            return new JsonPathExpression(canonical, segments);
         }
     }
 }

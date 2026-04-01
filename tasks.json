@@ -1,12 +1,20 @@
 [
   {
-    "category": "Refactoring",
-    "description": "Remove duplicated relational write-path lookup and JSONPath helper code introduced in the DMS-983 seam. Acceptance criteria: `RelationalWriteSupport.GetWritePlanOrThrow` is eliminated in favor of the existing shared mapping-set lookup helper so descriptor/plan guard-rail behavior is defined in one place; the backend-local JSONPath canonicalization/parsing helpers in `RelationalWriteFlattener` and `FlatteningResolvedReferenceLookupSet` are consolidated onto a single shared implementation instead of maintaining separate copies of canonical-build and path-parse logic; redundant helper code is deleted rather than left unused; relational write seam behavior and current error messages remain intentionally unchanged except where needed to preserve the shared helper contract.",
+    "category": "Testing",
+    "description": "Add relational flattener coverage for empty collection-array input. Acceptance: add a backend unit test proving that when the selected body contains an explicitly empty persisted collection array such as `\"addresses\": []`, the flattener produces zero `CollectionWriteCandidate` entries for that scope, does not throw, and does not emit unrelated extension or child collection rows. The test should exercise the real `RelationalWriteFlattener` seam input directly rather than relying on Core canonicalization to prune the array first.",
     "steps-to-verify": [
-      "Add or update unit tests covering write-plan lookup guard rails and the shared JSONPath helper behavior used by both flattening and resolved-reference lookup paths.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs` that builds a `FlatteningInput` with `\"addresses\": []` and asserts `result.RootRow.CollectionCandidates` is empty.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattenerTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Add a hosted relational write negative-path smoke test that exercises real scalar-validation failure handling end to end. Acceptance: add an ASP.NET-level test using the relational repository with the real flattener so that invalid scalar input from an HTTP request, such as a string where an integer is expected, returns HTTP 400 with the standard `detail` message and a populated `validationErrors` object, and the terminal stage is not invoked. This should validate the real flattener -> repository -> handler response mapping instead of simulating the failure with a fake flattener exception.",
+    "steps-to-verify": [
+      "Add a smoke test in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs` that submits invalid scalar data through the hosted app while wiring in the real relational flattener.",
+      "Assert the response status is 400, `detail` equals `Data validation failed. See 'validationErrors' for details.`, the expected path appears in `validationErrors`, and `_terminalStage.Requests` remains empty.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`"
     ],
     "completed": true
   }
