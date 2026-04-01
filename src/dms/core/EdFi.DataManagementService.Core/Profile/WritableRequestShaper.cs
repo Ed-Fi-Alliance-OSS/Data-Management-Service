@@ -331,9 +331,25 @@ public sealed class WritableRequestShaper(
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
-            // If VisibleAbsent, emit the array key with empty array to match expectations
-            if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            if (visibility == ProfileVisibilityKind.Hidden && scopeData != null)
             {
+                // Client submitted data for a hidden collection — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: ScopeKind.Collection,
+                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
+                        forbiddenCanonicalMemberPaths: []
+                    )
+                );
+            }
+            else if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            {
+                // If VisibleAbsent, emit the array key with empty array to match expectations
                 output[memberName] = new JsonArray();
             }
             return;

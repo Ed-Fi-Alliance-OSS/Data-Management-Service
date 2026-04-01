@@ -1248,7 +1248,87 @@ public abstract class WritableRequestShaperTests
     }
 
     // -----------------------------------------------------------------------
-    //  16. Hidden member NOT submitted — no failure expected
+    //  16. Hidden collection submitted — ForbiddenSubmittedData failure expected
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Collection_Submitted : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include classPeriods → Hidden
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties:
+                [
+                    new PropertyRule("studentReference"),
+                    new PropertyRule("schoolReference"),
+                    new PropertyRule("entryDate"),
+                ],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "calendarReference",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties:
+                        [
+                            new PropertyRule("calendarCode"),
+                            new PropertyRule("calendarTypeDescriptor"),
+                        ],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_validation_failure_for_hidden_submitted_collection()
+        {
+            _result
+                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+        }
+
+        [Test]
+        public void It_should_not_include_classPeriods_in_shaped_body()
+        {
+            var body = _result.WritableRequestBody.AsObject();
+            body.ContainsKey("classPeriods").Should().BeFalse();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  17. Hidden member NOT submitted — no failure expected
     // -----------------------------------------------------------------------
 
     [TestFixture]
