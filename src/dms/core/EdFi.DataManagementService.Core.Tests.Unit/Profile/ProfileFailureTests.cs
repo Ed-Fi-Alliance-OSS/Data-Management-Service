@@ -286,14 +286,12 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 method: "POST",
                 operation: "Create",
                 hiddenCreationRequiredMemberPaths: ["schoolReference.schoolId"],
-                missingCreationRequiredMemberPaths: ["entryDate"],
                 dependencies: [blockedDescendant]
             );
 
         failure.Context.Method.Should().Be("POST");
         failure.Context.Operation.Should().Be("Create");
         failure.HiddenCreationRequiredMemberPaths.Should().Equal("schoolReference.schoolId");
-        failure.MissingCreationRequiredMemberPaths.Should().Equal("entryDate");
         failure.Dependencies.Should().ContainSingle();
         failure.Dependencies[0].TargetKind.Should().Be(ProfileCreatabilityTargetKind.ExtensionScope);
         failure
@@ -311,11 +309,6 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
             .Single()
             .RelativePaths.Should()
             .Equal("schoolReference.schoolId");
-        failure
-            .Diagnostics.OfType<ProfileFailureDiagnostic.MissingCreationRequiredMembers>()
-            .Single()
-            .RelativePaths.Should()
-            .Equal("entryDate");
     }
 
     [TestCase(ProfileCreatabilityTargetKind.OneToOneScope, "$.calendarReference", "calendarTypeDescriptor")]
@@ -341,15 +334,13 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 operation: "Update",
                 targetKind: targetKind,
                 affectedAddress: affectedAddress,
-                hiddenCreationRequiredMemberPaths: [hiddenCreationRequiredMemberPath],
-                missingCreationRequiredMemberPaths: []
+                hiddenCreationRequiredMemberPaths: [hiddenCreationRequiredMemberPath]
             );
 
         failure.JsonScope.Should().Be(jsonScope);
         failure.AffectedScopeKind.Should().Be(ScopeKind.NonCollection);
         failure.TargetKind.Should().Be(targetKind);
         failure.HiddenCreationRequiredMemberPaths.Should().Equal(hiddenCreationRequiredMemberPath);
-        failure.MissingCreationRequiredMemberPaths.Should().BeEmpty();
         failure
             .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
             .Single()
@@ -390,15 +381,13 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 operation: "Update",
                 targetKind: ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem,
                 affectedAddress: affectedAddress,
-                hiddenCreationRequiredMemberPaths: ["startDate"],
-                missingCreationRequiredMemberPaths: ["sessionName"]
+                hiddenCreationRequiredMemberPaths: ["startDate"]
             );
 
         failure.JsonScope.Should().Be("$.sessions[*]");
         failure.AffectedScopeKind.Should().Be(ScopeKind.Collection);
         failure.TargetKind.Should().Be(ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem);
         failure.HiddenCreationRequiredMemberPaths.Should().Equal("startDate");
-        failure.MissingCreationRequiredMemberPaths.Should().Equal("sessionName");
         failure
             .Diagnostics.OfType<ProfileFailureDiagnostic.ScopeAddress>()
             .Single()
@@ -451,8 +440,7 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 operation: "Update",
                 targetKind: ProfileCreatabilityTargetKind.ExtensionCollectionItem,
                 affectedAddress: affectedAddress,
-                hiddenCreationRequiredMemberPaths: ["serviceDescriptor"],
-                missingCreationRequiredMemberPaths: []
+                hiddenCreationRequiredMemberPaths: ["serviceDescriptor"]
             );
 
         failure.JsonScope.Should().Be("$.programs[*]._ext.project.services[*]");
@@ -504,7 +492,6 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 targetKind: ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem,
                 affectedAddress: middleLevelAddress,
                 hiddenCreationRequiredMemberPaths: ["beginDate"],
-                missingCreationRequiredMemberPaths: [],
                 dependencies: [blockedDescendant]
             );
 
@@ -543,7 +530,6 @@ public class Given_ProfileFailureFactories : ProfileFailureTests
                 targetKind: ProfileCreatabilityTargetKind.ExtensionCollectionItem,
                 affectedAddress: childAddress,
                 hiddenCreationRequiredMemberPaths: [],
-                missingCreationRequiredMemberPaths: [],
                 dependencies: [blockedParent]
             );
 
