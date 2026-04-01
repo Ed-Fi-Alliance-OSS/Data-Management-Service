@@ -2382,4 +2382,343 @@ public abstract class CreatabilityAnalyzerTests
             failure.JsonScope.Should().Be("$.classPeriods[*]");
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  16. Non-collection scope nested under existing collection item resolves parent gate
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Scope_Nested_Under_Existing_Collection_Item : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Hierarchy: $ -> $.items[*] -> $.items[*].detail
+            // The collection item exists in stored state.
+            // The detail scope is new (not in stored state) and should be creatable
+            // because its parent (the collection item) exists.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.items[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["itemId"],
+                    CanonicalScopeRelativeMemberPaths: ["itemId"]
+                ),
+                new(
+                    JsonScope: "$.items[*].detail",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.items[*]",
+                    CollectionAncestorsInOrder: ["$.items[*]"],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["detailField"]
+                ),
+            ];
+
+            // IncludeAll profile — all members visible everywhere
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "items",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects:
+                        [
+                            new ObjectRule(
+                                Name: "detail",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                NestedObjects: null,
+                                Collections: null,
+                                Extensions: null
+                            ),
+                        ],
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            // The collection item's semantic identity
+            var itemIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart("itemId", System.Text.Json.Nodes.JsonValue.Create("Item1"), true)
+            );
+
+            // Ancestor context for the detail scope: the containing collection item
+            var detailAncestors = ImmutableArray.Create(
+                new AncestorCollectionInstance("$.items[*]", itemIdentity)
+            );
+
+            // The collection item with root as parent
+            var collectionItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress("$.items[*]", new ScopeInstanceAddress("$", []), itemIdentity),
+                Creatable: false,
+                "$.items[0]"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                // Root: existing
+                new(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // Detail scope under the collection item: new (not in stored state)
+                new(
+                    new ScopeInstanceAddress("$.items[*].detail", detailAncestors),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            ImmutableArray<VisibleRequestCollectionItem> items = [collectionItem];
+
+            // Root and the collection item both exist in stored state
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(new ScopeInstanceAddress("$", [])),
+                existingCollectionRows: new HashSet<CollectionRowAddress>(
+                    CollectionRowAddressComparer.Instance
+                )
+                {
+                    new CollectionRowAddress("$.items[*]", new ScopeInstanceAddress("$", []), itemIdentity),
+                }
+            );
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.items[*]"] = ["itemId"],
+                ["$.items[*].detail"] = ["detailField"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: false,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_mark_detail_scope_as_creatable()
+        {
+            // The detail scope is new (not in stored state), its parent collection item
+            // exists, so parent gate should be satisfied and it should be creatable.
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.items[*].detail" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_collection_item_as_non_creatable()
+        {
+            // The collection item exists in stored state, so it's an update, not a new create
+            _result.EnrichedCollectionItems[0].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_have_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  17. Collection item demoted by non-creatable descendant scope (bottom-up)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Item_Demoted_By_NonCreatable_Descendant_Scope : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Hierarchy: $ -> $.items[*] -> $.items[*].detail
+            // The collection item is new (not in stored state).
+            // The detail scope is new and has a hidden required member -> non-creatable.
+            // The collection item should be demoted to non-creatable by bottom-up propagation.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.items[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["itemId"],
+                    CanonicalScopeRelativeMemberPaths: ["itemId"]
+                ),
+                new(
+                    JsonScope: "$.items[*].detail",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.items[*]",
+                    CollectionAncestorsInOrder: ["$.items[*]"],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["detailField", "hiddenField"]
+                ),
+            ];
+
+            // Profile hides hiddenField on the detail scope
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "items",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects:
+                        [
+                            new ObjectRule(
+                                Name: "detail",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties: [new PropertyRule("detailField")],
+                                NestedObjects: null,
+                                Collections: null,
+                                Extensions: null
+                            ),
+                        ],
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            // The collection item's semantic identity
+            var itemIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart("itemId", System.Text.Json.Nodes.JsonValue.Create("Item1"), true)
+            );
+
+            // Ancestor context for the detail scope: the containing collection item
+            var detailAncestors = ImmutableArray.Create(
+                new AncestorCollectionInstance("$.items[*]", itemIdentity)
+            );
+
+            // The collection item with root as parent — new (not in stored state)
+            var collectionItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress("$.items[*]", new ScopeInstanceAddress("$", []), itemIdentity),
+                Creatable: false,
+                "$.items[0]"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                // Root: new create
+                new(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // Detail scope under the collection item: new (not in stored state)
+                new(
+                    new ScopeInstanceAddress("$.items[*].detail", detailAncestors),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            ImmutableArray<VisibleRequestCollectionItem> items = [collectionItem];
+
+            // Nothing exists in stored state
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.items[*]"] = ["itemId"],
+                ["$.items[*].detail"] = ["detailField", "hiddenField"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: true,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_mark_detail_scope_as_non_creatable()
+        {
+            // The detail scope has a hidden required member -> non-creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.items[*].detail" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_demote_collection_item_to_non_creatable()
+        {
+            // The collection item should be demoted by bottom-up propagation because
+            // its descendant detail scope is non-creatable
+            _result.EnrichedCollectionItems[0].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_detail_scope()
+        {
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.items[*].detail");
+        }
+    }
 }

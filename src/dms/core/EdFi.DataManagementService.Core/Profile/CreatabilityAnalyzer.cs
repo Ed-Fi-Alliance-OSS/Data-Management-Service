@@ -99,6 +99,30 @@ public sealed class CreatabilityAnalyzer(
         // attempting a new create satisfies the gate only if it is creatable.
         var scopeIsNewCreate = new bool[enrichedScopes.Length];
 
+        // Track whether each collection item is attempting a new create (Part B).
+        var itemIsNewCreate = new bool[enrichedItems.Length];
+
+        // Build a parallel lookup for collection items keyed by the address a child
+        // scope would construct for its collection parent (Part A). This allows
+        // non-collection scopes nested under collection items to resolve their parent gate.
+        var collectionItemByParentKey = new Dictionary<ScopeInstanceAddress, int>(
+            ScopeInstanceAddressComparer.Instance
+        );
+        for (int i = 0; i < enrichedItems.Length; i++)
+        {
+            var item = enrichedItems[i];
+            var parentKey = new ScopeInstanceAddress(
+                item.Address.JsonScope,
+                item.Address.ParentAddress.AncestorCollectionInstances.Add(
+                    new AncestorCollectionInstance(
+                        item.Address.JsonScope,
+                        item.Address.SemanticIdentityInOrder
+                    )
+                )
+            );
+            collectionItemByParentKey[parentKey] = i;
+        }
+
         // Build parent-child tree from scope catalog for top-down traversal
         var childrenByParent = new Dictionary<string, List<string>>();
         string? rootJsonScope = null;
@@ -160,6 +184,8 @@ public sealed class CreatabilityAnalyzer(
             scopeIsNewCreate,
             enrichedItems,
             itemCreatable,
+            itemIsNewCreate,
+            collectionItemByParentKey,
             existenceLookup,
             effectiveSchemaRequiredMembersByScope,
             failures
@@ -177,7 +203,7 @@ public sealed class CreatabilityAnalyzer(
 
             string parentJsonScope = enrichedScopes[i].Address.JsonScope;
 
-            // Check non-collection child scopes of this scope
+            // Check child scopes of this scope
             if (!childrenByParent.TryGetValue(parentJsonScope, out var childJsonScopes))
             {
                 continue;
@@ -185,14 +211,83 @@ public sealed class CreatabilityAnalyzer(
 
             foreach (string childJsonScope in childJsonScopes)
             {
-                if (
-                    !_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc)
-                    || childDesc.ScopeKind == ScopeKind.Collection
-                )
+                if (!_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc))
                 {
                     continue;
                 }
 
+                if (childDesc.ScopeKind == ScopeKind.Collection)
+                {
+                    // Part E: Check collection-item children for non-creatable new creates.
+                    // Iterate enrichedItems for matching items whose ancestor context matches
+                    // the parent scope's ancestor context.
+                    bool demotedByCollection = false;
+                    for (int j = 0; j < enrichedItems.Length; j++)
+                    {
+                        if (enrichedItems[j].Address.JsonScope != childJsonScope)
+                        {
+                            continue;
+                        }
+
+                        // Match: item's ParentAddress.AncestorCollectionInstances must equal
+                        // the parent scope's AncestorCollectionInstances
+                        if (
+                            !AncestorCollectionInstancesEqual(
+                                enrichedItems[j].Address.ParentAddress.AncestorCollectionInstances,
+                                enrichedScopes[i].Address.AncestorCollectionInstances
+                            )
+                        )
+                        {
+                            continue;
+                        }
+
+                        if (itemIsNewCreate[j] && !itemCreatable[j])
+                        {
+                            // Demote parent to non-creatable
+                            scopeCreatable[i] = false;
+                            demotedByCollection = true;
+
+                            if (parentJsonScope != rootJsonScope)
+                            {
+                                List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
+                                [
+                                    new(
+                                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                                        DetermineTargetKind(childDesc),
+                                        childJsonScope,
+                                        childDesc.ScopeKind,
+                                        false,
+                                        false
+                                    ),
+                                ];
+
+                                failures.Add(
+                                    ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                                        profileName: profileName,
+                                        resourceName: resourceName,
+                                        method: method,
+                                        operation: operation,
+                                        targetKind: DetermineScopeTargetKind(parentJsonScope),
+                                        affectedAddress: enrichedScopes[i].Address,
+                                        hiddenCreationRequiredMemberPaths: [],
+                                        dependencies: dependencies
+                                    )
+                                );
+                            }
+
+                            break;
+                        }
+                    }
+
+                    if (demotedByCollection)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                // Non-collection child scope
                 // Construct the candidate child address using the parent's ancestor context
                 var candidateChildAddress = new ScopeInstanceAddress(
                     childJsonScope,
@@ -252,6 +347,59 @@ public sealed class CreatabilityAnalyzer(
             }
         }
 
+        // Part D: Bottom-up — collection items demoted by non-collection scope descendants.
+        // Iterate enrichedItems in reverse. For each new-creatable item, check if any
+        // non-collection child scope is non-creatable.
+        for (int i = enrichedItems.Length - 1; i >= 0; i--)
+        {
+            if (!itemIsNewCreate[i] || !itemCreatable[i])
+            {
+                continue;
+            }
+
+            string collectionJsonScope = enrichedItems[i].Address.JsonScope;
+
+            if (!childrenByParent.TryGetValue(collectionJsonScope, out var childJsonScopes))
+            {
+                continue;
+            }
+
+            foreach (string childJsonScope in childJsonScopes)
+            {
+                if (
+                    !_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc)
+                    || childDesc.ScopeKind == ScopeKind.Collection
+                )
+                {
+                    continue;
+                }
+
+                // Construct the child address using the item's ancestor chain
+                var candidateChildAddress = new ScopeInstanceAddress(
+                    childJsonScope,
+                    enrichedItems[i]
+                        .Address.ParentAddress.AncestorCollectionInstances.Add(
+                            new AncestorCollectionInstance(
+                                collectionJsonScope,
+                                enrichedItems[i].Address.SemanticIdentityInOrder
+                            )
+                        )
+                );
+
+                if (!scopeStateByAddress.TryGetValue(candidateChildAddress, out int childIdx))
+                {
+                    continue;
+                }
+
+                if (scopeIsNewCreate[childIdx] && !scopeCreatable[childIdx])
+                {
+                    // Demote collection item to non-creatable
+                    itemCreatable[i] = false;
+                    break;
+                }
+            }
+        }
+
         // If bottom-up propagation demoted the root, update rootCreatable
         if (
             isCreate
@@ -302,6 +450,8 @@ public sealed class CreatabilityAnalyzer(
         bool[] scopeIsNewCreate,
         VisibleRequestCollectionItem[] enrichedItems,
         bool[] itemCreatable,
+        bool[] itemIsNewCreate,
+        Dictionary<ScopeInstanceAddress, int> collectionItemByParentKey,
         IStoredSideExistenceLookup existenceLookup,
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
         List<CreatabilityViolationFailure> failures
@@ -330,6 +480,8 @@ public sealed class CreatabilityAnalyzer(
                     scopeIsNewCreate,
                     enrichedItems,
                     itemCreatable,
+                    itemIsNewCreate,
+                    collectionItemByParentKey,
                     existenceLookup,
                     effectiveSchemaRequiredMembersByScope,
                     failures
@@ -346,6 +498,8 @@ public sealed class CreatabilityAnalyzer(
                     scopeIsNewCreate,
                     enrichedItems,
                     itemCreatable,
+                    itemIsNewCreate,
+                    collectionItemByParentKey,
                     existenceLookup,
                     effectiveSchemaRequiredMembersByScope,
                     failures
@@ -362,6 +516,9 @@ public sealed class CreatabilityAnalyzer(
                     enrichedScopes,
                     scopeCreatable,
                     scopeIsNewCreate,
+                    itemCreatable,
+                    itemIsNewCreate,
+                    collectionItemByParentKey,
                     existenceLookup,
                     effectiveSchemaRequiredMembersByScope,
                     failures
@@ -378,6 +535,8 @@ public sealed class CreatabilityAnalyzer(
                     scopeIsNewCreate,
                     enrichedItems,
                     itemCreatable,
+                    itemIsNewCreate,
+                    collectionItemByParentKey,
                     existenceLookup,
                     effectiveSchemaRequiredMembersByScope,
                     failures
@@ -397,6 +556,9 @@ public sealed class CreatabilityAnalyzer(
         RequestScopeState[] enrichedScopes,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate,
+        bool[] itemCreatable,
+        bool[] itemIsNewCreate,
+        Dictionary<ScopeInstanceAddress, int> collectionItemByParentKey,
         IStoredSideExistenceLookup existenceLookup,
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
         List<CreatabilityViolationFailure> failures
@@ -427,7 +589,10 @@ public sealed class CreatabilityAnalyzer(
                 parentAddress,
                 scopeStateByAddress,
                 scopeCreatable,
-                scopeIsNewCreate
+                scopeIsNewCreate,
+                collectionItemByParentKey,
+                itemCreatable,
+                itemIsNewCreate
             );
 
             if (!isCreatingNewInstance)
@@ -463,6 +628,8 @@ public sealed class CreatabilityAnalyzer(
         bool[] scopeIsNewCreate,
         VisibleRequestCollectionItem[] enrichedItems,
         bool[] itemCreatable,
+        bool[] itemIsNewCreate,
+        Dictionary<ScopeInstanceAddress, int> collectionItemByParentKey,
         IStoredSideExistenceLookup existenceLookup,
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
         List<CreatabilityViolationFailure> failures
@@ -478,6 +645,7 @@ public sealed class CreatabilityAnalyzer(
 
             // Step 1 for collection items: always check existence lookup
             bool isCreatingNewInstance = !existenceLookup.VisibleCollectionRowExistsAt(item.Address);
+            itemIsNewCreate[i] = isCreatingNewInstance;
 
             if (!isCreatingNewInstance)
             {
@@ -491,7 +659,10 @@ public sealed class CreatabilityAnalyzer(
                 item.Address.ParentAddress,
                 scopeStateByAddress,
                 scopeCreatable,
-                scopeIsNewCreate
+                scopeIsNewCreate,
+                collectionItemByParentKey,
+                itemCreatable,
+                itemIsNewCreate
             );
 
             // Step 3: Creating → check parent gate and required members
@@ -672,31 +843,84 @@ public sealed class CreatabilityAnalyzer(
     /// Determines whether the parent gate is satisfied for a child create attempt.
     /// The gate is satisfied when the specific parent instance (looked up by address)
     /// either already exists (is not a new create) or is itself creatable (a new create
-    /// that passed its own creatability check).
+    /// that passed its own creatability check). Also checks collection-item parents
+    /// via the collectionItemByParentKey lookup.
     /// </summary>
     private static bool IsParentGateSatisfied(
         ScopeInstanceAddress parentAddress,
         Dictionary<ScopeInstanceAddress, int> scopeStateByAddress,
         bool[] scopeCreatable,
-        bool[] scopeIsNewCreate
+        bool[] scopeIsNewCreate,
+        Dictionary<ScopeInstanceAddress, int> collectionItemByParentKey,
+        bool[] itemCreatable,
+        bool[] itemIsNewCreate
     )
     {
-        if (!scopeStateByAddress.TryGetValue(parentAddress, out int parentIdx))
+        // Check non-collection scope parents
+        if (scopeStateByAddress.TryGetValue(parentAddress, out int parentIdx))
         {
-            // Parent scope not found in scope states.
-            // For root scope "$", the parent gate is always satisfied.
-            return parentAddress.JsonScope == "$";
+            if (!scopeIsNewCreate[parentIdx])
+            {
+                // Parent is not attempting a new create — it already exists.
+                return true;
+            }
+
+            // Parent is attempting a new create — gate satisfied only if creatable.
+            return scopeCreatable[parentIdx];
         }
 
-        if (!scopeIsNewCreate[parentIdx])
+        // Check collection-item parents (Part C)
+        if (collectionItemByParentKey.TryGetValue(parentAddress, out int itemIdx))
         {
-            // Parent is not attempting a new create — it already exists.
-            // The gate is satisfied.
-            return true;
+            if (!itemIsNewCreate[itemIdx])
+            {
+                // Collection item exists — gate satisfied.
+                return true;
+            }
+
+            // Collection item is a new create — gate satisfied only if creatable.
+            return itemCreatable[itemIdx];
         }
 
-        // Parent is attempting a new create — gate satisfied only if creatable.
-        return scopeCreatable[parentIdx];
+        // Parent not found in either lookup.
+        // For root scope "$", the parent gate is always satisfied.
+        return parentAddress.JsonScope == "$";
+    }
+
+    /// <summary>
+    /// Compares two ancestor collection instance arrays for structural equality.
+    /// Used in bottom-up propagation (Part E) to match collection items to their
+    /// containing scope instances.
+    /// </summary>
+    private static bool AncestorCollectionInstancesEqual(
+        ImmutableArray<AncestorCollectionInstance> a,
+        ImmutableArray<AncestorCollectionInstance> b
+    )
+    {
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i].JsonScope != b[i].JsonScope)
+            {
+                return false;
+            }
+
+            if (
+                !ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                    a[i].SemanticIdentityInOrder,
+                    b[i].SemanticIdentityInOrder
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
