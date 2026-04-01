@@ -204,8 +204,8 @@ public sealed class CreatabilityAnalyzer(
                         // Demote parent to non-creatable
                         scopeCreatable[i] = false;
 
-                        // Root scope demotion is expressed through RootResourceCreatable=false;
-                        // only non-root scopes emit a category-4 scope-level failure.
+                        // Root scope demotion is expressed through the RootResourceCreatable flag,
+                        // so only non-root scopes emit a category-4 scope-level failure.
                         if (parentJsonScope != rootJsonScope)
                         {
                             var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
