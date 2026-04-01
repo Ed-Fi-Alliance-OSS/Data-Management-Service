@@ -100,19 +100,30 @@ public static class ReferenceIdentityProjector
     }
 
     /// <summary>
-    /// Projects all reference bindings for a table's hydrated rows, grouped by root document scope.
+    /// Projects all reference bindings for a root-scope table's hydrated rows, grouped by root document scope.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// This method is intended for <see cref="DbTableKind.Root"/> and <see cref="DbTableKind.RootExtension"/>
+    /// tables where there is exactly one row per document. For collection-scope tables (which have multiple
+    /// rows per document), use <see cref="Project"/> per-row during JSON assembly where the caller has
+    /// row-identity context (ordinal, parent scope ID) needed to place references into the correct array element.
+    /// </para>
+    /// <para>
     /// The root document scope is determined by <see cref="DbTableIdentityMetadata.RootScopeLocatorColumns"/>
-    /// from the table's identity metadata. Each root scope locator resolves to a <c>DocumentId</c> (<see langword="long"/>)
-    /// that identifies the owning root document.
+    /// from the table's identity metadata. Each root scope locator resolves to a <c>DocumentId</c>
+    /// (<see langword="long"/>) that identifies the owning root document.
+    /// </para>
     /// </remarks>
-    /// <param name="hydratedRows">Hydrated rows for the table.</param>
+    /// <param name="hydratedRows">Hydrated rows for a root-scope table.</param>
     /// <param name="projectionPlan">The compiled reference identity projection plan for the table.</param>
     /// <returns>
     /// Present projection results grouped by root document <c>DocumentId</c>.
     /// Absent references (null FK) are omitted.
     /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the table is a collection-scope table. Use <see cref="Project"/> per-row instead.
+    /// </exception>
     public static IReadOnlyDictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>> ProjectTable(
         HydratedTableRows hydratedRows,
         ReferenceIdentityProjectionTablePlan projectionPlan
@@ -120,6 +131,17 @@ public static class ReferenceIdentityProjector
     {
         ArgumentNullException.ThrowIfNull(hydratedRows);
         ArgumentNullException.ThrowIfNull(projectionPlan);
+
+        var tableKind = hydratedRows.TableModel.IdentityMetadata.TableKind;
+        if (tableKind is not DbTableKind.Root and not DbTableKind.RootExtension)
+        {
+            throw new InvalidOperationException(
+                $"ProjectTable is only valid for root-scope tables (Root, RootExtension) "
+                    + $"but table '{hydratedRows.TableModel.Table}' has kind '{tableKind}'. "
+                    + "For collection-scope tables, use Project() per-row during JSON assembly "
+                    + "where row-identity context (ordinal, parent scope) is available."
+            );
+        }
 
         if (!projectionPlan.Table.Equals(hydratedRows.TableModel.Table))
         {
@@ -166,6 +188,84 @@ public static class ReferenceIdentityProjector
         }
 
         return resultsByDocumentId.ToDictionary(
+            static kvp => kvp.Key,
+            static kvp => (IReadOnlyList<ReferenceProjectionResult.Present>)kvp.Value
+        );
+    }
+
+    /// <summary>
+    /// Projects all root-scope reference identity bindings for a hydrated page, merging
+    /// results from all root-scope tables into a single dictionary keyed by <c>DocumentId</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the primary entry point for applying reference identity projections to a
+    /// hydrated page result. It processes all <see cref="ReferenceIdentityProjectionTablePlan"/>
+    /// entries in the read plan that target root-scope tables (<see cref="DbTableKind.Root"/>,
+    /// <see cref="DbTableKind.RootExtension"/>).
+    /// </para>
+    /// <para>
+    /// Collection-scope tables are silently skipped. Their references should be projected
+    /// per-row using <see cref="Project"/> during JSON assembly, where the caller has
+    /// row-identity context needed for correct array-element placement.
+    /// </para>
+    /// </remarks>
+    /// <param name="page">The hydrated page from <see cref="HydrationExecutor"/>.</param>
+    /// <param name="plan">The compiled resource read plan containing projection metadata.</param>
+    /// <returns>
+    /// Present reference projections from all root-scope tables, merged and grouped by
+    /// root document <c>DocumentId</c>. Returns an empty dictionary when no root-scope
+    /// tables have reference bindings or all references are absent.
+    /// </returns>
+    public static IReadOnlyDictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>> ProjectPage(
+        HydratedPage page,
+        ResourceReadPlan plan
+    )
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(plan);
+
+        if (plan.ReferenceIdentityProjectionPlansInDependencyOrder.Length == 0)
+        {
+            return new Dictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>>();
+        }
+
+        var hydratedRowsByTable = new Dictionary<DbTableName, HydratedTableRows>();
+        foreach (var tableRows in page.TableRowsInDependencyOrder)
+        {
+            hydratedRowsByTable[tableRows.TableModel.Table] = tableRows;
+        }
+
+        var merged = new Dictionary<long, List<ReferenceProjectionResult.Present>>();
+
+        foreach (var projectionPlan in plan.ReferenceIdentityProjectionPlansInDependencyOrder)
+        {
+            if (!hydratedRowsByTable.TryGetValue(projectionPlan.Table, out var hydratedRows))
+            {
+                continue;
+            }
+
+            var tableKind = hydratedRows.TableModel.IdentityMetadata.TableKind;
+            if (tableKind is not DbTableKind.Root and not DbTableKind.RootExtension)
+            {
+                continue;
+            }
+
+            var tableProjections = ProjectTable(hydratedRows, projectionPlan);
+
+            foreach (var (documentId, projections) in tableProjections)
+            {
+                if (!merged.TryGetValue(documentId, out var list))
+                {
+                    list = [];
+                    merged[documentId] = list;
+                }
+
+                list.AddRange(projections);
+            }
+        }
+
+        return merged.ToDictionary(
             static kvp => kvp.Key,
             static kvp => (IReadOnlyList<ReferenceProjectionResult.Present>)kvp.Value
         );
