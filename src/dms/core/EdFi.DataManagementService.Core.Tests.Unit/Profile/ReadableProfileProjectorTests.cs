@@ -1149,6 +1149,225 @@ public class ReadableProfileProjectorTests
     }
 
     // =======================================================================
+    //  AC: Extensions within collection items follow base-data filtering rules
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Item_With_Extension_Data : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["addresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["streetAddress"] = "123 Main St",
+                        ["city"] = "Springfield",
+                        ["_ext"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["sampleField1"] = "keep",
+                                ["sampleField2"] = "drop",
+                            },
+                            ["tpdm"] = new JsonObject { ["tpdmField1"] = "unmentioned" },
+                        },
+                    },
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("streetAddress")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions:
+                        [
+                            new ExtensionRule(
+                                Name: "sample",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties: [new PropertyRule("sampleField1")],
+                                Objects: null,
+                                Collections: null
+                            ),
+                        ],
+                        ItemFilter: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_filters_extension_scalars_per_rule()
+        {
+            var ext = ((_result["addresses"] as JsonArray)![0] as JsonObject)!["_ext"] as JsonObject;
+            ext.Should().NotBeNull();
+            var sample = ext!["sample"] as JsonObject;
+            sample!["sampleField1"]?.GetValue<string>().Should().Be("keep");
+            sample["sampleField2"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_excludes_unmentioned_extension_under_IncludeOnly()
+        {
+            var ext = ((_result["addresses"] as JsonArray)![0] as JsonObject)!["_ext"] as JsonObject;
+            ext!["tpdm"].Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Item_All_Extensions_Hidden : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["addresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["streetAddress"] = "123 Main St",
+                        ["_ext"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject { ["sampleField1"] = "value1" },
+                        },
+                    },
+                },
+            };
+
+            // IncludeOnly with no extension rules — all _ext hidden
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("streetAddress")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_ext_from_collection_item_instead_of_empty_object()
+        {
+            var item = (_result["addresses"] as JsonArray)![0] as JsonObject;
+            item!["_ext"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  AC: Extensions within nested objects follow base-data filtering rules
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Nested_Object_With_Extension_Data : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["studentUniqueId"] = "STU001",
+                ["birthData"] = new JsonObject
+                {
+                    ["birthCity"] = "New York",
+                    ["birthDate"] = "2000-01-01",
+                    ["_ext"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["birthHospital"] = "General Hospital",
+                            ["birthWeight"] = 3.5,
+                        },
+                        ["tpdm"] = new JsonObject { ["tpdmField"] = "unmentioned" },
+                    },
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                objects:
+                [
+                    new ObjectRule(
+                        Name: "birthData",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("birthCity")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions:
+                        [
+                            new ExtensionRule(
+                                Name: "sample",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties: [new PropertyRule("birthHospital")],
+                                Objects: null,
+                                Collections: null
+                            ),
+                        ]
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("studentUniqueId"));
+        }
+
+        [Test]
+        public void It_filters_extension_scalars_per_rule()
+        {
+            var ext = (_result["birthData"] as JsonObject)!["_ext"] as JsonObject;
+            ext.Should().NotBeNull();
+            var sample = ext!["sample"] as JsonObject;
+            sample!["birthHospital"]?.GetValue<string>().Should().Be("General Hospital");
+            sample["birthWeight"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_excludes_unmentioned_extension_under_IncludeOnly()
+        {
+            var ext = (_result["birthData"] as JsonObject)!["_ext"] as JsonObject;
+            ext!["tpdm"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
     //  ExtractIdentityPropertyNames helper
     // =======================================================================
 
