@@ -218,7 +218,7 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
-            else if (memberValue != null)
+            else
             {
                 // Client submitted a hidden scalar member — emit category-3 failure
                 validationFailures.Add(
@@ -281,7 +281,7 @@ public sealed class WritableRequestShaper(
         }
         else
         {
-            if (visibility == ProfileVisibilityKind.Hidden && scopeData != null)
+            if (visibility == ProfileVisibilityKind.Hidden)
             {
                 // Client submitted data for a hidden scope — emit category-3 failure
                 validationFailures.Add(
@@ -331,7 +331,7 @@ public sealed class WritableRequestShaper(
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
-            if (visibility == ProfileVisibilityKind.Hidden && scopeData != null)
+            if (visibility == ProfileVisibilityKind.Hidden)
             {
                 // Client submitted data for a hidden collection — emit category-3 failure
                 validationFailures.Add(
@@ -478,7 +478,7 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
-                else if (itemMemberValue != null)
+                else
                 {
                     validationFailures.Add(
                         ProfileFailures.ForbiddenSubmittedData(
@@ -571,7 +571,7 @@ public sealed class WritableRequestShaper(
             }
             else
             {
-                if (visibility == ProfileVisibilityKind.Hidden && extData != null)
+                if (visibility == ProfileVisibilityKind.Hidden)
                 {
                     validationFailures.Add(
                         ProfileFailures.ForbiddenSubmittedData(

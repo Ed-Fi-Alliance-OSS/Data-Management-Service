@@ -1372,4 +1372,188 @@ public abstract class WritableRequestShaperTests
                 .BeEmpty();
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  18. Hidden scalar member submitted with null value — ForbiddenSubmittedData expected
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Scalar_Member_Submitted_With_Null_Value : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include entryTypeDescriptor → Hidden
+            var shaper = BuildShaper(BuildIncludeOnlyProfile(), SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "entryTypeDescriptor": null,
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_validation_failure_for_hidden_scalar_submitted_with_null()
+        {
+            _result
+                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .Contain(f => f.RequestJsonPaths.Contains("$.entryTypeDescriptor"));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  19. Hidden non-collection scope submitted with null value — ForbiddenSubmittedData expected
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Non_Collection_Scope_Submitted_With_Null_Value : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include calendarReference → Hidden
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties:
+                [
+                    new PropertyRule("studentReference"),
+                    new PropertyRule("schoolReference"),
+                    new PropertyRule("entryDate"),
+                ],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "calendarReference": null,
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_validation_failure_for_hidden_scope_submitted_with_null()
+        {
+            _result
+                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .Contain(f => f.RequestJsonPaths.Contains("$.calendarReference"));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  20. Hidden collection submitted with null value — ForbiddenSubmittedData expected
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Collection_Submitted_With_Null_Value : WritableRequestShaperTests
+    {
+        private WritableRequestShapingResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // IncludeOnly profile that does NOT include classPeriods → Hidden
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties:
+                [
+                    new PropertyRule("studentReference"),
+                    new PropertyRule("schoolReference"),
+                    new PropertyRule("entryDate"),
+                ],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "calendarReference",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties:
+                        [
+                            new PropertyRule("calendarCode"),
+                            new PropertyRule("calendarTypeDescriptor"),
+                        ],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var shaper = BuildShaper(profile, SharedFixtureScopes);
+
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    },
+                    "classPeriods": null
+                }
+                """
+            )!;
+
+            _result = shaper.Shape(requestBody);
+        }
+
+        [Test]
+        public void It_should_emit_validation_failure_for_hidden_collection_submitted_with_null()
+        {
+            _result
+                .ValidationFailures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .Contain(f => f.RequestJsonPaths.Any(p => p.Contains("classPeriods")));
+        }
+    }
 }
