@@ -23,6 +23,26 @@ public abstract class StoredSideExistenceLookupBuilderTests
         ProfileTestFixtures.AddressesFixtureScopes;
 
     // -----------------------------------------------------------------------
+    //  Test helper: wraps Build with classifier/engine construction
+    // -----------------------------------------------------------------------
+
+    protected static StoredSideExistenceLookupResult BuildLookup(
+        JsonNode? storedDocument,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        ContentTypeDefinition writeContentType
+    )
+    {
+        var classifier = new ProfileVisibilityClassifier(writeContentType, scopeCatalog);
+        var addressEngine = new AddressDerivationEngine(scopeCatalog);
+        return StoredSideExistenceLookupBuilder.Build(
+            storedDocument,
+            scopeCatalog,
+            classifier,
+            addressEngine
+        );
+    }
+
+    // -----------------------------------------------------------------------
     //  Profile builder helpers
     // -----------------------------------------------------------------------
 
@@ -190,11 +210,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
                 """
             )!;
 
-            _result = StoredSideExistenceLookupBuilder.Build(
-                storedDoc,
-                SharedFixtureScopes,
-                BuildIncludeOnlyWithCalendarReference()
-            );
+            _result = BuildLookup(storedDoc, SharedFixtureScopes, BuildIncludeOnlyWithCalendarReference());
         }
 
         [Test]
@@ -250,11 +266,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
             )!;
 
             // Profile does NOT include calendarReference
-            _result = StoredSideExistenceLookupBuilder.Build(
-                storedDoc,
-                SharedFixtureScopes,
-                BuildIncludeOnlyWithoutCalendarReference()
-            );
+            _result = BuildLookup(storedDoc, SharedFixtureScopes, BuildIncludeOnlyWithoutCalendarReference());
         }
 
         [Test]
@@ -303,11 +315,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
                 """
             )!;
 
-            _result = StoredSideExistenceLookupBuilder.Build(
-                storedDoc,
-                AddressesFixtureScopes,
-                BuildAddressesWithPhysicalFilter()
-            );
+            _result = BuildLookup(storedDoc, AddressesFixtureScopes, BuildAddressesWithPhysicalFilter());
         }
 
         [Test]
@@ -358,11 +366,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
             )!;
 
             // Physical filter — Mailing fails
-            _result = StoredSideExistenceLookupBuilder.Build(
-                storedDoc,
-                AddressesFixtureScopes,
-                BuildAddressesWithPhysicalFilter()
-            );
+            _result = BuildLookup(storedDoc, AddressesFixtureScopes, BuildAddressesWithPhysicalFilter());
         }
 
         [Test]
@@ -402,11 +406,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
         [SetUp]
         public void Setup()
         {
-            _result = StoredSideExistenceLookupBuilder.Build(
-                null,
-                SharedFixtureScopes,
-                BuildIncludeOnlyWithCalendarReference()
-            );
+            _result = BuildLookup(null, SharedFixtureScopes, BuildIncludeOnlyWithCalendarReference());
         }
 
         [Test]
@@ -476,11 +476,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
                 """
             )!;
 
-            _result = StoredSideExistenceLookupBuilder.Build(
-                storedDoc,
-                SharedFixtureScopes,
-                BuildIncludeOnlyWithCalendarReference()
-            );
+            _result = BuildLookup(storedDoc, SharedFixtureScopes, BuildIncludeOnlyWithCalendarReference());
         }
 
         [Test]
@@ -566,7 +562,7 @@ public abstract class StoredSideExistenceLookupBuilderTests
                 """
             )!;
 
-            _result = StoredSideExistenceLookupBuilder.Build(
+            _result = BuildLookup(
                 storedDoc,
                 AddressesFixtureScopes,
                 BuildAddressesIncludeOnlyWithPhysicalFilter()

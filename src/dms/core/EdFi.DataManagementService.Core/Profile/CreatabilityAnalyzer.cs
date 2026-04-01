@@ -165,13 +165,6 @@ public sealed class CreatabilityAnalyzer(
 
             string parentJsonScope = enrichedScopes[i].Address.JsonScope;
 
-            // Root scope creatability is not demoted by bottom-up propagation;
-            // root uses its own dedicated failure type.
-            if (parentJsonScope == rootJsonScope)
-            {
-                continue;
-            }
-
             // Check non-collection child scopes of this scope
             if (!childrenByParent.TryGetValue(parentJsonScope, out var childJsonScopes))
             {
@@ -200,35 +193,39 @@ public sealed class CreatabilityAnalyzer(
                         // Demote parent to non-creatable
                         scopeCreatable[i] = false;
 
-                        // Emit category-4 failure with RequiredVisibleDescendant dependency
-                        var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
-                            ? cd
-                            : null;
-                        List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
-                        [
-                            new(
-                                ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
-                                DetermineTargetKind(childDescriptor),
-                                childJsonScope,
-                                childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
-                                false,
-                                false
-                            ),
-                        ];
+                        // Root scope demotion is expressed through RootResourceCreatable=false;
+                        // only non-root scopes emit a category-4 scope-level failure.
+                        if (parentJsonScope != rootJsonScope)
+                        {
+                            var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
+                                ? cd
+                                : null;
+                            List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
+                            [
+                                new(
+                                    ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                                    DetermineTargetKind(childDescriptor),
+                                    childJsonScope,
+                                    childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
+                                    false,
+                                    false
+                                ),
+                            ];
 
-                        failures.Add(
-                            ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
-                                profileName: profileName,
-                                resourceName: resourceName,
-                                method: method,
-                                operation: operation,
-                                targetKind: DetermineScopeTargetKind(parentJsonScope),
-                                affectedAddress: enrichedScopes[i].Address,
-                                hiddenCreationRequiredMemberPaths: [],
-                                missingCreationRequiredMemberPaths: [],
-                                dependencies: dependencies
-                            )
-                        );
+                            failures.Add(
+                                ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                                    profileName: profileName,
+                                    resourceName: resourceName,
+                                    method: method,
+                                    operation: operation,
+                                    targetKind: DetermineScopeTargetKind(parentJsonScope),
+                                    affectedAddress: enrichedScopes[i].Address,
+                                    hiddenCreationRequiredMemberPaths: [],
+                                    missingCreationRequiredMemberPaths: [],
+                                    dependencies: dependencies
+                                )
+                            );
+                        }
 
                         break;
                     }
@@ -236,6 +233,23 @@ public sealed class CreatabilityAnalyzer(
 
                 if (!scopeCreatable[i])
                 {
+                    break;
+                }
+            }
+        }
+
+        // If bottom-up propagation demoted the root, update rootCreatable
+        if (
+            isCreate
+            && rootCreatable
+            && scopeStatesByJsonScope.TryGetValue(rootJsonScope, out var rootIndicesForUpdate)
+        )
+        {
+            foreach (int rootIdx in rootIndicesForUpdate)
+            {
+                if (!scopeCreatable[rootIdx])
+                {
+                    rootCreatable = false;
                     break;
                 }
             }

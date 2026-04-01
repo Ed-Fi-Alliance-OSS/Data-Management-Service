@@ -28,8 +28,11 @@ public static class StoredSideExistenceLookupBuilder
     /// <param name="scopeCatalog">
     /// The compiled scope descriptors for the resource.
     /// </param>
-    /// <param name="writeContentType">
-    /// The writable profile's content-type definition that controls member visibility.
+    /// <param name="classifier">
+    /// The shared profile visibility classifier (from C3) that controls member visibility.
+    /// </param>
+    /// <param name="addressEngine">
+    /// The shared address derivation engine (from C3) for computing scope/collection addresses.
     /// </param>
     /// <returns>
     /// A result containing the existence lookup, classified stored scopes, and
@@ -38,16 +41,14 @@ public static class StoredSideExistenceLookupBuilder
     public static StoredSideExistenceLookupResult Build(
         JsonNode? storedDocument,
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
-        ContentTypeDefinition writeContentType
+        ProfileVisibilityClassifier classifier,
+        AddressDerivationEngine addressEngine
     )
     {
         if (storedDocument == null)
         {
             return new StoredSideExistenceLookupResult(new EmptyExistenceLookup(), [], []);
         }
-
-        var classifier = new ProfileVisibilityClassifier(writeContentType, scopeCatalog);
-        var addressEngine = new AddressDerivationEngine(scopeCatalog);
 
         var scopesByJsonScope = scopeCatalog.ToDictionary(s => s.JsonScope);
 

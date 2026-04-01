@@ -152,6 +152,16 @@ internal sealed class CollectionRowAddressComparer : IEqualityComparer<Collectio
         var hash = new HashCode();
         hash.Add(obj.JsonScope);
         hash.Add(obj.ParentAddress.JsonScope);
+        foreach (var ancestor in obj.ParentAddress.AncestorCollectionInstances)
+        {
+            hash.Add(ancestor.JsonScope);
+            foreach (var part in ancestor.SemanticIdentityInOrder)
+            {
+                hash.Add(part.RelativePath);
+                hash.Add(part.Value?.ToJsonString());
+                hash.Add(part.IsPresent);
+            }
+        }
         foreach (var part in obj.SemanticIdentityInOrder)
         {
             hash.Add(part.RelativePath);

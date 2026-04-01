@@ -219,7 +219,8 @@ internal static class ProfileWritePipeline
         StoredSideExistenceLookupResult existenceLookupResult = StoredSideExistenceLookupBuilder.Build(
             storedDocument,
             scopeCatalog,
-            writeContentType
+            classifier,
+            addressEngine
         );
 
         // ------------------------------------------------------------------

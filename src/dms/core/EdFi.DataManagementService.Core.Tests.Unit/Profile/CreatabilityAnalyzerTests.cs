@@ -1048,6 +1048,229 @@ public abstract class CreatabilityAnalyzerTests
     }
 
     // -----------------------------------------------------------------------
+    //  10b. Three-level chain with collections: existing root → middle
+    //       common-type scope → descendant extension child collection.
+    //       Proves creatability gates across three levels including collections.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Three_Level_Chain_With_Collection_Scopes : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Three-level chain:
+            //   $                                        (Root, existing)
+            //   $.commonType                             (NonCollection, parent: $, new)
+            //   $.commonType._ext.project                (NonCollection extension, parent: $.commonType, new)
+            //   $.commonType._ext.project.services[*]    (Collection, parent: $.commonType._ext.project)
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["schoolReference"]
+                ),
+                new(
+                    JsonScope: "$.commonType",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["commonField"]
+                ),
+                new(
+                    JsonScope: "$.commonType._ext.project",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.commonType",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["projectCode"]
+                ),
+                new(
+                    JsonScope: "$.commonType._ext.project.services[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$.commonType._ext.project",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["serviceDescriptor"],
+                    CanonicalScopeRelativeMemberPaths: ["serviceDescriptor"]
+                ),
+            ];
+
+            // IncludeAll profile: all members visible at every scope
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeAll,
+                Properties: [],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "commonType",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions:
+                        [
+                            new ExtensionRule(
+                                Name: "project",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                Objects: null,
+                                Collections:
+                                [
+                                    new CollectionRule(
+                                        Name: "services",
+                                        MemberSelection: MemberSelection.IncludeAll,
+                                        LogicalSchema: null,
+                                        Properties: null,
+                                        NestedObjects: null,
+                                        NestedCollections: null,
+                                        Extensions: null,
+                                        ItemFilter: null
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            // Root exists (update path). Middle and extension scopes are new.
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(MakeAddress("$.commonType"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(
+                    MakeAddress("$.commonType._ext.project"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // Two collection items: one new (Coaching), one matched in stored (Tutoring)
+            var coachingRowAddress = MakeCollectionRowAddress(
+                "$.commonType._ext.project.services[*]",
+                "serviceDescriptor",
+                "Coaching"
+            );
+            var tutoringRowAddress = MakeCollectionRowAddress(
+                "$.commonType._ext.project.services[*]",
+                "serviceDescriptor",
+                "Tutoring"
+            );
+
+            ImmutableArray<VisibleRequestCollectionItem> items =
+            [
+                new(coachingRowAddress, Creatable: false),
+                new(tutoringRowAddress, Creatable: false),
+            ];
+
+            // Root exists in stored state; Tutoring item exists (matched)
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(MakeAddress("$")),
+                existingCollectionRows: new HashSet<CollectionRowAddress>(
+                    CollectionRowAddressComparer.Instance
+                )
+                {
+                    tutoringRowAddress,
+                }
+            );
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["schoolReference"],
+                ["$.commonType"] = ["commonField"],
+                ["$.commonType._ext.project"] = ["projectCode"],
+                ["$.commonType._ext.project.services[*]"] = ["serviceDescriptor"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: false,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_report_root_as_non_creatable()
+        {
+            // Root is existing (isCreate=false) so it is on the update path
+            _result.RootResourceCreatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_mark_middle_common_type_scope_as_creatable()
+        {
+            // New non-collection scope with all required members visible, parent root exists
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.commonType" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_extension_scope_as_creatable()
+        {
+            // New extension scope with all required visible, parent scope is creatable
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.commonType._ext.project" && s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_new_collection_item_as_creatable()
+        {
+            // Coaching item is new and parent extension scope is creatable
+            _result
+                .EnrichedCollectionItems.Should()
+                .Contain(i =>
+                    i.Address.JsonScope == "$.commonType._ext.project.services[*]"
+                    && i.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "Coaching"
+                    && i.Creatable
+                );
+        }
+
+        [Test]
+        public void It_should_mark_matched_collection_item_as_non_creatable()
+        {
+            // Tutoring item is matched in stored state → update, not creatable
+            _result
+                .EnrichedCollectionItems.Should()
+                .Contain(i =>
+                    i.Address.JsonScope == "$.commonType._ext.project.services[*]"
+                    && i.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "Tutoring"
+                    && !i.Creatable
+                );
+        }
+
+        [Test]
+        public void It_should_have_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  11. Update-allowed: existing scope matched in stored state → non-creatable, no failure
     // -----------------------------------------------------------------------
 
@@ -1408,6 +1631,122 @@ public abstract class CreatabilityAnalyzerTests
                 .Contain(d =>
                     d.DependencyKind == ProfileCreatabilityDependencyKind.RequiredVisibleDescendant
                 );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  13b. Root blocked by non-creatable descendant (bottom-up propagation
+    //       reaches root per profiles.md:443-446 and :476)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Root_Blocked_By_NonCreatable_Descendant : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Root + one child non-collection scope. Child has a hidden required member,
+            // making it non-creatable. Bottom-up propagation should demote root.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["schoolReference"]
+                ),
+                new(
+                    JsonScope: "$.childObject",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["visibleField", "hiddenField"]
+                ),
+            ];
+
+            // Root has all members visible; child hides hiddenField
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("schoolReference")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "childObject",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("visibleField")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+                new(MakeAddress("$.childObject"), ProfileVisibilityKind.VisiblePresent, Creatable: false),
+            ];
+
+            // Neither scope exists in stored state (both are new creates)
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["schoolReference"],
+                ["$.childObject"] = ["visibleField", "hiddenField"],
+            };
+
+            _result = analyzer.Analyze(scopeStates, [], existenceLookup, isCreate: true, effectiveRequired);
+        }
+
+        [Test]
+        public void It_should_mark_child_as_non_creatable()
+        {
+            _result
+                .EnrichedScopeStates.Should()
+                .Contain(s => s.Address.JsonScope == "$.childObject" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_mark_root_as_non_creatable_due_to_descendant()
+        {
+            _result.EnrichedScopeStates.Should().Contain(s => s.Address.JsonScope == "$" && !s.Creatable);
+        }
+
+        [Test]
+        public void It_should_set_RootResourceCreatable_to_false()
+        {
+            _result.RootResourceCreatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_the_non_creatable_child_only()
+        {
+            // Root demotion is expressed through RootResourceCreatable=false, not a
+            // scope-level failure. Only the child's own hidden-required failure is emitted.
+            _result.Failures.Should().HaveCount(1);
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.childObject");
         }
     }
 
