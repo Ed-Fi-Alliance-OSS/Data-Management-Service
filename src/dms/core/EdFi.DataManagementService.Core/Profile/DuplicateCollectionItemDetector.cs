@@ -54,11 +54,7 @@ public static class DuplicateCollectionItemDetector
             {
                 failures ??= ImmutableArray.CreateBuilder<WritableProfileValidationFailure>();
 
-                // The factory requires at least 2 request paths. Generate index-based
-                // placeholder paths since the detector does not track per-item JSON paths.
-                IEnumerable<string> placeholderPaths = Enumerable
-                    .Range(0, group.Count)
-                    .Select(i => $"{address.JsonScope}[{i}]");
+                IEnumerable<string> requestPaths = group.Select(item => item.RequestJsonPath);
 
                 failures.Add(
                     ProfileFailures.DuplicateVisibleCollectionItemCollision(
@@ -69,7 +65,7 @@ public static class DuplicateCollectionItemDetector
                         jsonScope: address.JsonScope,
                         stableParentAddress: address.ParentAddress,
                         semanticIdentityPartsInOrder: address.SemanticIdentityInOrder,
-                        requestJsonPaths: placeholderPaths
+                        requestJsonPaths: requestPaths
                     )
                 );
             }

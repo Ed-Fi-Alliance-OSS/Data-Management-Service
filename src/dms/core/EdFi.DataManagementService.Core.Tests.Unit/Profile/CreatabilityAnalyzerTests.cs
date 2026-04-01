@@ -590,7 +590,8 @@ public abstract class CreatabilityAnalyzerTests
             [
                 new(
                     MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
-                    Creatable: false
+                    Creatable: false,
+                    "$.classPeriods[0]"
                 ),
             ];
 
@@ -678,7 +679,8 @@ public abstract class CreatabilityAnalyzerTests
             [
                 new(
                     MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
-                    Creatable: false
+                    Creatable: false,
+                    "$.classPeriods[0]"
                 ),
             ];
 
@@ -1180,8 +1182,8 @@ public abstract class CreatabilityAnalyzerTests
 
             ImmutableArray<VisibleRequestCollectionItem> items =
             [
-                new(coachingRowAddress, Creatable: false),
-                new(tutoringRowAddress, Creatable: false),
+                new(coachingRowAddress, Creatable: false, "$.studentProgramAssociationServices[0]"),
+                new(tutoringRowAddress, Creatable: false, "$.studentProgramAssociationServices[1]"),
             ];
 
             // Root exists in stored state; Tutoring item exists (matched)
@@ -2097,7 +2099,8 @@ public abstract class CreatabilityAnalyzerTests
                         ),
                     ]
                 ),
-                Creatable: false
+                Creatable: false,
+                "$.parent[0].items[0]"
             );
             var betaItem = new VisibleRequestCollectionItem(
                 new CollectionRowAddress(
@@ -2111,7 +2114,8 @@ public abstract class CreatabilityAnalyzerTests
                         ),
                     ]
                 ),
-                Creatable: false
+                Creatable: false,
+                "$.parent[1].items[0]"
             );
             ImmutableArray<VisibleRequestCollectionItem> items = [alphaItem, betaItem];
 
@@ -2308,11 +2312,13 @@ public abstract class CreatabilityAnalyzerTests
             // Two items with the SAME semantic identity in the same collection
             var item1 = new VisibleRequestCollectionItem(
                 MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
-                Creatable: false
+                Creatable: false,
+                "$.classPeriods[0]"
             );
             var item2 = new VisibleRequestCollectionItem(
                 MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1"),
-                Creatable: false
+                Creatable: false,
+                "$.classPeriods[1]"
             );
 
             ImmutableArray<RequestScopeState> scopeStates =

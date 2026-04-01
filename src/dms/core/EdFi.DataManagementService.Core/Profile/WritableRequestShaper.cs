@@ -365,13 +365,16 @@ public sealed class WritableRequestShaper(
                 continue;
             }
 
-            // Item passes filter — derive address and emit
+            // Item passes filter — derive address and concrete path, then emit
             CollectionRowAddress rowAddress = addressEngine.DeriveCollectionRowAddress(
                 jsonScope,
                 item,
                 ancestorItems
             );
-            collectionItems.Add(new VisibleRequestCollectionItem(rowAddress, Creatable: false));
+            string itemRequestJsonPath = $"{requestJsonPath}.{memberName}[{i}]";
+            collectionItems.Add(
+                new VisibleRequestCollectionItem(rowAddress, Creatable: false, itemRequestJsonPath)
+            );
 
             // Build filtered item
             var filteredItem = new JsonObject();
@@ -379,9 +382,6 @@ public sealed class WritableRequestShaper(
 
             // Build ancestor context for potential nested scopes
             var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
-
-            // Concrete document path for this collection item
-            string itemRequestJsonPath = $"{requestJsonPath}.{memberName}[{i}]";
 
             // Track which child non-collection scopes are handled for this item
             HashSet<string> itemHandledChildScopes = [];

@@ -23,13 +23,15 @@ public class Given_Two_Items_With_Same_Identity_And_Parent
             "$.classPeriods[*]",
             "$",
             "classPeriodName",
-            "Period1"
+            "Period1",
+            "$.classPeriods[0]"
         );
         var item2 = DuplicateDetectorTestHelpers.BuildItem(
             "$.classPeriods[*]",
             "$",
             "classPeriodName",
-            "Period1"
+            "Period1",
+            "$.classPeriods[1]"
         );
 
         _result = DuplicateCollectionItemDetector.Detect(
@@ -203,7 +205,8 @@ internal static class DuplicateDetectorTestHelpers
         string jsonScope,
         string parentScope,
         string identityPath,
-        string identityValue
+        string identityValue,
+        string requestJsonPath = "$.unknown[0]"
     )
     {
         var parentAddress = new ScopeInstanceAddress(parentScope, []);
@@ -211,6 +214,6 @@ internal static class DuplicateDetectorTestHelpers
             new SemanticIdentityPart(identityPath, JsonValue.Create(identityValue), true)
         );
         var address = new CollectionRowAddress(jsonScope, parentAddress, identity);
-        return new VisibleRequestCollectionItem(address, Creatable: false);
+        return new VisibleRequestCollectionItem(address, Creatable: false, requestJsonPath);
     }
 }
