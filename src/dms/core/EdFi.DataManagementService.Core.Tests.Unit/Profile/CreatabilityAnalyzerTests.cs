@@ -1959,6 +1959,222 @@ public abstract class CreatabilityAnalyzerTests
     }
 
     // -----------------------------------------------------------------------
+    //  13b. Collection items under different parent instances (address-scoped gate)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Items_Under_Different_Parent_Instances : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // $.parent has two instances (different ancestor contexts, simulating
+            // being inside different collection items). Instance 1 (Alpha) exists
+            // in stored state (update path). Instance 2 (Beta) is a new create with
+            // a hidden required member (non-creatable).
+            //
+            // $.parent.items[*] has two collection items, one under each parent instance.
+            // The Alpha item's parent gate should be satisfied (parent exists).
+            // The Beta item's parent gate should NOT be satisfied (parent is non-creatable).
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.parent",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["visibleField", "hiddenField"]
+                ),
+                new(
+                    JsonScope: "$.parent.items[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$.parent",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["itemName"],
+                    CanonicalScopeRelativeMemberPaths: ["itemName"]
+                ),
+            ];
+
+            // Profile hides hiddenField on $.parent, all members visible on collection
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "parent",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("visibleField")],
+                        NestedObjects: null,
+                        Collections:
+                        [
+                            new CollectionRule(
+                                Name: "items",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                NestedObjects: null,
+                                NestedCollections: null,
+                                Extensions: null,
+                                ItemFilter: null
+                            ),
+                        ],
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            // Ancestor contexts representing two different collection items
+            var ancestorsAlpha = ImmutableArray.Create(
+                new AncestorCollectionInstance(
+                    "$.coll[*]",
+                    [new SemanticIdentityPart("id", System.Text.Json.Nodes.JsonValue.Create("Alpha"), true)]
+                )
+            );
+            var ancestorsBeta = ImmutableArray.Create(
+                new AncestorCollectionInstance(
+                    "$.coll[*]",
+                    [new SemanticIdentityPart("id", System.Text.Json.Nodes.JsonValue.Create("Beta"), true)]
+                )
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                // Root: existing
+                new(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.parent instance 1 (Alpha context): will exist in stored state
+                new(
+                    new ScopeInstanceAddress("$.parent", ancestorsAlpha),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.parent instance 2 (Beta context): NOT in stored state -> new create, non-creatable
+                new(
+                    new ScopeInstanceAddress("$.parent", ancestorsBeta),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // Collection items under each parent instance
+            var alphaItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress(
+                    "$.parent.items[*]",
+                    new ScopeInstanceAddress("$.parent", ancestorsAlpha),
+                    [
+                        new SemanticIdentityPart(
+                            "itemName",
+                            System.Text.Json.Nodes.JsonValue.Create("ItemA"),
+                            true
+                        ),
+                    ]
+                ),
+                Creatable: false
+            );
+            var betaItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress(
+                    "$.parent.items[*]",
+                    new ScopeInstanceAddress("$.parent", ancestorsBeta),
+                    [
+                        new SemanticIdentityPart(
+                            "itemName",
+                            System.Text.Json.Nodes.JsonValue.Create("ItemB"),
+                            true
+                        ),
+                    ]
+                ),
+                Creatable: false
+            );
+            ImmutableArray<VisibleRequestCollectionItem> items = [alphaItem, betaItem];
+
+            // $.parent instance 1 (Alpha) exists; everything else is new
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(
+                    new ScopeInstanceAddress("$", []),
+                    new ScopeInstanceAddress("$.parent", ancestorsAlpha)
+                )
+            );
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.parent"] = ["visibleField", "hiddenField"],
+                ["$.parent.items[*]"] = ["itemName"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: false,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_mark_alpha_collection_item_as_creatable()
+        {
+            // Alpha item: parent exists (not new create) -> gate satisfied, all members visible
+            _result.EnrichedCollectionItems[0].Creatable.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_mark_beta_collection_item_as_non_creatable()
+        {
+            // Beta item: parent is non-creatable new create -> gate fails
+            _result.EnrichedCollectionItems[1].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_beta_parent()
+        {
+            // $.parent instance 2 (Beta) has hidden required member
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.parent");
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_beta_collection_item()
+        {
+            // Beta collection item fails parent gate
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.parent.items[*]");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  14. Storage-managed values excluded from creatability checks
     // -----------------------------------------------------------------------
 

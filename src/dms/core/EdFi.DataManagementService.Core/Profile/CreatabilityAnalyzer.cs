@@ -73,6 +73,17 @@ public sealed class CreatabilityAnalyzer(
             indices.Add(i);
         }
 
+        // Build address-keyed index for O(1) parent-gate and demotion lookups.
+        // This replaces loop-and-filter over scopeStatesByJsonScope with direct
+        // per-instance resolution using structural equality on ScopeInstanceAddress.
+        var scopeStateByAddress = new Dictionary<ScopeInstanceAddress, int>(
+            ScopeInstanceAddressComparer.Instance
+        );
+        for (int i = 0; i < requestScopeStates.Length; i++)
+        {
+            scopeStateByAddress[requestScopeStates[i].Address] = i;
+        }
+
         // Build mutable arrays for enrichment
         var enrichedScopes = requestScopeStates.ToArray();
         var enrichedItems = visibleItems.ToArray();
@@ -143,6 +154,7 @@ public sealed class CreatabilityAnalyzer(
             rootJsonScope,
             childrenByParent,
             scopeStatesByJsonScope,
+            scopeStateByAddress,
             enrichedScopes,
             scopeCreatable,
             scopeIsNewCreate,
@@ -181,65 +193,57 @@ public sealed class CreatabilityAnalyzer(
                     continue;
                 }
 
-                if (!scopeStatesByJsonScope.TryGetValue(childJsonScope, out var childIndices))
+                // Construct the candidate child address using the parent's ancestor context
+                var candidateChildAddress = new ScopeInstanceAddress(
+                    childJsonScope,
+                    enrichedScopes[i].Address.AncestorCollectionInstances
+                );
+
+                if (!scopeStateByAddress.TryGetValue(candidateChildAddress, out int childIdx))
                 {
                     continue;
                 }
 
-                foreach (int childIdx in childIndices)
+                if (scopeIsNewCreate[childIdx] && !scopeCreatable[childIdx])
                 {
-                    // Only consider child instances in the same ancestor context
-                    if (
-                        !AncestorsArePrefix(
-                            enrichedScopes[i].Address.AncestorCollectionInstances,
-                            enrichedScopes[childIdx].Address.AncestorCollectionInstances
-                        )
-                    )
+                    // Demote parent to non-creatable
+                    scopeCreatable[i] = false;
+
+                    // Root scope demotion is expressed through the RootResourceCreatable flag,
+                    // so only non-root scopes emit a category-4 scope-level failure.
+                    if (parentJsonScope != rootJsonScope)
                     {
-                        continue;
+                        var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
+                            ? cd
+                            : null;
+                        List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
+                        [
+                            new(
+                                ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                                DetermineTargetKind(childDescriptor),
+                                childJsonScope,
+                                childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
+                                false,
+                                false
+                            ),
+                        ];
+
+                        failures.Add(
+                            ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                                profileName: profileName,
+                                resourceName: resourceName,
+                                method: method,
+                                operation: operation,
+                                targetKind: DetermineScopeTargetKind(parentJsonScope),
+                                affectedAddress: enrichedScopes[i].Address,
+                                hiddenCreationRequiredMemberPaths: [],
+                                missingCreationRequiredMemberPaths: [],
+                                dependencies: dependencies
+                            )
+                        );
                     }
 
-                    if (scopeIsNewCreate[childIdx] && !scopeCreatable[childIdx])
-                    {
-                        // Demote parent to non-creatable
-                        scopeCreatable[i] = false;
-
-                        // Root scope demotion is expressed through the RootResourceCreatable flag,
-                        // so only non-root scopes emit a category-4 scope-level failure.
-                        if (parentJsonScope != rootJsonScope)
-                        {
-                            var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
-                                ? cd
-                                : null;
-                            List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
-                            [
-                                new(
-                                    ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
-                                    DetermineTargetKind(childDescriptor),
-                                    childJsonScope,
-                                    childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
-                                    false,
-                                    false
-                                ),
-                            ];
-
-                            failures.Add(
-                                ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
-                                    profileName: profileName,
-                                    resourceName: resourceName,
-                                    method: method,
-                                    operation: operation,
-                                    targetKind: DetermineScopeTargetKind(parentJsonScope),
-                                    affectedAddress: enrichedScopes[i].Address,
-                                    hiddenCreationRequiredMemberPaths: [],
-                                    missingCreationRequiredMemberPaths: [],
-                                    dependencies: dependencies
-                                )
-                            );
-                        }
-
-                        break;
-                    }
+                    break;
                 }
 
                 if (!scopeCreatable[i])
@@ -293,6 +297,7 @@ public sealed class CreatabilityAnalyzer(
         string parentJsonScope,
         Dictionary<string, List<string>> childrenByParent,
         Dictionary<string, List<int>> scopeStatesByJsonScope,
+        Dictionary<ScopeInstanceAddress, int> scopeStateByAddress,
         RequestScopeState[] enrichedScopes,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate,
@@ -321,8 +326,7 @@ public sealed class CreatabilityAnalyzer(
                 ProcessCollectionItems(
                     childJsonScope,
                     parentJsonScope,
-                    scopeStatesByJsonScope,
-                    enrichedScopes,
+                    scopeStateByAddress,
                     scopeCreatable,
                     scopeIsNewCreate,
                     enrichedItems,
@@ -337,6 +341,7 @@ public sealed class CreatabilityAnalyzer(
                     childJsonScope,
                     childrenByParent,
                     scopeStatesByJsonScope,
+                    scopeStateByAddress,
                     enrichedScopes,
                     scopeCreatable,
                     scopeIsNewCreate,
@@ -354,6 +359,7 @@ public sealed class CreatabilityAnalyzer(
                     childJsonScope,
                     parentJsonScope,
                     scopeStatesByJsonScope,
+                    scopeStateByAddress,
                     enrichedScopes,
                     scopeCreatable,
                     scopeIsNewCreate,
@@ -367,6 +373,7 @@ public sealed class CreatabilityAnalyzer(
                     childJsonScope,
                     childrenByParent,
                     scopeStatesByJsonScope,
+                    scopeStateByAddress,
                     enrichedScopes,
                     scopeCreatable,
                     scopeIsNewCreate,
@@ -387,6 +394,7 @@ public sealed class CreatabilityAnalyzer(
         string jsonScope,
         string parentJsonScope,
         Dictionary<string, List<int>> scopeStatesByJsonScope,
+        Dictionary<ScopeInstanceAddress, int> scopeStateByAddress,
         RequestScopeState[] enrichedScopes,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate,
@@ -410,12 +418,15 @@ public sealed class CreatabilityAnalyzer(
                 && !existenceLookup.VisibleScopeExistsAt(scopeState.Address);
             scopeIsNewCreate[idx] = isCreatingNewInstance;
 
-            // Determine parent creatability gate using the child's ancestor context
-            bool parentSatisfiesGate = IsParentGateSatisfied(
+            // Determine parent creatability gate using the child's ancestor context.
+            // Construct parent address from child's ancestor context (same ancestors, parent scope).
+            var parentAddress = new ScopeInstanceAddress(
                 parentJsonScope,
-                scopeState.Address.AncestorCollectionInstances,
-                scopeStatesByJsonScope,
-                enrichedScopes,
+                scopeState.Address.AncestorCollectionInstances
+            );
+            bool parentSatisfiesGate = IsParentGateSatisfied(
+                parentAddress,
+                scopeStateByAddress,
                 scopeCreatable,
                 scopeIsNewCreate
             );
@@ -448,8 +459,7 @@ public sealed class CreatabilityAnalyzer(
     private void ProcessCollectionItems(
         string collectionJsonScope,
         string parentJsonScope,
-        Dictionary<string, List<int>> scopeStatesByJsonScope,
-        RequestScopeState[] enrichedScopes,
+        Dictionary<ScopeInstanceAddress, int> scopeStateByAddress,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate,
         VisibleRequestCollectionItem[] enrichedItems,
@@ -477,12 +487,10 @@ public sealed class CreatabilityAnalyzer(
                 continue;
             }
 
-            // Determine parent creatability gate using the item's parent address context
+            // Determine parent creatability gate using the item's parent address directly
             bool parentSatisfiesGate = IsParentGateSatisfied(
-                parentJsonScope,
-                item.Address.ParentAddress.AncestorCollectionInstances,
-                scopeStatesByJsonScope,
-                enrichedScopes,
+                item.Address.ParentAddress,
+                scopeStateByAddress,
                 scopeCreatable,
                 scopeIsNewCreate
             );
@@ -666,88 +674,33 @@ public sealed class CreatabilityAnalyzer(
 
     /// <summary>
     /// Determines whether the parent gate is satisfied for a child create attempt.
-    /// The gate is satisfied when the specific parent instance matching the child's
-    /// ancestor collection context either already exists (is not a new create)
-    /// or is itself creatable (a new create that passed its own creatability check).
+    /// The gate is satisfied when the specific parent instance (looked up by address)
+    /// either already exists (is not a new create) or is itself creatable (a new create
+    /// that passed its own creatability check).
     /// </summary>
     private static bool IsParentGateSatisfied(
-        string parentJsonScope,
-        ImmutableArray<AncestorCollectionInstance> childAncestors,
-        Dictionary<string, List<int>> scopeStatesByJsonScope,
-        RequestScopeState[] enrichedScopes,
+        ScopeInstanceAddress parentAddress,
+        Dictionary<ScopeInstanceAddress, int> scopeStateByAddress,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate
     )
     {
-        if (!scopeStatesByJsonScope.TryGetValue(parentJsonScope, out var parentIndices))
+        if (!scopeStateByAddress.TryGetValue(parentAddress, out int parentIdx))
         {
             // Parent scope not found in scope states.
             // For root scope "$", the parent gate is always satisfied.
-            return parentJsonScope == "$";
+            return parentAddress.JsonScope == "$";
         }
 
-        foreach (int idx in parentIndices)
+        if (!scopeIsNewCreate[parentIdx])
         {
-            // Only consider parent instances whose ancestor context matches
-            // the child's collection-item context (prefix match).
-            if (!AncestorsArePrefix(enrichedScopes[idx].Address.AncestorCollectionInstances, childAncestors))
-            {
-                continue;
-            }
-
-            if (!scopeIsNewCreate[idx])
-            {
-                // Parent is not attempting a new create — it already exists.
-                // The gate is satisfied.
-                return true;
-            }
-
-            if (scopeCreatable[idx])
-            {
-                // Parent is attempting a new create and is creatable. Gate satisfied.
-                return true;
-            }
+            // Parent is not attempting a new create — it already exists.
+            // The gate is satisfied.
+            return true;
         }
 
-        // No matching parent instance satisfies the gate.
-        return false;
-    }
-
-    /// <summary>
-    /// Checks whether a parent's <see cref="AncestorCollectionInstance"/> array is a
-    /// structural prefix of a child's. Same-level scopes have identical ancestors
-    /// (exact match = trivial prefix). Scopes separated by a nested collection have
-    /// the parent's ancestors as a proper prefix of the child's.
-    /// </summary>
-    private static bool AncestorsArePrefix(
-        ImmutableArray<AncestorCollectionInstance> parentAncestors,
-        ImmutableArray<AncestorCollectionInstance> childAncestors
-    )
-    {
-        if (parentAncestors.Length > childAncestors.Length)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < parentAncestors.Length; i++)
-        {
-            if (parentAncestors[i].JsonScope != childAncestors[i].JsonScope)
-            {
-                return false;
-            }
-
-            if (
-                !ScopeInstanceAddressComparer.SemanticIdentityEquals(
-                    parentAncestors[i].SemanticIdentityInOrder,
-                    childAncestors[i].SemanticIdentityInOrder
-                )
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
+        // Parent is attempting a new create — gate satisfied only if creatable.
+        return scopeCreatable[parentIdx];
     }
 
     /// <summary>
