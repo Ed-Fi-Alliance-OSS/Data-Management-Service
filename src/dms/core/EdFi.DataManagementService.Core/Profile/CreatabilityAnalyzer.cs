@@ -395,6 +395,35 @@ public sealed class CreatabilityAnalyzer(
                 {
                     // Demote collection item to non-creatable
                     itemCreatable[i] = false;
+
+                    var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
+                        ? cd
+                        : null;
+                    List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
+                    [
+                        new(
+                            ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                            DetermineTargetKind(childDescriptor),
+                            childJsonScope,
+                            childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
+                            false,
+                            false
+                        ),
+                    ];
+
+                    failures.Add(
+                        ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                            profileName: profileName,
+                            resourceName: resourceName,
+                            method: method,
+                            operation: operation,
+                            targetKind: DetermineCollectionItemTargetKind(collectionJsonScope),
+                            affectedAddress: enrichedItems[i].Address,
+                            hiddenCreationRequiredMemberPaths: [],
+                            dependencies: dependencies
+                        )
+                    );
+
                     break;
                 }
             }

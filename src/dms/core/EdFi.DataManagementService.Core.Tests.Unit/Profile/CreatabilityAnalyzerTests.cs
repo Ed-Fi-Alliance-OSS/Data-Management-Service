@@ -2720,5 +2720,16 @@ public abstract class CreatabilityAnalyzerTests
                 .Should()
                 .Contain(f => f.JsonScope == "$.items[*].detail");
         }
+
+        [Test]
+        public void It_should_emit_failure_for_demoted_collection_item()
+        {
+            // Bottom-up demotion should emit a failure for the collection item
+            // with a RequiredVisibleDescendant dependency pointing to the detail scope
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.items[*]");
+        }
     }
 }
