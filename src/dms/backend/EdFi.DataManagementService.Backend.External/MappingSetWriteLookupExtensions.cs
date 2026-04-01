@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
@@ -12,33 +11,29 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Lookup helpers for resource read plans with actionable failure reasons when a plan was intentionally omitted.
+/// Lookup helpers for resource write plans with actionable failure reasons when a plan was intentionally omitted.
 /// </summary>
-public static class MappingSetLookupExtensions
+public static class MappingSetWriteLookupExtensions
 {
-    private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
+    private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
     > ConcreteResourceModelsByResource = new();
-    private static readonly ConditionalWeakTable<
-        MappingSet,
-        ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>
-    > ValidatedReadPlansByResource = new();
 
     /// <summary>
-    /// Gets the compiled read plan for <paramref name="resource" /> or throws a deterministic actionable exception.
+    /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
     /// </summary>
-    public static ResourceReadPlan GetReadPlanOrThrow(
+    public static ResourceWritePlan GetWritePlanOrThrow(
         this MappingSet mappingSet,
         QualifiedResourceName resource
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
 
-        if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
+        if (mappingSet.WritePlansByResource.TryGetValue(resource, out var writePlan))
         {
-            return GetValidatedReadPlanOrThrow(mappingSet, resource, readPlan);
+            return writePlan;
         }
 
         var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
@@ -46,24 +41,24 @@ public static class MappingSetLookupExtensions
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
             throw new NotSupportedException(
-                $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + $"Next story: {DescriptorReadStoryRef}."
+                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
+                    + $"Next story: {DescriptorWriteStoryRef}."
             );
         }
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
         {
-            throw new InvalidOperationException(
-                $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+            throw new MissingWritePlanLookupGuardRailException(
+                $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                     + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
-                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "
                     + "was found. This indicates an internal compilation/selection bug."
             );
         }
 
         throw new InvalidOperationException(
-            $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+            $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                 + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
                 + "is not recognized."
         );
@@ -85,13 +80,13 @@ public static class MappingSetLookupExtensions
 
                 foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
                 {
-                    var candidateResource = concreteResourceModel.RelationalModel.Resource;
+                    var resource = concreteResourceModel.RelationalModel.Resource;
 
-                    if (!resourcesByName.TryAdd(candidateResource, concreteResourceModel))
+                    if (!resourcesByName.TryAdd(resource, concreteResourceModel))
                     {
                         throw new InvalidOperationException(
                             $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
-                                + $"'{FormatResource(candidateResource)}' in ConcreteResourcesInNameOrder."
+                                + $"'{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
                         );
                     }
                 }
@@ -107,38 +102,6 @@ public static class MappingSetLookupExtensions
 
         throw new KeyNotFoundException(
             $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
-        );
-    }
-
-    private static ResourceReadPlan GetValidatedReadPlanOrThrow(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ResourceReadPlan readPlan
-    )
-    {
-        var validatedReadPlansByResource = ValidatedReadPlansByResource.GetValue(
-            mappingSet,
-            static _ => new ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>()
-        );
-
-        return validatedReadPlansByResource.GetOrAdd(
-            resource,
-            static (validatedResource, state) =>
-            {
-                var (validatedMappingSet, cachedReadPlan) = state;
-
-                ReadPlanProjectionContractValidator.ValidateOrThrow(
-                    cachedReadPlan,
-                    reason => new InvalidOperationException(
-                        $"Read plan lookup failed for resource '{FormatResource(validatedResource)}' in mapping set "
-                            + $"'{FormatMappingSetKey(validatedMappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
-                            + $"{reason}. This indicates an internal compilation/selection bug."
-                    )
-                );
-
-                return cachedReadPlan;
-            },
-            (mappingSet, readPlan)
         );
     }
 

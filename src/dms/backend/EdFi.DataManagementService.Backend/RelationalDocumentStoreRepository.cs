@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -205,10 +207,23 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(terminalResultProjector);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
+        ResourceWritePlan writePlan;
 
         try
         {
-            var writePlan = RelationalWriteSupport.GetWritePlanOrThrow(mappingSet, resource);
+            writePlan = mappingSet.GetWritePlanOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return failureFactory(ex.Message);
+        }
+        catch (MissingWritePlanLookupGuardRailException ex)
+        {
+            return failureFactory(ex.Message);
+        }
+
+        try
+        {
             var targetContext = await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
 
             var resolvedReferences = await _referenceResolver
@@ -249,10 +264,6 @@ public sealed class RelationalDocumentStoreRepository(
         catch (RelationalWriteRequestValidationException ex)
         {
             return validationFailureFactory(ex.ValidationFailures);
-        }
-        catch (RelationalWriteGuardRailException ex)
-        {
-            return failureFactory(ex.Message);
         }
     }
 

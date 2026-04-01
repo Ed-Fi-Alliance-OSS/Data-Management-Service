@@ -127,7 +127,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
         )
         {
-            var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
+            var scopeSegments = RelationalJsonPathSupport
+                .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
+                .ToArray();
 
             if (
                 scopeSegments.Length < 2
@@ -141,7 +143,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             var parentScopeSegments = scopeSegments[..^2];
-            var parentScopeCanonical = RestrictedJsonPath.BuildCanonical(parentScopeSegments);
+            var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
             var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
 
             if (!childPlansByParentScope.TryGetValue(parentScopeCanonical, out var childPlans))
@@ -175,7 +177,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             )
         )
         {
-            var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
+            var scopeSegments = RelationalJsonPathSupport
+                .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
+                .ToArray();
 
             if (
                 scopeSegments.Length < 2
@@ -190,7 +194,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             var parentScopeSegments = scopeSegments[..^2];
-            var parentScopeCanonical = RestrictedJsonPath.BuildCanonical(parentScopeSegments);
+            var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
             var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
 
             if (!plansByParentScope.TryGetValue(parentScopeCanonical, out var plans))
@@ -587,7 +591,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             if (!Equals(canonicalValue, evaluation.Value))
             {
                 throw CreateRequestShapeValidationException(
-                    RestrictedJsonPath.CombineCanonical(
+                    RelationalJsonPathSupport.CombineRestrictedCanonical(
                         tableWritePlan.TableModel.JsonScope,
                         member.RelativePath
                     ),
@@ -610,7 +614,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         ReadOnlySpan<int> ordinalPath
     )
     {
-        var absolutePath = RestrictedJsonPath.CombineCanonical(
+        var absolutePath = RelationalJsonPathSupport.CombineRestrictedCanonical(
             tableWritePlan.TableModel.JsonScope,
             member.RelativePath
         );
@@ -973,7 +977,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonNode scopeNode
     )
     {
-        var absolutePath = RestrictedJsonPath.CombineCanonical(
+        var absolutePath = RelationalJsonPathSupport.CombineRestrictedCanonical(
             tableWritePlan.TableModel.JsonScope,
             scalar.RelativePath
         );
@@ -1189,7 +1193,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         out JsonNode? value
     )
     {
-        var segments = RestrictedJsonPath.GetSegments(relativePath);
+        var segments = RelationalJsonPathSupport.GetRestrictedSegments(relativePath);
         return TryNavigateRelativeNode(scopeNode, segments, out value);
     }
 
@@ -1214,7 +1218,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         out JsonNode? scopeNode
     )
     {
-        var scopeSegments = RestrictedJsonPath.GetSegments(scopePath);
+        var scopeSegments = RelationalJsonPathSupport.GetRestrictedSegments(scopePath);
         return TryNavigateRelativeNode(selectedBody, scopeSegments, out scopeNode);
     }
 
@@ -1223,8 +1227,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         JsonPathExpression absolutePath
     )
     {
-        var scopeSegments = RestrictedJsonPath.GetSegments(tableWritePlan.TableModel.JsonScope).ToArray();
-        var absoluteSegments = RestrictedJsonPath.GetSegments(absolutePath).ToArray();
+        var scopeSegments = RelationalJsonPathSupport
+            .GetRestrictedSegments(tableWritePlan.TableModel.JsonScope)
+            .ToArray();
+        var absoluteSegments = RelationalJsonPathSupport.GetRestrictedSegments(absolutePath).ToArray();
 
         if (absoluteSegments.Length < scopeSegments.Length)
         {
@@ -1689,7 +1695,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     )
     {
         return descriptorReference.DescriptorValuePath?.Canonical
-            ?? RestrictedJsonPath.CombineCanonical(
+            ?? RelationalJsonPathSupport.CombineRestrictedCanonical(
                 tableWritePlan.TableModel.JsonScope,
                 descriptorReference.RelativePath
             );
@@ -1831,147 +1837,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             }
 
             return hashCode.ToHashCode();
-        }
-    }
-
-    private static class RestrictedJsonPath
-    {
-        public static string CombineCanonical(JsonPathExpression scopePath, JsonPathExpression relativePath)
-        {
-            JsonPathSegment[] combinedSegments = [.. GetSegments(scopePath), .. GetSegments(relativePath)];
-
-            return BuildCanonical(combinedSegments);
-        }
-
-        public static IReadOnlyList<JsonPathSegment> GetSegments(JsonPathExpression path)
-        {
-            if (path.Canonical == "$")
-            {
-                return [];
-            }
-
-            if (path.Segments.Count > 0)
-            {
-                return path.Segments;
-            }
-
-            return Parse(path.Canonical);
-        }
-
-        private static JsonPathSegment[] Parse(string canonicalPath)
-        {
-            if (string.IsNullOrWhiteSpace(canonicalPath) || canonicalPath[0] != '$')
-            {
-                throw new InvalidOperationException(
-                    $"Restricted JSONPath '{canonicalPath}' is not canonical."
-                );
-            }
-
-            List<JsonPathSegment> segments = [];
-            var index = 1;
-
-            while (index < canonicalPath.Length)
-            {
-                switch (canonicalPath[index])
-                {
-                    case '.':
-                        index = AppendProperty(canonicalPath, index, segments);
-                        break;
-                    case '[' when IsArrayWildcard(canonicalPath, index):
-                        segments.Add(new JsonPathSegment.AnyArrayElement());
-                        index += 3;
-                        break;
-                    default:
-                        throw new InvalidOperationException(
-                            $"Restricted JSONPath '{canonicalPath}' is not canonical."
-                        );
-                }
-            }
-
-            return [.. segments];
-        }
-
-        private static int AppendProperty(string canonicalPath, int dotIndex, List<JsonPathSegment> segments)
-        {
-            var startIndex = dotIndex + 1;
-            var index = startIndex;
-
-            while (index < canonicalPath.Length && canonicalPath[index] is not ('.' or '['))
-            {
-                index++;
-            }
-
-            if (index == startIndex)
-            {
-                throw new InvalidOperationException(
-                    $"Restricted JSONPath '{canonicalPath}' is not canonical."
-                );
-            }
-
-            segments.Add(new JsonPathSegment.Property(canonicalPath[startIndex..index]));
-
-            return index;
-        }
-
-        private static bool IsArrayWildcard(string canonicalPath, int openBracketIndex)
-        {
-            return openBracketIndex + 2 < canonicalPath.Length
-                && canonicalPath[openBracketIndex + 1] == '*'
-                && canonicalPath[openBracketIndex + 2] == ']';
-        }
-
-        public static string BuildCanonical(IReadOnlyList<JsonPathSegment> segments)
-        {
-            ArgumentNullException.ThrowIfNull(segments);
-
-            return string.Create(
-                CalculateCanonicalLength(segments),
-                segments,
-                static (buffer, state) =>
-                {
-                    buffer[0] = '$';
-                    var index = 1;
-
-                    foreach (var segment in state)
-                    {
-                        switch (segment)
-                        {
-                            case JsonPathSegment.Property property:
-                                buffer[index++] = '.';
-                                property.Name.AsSpan().CopyTo(buffer[index..]);
-                                index += property.Name.Length;
-                                break;
-                            case JsonPathSegment.AnyArrayElement:
-                                "[*]".AsSpan().CopyTo(buffer[index..]);
-                                index += 3;
-                                break;
-                            default:
-                                throw new InvalidOperationException(
-                                    $"Restricted JSONPath segment '{segment.GetType().Name}' is not supported."
-                                );
-                        }
-                    }
-                }
-            );
-        }
-
-        private static int CalculateCanonicalLength(IReadOnlyList<JsonPathSegment> segments)
-        {
-            var length = 1;
-
-            for (var index = 0; index < segments.Count; index++)
-            {
-                length += segments[index] switch
-                {
-                    JsonPathSegment.Property property => property.Name.Length + 1,
-                    JsonPathSegment.AnyArrayElement => 3,
-                    _ => throw new InvalidOperationException(
-                        $"Restricted JSONPath segment '{segments[index].GetType().Name}' is not supported."
-                    ),
-                };
-            }
-
-            return length;
         }
     }
 }

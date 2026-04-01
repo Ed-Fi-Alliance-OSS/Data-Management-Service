@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
-using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
@@ -51,7 +49,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
         foreach (var entry in resolvedReferences.SuccessfulDocumentReferencesByPath)
         {
-            var parsedPath = ConcretePathParser.Parse(entry.Key);
+            var parsedPath = RelationalJsonPathSupport.ParseConcretePath(entry.Key);
 
             if (!documentBindingIndexByPath.TryGetValue(parsedPath.WildcardPath, out var bindingIndex))
             {
@@ -69,7 +67,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
         foreach (var entry in resolvedReferences.SuccessfulDescriptorReferencesByPath)
         {
-            var parsedPath = ConcretePathParser.Parse(entry.Key);
+            var parsedPath = RelationalJsonPathSupport.ParseConcretePath(entry.Key);
             var descriptorResource = RelationalWriteSupport.ToQualifiedResourceName(
                 entry.Value.Reference.ResourceInfo
             );
@@ -205,7 +203,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             .. descriptorReference.RelativePath.Segments,
         ];
 
-        return JsonPathCanonicalizer.Build(combinedSegments);
+        return RelationalJsonPathSupport.BuildCanonical(combinedSegments);
     }
 
     private static string GetDescriptorLookupPath(
@@ -219,7 +217,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             .. descriptorMember.RelativePath.Segments,
         ];
 
-        return JsonPathCanonicalizer.Build(combinedSegments);
+        return RelationalJsonPathSupport.BuildCanonical(combinedSegments);
     }
 
     private readonly record struct DescriptorLookupKey(
@@ -291,135 +289,6 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         {
             ArgumentNullException.ThrowIfNull(ordinalPath);
             return Hash(ordinalPath.AsSpan());
-        }
-    }
-
-    private static class ConcretePathParser
-    {
-        public static ParsedConcretePath Parse(JsonPath concretePath)
-        {
-            var path = concretePath.Value;
-
-            if (string.IsNullOrWhiteSpace(path) || path[0] != '$')
-            {
-                throw new InvalidOperationException(
-                    $"Resolved reference path '{path}' is not a canonical JSONPath."
-                );
-            }
-
-            StringBuilder wildcardPath = new(path.Length);
-            List<int> ordinalPath = [];
-            wildcardPath.Append('$');
-
-            var index = 1;
-
-            while (index < path.Length)
-            {
-                var current = path[index];
-
-                if (current == '.')
-                {
-                    wildcardPath.Append(current);
-                    index = AppendProperty(path, index, wildcardPath);
-                    continue;
-                }
-
-                if (current == '[')
-                {
-                    index = AppendArrayWildcard(path, index, wildcardPath, ordinalPath);
-                    continue;
-                }
-
-                throw new InvalidOperationException(
-                    $"Resolved reference path '{path}' is not a canonical JSONPath."
-                );
-            }
-
-            return new ParsedConcretePath(wildcardPath.ToString(), [.. ordinalPath]);
-        }
-
-        private static int AppendProperty(string path, int dotIndex, StringBuilder wildcardPath)
-        {
-            var startIndex = dotIndex + 1;
-            var index = startIndex;
-
-            while (index < path.Length && path[index] is not ('.' or '['))
-            {
-                index++;
-            }
-
-            if (index == startIndex)
-            {
-                throw new InvalidOperationException(
-                    $"Resolved reference path '{path}' is not a canonical JSONPath."
-                );
-            }
-
-            wildcardPath.Append(path.AsSpan(startIndex, index - startIndex));
-
-            return index;
-        }
-
-        private static int AppendArrayWildcard(
-            string path,
-            int openBracketIndex,
-            StringBuilder wildcardPath,
-            List<int> ordinalPath
-        )
-        {
-            var closeBracketIndex = path.IndexOf(']', openBracketIndex + 1);
-
-            if (closeBracketIndex < 0)
-            {
-                throw new InvalidOperationException(
-                    $"Resolved reference path '{path}' is not a canonical JSONPath."
-                );
-            }
-
-            var token = path.AsSpan(openBracketIndex + 1, closeBracketIndex - openBracketIndex - 1);
-
-            if (!int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Resolved reference path '{path}' is not a canonical JSONPath."
-                );
-            }
-
-            ordinalPath.Add(ordinal);
-            wildcardPath.Append("[*]");
-
-            return closeBracketIndex + 1;
-        }
-    }
-
-    private readonly record struct ParsedConcretePath(string WildcardPath, int[] OrdinalPath);
-
-    private static class JsonPathCanonicalizer
-    {
-        public static string Build(IReadOnlyList<JsonPathSegment> segments)
-        {
-            ArgumentNullException.ThrowIfNull(segments);
-
-            StringBuilder canonicalPath = new("$");
-
-            foreach (var segment in segments)
-            {
-                switch (segment)
-                {
-                    case JsonPathSegment.Property property:
-                        canonicalPath.Append('.').Append(property.Name);
-                        break;
-                    case JsonPathSegment.AnyArrayElement:
-                        canonicalPath.Append("[*]");
-                        break;
-                    default:
-                        throw new InvalidOperationException(
-                            $"Unsupported {nameof(JsonPathSegment)} type '{segment.GetType().Name}'."
-                        );
-                }
-            }
-
-            return canonicalPath.ToString();
         }
     }
 }
