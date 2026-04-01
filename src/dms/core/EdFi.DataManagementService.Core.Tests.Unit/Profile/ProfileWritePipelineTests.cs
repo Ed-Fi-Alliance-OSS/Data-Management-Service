@@ -154,7 +154,61 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  3. Given_Valid_Create_With_All_Required_Visible — full pipeline success
+    //  3. Given_Read_Only_Profile_With_Null_WriteContentType — category-2 error
+    //     even when writeContentType is null (read-only profile on write op)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Read_Only_Profile_With_Null_WriteContentType : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: null,
+                resolvedContentType: ProfileContentType.Read,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers
+            );
+        }
+
+        [Test]
+        public void It_should_have_a_profile()
+        {
+            _result.HasProfile.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_not_succeed()
+        {
+            _result.IsSuccess.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_have_exactly_one_failure()
+        {
+            _result.Failures.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_be_a_category_2_invalid_profile_usage_failure()
+        {
+            _result.Failures[0].Should().BeOfType<ProfileModeMismatchProfileUsageFailure>();
+            _result.Failures[0].Category.Should().Be(ProfileFailureCategory.InvalidProfileUsage);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  4. Given_Valid_Create_With_All_Required_Visible — full pipeline success
     // -----------------------------------------------------------------------
 
     [TestFixture]

@@ -149,17 +149,9 @@ internal static class ProfileWritePipeline
     )
     {
         // ------------------------------------------------------------------
-        // Step 1: No-profile short-circuit
+        // Step 1: Profile-mode validation — reject non-writable profile usage
         // ------------------------------------------------------------------
-        if (writeContentType == null)
-        {
-            return ProfileWritePipelineResult.NoProfile();
-        }
-
-        // ------------------------------------------------------------------
-        // Step 2: Profile-mode validation
-        // ------------------------------------------------------------------
-        if (resolvedContentType != ProfileContentType.Write)
+        if (resolvedContentType != null && resolvedContentType != ProfileContentType.Write)
         {
             return ProfileWritePipelineResult.Failure(
                 ProfileFailures.ProfileModeMismatch(
@@ -168,9 +160,17 @@ internal static class ProfileWritePipeline
                     method,
                     operation,
                     expectedUsage: "Write",
-                    actualUsage: resolvedContentType?.ToString() ?? "None"
+                    actualUsage: resolvedContentType.ToString() ?? "None"
                 )
             );
+        }
+
+        // ------------------------------------------------------------------
+        // Step 2: No-profile short-circuit
+        // ------------------------------------------------------------------
+        if (writeContentType == null)
+        {
+            return ProfileWritePipelineResult.NoProfile();
         }
 
         // ------------------------------------------------------------------
