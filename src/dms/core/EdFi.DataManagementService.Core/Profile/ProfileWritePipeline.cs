@@ -94,6 +94,14 @@ public sealed record ProfileWritePipelineResult
 ///   <item>For update/upsert: invoke C6 stored-state projector</item>
 /// </list>
 /// </para>
+/// <para>
+/// Integration status: This pipeline is staged infrastructure being built and
+/// proven with unit tests (DMS-1116/DMS-1117). It is not yet wired into the
+/// runtime write path — POST/PUT still flow through the existing
+/// ProfileWriteValidationMiddleware. Runtime integration will replace that
+/// middleware with this pipeline once all pipeline steps are complete and the
+/// C6 stored-state projector (DMS-1118) is implemented.
+/// </para>
 /// </remarks>
 internal static class ProfileWritePipeline
 {

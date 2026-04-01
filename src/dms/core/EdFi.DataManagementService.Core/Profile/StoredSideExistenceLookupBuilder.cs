@@ -55,6 +55,9 @@ public static class StoredSideExistenceLookupBuilder
         List<StoredScopeState> classifiedScopes = [];
         List<VisibleStoredCollectionRow> classifiedRows = [];
         HashSet<ScopeInstanceAddress> visibleScopeAddresses = new(ScopeInstanceAddressComparer.Instance);
+        // NOTE: Tracks walked scopes by JsonScope string, not by addressed instance.
+        // Sufficient for C4 existence lookup, but C6 (DMS-1118) will need per-instance
+        // tracking to emit complete per-item scope classifications.
         HashSet<string> walkedScopes = [];
         HashSet<CollectionRowAddress> visibleRowAddresses = new(CollectionRowAddressComparer.Instance);
 
@@ -460,6 +463,15 @@ public static class StoredSideExistenceLookupBuilder
     /// stored document walk. These represent scopes that are absent from the stored
     /// document. Skips scopes nested inside collections (they require ancestor context).
     /// </summary>
+    /// <remarks>
+    /// C6 gap (DMS-1118): This method skips scopes nested inside collections
+    /// because they require per-item ancestor context that is not available during
+    /// the missing-scope pass. Additionally, "walked" tracking uses JsonScope strings
+    /// rather than addressed instances, so per-item absent/hidden descendants under
+    /// collection ancestry are not represented in ClassifiedStoredScopes. When
+    /// DMS-1118 implements C6 stored-state projection, this builder must be enhanced
+    /// to emit per-item scope classifications so C6 can extend rather than reclassify.
+    /// </remarks>
     private static void EmitMissingScopeStates(
         ProfileVisibilityClassifier classifier,
         AddressDerivationEngine addressEngine,
