@@ -279,7 +279,13 @@ internal static class ProfileWritePipeline
 
         if (!isCreate && storedStateProjector != null)
         {
-            context = storedStateProjector.ProjectStoredState(request, existenceLookupResult);
+            context = storedStateProjector.ProjectStoredState(
+                storedDocument,
+                scopeCatalog,
+                writeContentType!,
+                request,
+                existenceLookupResult
+            );
         }
 
         return ProfileWritePipelineResult.Success(request, context);

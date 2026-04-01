@@ -481,6 +481,9 @@ public abstract class ProfileWritePipelineTests
             public bool WasCalled { get; private set; }
 
             public ProfileAppliedWriteContext ProjectStoredState(
+                JsonNode? storedDocument,
+                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+                ContentTypeDefinition writeContentType,
                 ProfileAppliedWriteRequest request,
                 StoredSideExistenceLookupResult existenceLookupResult
             )
@@ -560,6 +563,9 @@ public abstract class ProfileWritePipelineTests
             public bool WasCalled { get; private set; }
 
             public ProfileAppliedWriteContext ProjectStoredState(
+                JsonNode? storedDocument,
+                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+                ContentTypeDefinition writeContentType,
                 ProfileAppliedWriteRequest request,
                 StoredSideExistenceLookupResult existenceLookupResult
             )
