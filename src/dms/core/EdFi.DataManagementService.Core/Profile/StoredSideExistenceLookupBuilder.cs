@@ -532,6 +532,10 @@ public static class StoredSideExistenceLookupBuilder
 
         ScopeMemberFilter filter = classifier.GetMemberFilter(jsonScope);
 
+        // C6 note (DMS-1118): This returns [] for hidden scopes because
+        // GetMemberFilter normalizes them to IncludeAll. C6 must check the scope's
+        // visibility classification to distinguish "hidden scope" from "visible scope
+        // with all members exposed." See ProfileVisibilityClassifier.GetMemberFilter.
         // If IncludeAll, nothing is hidden
         if (filter.Mode == MemberSelection.IncludeAll)
         {
