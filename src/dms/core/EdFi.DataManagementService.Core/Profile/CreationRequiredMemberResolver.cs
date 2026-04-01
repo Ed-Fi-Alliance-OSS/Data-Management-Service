@@ -10,12 +10,8 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// <summary>
 /// Result of creation-required member analysis for a single scope.
 /// </summary>
-/// <param name="AllCreationRequired">All creation-required member paths for the scope.</param>
 /// <param name="HiddenByProfile">Creation-required members hidden by the writable profile.</param>
-public sealed record CreationRequiredMemberResult(
-    ImmutableArray<string> AllCreationRequired,
-    ImmutableArray<string> HiddenByProfile
-);
+public sealed record CreationRequiredMemberResult(ImmutableArray<string> HiddenByProfile);
 
 /// <summary>
 /// Determines which members are creation-required for a compiled scope and
@@ -95,10 +91,7 @@ public static class CreationRequiredMemberResolver
             }
         }
 
-        return new CreationRequiredMemberResult(
-            AllCreationRequired: [.. creationRequired],
-            HiddenByProfile: hiddenBuilder.ToImmutable()
-        );
+        return new CreationRequiredMemberResult(HiddenByProfile: hiddenBuilder.ToImmutable());
     }
 
     private static bool IsMemberVisible(ScopeMemberFilter filter, string name) =>

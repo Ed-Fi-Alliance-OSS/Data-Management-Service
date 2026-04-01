@@ -37,15 +37,6 @@ public abstract class CreationRequiredMemberResolverTests
         }
 
         [Test]
-        public void It_should_include_all_three_in_AllCreationRequired()
-        {
-            _result.AllCreationRequired.Should().HaveCount(3);
-            _result
-                .AllCreationRequired.Should()
-                .Contain(["studentReference", "schoolReference", "entryDate"]);
-        }
-
-        [Test]
         public void It_should_report_entryDate_as_hidden()
         {
             _result.HiddenByProfile.Should().HaveCount(1);
@@ -84,13 +75,6 @@ public abstract class CreationRequiredMemberResolverTests
         }
 
         [Test]
-        public void It_should_have_classPeriodName_in_AllCreationRequired()
-        {
-            _result.AllCreationRequired.Should().HaveCount(1);
-            _result.AllCreationRequired.Should().Contain("classPeriodName");
-        }
-
-        [Test]
         public void It_should_have_no_hidden_members()
         {
             _result.HiddenByProfile.Should().BeEmpty();
@@ -117,25 +101,6 @@ public abstract class CreationRequiredMemberResolverTests
             ScopeMemberFilter filter = new(MemberSelection.IncludeAll, new HashSet<string>());
 
             _result = CreationRequiredMemberResolver.Resolve(rootScope, effectiveSchemaRequired, filter);
-        }
-
-        [Test]
-        public void It_should_exclude_storage_managed_values()
-        {
-            _result.AllCreationRequired.Should().HaveCount(1);
-            _result.AllCreationRequired.Should().Contain("studentReference");
-        }
-
-        [Test]
-        public void It_should_not_contain_id()
-        {
-            _result.AllCreationRequired.Should().NotContain("id");
-        }
-
-        [Test]
-        public void It_should_not_contain_etag()
-        {
-            _result.AllCreationRequired.Should().NotContain("_etag");
         }
 
         [Test]
@@ -184,12 +149,6 @@ public abstract class CreationRequiredMemberResolverTests
         }
 
         [Test]
-        public void It_should_include_extracted_top_level_member_in_AllCreationRequired()
-        {
-            _result.AllCreationRequired.Should().Contain("schoolReference");
-        }
-
-        [Test]
         public void It_should_have_no_hidden_members()
         {
             _result.HiddenByProfile.Should().BeEmpty();
@@ -215,14 +174,6 @@ public abstract class CreationRequiredMemberResolverTests
             ScopeMemberFilter filter = new(MemberSelection.IncludeAll, new HashSet<string>());
 
             _result = CreationRequiredMemberResolver.Resolve(rootScope, effectiveSchemaRequired, filter);
-        }
-
-        [Test]
-        public void It_should_include_all_required_members()
-        {
-            _result
-                .AllCreationRequired.Should()
-                .Contain(["studentReference", "schoolReference", "entryDate"]);
         }
 
         [Test]
@@ -252,15 +203,6 @@ public abstract class CreationRequiredMemberResolverTests
             ScopeMemberFilter filter = new(MemberSelection.ExcludeOnly, new HashSet<string> { "entryDate" });
 
             _result = CreationRequiredMemberResolver.Resolve(rootScope, effectiveSchemaRequired, filter);
-        }
-
-        [Test]
-        public void It_should_include_all_three_in_AllCreationRequired()
-        {
-            _result.AllCreationRequired.Should().HaveCount(3);
-            _result
-                .AllCreationRequired.Should()
-                .Contain(["studentReference", "schoolReference", "entryDate"]);
         }
 
         [Test]
