@@ -497,14 +497,14 @@ public abstract class StoredSideExistenceLookupBuilderTests
         }
 
         [Test]
-        public void It_should_include_reference_sub_paths_in_hidden_paths()
+        public void It_should_not_hide_reference_sub_paths_when_top_level_member_is_included()
         {
             // Canonical paths "studentReference.studentUniqueId" and "schoolReference.schoolId"
-            // don't match the profile's explicit names ("studentReference", "schoolReference"),
-            // so they are correctly classified as hidden at the member-path level.
+            // have top-level members "studentReference" and "schoolReference" which are in the
+            // IncludeOnly list. Top-level inclusion transitively includes all descendants.
             var rootScope = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$");
-            rootScope.HiddenMemberPaths.Should().Contain("studentReference.studentUniqueId");
-            rootScope.HiddenMemberPaths.Should().Contain("schoolReference.schoolId");
+            rootScope.HiddenMemberPaths.Should().NotContain("studentReference.studentUniqueId");
+            rootScope.HiddenMemberPaths.Should().NotContain("schoolReference.schoolId");
         }
 
         [Test]
@@ -528,6 +528,68 @@ public abstract class StoredSideExistenceLookupBuilderTests
             // Since no classPeriods data was in the stored doc, there are no rows.
             // Let's verify the root scope instead — this test is covered above.
             _result.ClassifiedStoredScopes.Should().HaveCountGreaterThanOrEqualTo(1);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  6b. Dotted canonical paths are visible when top-level member is included
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Dotted_Canonical_Path_With_Included_Top_Level_Member
+        : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // SharedFixtureScopes root has canonical paths:
+            //   "studentReference.studentUniqueId", "schoolReference.schoolId",
+            //   "entryDate", "entryTypeDescriptor"
+            // The IncludeOnly profile includes "studentReference", "schoolReference", "entryDate"
+            // — so the dotted paths should be VISIBLE (top-level member is included).
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Original"
+                }
+                """
+            )!;
+
+            _result = BuildLookup(storedDoc, SharedFixtureScopes, BuildIncludeOnlyWithCalendarReference());
+        }
+
+        [Test]
+        public void It_should_not_hide_dotted_path_when_top_level_member_is_included()
+        {
+            // "studentReference.studentUniqueId" should NOT be hidden because
+            // the profile includes "studentReference" — top-level inclusion
+            // transitively includes all descendants.
+            var rootScope = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$");
+            rootScope.HiddenMemberPaths.Should().NotContain("studentReference.studentUniqueId");
+            rootScope.HiddenMemberPaths.Should().NotContain("schoolReference.schoolId");
+        }
+
+        [Test]
+        public void It_should_still_hide_excluded_flat_member()
+        {
+            // "entryTypeDescriptor" is NOT in the IncludeOnly list — it should be hidden.
+            var rootScope = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$");
+            rootScope.HiddenMemberPaths.Should().Contain("entryTypeDescriptor");
+        }
+
+        [Test]
+        public void It_should_only_hide_entryTypeDescriptor_for_root_scope()
+        {
+            // Only entryTypeDescriptor should be hidden — the three included top-level
+            // members (and their descendants) should all be visible.
+            var rootScope = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$");
+            rootScope.HiddenMemberPaths.Should().HaveCount(1);
+            rootScope.HiddenMemberPaths.Should().Contain("entryTypeDescriptor");
         }
     }
 

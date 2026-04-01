@@ -530,12 +530,7 @@ public static class StoredSideExistenceLookupBuilder
 
         foreach (string memberPath in descriptor.CanonicalScopeRelativeMemberPaths)
         {
-            bool isVisible = filter.Mode switch
-            {
-                MemberSelection.IncludeOnly => filter.ExplicitNames.Contains(memberPath),
-                MemberSelection.ExcludeOnly => !filter.ExplicitNames.Contains(memberPath),
-                _ => true,
-            };
+            bool isVisible = MemberPathVisibility.IsVisible(filter, memberPath);
 
             if (!isVisible)
             {

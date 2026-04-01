@@ -73,7 +73,7 @@ public static class CreationRequiredMemberResolver
                 // For dotted paths like "schoolReference.schoolId",
                 // the top-level member ("schoolReference") is what the profile
                 // visibility rules check against.
-                string topLevelMember = ExtractTopLevelMember(identityPath);
+                string topLevelMember = MemberPathVisibility.ExtractTopLevelMember(identityPath);
                 if (!StorageManagedValues.Contains(topLevelMember))
                 {
                     creationRequired.Add(topLevelMember);
@@ -85,32 +85,12 @@ public static class CreationRequiredMemberResolver
         ImmutableArray<string>.Builder hiddenBuilder = ImmutableArray.CreateBuilder<string>();
         foreach (string member in creationRequired)
         {
-            if (!IsMemberVisible(memberFilter, member))
+            if (!MemberPathVisibility.IsVisible(memberFilter, member))
             {
                 hiddenBuilder.Add(member);
             }
         }
 
         return new CreationRequiredMemberResult(HiddenByProfile: hiddenBuilder.ToImmutable());
-    }
-
-    private static bool IsMemberVisible(ScopeMemberFilter filter, string name) =>
-        filter.Mode switch
-        {
-            MemberSelection.IncludeOnly => filter.ExplicitNames.Contains(name),
-            MemberSelection.ExcludeOnly => !filter.ExplicitNames.Contains(name),
-            MemberSelection.IncludeAll => true,
-            _ => true,
-        };
-
-    /// <summary>
-    /// Extracts the top-level member name from a scope-relative path.
-    /// For dotted paths like "schoolReference.schoolId", returns "schoolReference".
-    /// For flat paths like "classPeriodName", returns the path unchanged.
-    /// </summary>
-    private static string ExtractTopLevelMember(string path)
-    {
-        int dotIndex = path.IndexOf('.');
-        return dotIndex >= 0 ? path[..dotIndex] : path;
     }
 }
