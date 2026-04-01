@@ -285,7 +285,7 @@ internal static class ProfileWritePipeline
         // ------------------------------------------------------------------
         ProfileAppliedWriteContext? context = null;
 
-        if (!isCreate && storedStateProjector != null)
+        if (!isCreate && storedDocument != null && storedStateProjector != null)
         {
             context = storedStateProjector.ProjectStoredState(
                 storedDocument,

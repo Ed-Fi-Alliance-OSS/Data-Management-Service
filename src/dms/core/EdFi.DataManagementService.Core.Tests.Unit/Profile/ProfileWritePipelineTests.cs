@@ -603,7 +603,72 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
-    //  7. Given_C6_Not_Invoked_For_Create_Flow — mock projector not called
+    //  7. Given_C6_Not_Invoked_When_Upsert_Misses_Stored_Document —
+    //     PUT/upsert with isCreate=false but no stored document must NOT invoke C6
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_C6_Not_Invoked_When_Upsert_Misses_Stored_Document : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        /// <summary>
+        /// Projector that throws if called, making any accidental invocation an immediate failure.
+        /// </summary>
+        private sealed class ThrowingStoredStateProjector : IStoredStateProjector
+        {
+            public ProfileAppliedWriteContext ProjectStoredState(
+                JsonNode? storedDocument,
+                IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+                ContentTypeDefinition writeContentType,
+                ProfileAppliedWriteRequest request,
+                StoredSideExistenceLookupResult existenceLookupResult
+            )
+            {
+                throw new InvalidOperationException(
+                    "C6 projector must not be called when storedDocument is null."
+                );
+            }
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            // isCreate=false (PUT/upsert), but no stored document was found — simulates
+            // an upsert that will insert a new record. C6 must be skipped entirely.
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: false,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "write",
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                storedStateProjector: new ThrowingStoredStateProjector()
+            );
+        }
+
+        [Test]
+        public void It_should_not_invoke_the_projector()
+        {
+            // If the guard is wrong the ThrowingStoredStateProjector would have thrown,
+            // causing Setup to fail before this assertion is ever reached.
+            _result.Context.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  8. Given_C6_Not_Invoked_For_Create_Flow — mock projector not called
     // -----------------------------------------------------------------------
 
     [TestFixture]
