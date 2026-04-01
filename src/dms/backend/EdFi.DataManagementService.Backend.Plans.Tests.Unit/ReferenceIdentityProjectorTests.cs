@@ -1249,3 +1249,153 @@ public class Given_ProjectPage_With_Mixed_Root_And_Collection_Plans
             .NotContain(p => p.ReferenceObjectPath.Canonical == "$.addresses[*].stateAbbreviationReference");
     }
 }
+
+[TestFixture]
+public class Given_ReferenceIdentityProjector_With_NonNull_Fk_But_Null_Identity_Field
+{
+    [Test]
+    public void It_should_throw_with_descriptive_message()
+    {
+        // Row buffer: FK is present (10L) but identity field is null
+        object?[] row = [1L, 10L, null];
+
+        var binding = new ReferenceIdentityProjectionBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: new("$.schoolReference", [new JsonPathSegment.Property("schoolReference")]),
+            TargetResource: new("Ed-Fi", "School"),
+            FkColumnOrdinal: 1,
+            IdentityFieldOrdinalsInOrder:
+            [
+                new ReferenceIdentityProjectionFieldOrdinal(
+                    new(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    ColumnOrdinal: 2
+                ),
+            ]
+        );
+
+        var act = () => ReferenceIdentityProjector.Project(row, binding);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Identity field at ordinal 2*")
+            .WithMessage("*null*FK column is non-null*");
+    }
+}
+
+[TestFixture]
+public class Given_ProjectTable_With_RootExtension_Table
+{
+    private IReadOnlyDictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>> _results = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "StudentSchoolAssociationExtension");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _mentorReferencePath = new(
+        "$.mentorReference",
+        [new JsonPathSegment.Property("mentorReference")]
+    );
+
+    private static readonly JsonPathExpression _mentorIdPath = new(
+        "$.mentorReference.staffUniqueId",
+        [new JsonPathSegment.Property("mentorReference"), new JsonPathSegment.Property("staffUniqueId")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        // Columns: [0]=DocumentId, [1]=Mentor_DocumentId, [2]=Mentor_StaffUniqueId
+        var tableModel = new DbTableModel(
+            _tableName,
+            _rootScope,
+            new TableKey(
+                "PK_StudentSchoolAssociationExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Mentor_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: new("Ed-Fi", "Staff")
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Mentor_StaffUniqueId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: true,
+                    SourceJsonPath: _mentorIdPath,
+                    TargetResource: null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var hydratedRows = new HydratedTableRows(
+            tableModel,
+            [new object?[] { 1L, 30L, "STAFF001" }, new object?[] { 2L, null, null }]
+        );
+
+        var projectionPlan = new ReferenceIdentityProjectionTablePlan(
+            _tableName,
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: _mentorReferencePath,
+                    TargetResource: new("Ed-Fi", "Staff"),
+                    FkColumnOrdinal: 1,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(_mentorIdPath, ColumnOrdinal: 2),
+                    ]
+                ),
+            ]
+        );
+
+        _results = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+    }
+
+    [Test]
+    public void It_should_project_present_reference_for_non_null_fk()
+    {
+        _results.Should().ContainKey(1L);
+
+        var present = _results[1L].Single(p => p.ReferenceObjectPath.Canonical == "$.mentorReference");
+        present
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.mentorReference.staffUniqueId")
+            .Value.Should()
+            .Be("STAFF001");
+    }
+
+    [Test]
+    public void It_should_omit_absent_reference()
+    {
+        _results.Should().NotContainKey(2L);
+    }
+}

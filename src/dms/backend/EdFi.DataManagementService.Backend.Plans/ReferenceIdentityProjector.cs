@@ -166,7 +166,7 @@ public static class ReferenceIdentityProjector
             )
         );
 
-        var resultsByDocumentId = new Dictionary<long, List<ReferenceProjectionResult.Present>>();
+        var resultsByDocumentId = new Dictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>>();
 
         foreach (var row in hydratedRows.Rows)
         {
@@ -176,21 +176,22 @@ public static class ReferenceIdentityProjector
             {
                 if (Project(row, binding) is ReferenceProjectionResult.Present present)
                 {
-                    if (!resultsByDocumentId.TryGetValue(documentId, out var list))
+                    if (!resultsByDocumentId.TryGetValue(documentId, out var existing))
                     {
-                        list = [];
-                        resultsByDocumentId[documentId] = list;
+                        resultsByDocumentId[documentId] = new List<ReferenceProjectionResult.Present>
+                        {
+                            present,
+                        };
                     }
-
-                    list.Add(present);
+                    else
+                    {
+                        ((List<ReferenceProjectionResult.Present>)existing).Add(present);
+                    }
                 }
             }
         }
 
-        return resultsByDocumentId.ToDictionary(
-            static kvp => kvp.Key,
-            static kvp => (IReadOnlyList<ReferenceProjectionResult.Present>)kvp.Value
-        );
+        return resultsByDocumentId;
     }
 
     /// <summary>
@@ -236,7 +237,7 @@ public static class ReferenceIdentityProjector
             hydratedRowsByTable[tableRows.TableModel.Table] = tableRows;
         }
 
-        var merged = new Dictionary<long, List<ReferenceProjectionResult.Present>>();
+        var merged = new Dictionary<long, IReadOnlyList<ReferenceProjectionResult.Present>>();
 
         foreach (var projectionPlan in plan.ReferenceIdentityProjectionPlansInDependencyOrder)
         {
@@ -255,19 +256,17 @@ public static class ReferenceIdentityProjector
 
             foreach (var (documentId, projections) in tableProjections)
             {
-                if (!merged.TryGetValue(documentId, out var list))
+                if (!merged.TryGetValue(documentId, out var existing))
                 {
-                    list = [];
-                    merged[documentId] = list;
+                    merged[documentId] = new List<ReferenceProjectionResult.Present>(projections);
                 }
-
-                list.AddRange(projections);
+                else
+                {
+                    ((List<ReferenceProjectionResult.Present>)existing).AddRange(projections);
+                }
             }
         }
 
-        return merged.ToDictionary(
-            static kvp => kvp.Key,
-            static kvp => (IReadOnlyList<ReferenceProjectionResult.Present>)kvp.Value
-        );
+        return merged;
     }
 }
