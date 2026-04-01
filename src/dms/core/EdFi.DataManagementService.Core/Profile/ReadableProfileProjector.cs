@@ -26,12 +26,44 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         IReadOnlySet<string> identityPropertyNames
     )
     {
+        if (reconstitutedDocument is JsonArray sourceArray)
+        {
+            return ProjectArray(sourceArray, readContentType, identityPropertyNames);
+        }
+
         if (reconstitutedDocument is not JsonObject sourceObject)
         {
             return reconstitutedDocument.DeepClone();
         }
 
         return ProjectRoot(sourceObject, readContentType, identityPropertyNames);
+    }
+
+    // -----------------------------------------------------------------------
+    //  Array scope (query responses)
+    // -----------------------------------------------------------------------
+
+    private static JsonArray ProjectArray(
+        JsonArray source,
+        ContentTypeDefinition contentType,
+        IReadOnlySet<string> identityPropertyNames
+    )
+    {
+        var result = new JsonArray();
+
+        foreach (JsonNode? item in source)
+        {
+            if (item is JsonObject itemObject)
+            {
+                result.Add(ProjectRoot(itemObject, contentType, identityPropertyNames));
+            }
+            else if (item is not null)
+            {
+                result.Add(item.DeepClone());
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -104,7 +136,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             {
                 if (value is JsonObject nestedObject)
                 {
-                    result[name] = ProjectNestedObject(nestedObject, objectRule);
+                    JsonObject projected = ProjectNestedObject(nestedObject, objectRule);
+                    if (projected.Count > 0)
+                    {
+                        result[name] = projected;
+                    }
                 }
                 continue;
             }
@@ -166,7 +202,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             {
                 if (value is JsonObject nestedObject)
                 {
-                    result[name] = ProjectNestedObject(nestedObject, nestedRule);
+                    JsonObject projected = ProjectNestedObject(nestedObject, nestedRule);
+                    if (projected.Count > 0)
+                    {
+                        result[name] = projected;
+                    }
                 }
                 continue;
             }
@@ -221,7 +261,10 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             }
 
             JsonObject projectedItem = ProjectCollectionItem(itemObject, collectionRule);
-            result.Add(projectedItem);
+            if (projectedItem.Count > 0)
+            {
+                result.Add(projectedItem);
+            }
         }
 
         return result;
@@ -256,7 +299,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             {
                 if (value is JsonObject nestedObject)
                 {
-                    result[name] = ProjectNestedObject(nestedObject, nestedRule);
+                    JsonObject projected = ProjectNestedObject(nestedObject, nestedRule);
+                    if (projected.Count > 0)
+                    {
+                        result[name] = projected;
+                    }
                 }
                 continue;
             }
@@ -355,7 +402,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             {
                 if (value is JsonObject nestedObject)
                 {
-                    result[name] = ProjectNestedObject(nestedObject, objectRule);
+                    JsonObject projected = ProjectNestedObject(nestedObject, objectRule);
+                    if (projected.Count > 0)
+                    {
+                        result[name] = projected;
+                    }
                 }
                 continue;
             }

@@ -10,6 +10,9 @@ namespace EdFi.DataManagementService.Core.Profile;
 
 /// <summary>
 /// Filters JSON documents according to profile ReadContentType rules.
+/// Note: This class will be superseded by <see cref="ReadableProfileProjector"/> once DMS-990
+/// wires the new projector into the reconstitution path. At that point this class and its
+/// middleware integration can be removed.
 /// </summary>
 internal class ProfileResponseFilter : IProfileResponseFilter
 {

@@ -1406,4 +1406,260 @@ public class ReadableProfileProjectorTests
             _result.Count.Should().Be(3);
         }
     }
+
+    // =======================================================================
+    //  Fix 1: JsonArray root inputs are projected per-element
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_JsonArray_Root_Each_Element_Is_Filtered : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["id"] = "abc-123",
+                    ["schoolId"] = 100,
+                    ["nameOfInstitution"] = "School A",
+                    ["webSite"] = "https://a.example.com",
+                },
+                new JsonObject
+                {
+                    ["id"] = "def-456",
+                    ["schoolId"] = 200,
+                    ["nameOfInstitution"] = "School B",
+                    ["webSite"] = "https://b.example.com",
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution")]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_returns_a_JsonArray()
+        {
+            _result.Should().BeOfType<JsonArray>();
+        }
+
+        [Test]
+        public void It_preserves_element_count()
+        {
+            (_result as JsonArray)!.Count.Should().Be(2);
+        }
+
+        [Test]
+        public void It_filters_hidden_members_from_each_element()
+        {
+            _result[0]!["webSite"].Should().BeNull();
+            _result[1]!["webSite"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_preserves_included_members_in_each_element()
+        {
+            _result[0]!["nameOfInstitution"]?.GetValue<string>().Should().Be("School A");
+            _result[1]!["nameOfInstitution"]?.GetValue<string>().Should().Be("School B");
+        }
+
+        [Test]
+        public void It_preserves_identity_in_each_element()
+        {
+            _result[0]!["schoolId"]?.GetValue<int>().Should().Be(100);
+            _result[1]!["schoolId"]?.GetValue<int>().Should().Be(200);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Empty_JsonArray_Root : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonArray();
+            var contentType = CreateContentType(MemberSelection.IncludeAll);
+            _result = _projector.Project(source, contentType, IdentityNames());
+        }
+
+        [Test]
+        public void It_returns_empty_array()
+        {
+            var arr = _result as JsonArray;
+            arr.Should().NotBeNull();
+            arr!.Count.Should().Be(0);
+        }
+    }
+
+    // =======================================================================
+    //  Fix 2: Empty nested objects are omitted
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Nested_Object_All_Members_Excluded : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["period"] = new JsonObject { ["beginDate"] = "2024-01-01", ["endDate"] = "2024-06-30" },
+            };
+
+            // Object rule that excludes all properties of the nested object
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                objects:
+                [
+                    new ObjectRule(
+                        Name: "period",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_empty_nested_object()
+        {
+            _result["period"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  Fix 2: Empty collection items are omitted
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Items_Become_Empty_After_Filtering : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["addresses"] = new JsonArray
+                {
+                    new JsonObject { ["streetAddress"] = "123 Main St", ["city"] = "Springfield" },
+                },
+            };
+
+            // Collection rule with IncludeOnly but empty property set — all scalars excluded
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_collection_when_all_items_are_empty()
+        {
+            _result["addresses"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  Fix 2: Empty nested objects within extensions are omitted
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extension_Nested_Object_All_Members_Excluded : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["_ext"] = new JsonObject
+                {
+                    ["sample"] = new JsonObject
+                    {
+                        ["nestedThing"] = new JsonObject { ["hiddenField"] = "secret" },
+                    },
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                extensions:
+                [
+                    new ExtensionRule(
+                        Name: "sample",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [],
+                        Objects:
+                        [
+                            new ObjectRule(
+                                Name: "nestedThing",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties: [],
+                                NestedObjects: null,
+                                Collections: null,
+                                Extensions: null
+                            ),
+                        ],
+                        Collections: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_omits_the_extension_when_nested_object_is_empty()
+        {
+            _result["_ext"].Should().BeNull();
+        }
+    }
 }
