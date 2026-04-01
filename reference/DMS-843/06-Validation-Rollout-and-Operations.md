@@ -47,25 +47,25 @@ Snapshot-backed reads are one of the two synchronization flows in the design. `U
 
 **Snapshot technology decision record (required before CQ-STORY-07):**
 
-The snapshot source must be a read-consistent, freezable view of the live database that DMS can keep stable for one bounded synchronization pass. The technology that provides this view is engine-specific and must be decided before implementing `Use-Snapshot` infrastructure (CQ-STORY-07). The following options are evaluated per engine:
+The snapshot source must be a read-consistent, freezable view of the live database that DMS can reach through an instance-scoped published binding at request time. The technology that provides this view is engine-specific and must be decided before implementing `Use-Snapshot` infrastructure (CQ-STORY-07). The following options are evaluated per engine:
 
 | Engine | Option | Verdict |
 | --- | --- | --- |
-| SQL Server | Native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) | **Preferred for on-premises SQL Server and SQL Server on IaaS.** Instantaneous, read-consistent, copy-on-write. DMS creates a named snapshot connection string per instance. Snapshot is dropped and recreated on each refresh cycle. Lifecycle is DMS-managed. **Not supported on Azure SQL Database or Azure SQL Managed Instance.** |
+| SQL Server | Native database snapshot (`CREATE DATABASE ... AS SNAPSHOT OF`) | **Preferred for on-premises SQL Server and SQL Server on IaaS.** Instantaneous, read-consistent, copy-on-write. Operations publish one named snapshot binding per instance and refresh it through a controlled publish/retire workflow. **Not supported on Azure SQL Database or Azure SQL Managed Instance.** |
 | SQL Server | Read-committed standby (log shipping) | Not suitable; not frozen; does not provide pass-stability. |
 | SQL Server (Azure SQL Database / Azure SQL Managed Instance) | Azure SQL-compatible snapshot strategy (e.g., Hyperscale named database copy, PIT restore to transient read-only instance) | **Decision required in CQ-STORY-00.** Native `CREATE DATABASE ... AS SNAPSHOT OF` is not available on PaaS SQL Server targets. The correct Azure SQL approach — including connection-string configuration and lifecycle semantics — is a required exit criterion for CQ-STORY-00 before CQ-STORY-07 begins. |
 | PostgreSQL | Streaming physical-replication read replica (e.g., AWS RDS read replica) | **Not suitable by itself;** replica continues receiving new writes and cannot be frozen for a pass. |
 | PostgreSQL | Point-in-time restore into a transient read-only instance (e.g., RDS PIT restore) | **Viable but slow** (minutes to provision); not suitable for O(seconds) snapshot refresh cycles; suitable for infrequent scheduled snapshots where SLA allows. |
 | PostgreSQL | Export/import (pg_dump + restore) | Offline only; not suitable for live pass-stability. |
 | PostgreSQL | Logical-replication standby at a fixed LSN | Complex schema-conflict risk; not recommended for initial delivery. |
-| PostgreSQL | **Recommended:** A separate PostgreSQL instance provisioned from a base backup or cloud snapshot (e.g., Aurora cluster clone, RDS snapshot restore), treated as a frozen read-only derivative for one snapshots cycle. DMS connects to the clone endpoint configured per instance; the clone is not promoted and receives no new writes. | **Preferred for PostgreSQL.** Acceptable refresh granularity for scheduled snapshot cycles (e.g., nightly or hourly). |
+| PostgreSQL | **Recommended:** A separate PostgreSQL instance provisioned from a base backup or cloud snapshot (e.g., Aurora cluster clone, RDS snapshot restore), treated as a frozen read-only derivative for one snapshots cycle. Operations publish the clone endpoint as the active binding for the instance; the clone is not promoted and receives no new writes. | **Preferred for PostgreSQL.** Acceptable refresh granularity for scheduled snapshot cycles (e.g., nightly or hourly). |
 
 Required implementation contract regardless of technology:
 
 - the snapshot connection string is configured per DMS instance in a `SnapshotConnectionString` (or equivalent) application setting
 - DMS never automatically falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable
-- DMS validates, at `Use-Snapshot = true` request time, that the snapshot source responds and exposes all required Change Query artifacts before allowing the pass to begin
-- snapshot lifecycle management (creation, refresh, retirement) is an operational responsibility outside the DMS application but DMS must detect stale or retired snapshots and fail the pass explicitly
+- DMS validates, at `Use-Snapshot = true` request time, that the currently active snapshot binding responds and exposes all required Change Query artifacts before allowing the request to proceed
+- snapshot lifecycle management (creation, publication, refresh, retirement) is an operational responsibility outside the DMS application; DMS validates only whether the currently active binding is usable for the current request, because the public contract does not include a binding id or pass token for cross-request pinning
 - a new story **CQ-STORY-00: Snapshot Infrastructure Provisioning and Configuration** must be added (or equivalent sub-task in CQ-STORY-07) before CQ-STORY-07 is implemented, covering: snapshot technology selection, `SnapshotConnectionString` configuration schema, lifecycle validation logic, and engine-specific DDL for snapshot creation/retirement
 
 Operational rules:
@@ -73,11 +73,13 @@ Operational rules:
 - the snapshot source is read-only and instance-scoped
 - snapshot configuration is a per-instance binding to one usable snapshot derivative; `Use-Snapshot = true` is invalid for an instance that has no active binding
 - the bound derivative must expose the same DMS schema, `dms.Document` rows, journals, tombstones, key-change rows, `dms.EducationOrganizationHierarchyTermsLookup`, and all authorization companion tables listed in `05-Authorization-and-Delete-Semantics.md` that are still used during tracked-change authorization evaluation; omitting any of these tables from the snapshot will produce silently wrong tracked-change authorization results or query-time failures
-- the bound derivative must expose an immutable enough identity or lifecycle handle that operations can keep one derivative stable for a bounded synchronization pass
+- the bound derivative must expose enough operational identity or lifecycle metadata for operators to know which published derivative is active and to manage publish/retire workflows safely
 - if no snapshot source is configured, ordinary live-flow requests still work exactly as they do today and `Use-Snapshot = true` requests fail explicitly
 - snapshot refresh or recreation must occur only after the matching migrations, backfill, and application version are in place
 - clients that rely on snapshot-backed synchronization must use `availableChangeVersions` and all later data reads against that same snapshot surface
-- if operations retire, refresh, or repoint the bound derivative before a pass completes, later `Use-Snapshot = true` requests must fail with the documented snapshot-unavailable contract rather than continuing on a different derivative
+- a published snapshot binding for an instance should be treated as operationally immutable for the full supported synchronization window; operators should not repoint that binding while snapshot-backed clients may still be using it because DMS-843 does not provide cross-request pinning
+- snapshot refresh is a publish/retire operation with runbook discipline, not an invisible in-place substitution that DMS-843 promises to bridge transparently across requests
+- if operations retire, refresh, or repoint the bound derivative between requests, DMS guarantees only request-time binding resolution and validation; clients that require one frozen pass must restart after operators confirm a stable published binding
 
 ## `AuthorizationBasis` Contract Evolution
 
@@ -160,15 +162,15 @@ Required backend integration coverage:
 9. delete inserts one tombstone row with copied natural-key and authorization data
 10. delete rollback leaves no tombstone row committed
 11. delete query authorization matches the documented tracked-change authorization contract, including ODS-style delete-aware relationship cases and the accepted DMS-specific ownership exception
-12. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the selected source (live-primary flow)
-12a. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the **snapshot source** when `Use-Snapshot = true`; suppression must not consult the live primary during a snapshot-backed pass
+12. delete query suppresses a tombstone when the same resource identity is already live again on the selected source at delete-query evaluation time, without applying a requested-window predicate to the surviving live row (live-primary flow)
+12a. delete query suppresses a tombstone when the same resource identity is already live again on the **snapshot source** when `Use-Snapshot = true`; suppression must not consult the live primary during a snapshot-backed pass
 13. identity-changing update inserts one key-change tracking row with copied old-key, new-key, and tracked-change authorization data
 14. identity-changing update records a distinct public key-change token from `dms.ChangeVersionSequence`, not the live resource `ChangeVersion` and not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
 15. non-identity update does not insert a key-change tracking row
 16. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
-17. key-change query returns one row per authorized key-change event within a window and preserves each event's stored `oldKeyValues`, `newKeyValues`, and tracked `changeVersion`
+17. key-change query collapses the authorized tracking rows for one affected resource item within a window into one response row containing the window's initial `oldKeyValues`, final `newKeyValues`, and final tracked `changeVersion`
 18. key-change query authorization uses the stored pre-update tracked-change authorization data as documented
-19. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering over the final key-change event stream
+19. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse over the final key-change result set
 20. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
 21. `availableChangeVersions` with `Use-Snapshot = true` returns the snapshot-visible ceiling rather than the live-primary ceiling
 22. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
@@ -189,7 +191,7 @@ Required E2E coverage:
 2. GET by id remains unchanged
 3. changed-resource query returns current resources within the requested window
 4. `/deletes` returns tombstones in deterministic order
-5. `/keyChanges` returns key-change event rows in deterministic order
+5. `/keyChanges` returns one collapsed row per affected resource item in deterministic order
 6. `minChangeVersion = 0` is accepted when used as a bootstrap watermark
 7. `maxChangeVersion = minChangeVersion` returns a valid single-version bounded-window response
 8. max-only windows are accepted on changed-resource, `/deletes`, and `/keyChanges`
@@ -209,10 +211,10 @@ Required E2E coverage:
 22. unauthorized callers do not see unauthorized key changes under the documented tracked-change authorization rules
 23. insert then delete before sync returns only the delete row
 24. delete then reinsert in the same window suppresses the delete row and returns only the later live resource for that window
-25. delete then reinsert in a later window yields a delete row in the earlier window and a later live resource in the later window
-26. multiple key changes before sync yield one key-change row per authorized committed event in deterministic order
+25. delete then reinsert in a later window suppresses the earlier tombstone whenever the later live row is already visible on the selected source at delete-query evaluation time; otherwise the earlier tombstone may still appear
+26. multiple key changes before sync yield one collapsed key-change row per affected resource item with the initial and final key values for the window
 27. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
-28. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering over the final key-change event stream
+28. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse over the final key-change result set
 29. required `journal + verify` changed-resource execution preserves the documented public paging semantics
 30. unsupported retained `AuthorizationBasis.contractVersion` values produce the documented security-configuration failure until corrected
 31. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
@@ -232,8 +234,8 @@ Required E2E coverage:
 | Auth-only maintenance updates | No new changed-resource signal |
 | Delete transaction rollback | No committed tombstone |
 | Delete then reinsert in the same window | Suppress the delete row and expose only the later live state for that window |
-| Delete then reinsert in a later window | Return the earlier delete in its window and the later live row in the later window |
-| Multiple key changes in one window | Return one ordered key-change row per authorized committed event |
+| Delete then reinsert in a later window | Suppress the earlier tombstone whenever the later live row is already visible on the selected source at delete-query evaluation time; otherwise the earlier tombstone may still appear |
+| Multiple key changes in one window | Return one collapsed key-change row per affected resource item with the initial and final key values for the window |
 | Snapshot-backed bounded synchronization | Return the snapshot-visible surface for the bounded window without paging drift from later live writes |
 | Snapshot source unavailable | Return explicit snapshot-unavailable problem details; do not silently fall back to live reads |
 | Repeated identity leaf names | Return deterministic disambiguated key payload fields |
@@ -260,12 +262,13 @@ Expected success criteria:
 
 **`AuthorizationBasis` write-path overhead acknowledgment:**
 
-Populating `AuthorizationBasis.basisDocumentIds` at delete or identity-changing-update time requires resolving basis-resource `DocumentId` values from the live authorization graph before the tombstone or key-change row is inserted. For complex relationship-based strategies (e.g., student relationship authorization that currently requires joining through `auth.EducationOrganizationIdToStudentUSI`), this is additional I/O on the hot delete path.
+Populating `AuthorizationBasis.basisDocumentIds` at delete or identity-changing-update time requires resolving basis-resource `DocumentId` values from the live current-backend resolver graph before the tombstone or key-change row is inserted. For complex relationship-based strategies, this is additional I/O on the hot delete or identity-changing-update path.
 
 Required mitigations:
 
-- the `AuthorizationBasis` resolution query must run inside the same transaction as the tombstone or key-change-row insert, using the row-locked pre-change state; it must not execute after the live row or companion rows have been deleted
-- basis-resource `DocumentId` resolution may reuse the same per-request authorization resolution pass that already authorizes the delete or update; no additional round-trips are required if the authorization pass already resolves the same basis-resource identifiers
+- the `AuthorizationBasis` resolution query must run inside the same transaction as the tombstone or key-change-row insert, using the row-locked pre-change state; it must not execute after the live row or capture-time resolver rows have been deleted or mutated
+- basis-resource `DocumentId` resolution may reuse the same per-request authorization resolution pass that already authorizes the delete or update; no additional round-trips are required if that pass already resolves the same basis-resource identifiers
+- on the current PostgreSQL backend, this work is expected to require dedicated capture-time resolver queries against `StudentSecurableDocument`, `ContactSecurableDocument`, `StaffSecurableDocument`, and `EducationOrganizationHierarchy`; the existing `Get*Authorization*Ids` helper methods that aggregate EdOrg ids are not sufficient for `AuthorizationBasis.basisDocumentIds`
 - deployments must baseline-measure delete and identity-changing-update latency for high-relationship resources (e.g., `StudentSchoolAssociation`, `StaffEducationOrganizationAssignment`) before and after enabling Change Queries to confirm the additional I/O is within tolerance
 - if `AuthorizationBasis` resolution latency is unacceptable for a specific resource, the tracked-change authorization contract for that resource may declare a simplified `basisDocumentIds` mapping that avoids deep relationship joins, provided the simplified mapping preserves the required authorization visibility guarantees
 
@@ -303,6 +306,7 @@ Required external-contract behavior:
 ODS compatibility note:
 
 - legacy ODS snapshot-missing flows surface `404 Not Found`; DMS-843 keeps that status while still documenting an explicit DMS problem-details body for the case
+- invalid `Use-Snapshot` handling is an explicit DMS contract choice; DMS validates the header as a strict boolean even though legacy ODS commonly treats non-true values as snapshot-off
 
 Problem-detail expectations:
 
@@ -333,9 +337,9 @@ Without snapshots:
 
 With snapshots:
 
-- the same routes and tracking artifacts can provide one frozen synchronization surface for the pass
-- bounded windows and offset paging are stable for that snapshot-backed pass
-- the pass sees the state current inside the snapshot, not the later state of the live primary
+- the same routes and tracking artifacts can provide one frozen synchronization surface across a multi-request pass when the active snapshot binding remains unchanged
+- bounded windows and offset paging are stable for that snapshot-backed pass only while the pass continues to read the same snapshot binding
+- the pass sees the state current inside that snapshot binding, not the later state of the live primary
 - snapshot lifecycle, refresh discipline, and availability become operational dependencies outside the core tracking schema
 - if the snapshot source is unavailable, DMS fails explicitly rather than silently falling back to live reads
 
@@ -350,7 +354,7 @@ Risk:
 Mitigation:
 
 - document the live-mode tradeoffs explicitly
-- use the normative open-ended `minChangeVersion` algorithm and persist the pass-start synchronization version only after the full pass succeeds
+- use the normative bounded-window algorithm with `maxChangeVersion = synchronizationVersion` and persist the pass-start synchronization version only after the full pass succeeds
 - require clients to tolerate duplicates and recommend overlap or periodic reinitialization when stronger assurance is required
 
 ## Snapshot lifecycle or staleness drift
@@ -419,7 +423,7 @@ The feature design is ready for review if reviewers can answer yes to the follow
 - feature-off behavior is explicit, with no silent downgrade of Change Query requests
 - the feature satisfies the Ed-Fi changed-resource semantics of current-state results rather than mutation history
 - deletes remain visible after the live row is gone
-- same-window delete plus re-add churn is suppressed from the public `/deletes` surface
+- delete plus re-add churn is suppressed from the public `/deletes` surface whenever the same natural-key identity is already visible again on the selected source at delete-query evaluation time
 - key changes remain visible after later key mutations or deletion of the live row
 - live changed-resource authorization remains aligned to current live-read semantics
 - delete and key-change authorization target the documented tracked-change contract, including ODS-style delete-aware relationship visibility and the accepted DMS-specific ownership exception

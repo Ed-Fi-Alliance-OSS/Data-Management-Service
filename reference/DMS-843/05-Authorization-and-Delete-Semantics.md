@@ -36,15 +36,15 @@ The current authorization model also depends on companion tables and triggers th
 
 | Table | Role in the current storage/runtime model | Change Queries impact |
 | --- | --- | --- |
-| `dms.EducationOrganizationHierarchy` | Stores education-organization parent-child relationships. | Unchanged. Existing cleanup remains part of delete execution. |
+| `dms.EducationOrganizationHierarchy` | Stores education-organization parent-child relationships. | Reused both as live authorization support and as a capture-time resolver source for `educationOrganizationDocumentIds`; existing cleanup remains part of delete execution after tracked-change capture is complete. |
 | `dms.EducationOrganizationHierarchyTermsLookup` | Stores hierarchy expansion values used in EdOrg filters. | Reused by live and tracked-change authorization logic. |
 | `dms.StudentSchoolAssociationAuthorization` | Derives student authorization values from student-school relationships. | Continues feeding live-row projection data, but tracked changes cannot rely on the row still existing later. |
-| `dms.StudentSecurableDocument` | Maps student identifiers to securable documents. | Live-only helper; tracked changes cannot assume it survives delete timing. |
+| `dms.StudentSecurableDocument` | Maps student identifiers to securable documents. | Capture-time resolver source for `studentDocumentIds`, but not a safe tracked-change read-time source after delete. |
 | `dms.StudentContactRelation` | Bridges student-contact relationships for contact authorization. | Live-only helper; tracked changes need preserved basis data when rows are gone. |
 | `dms.ContactStudentSchoolAuthorization` | Derives contact authorization values. | Continues feeding live-row projection data. |
-| `dms.ContactSecurableDocument` | Maps contact identifiers to securable documents. | Live-only helper. |
+| `dms.ContactSecurableDocument` | Maps contact identifiers to securable documents. | Capture-time resolver source for `contactDocumentIds`, but not a safe tracked-change read-time source after delete. |
 | `dms.StaffEducationOrganizationAuthorization` | Derives staff authorization values. | Continues feeding live-row projection data. |
-| `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Live-only helper. |
+| `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Capture-time resolver source for `staffDocumentIds`, but not a safe tracked-change read-time source after delete. |
 | `dms.StudentEducationOrganizationResponsibilityAuthorization` | Derives student responsibility authorization values. | Continues feeding live-row projection data, but tracked changes need preserved basis data after delete timing. |
 
 The Change Queries feature does not require these companion tables to become the tracked-change source of truth. The tracked-change source of truth is the authorization data preserved on the tombstone or key-change row.
@@ -136,29 +136,65 @@ Each key-change row must preserve the pre-update tracked-change authorization st
 
 The design does not store a second post-update authorization snapshot on the key-change row.
 
-**Auth-redesign transition note:** The auth redesign direction for the live-row authorization model is currently defined by two competing documents in this repository — `reference/design/backend-redesign/design-docs/auth.md` (which follows the ODS-equivalent `auth.EducationOrganizationIdTo{securableElementName}` view/table approach and explicitly rejects a `dms.DocumentSubject` table) and `reference/design/auth/auth-redesign-subject-edorg-model.md` (which proposes `dms.DocumentSubject` / `dms.SubjectEdOrg` as the new relational authorization model). Neither document defines tracked-change authorization for `/deletes` or `/keyChanges`, and no single document has been declared the authoritative auth redesign reference for DMS. **DMS-843 does not depend on either competing auth redesign document winning.** The current-backend tracked-change authorization contract defined in this package is fully self-contained: it uses the JSONB authorization columns already present on `dms.Document` for capture and evaluation today. When a future auth redesign story is approved and ships, a separate DMS-843 follow-on story must define the exact mapping from the then-current live-row authorization structures to the tombstone and key-change row capture contract. Until that follow-on story is approved and its mapping is defined, implementations must use the current-backend JSONB column capture contract defined below. Implementations must not anticipate either competing auth redesign direction or hardcode references to `dms.DocumentSubject`, `dms.SubjectEdOrg`, or any other redesign-era tables that have not yet been committed as the canonical auth model.
+**Auth-redesign transition note:** The auth redesign direction for the live-row authorization model is currently defined by two competing documents in this repository - `reference/design/backend-redesign/design-docs/auth.md` (which follows the ODS-equivalent `auth.EducationOrganizationIdTo{securableElementName}` view/table approach and explicitly rejects a `dms.DocumentSubject` table) and `reference/design/auth/auth-redesign-subject-edorg-model.md` (which proposes `dms.DocumentSubject` / `dms.SubjectEdOrg` as the new relational authorization model). Neither document defines tracked-change authorization for `/deletes` or `/keyChanges`, and no single document has been declared the authoritative auth redesign reference for DMS. **DMS-843 does not depend on either competing auth redesign document winning.** The current-backend tracked-change authorization contract defined in this package is self-contained because it captures two different categories of data during the live pre-change authorization pass:
+
+- copied row-local authorization projection fields from `dms.Document`, which remain tracked-change read-time inputs and context
+- separately resolved `AuthorizationBasis.basisDocumentIds`, which are capture-time artifacts resolved from the live current-backend resolver graph rather than from those copied JSONB projection columns
+
+When a future auth redesign story is approved and ships, a separate DMS-843 follow-on story must define the exact mapping from the then-current live authorization structures to these same tracked-change artifacts. Until that follow-on story is approved, implementations must use the current-backend capture-time resolver mapping defined below. Implementations must not anticipate either competing auth redesign direction or hardcode references to `dms.DocumentSubject`, `dms.SubjectEdOrg`, or any other redesign-era tables that have not yet been committed as the canonical auth model.
 
 **Required `AuthorizationBasis.basisDocumentIds` mapping by authorization strategy (normative):**
 
-The following table defines what `basisDocumentIds` must capture per strategy for the current backend. The source for these `DocumentId` values is the current-backend JSONB authorization projection columns on `dms.Document`. When a future auth redesign ships and those JSONB columns are replaced by a different live-row authorization structure, a dedicated follow-on story must update this mapping table to name the then-current source; until that story is approved no implementation may substitute a speculative future source.
+The following table defines what `basisDocumentIds` must capture per strategy for the current backend. The copied JSONB authorization projection columns on `dms.Document` remain tracked-change row data, but they are not the source of these `DocumentId` values. Instead, `basisDocumentIds` are resolved during the same pre-delete or pre-update authorization pass from the live current-backend resolver graph. When a future auth redesign ships and those live resolver structures change, a dedicated follow-on story must update this mapping table to name the then-current capture-time resolver source; until that story is approved no implementation may substitute a speculative future source.
 
 | Authorization strategy | `basisDocumentIds` key | What is captured |
 | --- | --- | --- |
-| `RelationshipsWithStudentsOnly` / `RelationshipsWithStudentsAndEdOrgs` | `studentDocumentIds` | Sorted unique `DocumentId` values for the `Student` basis documents reachable from this resource row via the active authorization graph (current backend: sourced from `StudentSchoolAuthorizationEdOrgIds` expansion on `dms.Document`) |
-| `RelationshipsWithEdOrgsOnly` (direct EdOrg) | `educationOrganizationDocumentIds` | Sorted unique `DocumentId` values for the education-organization basis documents directly or transitively in scope for this row |
-| `RelationshipsWithContactsAndEdOrgs` | `contactDocumentIds` | Sorted unique `DocumentId` values for the `Contact` basis documents reachable from this resource row (current backend: sourced from `ContactStudentSchoolAuthorizationEdOrgIds` expansion on `dms.Document`) |
-| `RelationshipsWithStaffAndEdOrgs` | `staffDocumentIds` | Sorted unique `DocumentId` values for the `Staff` basis documents reachable from this resource row (current backend: sourced from `StaffEducationOrganizationAuthorizationEdOrgIds` expansion on `dms.Document`) |
-| Custom-view authorization | `customViewDocumentIds` (or resource-specific key) | Basis-resource `DocumentId` values required for that custom view, as declared in the resource's tracked-change authorization contract |
+| `RelationshipsWithStudentsOnly` / `RelationshipsWithStudentsOnlyThroughResponsibility` / `RelationshipsWithStudentsAndEdOrgs` | `studentDocumentIds` | Sorted unique `DocumentId` values for the `Student` basis documents resolved during the pre-change authorization pass from the resource's resolved student securable identifiers through `dms.StudentSecurableDocument` |
+| `RelationshipsWithEdOrgsOnly` (direct EdOrg) | `educationOrganizationDocumentIds` | Sorted unique `DocumentId` values for the education-organization basis documents resolved during the pre-change authorization pass from the routed resource's resolved EdOrg securable identifiers through `dms.EducationOrganizationHierarchy` |
+| `RelationshipsWithContactsAndEdOrgs` | `contactDocumentIds` | Sorted unique `DocumentId` values for the `Contact` basis documents resolved during the pre-change authorization pass from the resource's resolved contact securable identifiers through `dms.ContactSecurableDocument` |
+| `RelationshipsWithStaffAndEdOrgs` | `staffDocumentIds` | Sorted unique `DocumentId` values for the `Staff` basis documents resolved during the pre-change authorization pass from the resource's resolved staff securable identifiers through `dms.StaffSecurableDocument` |
+| Custom-view authorization | `customViewDocumentIds` (or resource-specific key) | Basis-resource `DocumentId` values emitted by the same live authorization/view logic that authorizes the resource; if that logic cannot deterministically emit basis-resource `DocumentId` values at write time, the resource is not eligible for tracked-change custom-view authorization |
+
+**Current-backend capture-time resolver implementation rule (normative):**
+
+For the current PostgreSQL backend, `AuthorizationBasis.basisDocumentIds` must be populated by dedicated capture-time resolver queries that return basis-resource `dms.Document.Id` values. The existing helper methods that populate live authorization projections on `dms.Document` remain valid only for live EdOrg-array projections and copied tracked-change context; they are not valid sources for `basisDocumentIds` because they aggregate education-organization ids rather than basis-resource `DocumentId` values.
+
+| `basisDocumentIds` key | Required current-backend capture-time resolver source | Returned basis value |
+| --- | --- | --- |
+| `studentDocumentIds` | `dms.StudentSecurableDocument` by the resolved student securable identifier from the pre-change authorization pass | `StudentSecurableDocumentId` (`dms.Document.Id`) |
+| `educationOrganizationDocumentIds` | `dms.EducationOrganizationHierarchy` by the resolved EdOrg securable identifier from the pre-change authorization pass | `DocumentId` (`dms.Document.Id`) |
+| `contactDocumentIds` | `dms.ContactSecurableDocument` by the resolved contact securable identifier from the pre-change authorization pass | `ContactSecurableDocumentId` (`dms.Document.Id`) |
+| `staffDocumentIds` | `dms.StaffSecurableDocument` by the resolved staff securable identifier from the pre-change authorization pass | `StaffSecurableDocumentId` (`dms.Document.Id`) |
+
+For avoidance of doubt, the following current-backend artifacts are not valid sources for `AuthorizationBasis.basisDocumentIds`:
+
+- `dms.Document.StudentSchoolAuthorizationEdOrgIds`
+- `dms.Document.StudentEdOrgResponsibilityAuthorizationIds`
+- `dms.Document.ContactStudentSchoolAuthorizationEdOrgIds`
+- `dms.Document.StaffEducationOrganizationAuthorizationEdOrgIds`
+- `GetStudentSchoolAuthorizationEducationOrganizationIds(...)`
+- `GetStudentEdOrgResponsibilityAuthorizationIds(...)`
+- `GetContactStudentSchoolAuthorizationEducationOrganizationIds(...)`
+- `GetStaffEducationOrganizationAuthorizationEdOrgIds(...)`
+
+Those columns and helper methods remain EdOrg-array projections only. A conforming DMS-843 implementation on the current backend must add separate resolver queries for tracked-change capture rather than expanding those arrays and reinterpreting them as basis-resource `DocumentId` values.
 
 For relationship strategies that require ODS-style delete-aware visibility, `relationshipInputs` must also capture the named relationship values that cannot be derived from `DocumentId` lookups alone after the live row has been deleted. The required `relationshipInputs` members must be declared per-resource in the tracked-change authorization contract and validated at claim-set load time.
 
+Required interpretation:
+
+- `dms.StudentSecurableDocument`, `dms.ContactSecurableDocument`, and `dms.StaffSecurableDocument` are valid capture-time resolver sources even though they are not safe tracked-change read-time sources after delete
+- `dms.EducationOrganizationHierarchy.DocumentId` is the valid current-backend direct-EdOrg capture-time resolver source for `educationOrganizationDocumentIds`
+- JSONB columns such as `StudentSchoolAuthorizationEdOrgIds`, `ContactStudentSchoolAuthorizationEdOrgIds`, and `StaffEducationOrganizationAuthorizationEdOrgIds` remain copied tracked-change row data, but they are not the source of `basisDocumentIds`
+- existing old-PostgreSQL helper methods that aggregate EdOrg ids from `StudentSchoolAssociationAuthorization`, `StudentEducationOrganizationResponsibilityAuthorization`, `ContactStudentSchoolAuthorization`, or `StaffEducationOrganizationAuthorization` are live-projection helpers only and must not be reused as tracked-change `basisDocumentIds` resolvers
+
 **Future auth-redesign tombstone authorization evaluation (deferred):**
 
-When a future auth redesign ships and the JSONB projection columns no longer exist on `dms.Document`, tracked-change authorization for `/deletes` and `/keyChanges` must be re-evaluated against the then-current live-row authorization structures. The exact evaluation mapping depends on which auth redesign design is approved and is not defined in this package. The normative evaluation contract for that future state must be defined in a dedicated follow-on story after the auth redesign direction is settled. Until that story is approved, implementations must use the current-backend JSONB column evaluation contract:
+When a future auth redesign ships and the current capture-time resolver structures no longer exist in their present form, tracked-change authorization for `/deletes` and `/keyChanges` must be re-evaluated against the then-current live authorization structures. The exact evaluation mapping depends on which auth redesign design is approved and is not defined in this package. The normative evaluation contract for that future state must be defined in a dedicated follow-on story after the auth redesign direction is settled. Until that story is approved, implementations must use the current-backend tracked-change evaluation contract:
 
 - namespace-based: use stored `SecurityElements.Namespace` on the tombstone or key-change row
 - EdOrg-based: join the stored `educationOrganizationDocumentIds` against the live-row authorization structures for the caller's authorized EdOrg set
-- student/contact/staff relationship: join the stored `studentDocumentIds` / `contactDocumentIds` / `staffDocumentIds` against the current-backend authorization expansion tables
+- student/contact/staff relationship: join the stored `studentDocumentIds` / `contactDocumentIds` / `staffDocumentIds` against the current-backend authorization structures that recognize those basis-resource `DocumentId` values
 - ownership: use stored `CreatedByOwnershipTokenId` unchanged
 - custom-view: evaluate the resource's declared tracked-change authorization contract using stored `basisDocumentIds` and `relationshipInputs`
 
@@ -173,6 +209,7 @@ Required meaning:
 - it preserves the basis-resource `DocumentId` values needed for redesign relationship and custom-view authorization
 - it preserves any additional delete-aware relationship inputs needed to reproduce ODS-style tracked-change visibility when the authorizing relationship row has already been deleted
 - it is captured from the same pre-delete or pre-update authorization-resolution pass used to determine the row's live authorization state
+- its `basisDocumentIds` members are capture-time artifacts resolved from the live current-backend resolver graph before the delete or update mutates or removes the relevant resolver rows; they are not direct reuses of the copied JSONB EdOrg-array projections on `dms.Document`
 - it is interpreted only in the context of the tracked row's routed resource
 
 Required structural contract:

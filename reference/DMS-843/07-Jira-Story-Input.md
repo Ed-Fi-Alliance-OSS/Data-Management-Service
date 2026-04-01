@@ -51,9 +51,9 @@ The story owns:
 
 - confirming the snapshot technology per supported engine (SQL Server and PostgreSQL) based on the evaluation table in `06-Validation-Rollout-and-Operations.md`, Optional Snapshot Source
 - defining the `SnapshotConnectionString` (or equivalent) configuration schema, including the per-instance binding model and how DMS discovers which configured derivative to use for `Use-Snapshot = true`
-- lifecycle validation logic: the rules DMS must apply at `Use-Snapshot = true` request time to confirm the snapshot source is available, structurally correct, and still fresh enough for the requested pass
+- lifecycle validation logic: the rules DMS must apply at `Use-Snapshot = true` request time to confirm the currently active binding is available, structurally correct, and usable for the current request
 - engine-specific DDL or operational scripts for creating, refreshing, and retiring snapshot bindings (SQL Server `CREATE DATABASE ... AS SNAPSHOT OF`; PostgreSQL clone provisioning / PIT-restore flow)
-- the required-artifact validation checklist DMS runs against the snapshot derivative before allowing the pass to begin
+- the required-artifact validation checklist DMS runs against the snapshot derivative before allowing a `Use-Snapshot = true` request to proceed
 
 This story does not own the application-level `Use-Snapshot` request dispatch (CQ-STORY-07). It provides the infrastructure that CQ-STORY-07 depends on.
 
@@ -62,7 +62,7 @@ This story does not own the application-level `Use-Snapshot` request dispatch (C
 - The snapshot technology choice for each supported engine is documented and accepted by the team, resolving the decision-record table in `06-Validation-Rollout-and-Operations.md`.
 - `SnapshotConnectionString` (or equivalent) configuration model is defined: per-instance binding, absence semantics, and how DMS resolves it at startup and at request time.
 - DMS validates at `Use-Snapshot = true` request time that the configured snapshot source responds and exposes all required Change Query artifacts (`dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, `dms.ResourceKey`, and all authorization companion tables); missing artifacts produce explicit failure, not silent degradation.
-- Snapshot lifecycle enforcement is defined: what constitutes a stale or retired derivative, and what DMS does when lifecycle validity cannot be preserved for the pass.
+- Snapshot lifecycle enforcement is defined: what DMS validates at request time, what operator publication discipline is required for stable multi-request passes, and the explicit statement that DMS-843 does not introduce a client-visible binding token or server-side cross-request pinning guarantee.
 - For SQL Server: `CREATE DATABASE ... AS SNAPSHOT OF` DDL, naming convention, and retirement DDL are documented or scripted.
 - For PostgreSQL: the clone or PIT-restore provisioning flow, connection-string configuration, and freeze-on-creation contract are documented or scripted.
 - DMS never automatically falls back to the live primary when `Use-Snapshot = true` and the snapshot source is unavailable.
@@ -76,7 +76,8 @@ This story does not own the application-level `Use-Snapshot` request dispatch (C
 - Implement or document SQL Server snapshot DDL: `CREATE DATABASE ... AS SNAPSHOT OF`, named connection binding, and `DROP DATABASE` retirement.
 - Implement or document PostgreSQL snapshot provisioning: the preferred clone / PIT-restore flow, connection-string handoff to DMS, and read-only-instance validation.
 - Implement the required-artifact validation logic DMS runs before allowing a `Use-Snapshot = true` pass to begin.
-- Implement the lifecycle staleness check DMS applies when a pass is in progress (detect retired or refreshed derivatives and fail the request explicitly).
+- Implement request-time active-binding resolution and validation for `Use-Snapshot = true`, including explicit `404` behavior when no usable binding exists.
+- Document the operator publication discipline that keeps one published binding stable for the supported synchronization window and treats snapshot refresh as publish/retire rather than as a server-enforced cross-request pinning feature.
 - Document the operational runbook or configuration reference that implementers can follow in CQ-STORY-07.
 
 ### Dependencies
@@ -235,6 +236,8 @@ This story is about write-path capture. It does not own the public `/deletes` qu
 - `id` is sourced from the canonical public `DocumentUuid`.
 - `keyValues` remain deterministic for simple, composite, and repeated-leaf identity shapes.
 - Tombstones preserve the tracked-change authorization data required for delete-query filtering after the live row and related relationship rows are removed.
+- Tombstone capture resolves `AuthorizationBasis.basisDocumentIds` from the live current-backend resolver structures during the pre-delete authorization pass rather than from the copied JSONB EdOrg-array projections on `dms.Document`.
+- Tombstone capture uses dedicated current-backend resolver queries that return basis-resource `DocumentId` values from `StudentSecurableDocument`, `ContactSecurableDocument`, `StaffSecurableDocument`, or `EducationOrganizationHierarchy` as applicable; the existing `Get*Authorization*Ids` helpers are not reused because they return EdOrg ids only.
 - Tombstone insertion occurs before the live row and companion authorization rows disappear.
 
 ### Tasks
@@ -242,7 +245,9 @@ This story is about write-path capture. It does not own the public `/deletes` qu
 - Create `dms.DocumentDeleteTracking` and its resource-window index.
 - Capture tombstones in the delete transaction before deleting the live `dms.Document` row.
 - Extract `keyValues` from the pre-delete `EdfiDoc` using the canonical identity-path and key-alias rules.
-- Copy the current live tracked-change authorization data into the tombstone row, including `CreatedByOwnershipTokenId` and authorization basis values.
+- Copy the current live tracked-change authorization data into the tombstone row, including `CreatedByOwnershipTokenId`.
+- Resolve `AuthorizationBasis.basisDocumentIds` from the live current-backend resolver graph during the pre-delete authorization pass and persist the resolved basis ids plus any required `relationshipInputs` on the tombstone row.
+- Add dedicated current-backend capture-time resolver helpers for tracked-change `basisDocumentIds`; do not reuse the existing EdOrg-array helper methods in `SqlAction`/`ISqlAction`.
 - Preserve existing delete authorization behavior so unauthorized callers cannot create tombstone side effects.
 - Keep education-organization cleanup ordering compatible with tombstone capture.
 
@@ -290,6 +295,8 @@ This story does not own the public `/keyChanges` endpoint read semantics. It own
 - Tracking-row `changeVersion` is a newly allocated distinct public key-change token from `dms.ChangeVersionSequence`, not the live `dms.Document.ChangeVersion` and not the internal `IdentityVersion`.
 - `oldKeyValues` and `newKeyValues` remain deterministic for simple, composite, and repeated-leaf identity shapes.
 - The tracking row preserves the pre-update tracked-change authorization data required for transition visibility.
+- Key-change capture resolves `AuthorizationBasis.basisDocumentIds` from the live current-backend resolver structures during the pre-update authorization pass rather than from the copied JSONB EdOrg-array projections on `dms.Document`.
+- Key-change capture uses dedicated current-backend resolver queries that return basis-resource `DocumentId` values from `StudentSecurableDocument`, `ContactSecurableDocument`, `StaffSecurableDocument`, or `EducationOrganizationHierarchy` as applicable; the existing `Get*Authorization*Ids` helpers are not reused because they return EdOrg ids only.
 - No key-change row is created for authorization-only maintenance updates.
 
 ### Tasks
@@ -297,6 +304,8 @@ This story does not own the public `/keyChanges` endpoint read semantics. It own
 - Create `dms.DocumentKeyChangeTracking` and its resource-window index.
 - Detect identity-changing updates by comparing the pre-update and post-update identity tuples derived from `IdentityJsonPaths`.
 - Capture the pre-update identity tuple and tracked-change authorization data before mutating the live row.
+- Resolve `AuthorizationBasis.basisDocumentIds` from the live current-backend resolver graph during the pre-update authorization pass and persist the resolved basis ids plus any required `relationshipInputs` on the tracking row.
+- Add dedicated current-backend capture-time resolver helpers for tracked-change `basisDocumentIds`; do not reuse the existing EdOrg-array helper methods in `SqlAction`/`ISqlAction`.
 - Capture the post-update identity tuple from the updated `EdfiDoc`.
 - Allocate a new distinct public key-change token from `dms.ChangeVersionSequence` and insert one tracking row with that token for the committed identity-changing update.
 - Ensure dependent representation rewrites do not create key-change rows unless the dependent document's own identity tuple changed.
@@ -474,7 +483,7 @@ The story owns:
 - `availableChangeVersions` computation across the participating artifacts
 - live-vs-snapshot source selection for those synchronization reads
 - snapshot lifecycle handling for snapshot-backed synchronization passes without changing public route or header contracts
-- key-change one-row-per-event read rules
+- key-change window-collapsing read rules
 - delete and key-change authorization semantics
 - row-level locking or engine-equivalent serialization on identity-changing updates and deletes
 
@@ -483,17 +492,17 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 ### Acceptance Criteria
 
 - `/deletes` returns tombstones ordered deterministically.
-- `/deletes` suppresses same-window re-add churn when the same routed resource identity is live again within the requested window on the selected source.
-- `/keyChanges` returns one row per authorized key-change event ordered deterministically.
+- `/deletes` suppresses a tombstone when the same routed resource identity is already live again on the selected source at delete-query evaluation time.
+- `/keyChanges` returns one collapsed row per affected resource item ordered deterministically.
 - `/keyChanges` remains valid for resources that do not support identity updates and returns `200 OK` with an empty array for them.
 - `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`.
-- `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering over the final key-change event stream.
+- `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse over the final key-change result set.
 - Delete-query authorization matches the documented tracked-change contract, including ODS-style delete-aware relationship visibility and the accepted DMS-specific ownership exception.
 - Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility, including the accepted DMS-specific ownership exception.
 - `/keyChanges` uses a distinct public key-change token allocated from `dms.ChangeVersionSequence` for the tracked row, matching legacy ODS sequencing expectations.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
 - `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
-- Snapshot-backed synchronization preserves one consistent snapshot derivative across the pass; if that cannot be preserved, the pass fails explicitly with the documented snapshot-unavailable behavior.
+- Snapshot-backed synchronization uses the currently active instance-scoped binding on each request; stable multi-request passes depend on operators keeping that binding unchanged because DMS-843 does not add a client-visible binding token or server-side cross-request pinning.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
 - Writes that cannot resolve required tracked-change authorization inputs fail with the documented security-configuration ProblemDetails contract before tombstone or key-change persistence, and do not commit partial tracking rows.
@@ -503,12 +512,12 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Implement `/deletes` query execution over `dms.DocumentDeleteTracking`.
 - Implement `/keyChanges` query execution over `dms.DocumentKeyChangeTracking`.
 - Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
-- Apply same-window re-add suppression on `/deletes` before public paging and `totalCount` semantics are finalized.
+- Apply ODS-style re-add suppression on `/deletes` before public paging and `totalCount` semantics are finalized.
 - Apply key-change authorization against the stored pre-update tracked-change authorization data before ordering, paging, and `totalCount` are finalized.
 - Preserve the accepted DMS-specific ownership exception documented in `05-Authorization-and-Delete-Semantics.md` across `/deletes`, `/keyChanges`, validation, and tests.
 - Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
-- Implement snapshot lifecycle checks that enforce consistent derivative selection and explicit failure when lifecycle validity cannot be maintained, without introducing new public routes or headers.
-- Implement one-row-per-event key-change semantics so each surviving tracking row returns its own `oldKeyValues`, `newKeyValues`, and `changeVersion`.
+- Implement snapshot request-time binding resolution and validation for `Use-Snapshot = true`, returning the documented snapshot-unavailable behavior when no usable binding exists and leaving cross-request pass stability to documented operator discipline.
+- Implement key-change window-collapsing semantics so the surviving authorized tracking rows for one affected resource item produce one response row with the window's initial `oldKeyValues`, final `newKeyValues`, and final tracked `changeVersion`.
 - Allocate a distinct public key-change token from `dms.ChangeVersionSequence` when persisting each committed key-change tracking row.
 - Compute `availableChangeVersions.oldestChangeVersion` from replay-floor semantics (or bootstrap `0`) and `availableChangeVersions.newestChangeVersion` from the selected source sequence ceiling (`next value - 1`) for ODS-compatible watermark behavior.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.

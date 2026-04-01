@@ -129,7 +129,7 @@ Required semantics:
 - values may contain gaps
 - rollbacks may consume values
 - clients treat values as ordering tokens rather than row counts
-- value `0` matches the ODS-output-compatible bootstrap watermark exposed by `availableChangeVersions` when no change versions have been allocated; legacy ODS also returns `0` on an empty instance because `MAX(ChangeVersion)` over empty tables is `NULL`, serialized as `0`
+- value `0` matches the ODS-output-compatible bootstrap watermark exposed by `availableChangeVersions` when no change versions have been allocated; legacy ODS also returns `0` on an empty instance through sequence-ceiling logic
 - the sequence is both the stamp-allocation mechanism and the public source for the ODS-compatible `newestChangeVersion` ceiling (`next value - 1` on the selected source)
 - `oldestChangeVersion` remains replay-floor metadata (or bootstrap `0` when no replay-floor metadata exists)
 
@@ -419,7 +419,7 @@ The tombstone therefore stores:
 - `CreatedByOwnershipTokenId` for redesign ownership-based authorization
 - row-local `AuthorizationBasis` data containing the resolved basis-resource DocumentIds and other delete-aware relationship inputs needed to evaluate tracked-change authorization after the live row or relationship rows disappear
 
-A committed tombstone does not guarantee public `/deletes` emission. Read-time delete execution still applies same-window re-add suppression against the selected live surface.
+A committed tombstone does not guarantee public `/deletes` emission. Read-time delete execution still applies ODS-style re-add suppression against the selected live surface based on current live-row visibility, without a requested-window predicate on the surviving live row.
 
 ## Key Change Tracking
 
@@ -493,6 +493,7 @@ Required semantics:
 - it preserves the basis-resource `DocumentId` values needed for redesign relationship and custom-view authorization checks
 - it preserves any additional delete-aware relationship inputs needed to reproduce ODS tracked-change visibility when the authorizing relationship row has already been deleted
 - it is captured from the same pre-delete or pre-update authorization-resolution pass that determines the row's live authorization state
+- those `basisDocumentIds` are capture-time artifacts resolved from the live current-backend resolver graph before the delete or update mutates or removes the relevant resolver rows; they are not sourced from the copied JSONB EdOrg-array projections on `dms.Document`
 - the payload root is a JSON object
 - when `AuthorizationBasis` is present, the payload root must contain `contractVersion`
 - `contractVersion` is a positive integer identifying the resource-scoped tracked-change authorization contract version used when the row was captured
@@ -559,7 +560,7 @@ Reasons:
 
 - delete rows are terminal tombstones and must preserve `KeyValues` after the live row disappears
 - key-change rows are transition records and must preserve both `OldKeyValues` and `NewKeyValues`
-- key-change queries expose one row per retained identity-transition event rather than a tombstone-style terminal state
+- key-change tracking retains one row per committed identity transition even though the public `/keyChanges` route may collapse multiple retained rows for one affected resource item within one requested window
 - live changed-resource queries are driven by the current live representation stamp and required live-change journal, not by historical tombstones
 - separate tables keep indexes purpose-built, avoid sparse nullable payload columns, and allow retention policies to evolve without conflating distinct artifact lifecycles
 
@@ -771,7 +772,7 @@ For the participating sources:
 
 - `newestChangeVersion` is the selected source sequence ceiling (`next value - 1` on that source), not the max retained committed tracking-row value across the participating sources
 - for the initial DMS-843 scope, each participating surface contributes replay floor `0`, so `oldestChangeVersion` remains `0`
-- if the selected source has never allocated a change-version value and no replay-floor metadata exists, return `0` for both values; this is ODS-output-compatible behavior: legacy ODS also returns `0/0` on an empty instance (NULL MAX serialized as 0), and DMS-843 reaches the same result via sequence-ceiling arithmetic (`next value - 1` = `0` before the first allocation)
+- if the selected source has never allocated a change-version value and no replay-floor metadata exists, return `0` for both values; this is ODS-output-compatible behavior reached through sequence-ceiling arithmetic (`next value - 1` = `0` before the first allocation)
 - if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
 - for identity-changing updates, the key-change participation value is the distinct public key-change token allocated from `dms.ChangeVersionSequence` for the tracked row, not the live resource `ChangeVersion` and not the internal `IdentityVersion`
 

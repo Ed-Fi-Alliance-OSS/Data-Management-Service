@@ -51,7 +51,7 @@ Responsibilities:
 - issue key-change queries
 - compute `availableChangeVersions`
 - resolve the selected read source for change-query reads and execute authorization plus data selection against that same source
-- apply same-window delete re-add suppression on the public `/deletes` surface
+- apply ODS-style delete re-add suppression on the public `/deletes` surface
 - insert tombstones on delete
 - insert key-change tracking rows when natural keys change
 - preserve tracked-change authorization inputs needed for ownership and DocumentId-based authorization after deletes or later key changes
@@ -206,11 +206,11 @@ Behavior:
 - filter by `ProjectName`, `ResourceName`, and the requested window
 - these shared tracking tables stay resource-scoped by canonical project and resource identity, so the routed-resource filter remains on those columns even though the live change journal uses `ResourceKeyId` as its narrow filter key
 - apply the documented tracked-change authorization predicates against the tombstone's preserved authorization data, including ODS-style delete-aware relationship visibility plus the accepted DMS-specific ownership exception and row-local basis values needed for custom-view authorization, using the same selected source for any companion authorization reads
-- suppress tombstones whose **natural-key identity** is represented again by a current live row for the same routed resource within the same requested window on that same selected source; natural-key identity is compared by matching the tombstone's stored `keyValues` against the live row's identity values derived from `ResourceSchema.IdentityJsonPaths`; comparison is always natural-key-based, not `DocumentUuid`-based, because delete-then-reinsert always creates a new live row with a new `DocumentUuid` even when the natural key is identical
+- suppress tombstones whose **natural-key identity** is represented again by a current live row for the same routed resource on that same selected source when `/deletes` is evaluated; natural-key identity is compared by matching the tombstone's stored `keyValues` against the live row's identity values derived from `ResourceSchema.IdentityJsonPaths`; comparison is always natural-key-based, not `DocumentUuid`-based, because delete-then-reinsert always creates a new live row with a new `DocumentUuid` even when the natural key is identical
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
 
-Delete query execution never reads `dms.DocumentChangeEvent` as a delete source, but it may consult the current live surface to apply the required same-window re-add suppression.
+Delete query execution never reads `dms.DocumentChangeEvent` as a delete source, but it may consult the current live surface to apply the required ODS-style re-add suppression without a requested-window predicate on the surviving live row. This is the intended DMS-843 parity behavior for legacy ODS delete suppression, not a named DMS-specific deviation.
 
 ## Key Change Query Execution
 
@@ -221,17 +221,18 @@ Behavior:
 - read from `dms.DocumentKeyChangeTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
 - these shared tracking tables stay resource-scoped by canonical project and resource identity, so the routed-resource filter remains on those columns even though the live change journal uses `ResourceKeyId` as its narrow filter key
-- apply the documented tracked-change authorization predicates against the copied pre-update tracking-row authorization data, including ODS-style relationship visibility plus the accepted DMS-specific ownership exception and row-local basis values needed for DocumentId-based custom-view authorization, using the same selected source for any companion authorization reads
+- apply the documented tracked-change authorization predicates against each copied pre-update tracking row's authorization data, including ODS-style relationship visibility plus the accepted DMS-specific ownership exception and row-local basis values needed for DocumentId-based custom-view authorization, using the same selected source for any companion authorization reads
 - materialize `oldKeyValues` and `newKeyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
-- order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
-- apply `totalCount`, `offset`, and `limit` to that authorized event stream rather than to raw pre-authorization tracking rows
+- collapse the surviving authorized tracking rows for one affected resource item (`DocumentUuid`) within the requested window into one public row whose `oldKeyValues` come from the earliest surviving row, whose `newKeyValues` come from the latest surviving row, and whose `changeVersion` is the latest surviving tracked key-change token for that resource item
+- order the final collapsed result set by that collapsed-row `changeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend; `DocumentId` alone on redesign-aligned backends where `DocumentPartitionKey` is absent)
+- apply `totalCount`, `offset`, and `limit` to that final authorized collapsed result set rather than to raw pre-authorization tracking rows
 
 Required semantics:
 
 - if the routed resource does not support identity updates, return an empty result set and `totalCount = 0` when requested
-- authorization filtering happens before ordering, paging, and `totalCount`
-- each surviving key-change tracking row becomes one public key-change event row
-- paging and total-count semantics apply after authorization filtering over that event result set
+- authorization filtering happens before collapse, ordering, paging, and `totalCount`
+- the route returns one public row per affected resource item in the requested window rather than one row per retained identity transition
+- paging and total-count semantics apply after authorization filtering and collapse over that result set
 - the copied authorization data on each key-change row represents the pre-update tracked-change authorization state for that transition
 
 ## Available Change Versions Execution
@@ -291,12 +292,13 @@ Required interpretation:
 - the snapshot source must expose the same DMS schema, change-tracking artifacts, and required authorization companion artifacts as the live primary
 - the selected derivative must include equivalent synchronization structures: `dms.ChangeVersionSequence`, `dms.ResourceKey`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, `dms.EducationOrganizationHierarchyTermsLookup`, and all authorization companion tables listed in the authorization companion table inventory in `05-Authorization-and-Delete-Semantics.md` that are still used during tracked-change authorization evaluation
 - authorization filters, resource-key resolution, and data selection for one request must all run against the same chosen source
-- the configured snapshot binding for that instance must remain stable for one bounded synchronization pass; if operations refresh or retire the derivative before the pass completes, later `Use-Snapshot = true` requests fail explicitly rather than switching to a different derivative
-- `availableChangeVersions`, changed-resource reads, `/keyChanges`, and `/deletes` for one synchronization pass must reuse the same derivative selection to keep watermarks and data reads coherent
+- DMS resolves and validates the currently active configured snapshot binding for that instance on each `Use-Snapshot = true` request from operator-managed instance configuration (`SnapshotConnectionString` or equivalent)
+- `availableChangeVersions`, changed-resource reads, `/keyChanges`, and `/deletes` for one synchronization pass must all use `Use-Snapshot = true`; stable multi-request passes additionally depend on operations keeping the same binding active across those requests because the public contract exposes no binding id or pass token
+- DMS does not define server-side pinning or cross-request rotation detection for snapshot-backed passes; if operators refresh or retire the derivative between requests, DMS resolves whichever binding is active for the later request or fails if no usable binding exists
 - non-snapshot synchronization under concurrent writes remains best-effort rather than gap-free
-- snapshot-backed synchronization uses the same tracking artifacts but changes the completeness guarantee by pinning reads to the snapshot source
+- snapshot-backed synchronization uses the same tracking artifacts but changes the completeness guarantee when the relevant requests continue to read the same snapshot source
 - DMS never silently falls back to a live read when `Use-Snapshot = true`
-- snapshot lifecycle management is in scope for DMS-843: DMS must validate and preserve a consistent snapshot derivative for the requested snapshot-backed pass while keeping the public API contract unchanged
+- snapshot lifecycle management is in scope for DMS-843 only at request-time binding resolution and validation: DMS must validate the currently bound derivative and fail explicitly when no usable binding exists, while operator publication discipline handles multi-request stability
 
 ## Write-Path Locking Contract
 
@@ -387,7 +389,7 @@ The architecture must preserve these invariants:
 - representation-changing writes get a unique `ChangeVersion`
 - authorization-only maintenance updates do not emit false change records
 - delete visibility survives deletion of the live row
-- same-window delete plus re-add churn is suppressed from the public `/deletes` surface
+- delete plus re-add churn is suppressed from the public `/deletes` surface whenever the same natural-key identity is already visible again on the selected source at delete-query evaluation time
 - key-change visibility survives later changes to the live key state
 - identity-driven downstream rewrites are restamped and journaled in the same committed write path through storage-layer propagation responsibilities rather than through API/core-layer recursion guarantees
 - delete-query authorization targets the documented tracked-change contract, including ODS-style delete-aware relationship visibility plus the accepted DMS-specific ownership exception and redesign custom-view concepts

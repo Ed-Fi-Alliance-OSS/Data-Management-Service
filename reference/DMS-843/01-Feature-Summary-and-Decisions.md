@@ -21,12 +21,13 @@ The approval bar is correctness and alignment, not mechanical reproduction of OD
 - `availableChangeVersions` uses ODS-compatible sequence-ceiling watermark semantics.
 - Each deliberate departure from legacy ODS behavior is documented as an explicit owned decision in the relevant section, not as an undeclared omission.
 
-**`newestChangeVersion` false-upper-watermark consumer warning:** DMS derives `newestChangeVersion` from the sequence allocation ceiling (`next value - 1`) rather than from `MAX(committed ChangeVersion)` across retained rows. Sequence gaps from rolled-back transactions mean `newestChangeVersion` can exceed the highest committed representation change. This is a safe-direction artifact: the watermark is conservative, not a missed-data watermark. However, downstream tooling built against ODS that assumes `newestChangeVersion == max(committed ChangeVersion)` will observe apparent "empty windows" near the sequence ceiling in DMS. Vendors and integration partners should be made aware of this difference during integration testing. Ed-Fi Alliance must communicate this departure through release notes, the client developer guide, or an equivalent channel before DMS Change Queries ships to production audiences so that integration partners can validate their watermark persistence logic against the sequence-ceiling model.
+**`newestChangeVersion` false-upper-watermark consumer warning:** DMS derives `newestChangeVersion` from the sequence allocation ceiling (`next value - 1`), which matches the current ODS watermark model rather than a `MAX(committed ChangeVersion)` scan across retained rows. Sequence gaps from rolled-back transactions mean `newestChangeVersion` can exceed the highest committed representation change. This is a safe-direction artifact: the watermark is conservative, not a missed-data watermark. Downstream tooling that assumes `newestChangeVersion == max(committed ChangeVersion)` can therefore observe apparent "empty windows" near the sequence ceiling in both current ODS and DMS. Vendors and integration partners should be made aware of this sequence-ceiling behavior during integration testing so they can validate their watermark persistence logic against the actual contract.
 
 Known explicit DMS-specific choices in this package:
 
 - tracked-change authorization includes the accepted DMS-specific ownership exception for `/deletes` and `/keyChanges`; legacy ODS `ReadChanges` does not currently apply ownership filtering on those surfaces, but DMS-843 does because redesign auth treats ownership as a first-class DMS authorization input.
-- when the selected synchronization surface has not yet allocated any change-version values, `availableChangeVersions` returns bootstrap `0/0`; this is verified ODS-output-compatible behavior: legacy ODS returns `0/0` on an empty instance because `MAX(ChangeVersion)` across empty tables evaluates to `NULL`, which ODS serializes as `0`; DMS-843 reaches the same output via sequence-ceiling arithmetic (`next value - 1` = `0` before the first allocation); the output contracts are identical, though the internal computation paths differ.
+- when the selected synchronization surface has not yet allocated any change-version values, `availableChangeVersions` returns bootstrap `0/0`; this is verified ODS-output-compatible behavior, and current ODS plus DMS-843 both reach it through sequence-ceiling logic (`next value - 1` = `0` before the first allocation) rather than through `MAX(ChangeVersion)` over empty retained tables.
+- invalid `Use-Snapshot` values return `400 Bad Request` as an explicit DMS contract choice rather than as an assumed ODS match.
 - `_etag` and `_lastModifiedDate` remain inside `EdfiDoc` on the current backend; redesign metadata-stamp storage ownership is deferred to a later backend replacement phase.
 - Snapshot history tables remain out of scope, but snapshot lifecycle behavior for `Use-Snapshot` requests is in scope and must preserve ODS-compatible synchronization guarantees without changing existing route shapes.
 
@@ -82,7 +83,7 @@ Bridge migration rule:
 
 Deletes cannot be inferred from the live row because the live row disappears. The feature therefore requires `dms.DocumentDeleteTracking` in the `dms` schema.
 
-Public `/deletes` reads must still apply ODS-style same-window re-add suppression, so tombstone capture is required even though a captured tombstone is not always emitted back to clients.
+Public `/deletes` reads must still apply ODS-style re-add suppression based on whether the same natural-key identity is visible again as a live row on the selected source when `/deletes` is evaluated, so tombstone capture is required even though a captured tombstone is not always emitted back to clients. This is intended legacy ODS parity, not an accepted DMS-specific behavior difference like the ownership exception.
 
 ## 4. Updates do not require historical payload storage
 
@@ -232,10 +233,12 @@ Required interpretation:
 - snapshot mode does not add snapshot payload tables, alternate change tokens, or different route shapes
 - snapshot-backed reads return the current representation visible inside the snapshot, not historical payload versions
 - snapshot configuration is instance-scoped: each resolved DMS instance either has no snapshot binding or has one configured read-only derivative binding that DMS resolves for `Use-Snapshot = true`
+- DMS resolves that binding from operator-managed instance configuration (`SnapshotConnectionString` or equivalent) at request time; the public contract does not carry a snapshot binding id, derivative identity, or pass token
 - the configured derivative must expose the same DMS schema and synchronization artifacts as the live instance, including `dms.ChangeVersionSequence`, journals, tombstones, key-change rows, and tracked-change authorization companion tables
-- the configured derivative binding must remain frozen long enough for one synchronization pass or equivalent bounded workflow; clients obtain one window from that derivative and then continue to read against that same bound derivative for the pass
-- DMS owns snapshot lifecycle enforcement for `Use-Snapshot` requests, including derivative selection, binding validation, required-artifact validation, and explicit failure when the configured derivative is missing, expired, refreshed away, or otherwise no longer usable
-- if lifecycle validity cannot be preserved for the requested snapshot-backed pass, DMS must fail the request or pass explicitly with the documented snapshot-unavailable `404 Not Found` contract rather than degrading silently
+- DMS validates the currently active configured derivative binding on each `Use-Snapshot = true` request and never silently falls back to live reads
+- snapshot-backed multi-request pass stability is therefore an operational property rather than a server-enforced API guarantee: stable passes require operators to keep the active instance-scoped binding unchanged for the duration of the pass
+- if operators retire, refresh, or repoint the binding between requests, DMS-843 does not define server-side pinning or cross-request rotation detection; requests are resolved against whichever binding is active for that request, or fail with the documented snapshot-unavailable `404 Not Found` contract if no usable binding exists
+- if product later requires DMS itself to pin later requests in a pass to an earlier derivative after binding rotation, that is a follow-on public-contract expansion rather than an implied DMS-843 guarantee
 
 ## Existing DMS-specific choices that `Use-Snapshot` does not change
 
@@ -250,14 +253,16 @@ Those unchanged DMS-specific choices include:
 Key-change token boundary:
 
 - the `/keyChanges` public token model is part of the DMS-843 public API contract and is therefore in scope for this package
-- DMS-843 adopts legacy ODS parity for this contract by allocating a distinct public key-change token from the same `dms.ChangeVersionSequence` for the tracked key-change row rather than reusing the live document `ChangeVersion`
+- DMS-843 adopts legacy ODS parity for this contract by allocating a distinct public key-change token from the same `dms.ChangeVersionSequence` for each tracked key-change row rather than reusing the live document `ChangeVersion`
+- the public `/keyChanges` route collapses multiple tracked key-change rows for the same affected resource item within one requested window into one response row carrying that window's initial `oldKeyValues`, final `newKeyValues`, and final tracked key-change token
 
 ## Why the remaining DMS-specific tracked-change choices are intentional
 
 These choices are not arbitrary. They follow the current DMS storage model and the backend-redesign direction that DMS-843 is trying to preserve while keeping `/keyChanges` aligned to legacy ODS event semantics.
 
 - tracked-change authorization stores basis-resource `DocumentId` values as `basisDocumentIds` because backend-redesign custom-view and relationship authorization in DMS is DocumentId-based rather than natural-key-based, and `/deletes` plus `/keyChanges` must still authorize correctly after the live row or relationship rows are gone
-- `/keyChanges` adopts the legacy ODS public token model because strict key-change sequencing parity matters more here than collapsing every public tracked-change surface onto one shared live-row token
+- those basis-resource `DocumentId` values are capture-time artifacts resolved from the live current-backend resolver graph during the pre-delete or pre-update authorization pass, not direct reuses of the JSONB EdOrg-array projections copied onto `dms.Document`
+- `/keyChanges` adopts the legacy ODS public contract by collapsing multiple key changes in one window to one response row per affected resource item while still using distinct tracked key-change tokens under the covers
 - tracked-change authorization includes ownership filtering because backend-redesign [`auth.md`](../design/backend-redesign/design-docs/auth.md) treats `CreatedByOwnershipTokenId` on `dms.Document` as a first-class authorization input and redesign [`auth-redesign-subject-edorg-model.md`](../design/auth/auth-redesign-subject-edorg-model.md) preserves ownership-style constraints, even though that extends legacy ODS `ReadChanges` behavior
 - if a future product requirement later demands one shared public token across changed resources and key changes, that should be treated as a deliberate design change rather than as an implementation-side substitution
 
@@ -318,12 +323,14 @@ The published Ed-Fi ODS/API Change Queries specification includes a `Snapshots` 
 
 **DMS-843 does not implement the Snapshots management API.** This is a deliberate out-of-scope decision for this package, not an inadvertent omission.
 
+Note: Ed‑Fi ODS/API release notes for v7.x remove the Snapshots management API in favor of the `Use-Snapshot` selection model; DMS-843 documents and embraces that operational posture by providing operator-managed snapshot bindings rather than an API-managed snapshot lifecycle.
+
 Rationale:
 
 - DMS snapshot lifecycle is operator-managed: each resolved DMS instance is either bound to a configured read-only snapshot derivative (`SnapshotConnectionString` or equivalent) or it is not; there is no API surface for clients to request or retire snapshot derivatives
 - the ODS Snapshots management API delegates snapshot creation and retirement to API clients; DMS-843 chooses operator provisioning instead, because the supported snapshot technologies (Aurora clone, RDS PIT restore, SQL Server database snapshot) are operationally provisioned rather than on-demand request-time actions
-- DMS `Use-Snapshot` preserves the ODS client synchronization intent — one frozen view per bounded pass — through a configured long-lived derivative rather than through an API-managed ephemeral artifact
-- the `Use-Snapshot` header contract and snapshot-unavailable `404 Not Found` failure behavior are sufficient for client synchronization tools to detect the presence and health of a configured snapshot derivative without requiring a Snapshots management route
+- DMS `Use-Snapshot` preserves the ODS client derivative-selection model through a configured long-lived derivative binding rather than through an API-managed ephemeral artifact; stable multi-request passes still depend on operators keeping that binding unchanged
+- the `Use-Snapshot` header contract and snapshot-unavailable `404 Not Found` failure behavior are sufficient for client synchronization tools to detect the presence and health of a configured snapshot derivative without requiring a Snapshots management route, but they are not a client-visible pinning mechanism for cross-request binding stability
 
 Required documentation for integration partners and migration tooling:
 
@@ -347,8 +354,8 @@ The full Change Queries feature defined by this package includes:
 - delete tombstones with natural-key and tracked-change authorization data
 - key-change tracking rows with old-key and new-key values plus tracked-change authorization data
 - deterministic ordering for changed-resource and delete queries
-- deterministic ordering and one-row-per-key-change-event semantics for key-change queries
-- same-window delete re-add suppression on the public `/deletes` surface
+- deterministic ordering and one-row-per-affected-resource-item semantics for key-change queries, with initial and final key values for the requested window
+- ODS-style delete re-add suppression on the public `/deletes` surface based on current live-row visibility on the selected source rather than on window-limited suppression logic
 - tracked-change authorization inputs sufficient for the selected tracked-change authorization contract, including ODS-style delete-aware relationship visibility plus redesign ownership and DocumentId-based authorization concepts
 - bootstrap `oldestChangeVersion = newestChangeVersion = 0` semantics for empty surfaces in phase 1, with replay-floor-aware bounds left available for a later retention phase
 - `Use-Snapshot` handling for synchronization reads so clients select either the live best-effort flow or the snapshot-backed flow without changing route shapes
