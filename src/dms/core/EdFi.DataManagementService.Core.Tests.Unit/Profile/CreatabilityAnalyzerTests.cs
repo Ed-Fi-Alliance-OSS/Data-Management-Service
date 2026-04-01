@@ -2732,4 +2732,222 @@ public abstract class CreatabilityAnalyzerTests
                 .Contain(f => f.JsonScope == "$.items[*]");
         }
     }
+
+    // -----------------------------------------------------------------------
+    //  18. Collection item demoted by non-creatable nested collection item (bottom-up)
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Item_Demoted_By_NonCreatable_Nested_Collection_Item
+        : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Hierarchy: $ -> $.outer[*] -> $.outer[*].inner[*]
+            // The outer collection item is new (not in stored state) and all its own
+            // members are visible -> creatable on its own merits.
+            // The inner collection item is new and has a hidden required member -> non-creatable.
+            // The outer item should be demoted to non-creatable by bottom-up propagation
+            // through the nested collection chain.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.outer[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: ["outerId"],
+                    CanonicalScopeRelativeMemberPaths: ["outerId", "outerField"]
+                ),
+                new(
+                    JsonScope: "$.outer[*].inner[*]",
+                    ScopeKind: ScopeKind.Collection,
+                    ImmediateParentJsonScope: "$.outer[*]",
+                    CollectionAncestorsInOrder: ["$.outer[*]"],
+                    SemanticIdentityRelativePathsInOrder: ["innerId"],
+                    CanonicalScopeRelativeMemberPaths: ["innerId", "innerField", "hiddenInnerField"]
+                ),
+            ];
+
+            // Profile includes all members of outer, but hides hiddenInnerField on inner
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeAll,
+                Properties: [],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "outer",
+                        MemberSelection: MemberSelection.IncludeAll,
+                        LogicalSchema: null,
+                        Properties: [],
+                        NestedObjects: null,
+                        NestedCollections:
+                        [
+                            new CollectionRule(
+                                Name: "inner",
+                                MemberSelection: MemberSelection.IncludeOnly,
+                                LogicalSchema: null,
+                                Properties:
+                                [
+                                    new PropertyRule("innerId"),
+                                    new PropertyRule("innerField"),
+                                ],
+                                NestedObjects: null,
+                                NestedCollections: null,
+                                Extensions: null,
+                                ItemFilter: null
+                            ),
+                        ],
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "POST",
+                "Create"
+            );
+
+            // The outer collection item's semantic identity
+            var outerIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart(
+                    "outerId",
+                    System.Text.Json.Nodes.JsonValue.Create("Outer1"),
+                    true
+                )
+            );
+
+            // The inner collection item's semantic identity
+            var innerIdentity = ImmutableArray.Create(
+                new SemanticIdentityPart(
+                    "innerId",
+                    System.Text.Json.Nodes.JsonValue.Create("Inner1"),
+                    true
+                )
+            );
+
+            // Ancestor context for the inner item: includes the outer collection item
+            var innerAncestors = ImmutableArray.Create(
+                new AncestorCollectionInstance("$.outer[*]", outerIdentity)
+            );
+
+            // The outer collection item with root as parent — new (not in stored state)
+            var outerItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress(
+                    "$.outer[*]",
+                    new ScopeInstanceAddress("$", []),
+                    outerIdentity
+                ),
+                Creatable: false,
+                "$.outer[0]"
+            );
+
+            // The inner collection item with outer as parent — new (not in stored state)
+            var innerItem = new VisibleRequestCollectionItem(
+                new CollectionRowAddress(
+                    "$.outer[*].inner[*]",
+                    new ScopeInstanceAddress("$.outer[*]", innerAncestors),
+                    innerIdentity
+                ),
+                Creatable: false,
+                "$.outer[0].inner[0]"
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                // Root: new create
+                new(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            ImmutableArray<VisibleRequestCollectionItem> items = [outerItem, innerItem];
+
+            // Nothing exists in stored state — both items are new creates
+            var existenceLookup = new TestExistenceLookup();
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.outer[*]"] = ["outerId"],
+                ["$.outer[*].inner[*]"] = ["innerId", "hiddenInnerField"],
+            };
+
+            _result = analyzer.Analyze(
+                scopeStates,
+                items,
+                existenceLookup,
+                isCreate: true,
+                effectiveRequired
+            );
+        }
+
+        [Test]
+        public void It_should_mark_inner_collection_item_as_non_creatable()
+        {
+            // The inner item has a hidden required member -> non-creatable
+            _result
+                .EnrichedCollectionItems.Should()
+                .Contain(item =>
+                    item.Address.JsonScope == "$.outer[*].inner[*]" && !item.Creatable
+                );
+        }
+
+        [Test]
+        public void It_should_demote_outer_collection_item_to_non_creatable()
+        {
+            // The outer item should be demoted by bottom-up propagation because
+            // its nested inner collection item is non-creatable
+            _result
+                .EnrichedCollectionItems.Should()
+                .Contain(item => item.Address.JsonScope == "$.outer[*]" && !item.Creatable);
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_inner_collection_item()
+        {
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.outer[*].inner[*]");
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_demoted_outer_collection_item()
+        {
+            // Bottom-up demotion should emit a failure for the outer item
+            // with a RequiredVisibleDescendant dependency pointing to the inner collection
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f =>
+                    f.JsonScope == "$.outer[*]"
+                    && f.Dependencies.Any(d =>
+                        d.DependencyKind == ProfileCreatabilityDependencyKind.RequiredVisibleDescendant
+                        && d.JsonScope == "$.outer[*].inner[*]"
+                    )
+                );
+        }
+    }
 }

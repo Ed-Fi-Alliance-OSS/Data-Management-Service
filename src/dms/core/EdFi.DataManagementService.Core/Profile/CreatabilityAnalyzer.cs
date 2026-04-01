@@ -366,15 +366,92 @@ public sealed class CreatabilityAnalyzer(
 
             foreach (string childJsonScope in childJsonScopes)
             {
-                if (
-                    !_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc)
-                    || childDesc.ScopeKind == ScopeKind.Collection
-                )
+                if (!_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc))
                 {
                     continue;
                 }
 
-                // Construct the child address using the item's ancestor chain
+                if (childDesc.ScopeKind == ScopeKind.Collection)
+                {
+                    // Check child collection items for non-creatability
+                    var parentExtendedAncestors = enrichedItems[i]
+                        .Address.ParentAddress.AncestorCollectionInstances.Add(
+                            new AncestorCollectionInstance(
+                                collectionJsonScope,
+                                enrichedItems[i].Address.SemanticIdentityInOrder
+                            )
+                        );
+
+                    for (int j = 0; j < enrichedItems.Length; j++)
+                    {
+                        if (enrichedItems[j].Address.JsonScope != childJsonScope)
+                        {
+                            continue;
+                        }
+
+                        if (
+                            !AncestorCollectionInstancesEqual(
+                                enrichedItems[j]
+                                    .Address.ParentAddress.AncestorCollectionInstances,
+                                parentExtendedAncestors
+                            )
+                        )
+                        {
+                            continue;
+                        }
+
+                        if (itemIsNewCreate[j] && !itemCreatable[j])
+                        {
+                            itemCreatable[i] = false;
+
+                            // Emit failure with RequiredVisibleDescendant dependency
+                            var childDescriptor = _scopesByJsonScope.TryGetValue(
+                                childJsonScope,
+                                out var cd2
+                            )
+                                ? cd2
+                                : null;
+                            List<ProfileFailureDiagnostic.CreatabilityDependency> deps =
+                            [
+                                new(
+                                    ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                                    DetermineTargetKind(childDescriptor),
+                                    childJsonScope,
+                                    childDescriptor?.ScopeKind ?? ScopeKind.Collection,
+                                    false,
+                                    false
+                                ),
+                            ];
+
+                            failures.Add(
+                                ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                                    profileName: profileName,
+                                    resourceName: resourceName,
+                                    method: method,
+                                    operation: operation,
+                                    targetKind: DetermineCollectionItemTargetKind(
+                                        collectionJsonScope
+                                    ),
+                                    affectedAddress: enrichedItems[i].Address,
+                                    hiddenCreationRequiredMemberPaths: [],
+                                    dependencies: deps
+                                )
+                            );
+
+                            break;
+                        }
+                    }
+
+                    if (!itemCreatable[i])
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                // Non-collection child scope: construct the child address using the item's
+                // ancestor chain
                 var candidateChildAddress = new ScopeInstanceAddress(
                     childJsonScope,
                     enrichedItems[i]
