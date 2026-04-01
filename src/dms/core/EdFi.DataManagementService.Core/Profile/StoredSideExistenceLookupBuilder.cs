@@ -53,7 +53,7 @@ public static class StoredSideExistenceLookupBuilder
 
         List<StoredScopeState> classifiedScopes = [];
         List<VisibleStoredCollectionRow> classifiedRows = [];
-        HashSet<string> visibleScopeJsonScopes = [];
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses = new(ScopeInstanceAddressComparer.Instance);
         HashSet<string> walkedScopes = [];
         HashSet<CollectionRowAddress> visibleRowAddresses = new(CollectionRowAddressComparer.Instance);
 
@@ -67,7 +67,7 @@ public static class StoredSideExistenceLookupBuilder
             scopesByJsonScope,
             classifiedScopes,
             classifiedRows,
-            visibleScopeJsonScopes,
+            visibleScopeAddresses,
             walkedScopes,
             visibleRowAddresses
         );
@@ -75,7 +75,7 @@ public static class StoredSideExistenceLookupBuilder
         // Emit missing non-collection scope states for scopes not encountered during the walk
         EmitMissingScopeStates(classifier, addressEngine, scopesByJsonScope, classifiedScopes, walkedScopes);
 
-        var lookup = new HashSetExistenceLookup(visibleScopeJsonScopes, visibleRowAddresses);
+        var lookup = new HashSetExistenceLookup(visibleScopeAddresses, visibleRowAddresses);
 
         return new StoredSideExistenceLookupResult(lookup, [.. classifiedScopes], [.. classifiedRows]);
     }
@@ -97,7 +97,7 @@ public static class StoredSideExistenceLookupBuilder
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
         List<StoredScopeState> classifiedScopes,
         List<VisibleStoredCollectionRow> classifiedRows,
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
         HashSet<CollectionRowAddress> visibleRowAddresses
     )
@@ -115,7 +115,7 @@ public static class StoredSideExistenceLookupBuilder
 
         if (visibility == ProfileVisibilityKind.VisiblePresent)
         {
-            visibleScopeJsonScopes.Add(jsonScope);
+            visibleScopeAddresses.Add(address);
         }
 
         // Walk child members
@@ -128,7 +128,7 @@ public static class StoredSideExistenceLookupBuilder
             scopesByJsonScope,
             classifiedScopes,
             classifiedRows,
-            visibleScopeJsonScopes,
+            visibleScopeAddresses,
             walkedScopes,
             visibleRowAddresses
         );
@@ -147,7 +147,7 @@ public static class StoredSideExistenceLookupBuilder
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
         List<StoredScopeState> classifiedScopes,
         List<VisibleStoredCollectionRow> classifiedRows,
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
         HashSet<CollectionRowAddress> visibleRowAddresses
     )
@@ -169,7 +169,7 @@ public static class StoredSideExistenceLookupBuilder
                     scopesByJsonScope,
                     classifiedScopes,
                     classifiedRows,
-                    visibleScopeJsonScopes,
+                    visibleScopeAddresses,
                     walkedScopes,
                     visibleRowAddresses
                 );
@@ -192,7 +192,7 @@ public static class StoredSideExistenceLookupBuilder
                     scopesByJsonScope,
                     classifiedScopes,
                     classifiedRows,
-                    visibleScopeJsonScopes,
+                    visibleScopeAddresses,
                     walkedScopes,
                     visibleRowAddresses
                 );
@@ -215,7 +215,7 @@ public static class StoredSideExistenceLookupBuilder
                     scopesByJsonScope,
                     classifiedScopes,
                     classifiedRows,
-                    visibleScopeJsonScopes,
+                    visibleScopeAddresses,
                     walkedScopes,
                     visibleRowAddresses
                 );
@@ -238,7 +238,7 @@ public static class StoredSideExistenceLookupBuilder
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
         List<StoredScopeState> classifiedScopes,
         List<VisibleStoredCollectionRow> classifiedRows,
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
         HashSet<CollectionRowAddress> visibleRowAddresses
     )
@@ -256,7 +256,7 @@ public static class StoredSideExistenceLookupBuilder
 
         if (visibility == ProfileVisibilityKind.VisiblePresent && scopeData != null)
         {
-            visibleScopeJsonScopes.Add(jsonScope);
+            visibleScopeAddresses.Add(address);
 
             WalkScopeMembers(
                 jsonScope,
@@ -267,7 +267,7 @@ public static class StoredSideExistenceLookupBuilder
                 scopesByJsonScope,
                 classifiedScopes,
                 classifiedRows,
-                visibleScopeJsonScopes,
+                visibleScopeAddresses,
                 walkedScopes,
                 visibleRowAddresses
             );
@@ -287,7 +287,7 @@ public static class StoredSideExistenceLookupBuilder
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
         List<StoredScopeState> classifiedScopes,
         List<VisibleStoredCollectionRow> classifiedRows,
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
         HashSet<CollectionRowAddress> visibleRowAddresses
     )
@@ -345,7 +345,7 @@ public static class StoredSideExistenceLookupBuilder
                         scopesByJsonScope,
                         classifiedScopes,
                         classifiedRows,
-                        visibleScopeJsonScopes,
+                        visibleScopeAddresses,
                         walkedScopes,
                         visibleRowAddresses
                     );
@@ -368,7 +368,7 @@ public static class StoredSideExistenceLookupBuilder
                         scopesByJsonScope,
                         classifiedScopes,
                         classifiedRows,
-                        visibleScopeJsonScopes,
+                        visibleScopeAddresses,
                         walkedScopes,
                         visibleRowAddresses
                     );
@@ -391,7 +391,7 @@ public static class StoredSideExistenceLookupBuilder
                         scopesByJsonScope,
                         classifiedScopes,
                         classifiedRows,
-                        visibleScopeJsonScopes,
+                        visibleScopeAddresses,
                         walkedScopes,
                         visibleRowAddresses
                     );
@@ -412,7 +412,7 @@ public static class StoredSideExistenceLookupBuilder
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
         List<StoredScopeState> classifiedScopes,
         List<VisibleStoredCollectionRow> classifiedRows,
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
         HashSet<CollectionRowAddress> visibleRowAddresses
     )
@@ -443,7 +443,7 @@ public static class StoredSideExistenceLookupBuilder
                 scopesByJsonScope,
                 classifiedScopes,
                 classifiedRows,
-                visibleScopeJsonScopes,
+                visibleScopeAddresses,
                 walkedScopes,
                 visibleRowAddresses
             );
@@ -561,17 +561,17 @@ public static class StoredSideExistenceLookupBuilder
     }
 
     /// <summary>
-    /// Hash-set-based lookup for update flows. Uses JsonScope string equality for
-    /// non-collection scopes (unique by JsonScope when no collection ancestors)
-    /// and <see cref="CollectionRowAddressComparer"/> for collection rows.
+    /// Hash-set-based lookup for update flows. Uses <see cref="ScopeInstanceAddressComparer"/>
+    /// for structural comparison of non-collection scope addresses and
+    /// <see cref="CollectionRowAddressComparer"/> for collection rows.
     /// </summary>
     private sealed class HashSetExistenceLookup(
-        HashSet<string> visibleScopeJsonScopes,
+        HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<CollectionRowAddress> visibleRowAddresses
     ) : IStoredSideExistenceLookup
     {
         public bool VisibleScopeExistsAt(ScopeInstanceAddress address) =>
-            visibleScopeJsonScopes.Contains(address.JsonScope);
+            visibleScopeAddresses.Contains(address);
 
         public bool VisibleCollectionRowExistsAt(CollectionRowAddress address) =>
             visibleRowAddresses.Contains(address);

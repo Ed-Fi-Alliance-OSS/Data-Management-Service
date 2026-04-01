@@ -153,10 +153,93 @@ public sealed class CreatabilityAnalyzer(
             failures
         );
 
-        // Bottom-up co-creation propagation is a no-op in this initial implementation.
-        // The top-down pass already handles the primary creatability logic. Bottom-up
-        // propagation (demoting a creatable parent when a required descendant is non-creatable)
-        // can be added in a later pass for deeply nested structures.
+        // Bottom-up co-creation propagation: if creating a scope requires co-creating
+        // a newly visible descendant, and that descendant is non-creatable, the parent
+        // is also non-creatable. Iterate in reverse depth order (leaves first).
+        for (int i = enrichedScopes.Length - 1; i >= 0; i--)
+        {
+            if (!scopeIsNewCreate[i] || !scopeCreatable[i])
+            {
+                continue;
+            }
+
+            string parentJsonScope = enrichedScopes[i].Address.JsonScope;
+
+            // Root scope creatability is not demoted by bottom-up propagation;
+            // root uses its own dedicated failure type.
+            if (parentJsonScope == rootJsonScope)
+            {
+                continue;
+            }
+
+            // Check non-collection child scopes of this scope
+            if (!childrenByParent.TryGetValue(parentJsonScope, out var childJsonScopes))
+            {
+                continue;
+            }
+
+            foreach (string childJsonScope in childJsonScopes)
+            {
+                if (
+                    !_scopesByJsonScope.TryGetValue(childJsonScope, out var childDesc)
+                    || childDesc.ScopeKind == ScopeKind.Collection
+                )
+                {
+                    continue;
+                }
+
+                if (!scopeStatesByJsonScope.TryGetValue(childJsonScope, out var childIndices))
+                {
+                    continue;
+                }
+
+                foreach (int childIdx in childIndices)
+                {
+                    if (scopeIsNewCreate[childIdx] && !scopeCreatable[childIdx])
+                    {
+                        // Demote parent to non-creatable
+                        scopeCreatable[i] = false;
+
+                        // Emit category-4 failure with RequiredVisibleDescendant dependency
+                        var childDescriptor = _scopesByJsonScope.TryGetValue(childJsonScope, out var cd)
+                            ? cd
+                            : null;
+                        List<ProfileFailureDiagnostic.CreatabilityDependency> dependencies =
+                        [
+                            new(
+                                ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                                DetermineTargetKind(childDescriptor),
+                                childJsonScope,
+                                childDescriptor?.ScopeKind ?? ScopeKind.NonCollection,
+                                false,
+                                false
+                            ),
+                        ];
+
+                        failures.Add(
+                            ProfileFailures.VisibleScopeOrItemInsertRejectedWhenNonCreatable(
+                                profileName: profileName,
+                                resourceName: resourceName,
+                                method: method,
+                                operation: operation,
+                                targetKind: DetermineScopeTargetKind(parentJsonScope),
+                                affectedAddress: enrichedScopes[i].Address,
+                                hiddenCreationRequiredMemberPaths: [],
+                                missingCreationRequiredMemberPaths: [],
+                                dependencies: dependencies
+                            )
+                        );
+
+                        break;
+                    }
+                }
+
+                if (!scopeCreatable[i])
+                {
+                    break;
+                }
+            }
+        }
 
         // Apply creatable flags to produce immutable enriched results
         for (int i = 0; i < enrichedScopes.Length; i++)

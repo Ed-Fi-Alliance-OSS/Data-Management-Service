@@ -17,16 +17,22 @@ public abstract class CreatabilityAnalyzerTests
     // -----------------------------------------------------------------------
 
     private sealed class TestExistenceLookup(
-        HashSet<string>? existingScopeJsonScopes = null,
-        HashSet<string>? existingCollectionJsonScopes = null
+        HashSet<ScopeInstanceAddress>? existingScopes = null,
+        HashSet<CollectionRowAddress>? existingCollectionRows = null
     ) : IStoredSideExistenceLookup
     {
         public bool VisibleScopeExistsAt(ScopeInstanceAddress address) =>
-            existingScopeJsonScopes?.Contains(address.JsonScope) ?? false;
+            existingScopes?.Contains(address) ?? false;
 
         public bool VisibleCollectionRowExistsAt(CollectionRowAddress address) =>
-            existingCollectionJsonScopes?.Contains(address.JsonScope) ?? false;
+            existingCollectionRows?.Contains(address) ?? false;
     }
+
+    /// <summary>
+    /// Creates a HashSet of ScopeInstanceAddresses using structural equality.
+    /// </summary>
+    private static HashSet<ScopeInstanceAddress> ScopeAddressSet(params ScopeInstanceAddress[] addresses) =>
+        new(addresses, ScopeInstanceAddressComparer.Instance);
 
     // -----------------------------------------------------------------------
     //  Shared helpers
@@ -423,7 +429,9 @@ public abstract class CreatabilityAnalyzerTests
             ];
 
             // Existence lookup: calendarReference DOES exist in stored state
-            var existenceLookup = new TestExistenceLookup(existingScopeJsonScopes: ["$.calendarReference"]);
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(MakeAddress("$.calendarReference"))
+            );
 
             _result = analyzer.Analyze(
                 scopeStates,
@@ -676,7 +684,10 @@ public abstract class CreatabilityAnalyzerTests
 
             // Item DOES exist in stored state
             var existenceLookup = new TestExistenceLookup(
-                existingCollectionJsonScopes: ["$.classPeriods[*]"]
+                existingCollectionRows: new(
+                    [MakeCollectionRowAddress("$.classPeriods[*]", "classPeriodName", "Period1")],
+                    CollectionRowAddressComparer.Instance
+                )
             );
 
             _result = analyzer.Analyze(
@@ -1109,7 +1120,9 @@ public abstract class CreatabilityAnalyzerTests
             ];
 
             // Scope EXISTS in stored state → update path, not a create
-            var existenceLookup = new TestExistenceLookup(existingScopeJsonScopes: ["$.calendarReference"]);
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(MakeAddress("$.calendarReference"))
+            );
 
             _result = analyzer.Analyze(
                 scopeStates,
@@ -1261,7 +1274,6 @@ public abstract class CreatabilityAnalyzerTests
     // -----------------------------------------------------------------------
 
     [TestFixture]
-    [Ignore("Bottom-up co-creation propagation not yet implemented")]
     public class Given_Descendant_Blocks_Parent_Bottom_Up : CreatabilityAnalyzerTests
     {
         private CreatabilityResult _result = null!;

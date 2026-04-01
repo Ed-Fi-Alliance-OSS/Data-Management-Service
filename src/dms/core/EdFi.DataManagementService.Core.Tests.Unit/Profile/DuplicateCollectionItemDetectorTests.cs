@@ -17,7 +17,7 @@ public class Given_Two_Items_With_Same_Identity_And_Parent
     private ImmutableArray<WritableProfileValidationFailure> _result;
 
     [SetUp]
-    public void Arrange_And_Act()
+    public void Setup()
     {
         var item1 = DuplicateDetectorTestHelpers.BuildItem(
             "$.classPeriods[*]",
@@ -69,7 +69,7 @@ public class Given_Items_With_Different_Identities
     private ImmutableArray<WritableProfileValidationFailure> _result;
 
     [SetUp]
-    public void Arrange_And_Act()
+    public void Setup()
     {
         var item1 = DuplicateDetectorTestHelpers.BuildItem(
             "$.classPeriods[*]",
@@ -106,7 +106,7 @@ public class Given_Items_With_Same_Identity_Different_Parents
     private ImmutableArray<WritableProfileValidationFailure> _result;
 
     [SetUp]
-    public void Arrange_And_Act()
+    public void Setup()
     {
         // Same jsonScope and semantic identity, but different parent scopes
         var item1 = DuplicateDetectorTestHelpers.BuildItem(
@@ -144,7 +144,7 @@ public class Given_Single_Item
     private ImmutableArray<WritableProfileValidationFailure> _result;
 
     [SetUp]
-    public void Arrange_And_Act()
+    public void Setup()
     {
         var item = DuplicateDetectorTestHelpers.BuildItem(
             "$.classPeriods[*]",
@@ -175,7 +175,7 @@ public class Given_Empty_Items
     private ImmutableArray<WritableProfileValidationFailure> _result;
 
     [SetUp]
-    public void Arrange_And_Act()
+    public void Setup()
     {
         _result = DuplicateCollectionItemDetector.Detect(
             [],
