@@ -469,6 +469,8 @@ public interface IRelationalWriteTerminalStage
 }
 
 /// <summary>
+/// Shared validation and immutable-array helpers for flattened write contracts.
+/// </summary>
 internal static class FlattenedWriteContractSupport
 {
     public static ImmutableArray<T> ToImmutableArray<T>(IEnumerable<T> items, string parameterName)

@@ -38,7 +38,7 @@
         "Format the touched file if needed.",
         "Inspect the file or build the backend project to confirm the malformed XML documentation comment is gone."
       ],
-      "completed": false
+      "completed": true
     }
   ]
 }
