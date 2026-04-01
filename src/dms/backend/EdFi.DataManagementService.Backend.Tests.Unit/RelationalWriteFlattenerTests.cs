@@ -308,6 +308,37 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_does_not_emit_collection_aligned_extension_scope_rows_for_deeply_nested_all_array_extension_sites()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {
+                          "nested": {
+                            "onlyArrays": []
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_emits_top_level_collection_candidates_with_unresolved_keys_and_semantic_identity()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -662,6 +693,32 @@ public class Given_RelationalWriteFlattener
                   "_ext": {
                     "sample": {
                       "interventions": []
+                    }
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.RootExtensionRows.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_emit_root_extension_rows_for_deeply_nested_all_array_extension_sites()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {
+                      "nested": {
+                        "onlyArrays": []
+                      }
                     }
                   }
                 }

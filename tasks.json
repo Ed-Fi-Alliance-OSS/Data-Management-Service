@@ -28,7 +28,7 @@
         "Add a collection-aligned `_ext` variant under `$.addresses[*]._ext.sample` with the same all-array nesting and assert no attached aligned scope rows are emitted.",
         "Run the relational flattener unit tests covering extension emission and confirm the new edge cases pass."
       ],
-      "completed": false
+      "completed": true
     },
     {
       "category": "maintenance",
