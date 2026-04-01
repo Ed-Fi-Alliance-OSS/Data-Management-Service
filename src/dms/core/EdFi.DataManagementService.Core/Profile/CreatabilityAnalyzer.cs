@@ -188,6 +188,17 @@ public sealed class CreatabilityAnalyzer(
 
                 foreach (int childIdx in childIndices)
                 {
+                    // Only consider child instances in the same ancestor context
+                    if (
+                        !AncestorsArePrefix(
+                            enrichedScopes[i].Address.AncestorCollectionInstances,
+                            enrichedScopes[childIdx].Address.AncestorCollectionInstances
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
                     if (scopeIsNewCreate[childIdx] && !scopeCreatable[childIdx])
                     {
                         // Demote parent to non-creatable
@@ -311,6 +322,7 @@ public sealed class CreatabilityAnalyzer(
                     childJsonScope,
                     parentJsonScope,
                     scopeStatesByJsonScope,
+                    enrichedScopes,
                     scopeCreatable,
                     scopeIsNewCreate,
                     enrichedItems,
@@ -398,10 +410,12 @@ public sealed class CreatabilityAnalyzer(
                 && !existenceLookup.VisibleScopeExistsAt(scopeState.Address);
             scopeIsNewCreate[idx] = isCreatingNewInstance;
 
-            // Determine parent creatability gate
+            // Determine parent creatability gate using the child's ancestor context
             bool parentSatisfiesGate = IsParentGateSatisfied(
                 parentJsonScope,
+                scopeState.Address.AncestorCollectionInstances,
                 scopeStatesByJsonScope,
+                enrichedScopes,
                 scopeCreatable,
                 scopeIsNewCreate
             );
@@ -435,6 +449,7 @@ public sealed class CreatabilityAnalyzer(
         string collectionJsonScope,
         string parentJsonScope,
         Dictionary<string, List<int>> scopeStatesByJsonScope,
+        RequestScopeState[] enrichedScopes,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate,
         VisibleRequestCollectionItem[] enrichedItems,
@@ -462,10 +477,12 @@ public sealed class CreatabilityAnalyzer(
                 continue;
             }
 
-            // Determine parent creatability gate from the containing scope
+            // Determine parent creatability gate using the item's parent address context
             bool parentSatisfiesGate = IsParentGateSatisfied(
                 parentJsonScope,
+                item.Address.ParentAddress.AncestorCollectionInstances,
                 scopeStatesByJsonScope,
+                enrichedScopes,
                 scopeCreatable,
                 scopeIsNewCreate
             );
@@ -649,12 +666,15 @@ public sealed class CreatabilityAnalyzer(
 
     /// <summary>
     /// Determines whether the parent gate is satisfied for a child create attempt.
-    /// The gate is satisfied when the parent either already exists (is not a new create)
+    /// The gate is satisfied when the specific parent instance matching the child's
+    /// ancestor collection context either already exists (is not a new create)
     /// or is itself creatable (a new create that passed its own creatability check).
     /// </summary>
     private static bool IsParentGateSatisfied(
         string parentJsonScope,
+        ImmutableArray<AncestorCollectionInstance> childAncestors,
         Dictionary<string, List<int>> scopeStatesByJsonScope,
+        RequestScopeState[] enrichedScopes,
         bool[] scopeCreatable,
         bool[] scopeIsNewCreate
     )
@@ -668,6 +688,13 @@ public sealed class CreatabilityAnalyzer(
 
         foreach (int idx in parentIndices)
         {
+            // Only consider parent instances whose ancestor context matches
+            // the child's collection-item context (prefix match).
+            if (!AncestorsArePrefix(enrichedScopes[idx].Address.AncestorCollectionInstances, childAncestors))
+            {
+                continue;
+            }
+
             if (!scopeIsNewCreate[idx])
             {
                 // Parent is not attempting a new create — it already exists.
@@ -682,8 +709,45 @@ public sealed class CreatabilityAnalyzer(
             }
         }
 
-        // All parent instances are new creates that failed creatability.
+        // No matching parent instance satisfies the gate.
         return false;
+    }
+
+    /// <summary>
+    /// Checks whether a parent's <see cref="AncestorCollectionInstance"/> array is a
+    /// structural prefix of a child's. Same-level scopes have identical ancestors
+    /// (exact match = trivial prefix). Scopes separated by a nested collection have
+    /// the parent's ancestors as a proper prefix of the child's.
+    /// </summary>
+    private static bool AncestorsArePrefix(
+        ImmutableArray<AncestorCollectionInstance> parentAncestors,
+        ImmutableArray<AncestorCollectionInstance> childAncestors
+    )
+    {
+        if (parentAncestors.Length > childAncestors.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < parentAncestors.Length; i++)
+        {
+            if (parentAncestors[i].JsonScope != childAncestors[i].JsonScope)
+            {
+                return false;
+            }
+
+            if (
+                !ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                    parentAncestors[i].SemanticIdentityInOrder,
+                    childAncestors[i].SemanticIdentityInOrder
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

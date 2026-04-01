@@ -1751,6 +1751,214 @@ public abstract class CreatabilityAnalyzerTests
     }
 
     // -----------------------------------------------------------------------
+    //  13c. Multi-instance parent gate: only the specific parent matching the
+    //       child's ancestor context is checked, not all instances of the same scope.
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Multi_Instance_Parent_Gate_Matches_Ancestor_Context : CreatabilityAnalyzerTests
+    {
+        private CreatabilityResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // $.a has two instances (different ancestor contexts, simulating
+            // being inside different collection items). Instance 1 exists in
+            // stored state (update path). Instance 2 is a new create with a
+            // hidden required member (non-creatable).
+            //
+            // $.a.child also has two instances. Child 1's parent gate should
+            // be satisfied (parent instance 1 exists). Child 2's parent gate
+            // should NOT be satisfied (parent instance 2 is non-creatable).
+            //
+            // Without ancestor-aware matching, IsParentGateSatisfied("$.a")
+            // would return true for BOTH children because instance 1 exists.
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new(
+                    JsonScope: "$",
+                    ScopeKind: ScopeKind.Root,
+                    ImmediateParentJsonScope: null,
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["field1"]
+                ),
+                new(
+                    JsonScope: "$.a",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["visibleField", "hiddenField"]
+                ),
+                new(
+                    JsonScope: "$.a.child",
+                    ScopeKind: ScopeKind.NonCollection,
+                    ImmediateParentJsonScope: "$.a",
+                    CollectionAncestorsInOrder: [],
+                    SemanticIdentityRelativePathsInOrder: [],
+                    CanonicalScopeRelativeMemberPaths: ["childField"]
+                ),
+            ];
+
+            // Profile hides hiddenField on $.a, all members visible on $.a.child
+            var profile = new ContentTypeDefinition(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("field1")],
+                Objects:
+                [
+                    new ObjectRule(
+                        Name: "a",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("visibleField")],
+                        NestedObjects:
+                        [
+                            new ObjectRule(
+                                Name: "child",
+                                MemberSelection: MemberSelection.IncludeAll,
+                                LogicalSchema: null,
+                                Properties: [],
+                                NestedObjects: null,
+                                Collections: null,
+                                Extensions: null
+                            ),
+                        ],
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ],
+                Collections: [],
+                Extensions: []
+            );
+
+            var classifier = new ProfileVisibilityClassifier(profile, scopes);
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                classifier,
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "Update"
+            );
+
+            // Ancestor contexts representing two different collection items
+            var ancestorsAlpha = ImmutableArray.Create(
+                new AncestorCollectionInstance(
+                    "$.coll[*]",
+                    [new SemanticIdentityPart("id", System.Text.Json.Nodes.JsonValue.Create("Alpha"), true)]
+                )
+            );
+            var ancestorsBeta = ImmutableArray.Create(
+                new AncestorCollectionInstance(
+                    "$.coll[*]",
+                    [new SemanticIdentityPart("id", System.Text.Json.Nodes.JsonValue.Create("Beta"), true)]
+                )
+            );
+
+            ImmutableArray<RequestScopeState> scopeStates =
+            [
+                // Root: existing
+                new(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.a instance 1 (Alpha context): will exist in stored state
+                new(
+                    new ScopeInstanceAddress("$.a", ancestorsAlpha),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.a instance 2 (Beta context): NOT in stored state → new create, non-creatable
+                new(
+                    new ScopeInstanceAddress("$.a", ancestorsBeta),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.a.child instance 1 (Alpha context): new create
+                new(
+                    new ScopeInstanceAddress("$.a.child", ancestorsAlpha),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+                // $.a.child instance 2 (Beta context): new create
+                new(
+                    new ScopeInstanceAddress("$.a.child", ancestorsBeta),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ];
+
+            // $.a instance 1 (Alpha) exists; everything else is new
+            var existenceLookup = new TestExistenceLookup(
+                existingScopes: ScopeAddressSet(
+                    new ScopeInstanceAddress("$", []),
+                    new ScopeInstanceAddress("$.a", ancestorsAlpha)
+                )
+            );
+
+            var effectiveRequired = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field1"],
+                ["$.a"] = ["visibleField", "hiddenField"],
+                ["$.a.child"] = ["childField"],
+            };
+
+            _result = analyzer.Analyze(scopeStates, [], existenceLookup, isCreate: false, effectiveRequired);
+        }
+
+        [Test]
+        public void It_should_mark_parent_instance_1_as_not_new_create()
+        {
+            // Instance 1 (Alpha) exists in stored state → not a new create, Creatable=false
+            _result.EnrichedScopeStates[1].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_mark_parent_instance_2_as_non_creatable()
+        {
+            // Instance 2 (Beta) is a new create with hidden required member → non-creatable
+            _result.EnrichedScopeStates[2].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_mark_child_instance_1_as_creatable()
+        {
+            // Child 1 (Alpha context): parent instance 1 exists (not new create) → gate satisfied
+            _result.EnrichedScopeStates[3].Creatable.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_mark_child_instance_2_as_non_creatable()
+        {
+            // Child 2 (Beta context): parent instance 2 is non-creatable new create → gate fails
+            _result.EnrichedScopeStates[4].Creatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_parent_instance_2()
+        {
+            // $.a instance 2 has hidden required member
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.a");
+        }
+
+        [Test]
+        public void It_should_emit_failure_for_child_instance_2()
+        {
+            // $.a.child instance 2 fails parent gate
+            _result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .Contain(f => f.JsonScope == "$.a.child");
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  14. Storage-managed values excluded from creatability checks
     // -----------------------------------------------------------------------
 
