@@ -152,6 +152,59 @@ public class Given_Relational_Write_Seam
             .Be($"/ed-fi/students/{existingDocumentUuid.Value}");
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_keeps_put_create_new_requests_on_the_update_contract_for_both_dialects(
+        SqlDialect dialect
+    )
+    {
+        var requestedDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            resolvedReferences: _fixture.ResolvedReferences,
+            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
+                documentUuid
+            ),
+            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(documentUuid),
+            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Update(
+                new UpdateResult.UpdateSuccess(
+                    (
+                        (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
+                    ).DocumentUuid
+                )
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpdateAsync(
+            RelationalWriteSeamFixture.CreateComplexBody(),
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(),
+            requestedDocumentUuid
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+        harness.TerminalStage.Requests.Should().ContainSingle();
+
+        var request = harness.TerminalStage.Requests.Single();
+        request.FlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        request
+            .FlatteningInput.TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(requestedDocumentUuid));
+        request
+            .FlattenedWriteSet.RootRow.Values.Should()
+            .Equal(
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(2026),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal(77L)
+            );
+        requestInfo
+            .FrontendResponse.LocationHeaderPath.Should()
+            .Be($"/ed-fi/students/{requestedDocumentUuid.Value}");
+    }
+
     [Test]
     public async Task It_short_circuits_reference_failures_before_terminal_handoff()
     {

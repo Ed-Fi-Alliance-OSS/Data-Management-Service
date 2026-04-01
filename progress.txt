@@ -3,3 +3,9 @@
 - Decisions: added explicit RelationalWriteGuardRailException for descriptor + missing-write-plan guard rails; stopped remapping generic InvalidOperationException/KeyNotFound/NotSupported failures so CoreExceptionLoggingMiddleware owns generic 500s.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteSupport.cs; src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteGuardRailException.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs
 - Notes: repository tests now cover preserved guard rails + escaped target-context/flattener InvalidOperationException; seam test now verifies generic 500 body + logged exception details for lookup-set invariant failure.
+
+2026-04-01 DMS-983 reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md
+- Completed: Add PUT create-new seam coverage for non-existent documents.
+- Decisions: kept PUT no-match on RelationalWriteTargetContext.CreateNew; asserted seam still uses Put/update contract while flattened root row keeps UnresolvedRootDocumentId.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteTargetContextResolverTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/RelationalWriteSeamTests.cs; tasks.json; progress.txt
+- Notes: added no-row ResolveForPutAsync coverage for Pgsql + Mssql; added core seam test for 204 PUT response, CreateNew target context, unresolved root document id.

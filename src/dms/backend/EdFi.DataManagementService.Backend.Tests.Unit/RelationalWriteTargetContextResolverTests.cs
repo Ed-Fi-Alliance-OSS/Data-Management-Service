@@ -74,6 +74,31 @@ public class Given_RelationalWriteTargetContextResolver
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    public async Task It_returns_create_new_for_put_when_requested_document_uuid_does_not_match_a_persisted_document(
+        SqlDialect dialect,
+        string expectedTableFragment
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = new RelationalWriteTargetContextResolver(executor);
+
+        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+
+        result.Should().BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
+        executor.Commands.Should().ContainSingle();
+        executor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        executor
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(documentUuid.Value, (short)1);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
     public async Task It_returns_existing_document_for_put_when_requested_document_uuid_matches_a_persisted_document(
         SqlDialect dialect,
         string expectedTableFragment
