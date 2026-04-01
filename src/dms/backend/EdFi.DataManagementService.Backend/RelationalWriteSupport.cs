@@ -35,7 +35,7 @@ internal static class RelationalWriteSupport
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
-            throw new NotSupportedException(
+            throw new RelationalWriteGuardRailException(
                 $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
                     + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
                     + $"Next story: {DescriptorWriteStoryRef}."
@@ -44,7 +44,7 @@ internal static class RelationalWriteSupport
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
         {
-            throw new InvalidOperationException(
+            throw new RelationalWriteGuardRailException(
                 $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                     + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
                     + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "

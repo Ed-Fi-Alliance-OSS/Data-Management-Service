@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "category": "correctness",
+      "description": "Separate intentional relational write guard rails from internal invariant failures in `RelationalDocumentStoreRepository.ExecuteWriteGuardRails`. Acceptance criteria: descriptor writes and missing non-descriptor write-plan guard rails still return deterministic request-scoped `UnknownFailure` messages, but internal `InvalidOperationException` failures from target-context resolution, `FlatteningResolvedReferenceLookupSet`, and `RelationalWriteFlattener` are no longer converted into raw client-visible error text and instead flow through centralized exception logging with the generic 500 server-error body.",
+      "steps_to_verify": [
+        "Add repository tests proving descriptor-write and missing-write-plan guard rails still return the current deterministic failure messages.",
+        "Add repository tests proving an internal `InvalidOperationException` from the flattener and from target-context resolution is not remapped by the repository catch block.",
+        "Exercise the handler or middleware path and confirm the error is logged with exception details while the client receives the generic server-error response instead of the raw exception message."
+      ],
+      "completed": true
+    },
+    {
+      "category": "test-coverage",
+      "description": "Add PUT create-new seam coverage for non-existent documents. Acceptance criteria: when `ResolveForPutAsync` returns `RelationalWriteTargetContext.CreateNew`, the relational PUT seam still reaches flattening and terminal handoff, the flattened root row carries `UnresolvedRootDocumentId`, and the flow remains on the PUT/update contract rather than switching to POST/upsert semantics.",
+      "steps_to_verify": [
+        "Add a `RelationalWriteTargetContextResolver` test proving `ResolveForPutAsync` returns `CreateNew` when the document lookup returns no rows.",
+        "Add a repository or seam test that stubs `CreateNew` for PUT and asserts `FlatteningInput.OperationKind` is `Put`, `TargetContext` is `CreateNew`, and the flattened root row starts with `FlattenedWriteValue.UnresolvedRootDocumentId.Instance`.",
+        "Keep the terminal-stage expectation on the PUT/update path and verify the response matches the current DMS-983 PUT contract instead of asserting a POST-style 201 insert result."
+      ],
+      "completed": false
+    },
+    {
+      "category": "test-coverage",
+      "description": "Add a flattener regression test for `HasBoundScopeData` with deeply nested all-array extension scopes. Acceptance criteria: nested extension shapes that contain only objects and empty arrays, with no bound scalar, FK, or precomputed values and no emitted child collection candidates, do not produce root-extension rows or collection-aligned extension scope rows.",
+      "steps_to_verify": [
+        "Add a root `_ext` test using a shape like `{ \"_ext\": { \"sample\": { \"nested\": { \"onlyArrays\": [] } } } }` and assert no root-extension rows are emitted.",
+        "Add a collection-aligned `_ext` variant under `$.addresses[*]._ext.sample` with the same all-array nesting and assert no attached aligned scope rows are emitted.",
+        "Run the relational flattener unit tests covering extension emission and confirm the new edge cases pass."
+      ],
+      "completed": false
+    },
+    {
+      "category": "maintenance",
+      "description": "Remove or complete the empty XML documentation comment on `FlattenedWriteContractSupport`. Acceptance criteria: `RelationalWriteContracts.cs` no longer contains an empty or unterminated `<summary>` block above `FlattenedWriteContractSupport`.",
+      "steps_to_verify": [
+        "Replace the empty XML doc with a short valid summary or delete it entirely.",
+        "Format the touched file if needed.",
+        "Inspect the file or build the backend project to confirm the malformed XML documentation comment is gone."
+      ],
+      "completed": false
+    }
+  ]
+}

@@ -13,11 +13,13 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -198,7 +200,7 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public async Task It_surfaces_missing_resolved_reference_lookups_before_terminal_handoff()
+    public async Task It_routes_missing_resolved_reference_lookups_to_the_centralized_server_error_response()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
@@ -214,7 +216,7 @@ public class Given_Relational_Write_Seam
                 throw new AssertionException("Terminal stage should not be called.")
         );
 
-        var requestInfo = await harness.ExecuteUpsertAsync(
+        var requestInfo = await harness.ExecuteUpsertThroughExceptionMiddlewareAsync(
             JsonNode.Parse(
                 """
                 {
@@ -234,11 +236,28 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
+        requestInfo.FrontendResponse.Body!["message"]!
             .GetValue<string>()
             .Should()
-            .Contain("resolved lookup set did not contain a matching 'Ed-Fi.School' entry")
-            .And.Contain("$.schoolReference");
+            .Be(
+                "The server encountered an unexpected condition that prevented it from fulfilling the request."
+            );
+        requestInfo.FrontendResponse.Body!["traceId"]!
+            .GetValue<string>()
+            .Should()
+            .Be("relational-write-seam");
+        var loggedFailure = harness
+            .ExceptionLogger.Entries.Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Error
+                && entry.Message.Contains("Unknown Error - relational-write-seam")
+            )
+            .Which;
+        loggedFailure.Exception.Should().BeOfType<InvalidOperationException>();
+        loggedFailure
+            .Exception!.Message.Should()
+            .Contain("resolved lookup set did not contain a matching 'Ed-Fi.School' entry");
+        loggedFailure.Exception.Message.Should().Contain("$.schoolReference");
         harness.TerminalStage.Requests.Should().BeEmpty();
     }
 
@@ -600,6 +619,7 @@ public class Given_Relational_Write_Seam
 
     private sealed class RelationalWriteSeamHarness
     {
+        private readonly IPipelineStep _exceptionLoggingMiddleware;
         private readonly IPipelineStep _upsertHandler;
         private readonly IPipelineStep _updateHandler;
         private readonly ResourceInfo _resourceInfo;
@@ -608,12 +628,15 @@ public class Given_Relational_Write_Seam
         private RelationalWriteSeamHarness(
             ResourceInfo resourceInfo,
             IDocumentStoreRepository repository,
-            CapturingTerminalStage terminalStage
+            CapturingTerminalStage terminalStage,
+            CapturingLogger exceptionLogger
         )
         {
             _resourceInfo = resourceInfo;
             TerminalStage = terminalStage;
+            ExceptionLogger = exceptionLogger;
             _serviceProvider = new RepositoryServiceProvider(repository);
+            _exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(exceptionLogger);
             _upsertHandler = new UpsertHandler(
                 NullLogger.Instance,
                 ResiliencePipeline.Empty,
@@ -629,6 +652,8 @@ public class Given_Relational_Write_Seam
         }
 
         public CapturingTerminalStage TerminalStage { get; }
+
+        public CapturingLogger ExceptionLogger { get; }
 
         public static RelationalWriteSeamHarness Create(
             ResourceInfo resourceInfo,
@@ -680,8 +705,9 @@ public class Given_Relational_Write_Seam
                 new RelationalWriteFlattener(),
                 terminalStage
             );
+            var exceptionLogger = new CapturingLogger();
 
-            return new RelationalWriteSeamHarness(resourceInfo, repository, terminalStage);
+            return new RelationalWriteSeamHarness(resourceInfo, repository, terminalStage, exceptionLogger);
         }
 
         public async Task<RequestInfo> ExecuteUpsertAsync(
@@ -700,6 +726,28 @@ public class Given_Relational_Write_Seam
                 originalBody
             );
             await _upsertHandler.Execute(requestInfo, NullNext);
+            return requestInfo;
+        }
+
+        public async Task<RequestInfo> ExecuteUpsertThroughExceptionMiddlewareAsync(
+            JsonNode parsedBody,
+            MappingSet? mappingSet,
+            DocumentInfo documentInfo,
+            string? originalBody = null
+        )
+        {
+            var requestInfo = CreateRequestInfo(
+                RequestMethod.POST,
+                parsedBody,
+                mappingSet,
+                documentInfo,
+                No.DocumentUuid,
+                originalBody
+            );
+            await _exceptionLoggingMiddleware.Execute(
+                requestInfo,
+                () => _upsertHandler.Execute(requestInfo, NullNext)
+            );
             return requestInfo;
         }
 
@@ -801,5 +849,41 @@ public class Given_Relational_Write_Seam
         public bool IsSchemaValid => true;
 
         public List<ApiSchemaFailure> ApiSchemaFailures => [];
+    }
+
+    public sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
+
+    public sealed class CapturingLogger : ILogger
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return NullScope.Instance;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose() { }
     }
 }

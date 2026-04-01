@@ -250,8 +250,7 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return validationFailureFactory(ex.ValidationFailures);
         }
-        catch (Exception ex)
-            when (ex is NotSupportedException or InvalidOperationException or KeyNotFoundException)
+        catch (RelationalWriteGuardRailException ex)
         {
             return failureFactory(ex.Message);
         }

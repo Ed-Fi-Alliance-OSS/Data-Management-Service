@@ -611,6 +611,93 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_put_requests()
+    {
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateMissingWritePlanMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UnknownFailure(
+                    "Write plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+                        + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table write plan, "
+                        + "but no entry was found. This indicates an internal compilation/selection bug."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_does_not_remap_internal_flattener_invalid_operation_failures()
+    {
+        var internalFailure = new InvalidOperationException(
+            "Resolved lookup set did not contain a matching 'Ed-Fi.School' entry at '$.schoolReference'."
+        );
+
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).Throws(internalFailure);
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
+
+        var thrownException = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrownException.Which.Message.Should().Be(internalFailure.Message);
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_does_not_remap_internal_target_context_invalid_operation_failures()
+    {
+        var internalFailure = new InvalidOperationException(
+            "Relational write target-context resolution returned multiple rows for resource 'Ed-Fi.School'."
+        );
+
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(internalFailure);
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        Func<Task> act = async () => _ = await _sut.UpdateDocumentById(updateRequest);
+
+        var thrownException = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrownException.Which.Message.Should().Be(internalFailure.Message);
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public void It_does_not_remap_missing_mapping_sets_inside_the_repository()
     {
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
