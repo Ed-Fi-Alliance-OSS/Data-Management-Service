@@ -237,7 +237,6 @@ public sealed class CreatabilityAnalyzer(
                                 targetKind: DetermineScopeTargetKind(parentJsonScope),
                                 affectedAddress: enrichedScopes[i].Address,
                                 hiddenCreationRequiredMemberPaths: [],
-                                missingCreationRequiredMemberPaths: [],
                                 dependencies: dependencies
                             )
                         );
@@ -543,7 +542,6 @@ public sealed class CreatabilityAnalyzer(
                         targetKind: DetermineCollectionItemTargetKind(collectionJsonScope),
                         affectedAddress: item.Address,
                         hiddenCreationRequiredMemberPaths: crResult.HiddenByProfile,
-                        missingCreationRequiredMemberPaths: [],
                         dependencies: dependencies.Count > 0 ? dependencies : null
                     )
                 );
@@ -596,8 +594,7 @@ public sealed class CreatabilityAnalyzer(
                     resourceName: resourceName,
                     method: method,
                     operation: operation,
-                    hiddenCreationRequiredMemberPaths: crResult.HiddenByProfile,
-                    missingCreationRequiredMemberPaths: []
+                    hiddenCreationRequiredMemberPaths: crResult.HiddenByProfile
                 )
             );
         }
@@ -663,7 +660,6 @@ public sealed class CreatabilityAnalyzer(
                     targetKind: DetermineScopeTargetKind(jsonScope),
                     affectedAddress: scopeState.Address,
                     hiddenCreationRequiredMemberPaths: crResult.HiddenByProfile,
-                    missingCreationRequiredMemberPaths: [],
                     dependencies: dependencies.Count > 0 ? dependencies : null
                 )
             );

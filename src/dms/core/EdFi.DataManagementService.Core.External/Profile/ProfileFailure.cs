@@ -250,14 +250,6 @@ public abstract record ProfileFailureDiagnostic
         : ProfileFailureDiagnostic;
 
     /// <summary>
-    /// Creation-required member paths that remain missing after request
-    /// shaping/system-supplied values are considered.
-    /// Used by creatability violations.
-    /// </summary>
-    public sealed record MissingCreationRequiredMembers(ImmutableArray<string> RelativePaths)
-        : ProfileFailureDiagnostic;
-
-    /// <summary>
     /// Request JSON paths associated with forbidden submitted data.
     /// Used by request-side validation failures.
     /// </summary>
@@ -507,7 +499,6 @@ public sealed record GenericCreatabilityViolationFailure(
 public sealed record RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure(
     ProfileFailureContext Context,
     ImmutableArray<string> HiddenCreationRequiredMemberPaths,
-    ImmutableArray<string> MissingCreationRequiredMemberPaths,
     ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> Dependencies,
     ImmutableArray<ProfileFailureDiagnostic> Diagnostics
 )
@@ -528,7 +519,6 @@ public sealed record VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilit
     ScopeKind AffectedScopeKind,
     ProfileCreatabilityTargetKind TargetKind,
     ImmutableArray<string> HiddenCreationRequiredMemberPaths,
-    ImmutableArray<string> MissingCreationRequiredMemberPaths,
     ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> Dependencies,
     ImmutableArray<ProfileFailureDiagnostic> Diagnostics
 )
@@ -944,7 +934,6 @@ public static class ProfileFailures
         string method,
         string operation,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -952,33 +941,22 @@ public static class ProfileFailures
         ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
 
         ArgumentNullException.ThrowIfNull(hiddenCreationRequiredMemberPaths);
-        ArgumentNullException.ThrowIfNull(missingCreationRequiredMemberPaths);
 
         ImmutableArray<string> normalizedHiddenCreationRequiredMemberPaths = NormalizeOptionalStrings(
             hiddenCreationRequiredMemberPaths,
             nameof(hiddenCreationRequiredMemberPaths)
         );
 
-        ImmutableArray<string> normalizedMissingCreationRequiredMemberPaths = NormalizeOptionalStrings(
-            missingCreationRequiredMemberPaths,
-            nameof(missingCreationRequiredMemberPaths)
-        );
-
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> normalizedDependencies =
             NormalizeOptionalCreatabilityDependencies(dependencies, nameof(dependencies));
 
-        EnsureCreatabilityBlockingReason(
-            normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
-            normalizedDependencies
-        );
+        EnsureCreatabilityBlockingReason(normalizedHiddenCreationRequiredMemberPaths, normalizedDependencies);
 
         ScopeInstanceAddress rootAddress = new("$", []);
 
         return new(
             context,
             normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
             normalizedDependencies,
             MergeCreatabilityDiagnostics(
                 diagnostics,
@@ -986,7 +964,6 @@ public static class ProfileFailures
                 ScopeKind.Root,
                 [new ProfileFailureDiagnostic.ScopeAddress(rootAddress)],
                 normalizedHiddenCreationRequiredMemberPaths,
-                normalizedMissingCreationRequiredMemberPaths,
                 normalizedDependencies
             )
         );
@@ -1000,7 +977,6 @@ public static class ProfileFailures
         ProfileCreatabilityTargetKind targetKind,
         ScopeInstanceAddress affectedAddress,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -1017,7 +993,6 @@ public static class ProfileFailures
             ScopeKind.NonCollection,
             [new ProfileFailureDiagnostic.ScopeAddress(affectedAddress)],
             hiddenCreationRequiredMemberPaths,
-            missingCreationRequiredMemberPaths,
             dependencies,
             diagnostics
         );
@@ -1031,7 +1006,6 @@ public static class ProfileFailures
         ProfileCreatabilityTargetKind targetKind,
         CollectionRowAddress affectedAddress,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -1048,7 +1022,6 @@ public static class ProfileFailures
             ScopeKind.Collection,
             BuildCollectionCreatabilityAddressDiagnostics(affectedAddress),
             hiddenCreationRequiredMemberPaths,
-            missingCreationRequiredMemberPaths,
             dependencies,
             diagnostics
         );
@@ -1414,7 +1387,6 @@ public static class ProfileFailures
         ScopeKind affectedScopeKind,
         IEnumerable<ProfileFailureDiagnostic> addressDiagnostics,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies,
         ProfileFailureDiagnostic[] diagnostics
     )
@@ -1422,26 +1394,16 @@ public static class ProfileFailures
         ArgumentException.ThrowIfNullOrWhiteSpace(jsonScope);
         ArgumentNullException.ThrowIfNull(addressDiagnostics);
         ArgumentNullException.ThrowIfNull(hiddenCreationRequiredMemberPaths);
-        ArgumentNullException.ThrowIfNull(missingCreationRequiredMemberPaths);
 
         ImmutableArray<string> normalizedHiddenCreationRequiredMemberPaths = NormalizeOptionalStrings(
             hiddenCreationRequiredMemberPaths,
             nameof(hiddenCreationRequiredMemberPaths)
         );
 
-        ImmutableArray<string> normalizedMissingCreationRequiredMemberPaths = NormalizeOptionalStrings(
-            missingCreationRequiredMemberPaths,
-            nameof(missingCreationRequiredMemberPaths)
-        );
-
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> normalizedDependencies =
             NormalizeOptionalCreatabilityDependencies(dependencies, nameof(dependencies));
 
-        EnsureCreatabilityBlockingReason(
-            normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
-            normalizedDependencies
-        );
+        EnsureCreatabilityBlockingReason(normalizedHiddenCreationRequiredMemberPaths, normalizedDependencies);
 
         return new(
             context,
@@ -1449,7 +1411,6 @@ public static class ProfileFailures
             affectedScopeKind,
             targetKind,
             normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
             normalizedDependencies,
             MergeCreatabilityDiagnostics(
                 diagnostics,
@@ -1457,7 +1418,6 @@ public static class ProfileFailures
                 affectedScopeKind,
                 addressDiagnostics,
                 normalizedHiddenCreationRequiredMemberPaths,
-                normalizedMissingCreationRequiredMemberPaths,
                 normalizedDependencies
             )
         );
@@ -1873,7 +1833,6 @@ public static class ProfileFailures
         ScopeKind scopeKind,
         IEnumerable<ProfileFailureDiagnostic> addressDiagnostics,
         ImmutableArray<string> hiddenCreationRequiredMemberPaths,
-        ImmutableArray<string> missingCreationRequiredMemberPaths,
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> dependencies
     )
     {
@@ -1888,15 +1847,6 @@ public static class ProfileFailures
         {
             additionalDiagnostics.Add(
                 new ProfileFailureDiagnostic.HiddenCreationRequiredMembers(hiddenCreationRequiredMemberPaths)
-            );
-        }
-
-        if (!missingCreationRequiredMemberPaths.IsDefaultOrEmpty)
-        {
-            additionalDiagnostics.Add(
-                new ProfileFailureDiagnostic.MissingCreationRequiredMembers(
-                    missingCreationRequiredMemberPaths
-                )
             );
         }
 
@@ -1916,18 +1866,13 @@ public static class ProfileFailures
 
     private static void EnsureCreatabilityBlockingReason(
         ImmutableArray<string> hiddenCreationRequiredMemberPaths,
-        ImmutableArray<string> missingCreationRequiredMemberPaths,
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> dependencies
     )
     {
-        if (
-            hiddenCreationRequiredMemberPaths.IsDefaultOrEmpty
-            && missingCreationRequiredMemberPaths.IsDefaultOrEmpty
-            && dependencies.IsDefaultOrEmpty
-        )
+        if (hiddenCreationRequiredMemberPaths.IsDefaultOrEmpty && dependencies.IsDefaultOrEmpty)
         {
             throw new ArgumentException(
-                "At least one hidden member, missing member, or related dependency is required for a creatability violation."
+                "At least one hidden member or related dependency is required for a creatability violation."
             );
         }
     }
