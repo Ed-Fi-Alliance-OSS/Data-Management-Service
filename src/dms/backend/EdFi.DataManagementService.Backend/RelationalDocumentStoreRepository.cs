@@ -54,7 +54,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
-            static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
             static executorResult =>
                 executorResult switch
                 {
@@ -110,7 +109,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
-            static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
             static executorResult =>
                 executorResult switch
                 {
@@ -167,7 +165,6 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
-        Func<WriteValidationFailure[], TResult> validationFailureFactory,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector
     )
     {
@@ -176,7 +173,6 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
-        ArgumentNullException.ThrowIfNull(validationFailureFactory);
         ArgumentNullException.ThrowIfNull(executorResultProjector);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
@@ -197,65 +193,58 @@ public sealed class RelationalDocumentStoreRepository(
 
         var readPlanPreparation = PrepareExistingDocumentReadPlan(mappingSet, resource);
 
-        try
+        for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
         {
-            for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
-            {
-                var targetResolution = await ResolveTargetContextAsync(
-                        mappingSet,
-                        resource,
-                        operationKind,
-                        targetRequest
-                    )
-                    .ConfigureAwait(false);
-
-                if (targetResolution.ImmediateResult is not null)
-                {
-                    return executorResultProjector(targetResolution.ImmediateResult);
-                }
-
-                var executorResult = await _writeExecutor
-                    .ExecuteAsync(
-                        new RelationalWriteExecutorRequest(
-                            mappingSet,
-                            operationKind,
-                            targetRequest,
-                            writePlan,
-                            readPlanPreparation.ReadPlan,
-                            requestBody,
-                            resourceInfo.AllowIdentityUpdates,
-                            traceId,
-                            new ReferenceResolverRequest(
-                                MappingSet: mappingSet,
-                                RequestResource: resource,
-                                DocumentReferences: documentReferences,
-                                DescriptorReferences: descriptorReferences
-                            ),
-                            targetContext: targetResolution.TargetContext!,
-                            missingExistingDocumentReadPlanFailureMessage: readPlanPreparation.FailureMessage
-                        )
-                    )
-                    .ConfigureAwait(false);
-
-                if (
-                    executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
-                    && attemptIndex == 0
+            var targetResolution = await ResolveTargetContextAsync(
+                    mappingSet,
+                    resource,
+                    operationKind,
+                    targetRequest
                 )
-                {
-                    continue;
-                }
+                .ConfigureAwait(false);
 
-                return executorResultProjector(executorResult);
+            if (targetResolution.ImmediateResult is not null)
+            {
+                return executorResultProjector(targetResolution.ImmediateResult);
             }
 
-            throw new InvalidOperationException(
-                $"Relational {operationKind} write retry loop exited without a final executor result."
-            );
+            var executorResult = await _writeExecutor
+                .ExecuteAsync(
+                    new RelationalWriteExecutorRequest(
+                        mappingSet,
+                        operationKind,
+                        targetRequest,
+                        writePlan,
+                        readPlanPreparation.ReadPlan,
+                        requestBody,
+                        resourceInfo.AllowIdentityUpdates,
+                        traceId,
+                        new ReferenceResolverRequest(
+                            MappingSet: mappingSet,
+                            RequestResource: resource,
+                            DocumentReferences: documentReferences,
+                            DescriptorReferences: descriptorReferences
+                        ),
+                        targetContext: targetResolution.TargetContext!,
+                        missingExistingDocumentReadPlanFailureMessage: readPlanPreparation.FailureMessage
+                    )
+                )
+                .ConfigureAwait(false);
+
+            if (
+                executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
+                && attemptIndex == 0
+            )
+            {
+                continue;
+            }
+
+            return executorResultProjector(executorResult);
         }
-        catch (RelationalWriteRequestValidationException ex)
-        {
-            return validationFailureFactory(ex.ValidationFailures);
-        }
+
+        throw new InvalidOperationException(
+            $"Relational {operationKind} write retry loop exited without a final executor result."
+        );
     }
 
     private async Task<TargetContextResolution> ResolveTargetContextAsync(

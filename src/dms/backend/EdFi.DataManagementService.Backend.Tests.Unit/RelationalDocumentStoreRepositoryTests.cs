@@ -684,56 +684,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_maps_post_request_validation_failures_out_of_the_executor_to_validation_results()
-    {
-        var validationFailure = new WriteValidationFailure(
-            new JsonPath("$.schoolYear"),
-            "Column 'SchoolYear' expected an integer."
-        );
-
-        A.CallTo(() =>
-                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
-            )
-            .Throws(new RelationalWriteRequestValidationException([validationFailure]));
-
-        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
-        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
-        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
-        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
-
-        var result = await _sut.UpsertDocument(upsertRequest);
-
-        result.Should().BeEquivalentTo(new UpsertResult.UpsertFailureValidation([validationFailure]));
-    }
-
-    [Test]
-    public async Task It_maps_put_request_validation_failures_out_of_the_executor_to_validation_results()
-    {
-        var validationFailure = new WriteValidationFailure(
-            new JsonPath("$.addresses[1]"),
-            "Duplicate submitted semantic identity values are not allowed."
-        );
-
-        A.CallTo(() =>
-                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
-            )
-            .Throws(new RelationalWriteRequestValidationException([validationFailure]));
-
-        var updateRequest = A.Fake<IRelationalUpdateRequest>();
-        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
-        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
-        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
-
-        var result = await _sut.UpdateDocumentById(updateRequest);
-
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateFailureValidation([validationFailure]));
-    }
-
-    [Test]
     public async Task It_returns_the_descriptor_write_path_guard_rail_for_post_requests()
     {
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();

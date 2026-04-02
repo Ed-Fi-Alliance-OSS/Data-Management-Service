@@ -308,7 +308,7 @@
       "Add backend unit tests that prove missing PUT targets return `UpdateFailureNotExists` without opening executor-owned write-session work and that POST create-vs-existing lookup still maps correctly.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Code Review Follow-Up - Remove Duplicate Repository Validation Mapping",
@@ -317,6 +317,6 @@
       "Delete or consolidate the duplicate validation-exception handling path and update backend unit tests so they assert a single owner for validation-result translation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
