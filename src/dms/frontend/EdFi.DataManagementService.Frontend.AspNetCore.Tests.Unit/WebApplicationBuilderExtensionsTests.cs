@@ -101,7 +101,7 @@ public class WebApplicationBuilderExtensionsTests
             using var scope = serviceProvider.CreateScope();
 
             scope.ServiceProvider.GetService<IReferenceResolver>().Should().BeNull();
-            scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
+            scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapterFactory>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapter>().Should().BeNull();
             scope.ServiceProvider.GetService<IRelationalCommandExecutor>().Should().BeNull();
@@ -154,9 +154,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFlattener>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
                 .Should()
-                .BeOfType<RelationalWriteTargetContextResolver>();
+                .BeOfType<RelationalWriteTargetLookupResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
@@ -236,9 +236,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFlattener>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
                 .Should()
-                .BeOfType<RelationalWriteTargetContextResolver>();
+                .BeOfType<RelationalWriteTargetLookupResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()

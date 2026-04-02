@@ -28,7 +28,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
-        scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
         factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<TestReferenceResolverAdapter>();
     }
@@ -48,8 +48,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
-        var targetContextResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
+        var targetLookupResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
@@ -64,7 +64,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
-        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
+        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);

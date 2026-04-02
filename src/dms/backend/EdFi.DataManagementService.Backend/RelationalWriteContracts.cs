@@ -44,8 +44,43 @@ public abstract record RelationalWriteTargetContext
     /// </summary>
     /// <param name="DocumentId">The persisted relational document id.</param>
     /// <param name="DocumentUuid">The persisted externally visible document id.</param>
-    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid)
-        : RelationalWriteTargetContext;
+    /// <param name="ObservedContentVersion">
+    /// The stored representation stamp observed during target lookup for this existing document.
+    /// </param>
+    public sealed record ExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ObservedContentVersion = 0
+    ) : RelationalWriteTargetContext;
+}
+
+/// <summary>
+/// Operation-correct relational write lookup result before translation to executor-facing target context.
+/// </summary>
+public abstract record RelationalWriteTargetLookupResult
+{
+    /// <summary>
+    /// POST resolved to a brand-new document.
+    /// </summary>
+    /// <param name="DocumentUuid">The externally visible document id reserved by the caller.</param>
+    public sealed record CreateNew(DocumentUuid DocumentUuid) : RelationalWriteTargetLookupResult;
+
+    /// <summary>
+    /// POST or PUT resolved to an already persisted document.
+    /// </summary>
+    /// <param name="DocumentId">The persisted relational document id.</param>
+    /// <param name="DocumentUuid">The persisted externally visible document id.</param>
+    /// <param name="ObservedContentVersion">The stored representation stamp observed during lookup.</param>
+    public sealed record ExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ObservedContentVersion
+    ) : RelationalWriteTargetLookupResult;
+
+    /// <summary>
+    /// PUT did not resolve to a persisted document.
+    /// </summary>
+    public sealed record NotFound : RelationalWriteTargetLookupResult;
 }
 
 /// <summary>

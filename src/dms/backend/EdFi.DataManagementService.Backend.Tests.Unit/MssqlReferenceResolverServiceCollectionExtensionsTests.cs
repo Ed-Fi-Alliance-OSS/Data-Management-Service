@@ -29,8 +29,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         var resolver = scope.ServiceProvider.GetRequiredService<IReferenceResolver>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
-        var targetContextResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
+        var targetLookupResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
@@ -38,7 +38,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
-        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
+        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();

@@ -35,7 +35,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     );
 
     private RelationalDocumentStoreRepository _sut = null!;
-    private IRelationalWriteTargetContextResolver _targetContextResolver = null!;
+    private IRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
     private IRelationalWriteExecutor _writeExecutor = null!;
@@ -45,12 +45,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [SetUp]
     public void Setup()
     {
-        _targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
+        _targetLookupResolver = A.Fake<IRelationalWriteTargetLookupResolver>();
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPostAsync(
+                _targetLookupResolver.ResolveForPostAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<ReferentialId>._,
@@ -59,12 +59,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .ReturnsLazily(call =>
-                Task.FromResult<RelationalWriteTargetContext>(
-                    new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(3))
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.CreateNew(call.GetArgument<DocumentUuid>(3))
                 )
             );
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPutAsync(
+                _targetLookupResolver.ResolveForPutAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<DocumentUuid>._,
@@ -72,8 +72,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .ReturnsLazily(call =>
-                Task.FromResult<RelationalWriteTargetContext>(
-                    new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(2))
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.ExistingDocument(
+                        1L,
+                        call.GetArgument<DocumentUuid>(2),
+                        0L
+                    )
                 )
             );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -95,7 +99,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
-            _targetContextResolver,
+            _targetLookupResolver,
             _referenceResolver,
             _writeFlattener,
             _writeExecutor
@@ -197,7 +201,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPostAsync(
+                _targetLookupResolver.ResolveForPostAsync(
                     A<MappingSet>._,
                     new QualifiedResourceName("Ed-Fi", "School"),
                     A<ReferentialId>._,
@@ -264,9 +268,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var flattenedWriteSet = CreateFlattenedWriteSet(CreateRootPlan());
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        const long observedContentVersion = 42L;
 
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPostAsync(
+                _targetLookupResolver.ResolveForPostAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<ReferentialId>._,
@@ -275,8 +280,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .Returns(
-                Task.FromResult<RelationalWriteTargetContext>(
-                    new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.ExistingDocument(
+                        existingDocumentId,
+                        documentUuid,
+                        observedContentVersion
+                    )
                 )
             );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -311,7 +320,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetContext.Should()
             .BeEquivalentTo(
-                new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+                new RelationalWriteTargetContext.ExistingDocument(
+                    existingDocumentId,
+                    documentUuid,
+                    observedContentVersion
+                )
             );
         _capturedExecutorRequest.WritePlan.Should().BeSameAs(_capturedFlatteningInput.WritePlan);
         _capturedExecutorRequest.ReadPlan.Should().BeSameAs(expectedReadPlan);
@@ -337,11 +350,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var traceId = new TraceId("put-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var existingDocumentId = 123L;
+        const long observedContentVersion = 84L;
         var requestBody = CreateRequestBody("Roosevelt High");
         var flattenedWriteSet = CreateFlattenedWriteSet(CreateRootPlan());
 
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPutAsync(
+                _targetLookupResolver.ResolveForPutAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<DocumentUuid>._,
@@ -349,8 +363,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .Returns(
-                Task.FromResult<RelationalWriteTargetContext>(
-                    new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.ExistingDocument(
+                        existingDocumentId,
+                        documentUuid,
+                        observedContentVersion
+                    )
                 )
             );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -383,7 +401,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPutAsync(
+                _targetLookupResolver.ResolveForPutAsync(
                     A<MappingSet>._,
                     new QualifiedResourceName("Ed-Fi", "School"),
                     A<DocumentUuid>._,
@@ -415,6 +433,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Subject;
         existingDocumentTargetContext.DocumentId.Should().Be(existingDocumentId);
         existingDocumentTargetContext.DocumentUuid.Should().Be(documentUuid);
+        existingDocumentTargetContext.ObservedContentVersion.Should().Be(observedContentVersion);
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest.TargetContext.Should().BeSameAs(_capturedFlatteningInput.TargetContext);
@@ -425,6 +444,43 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.PreparedData!.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
         _capturedExecutorRequest.PreparedData.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+    }
+
+    [Test]
+    public async Task It_short_circuits_missing_put_targets_to_not_exists_before_reference_resolution()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.NotFound()
+                )
+            );
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -724,7 +780,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var documentUuid = new DocumentUuid(Guid.NewGuid());
 
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPutAsync(
+                _targetLookupResolver.ResolveForPutAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<DocumentUuid>._,
@@ -732,8 +788,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .Returns(
-                Task.FromResult<RelationalWriteTargetContext>(
-                    new RelationalWriteTargetContext.ExistingDocument(123L, documentUuid)
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 11L)
                 )
             );
 
@@ -792,14 +848,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_does_not_remap_internal_target_context_invalid_operation_failures()
+    public async Task It_does_not_remap_internal_target_lookup_invalid_operation_failures()
     {
         var internalFailure = new InvalidOperationException(
-            "Relational write target-context resolution returned multiple rows for resource 'Ed-Fi.School'."
+            "Relational write target lookup returned multiple rows for resource 'Ed-Fi.School'."
         );
 
         A.CallTo(() =>
-                _targetContextResolver.ResolveForPutAsync(
+                _targetLookupResolver.ResolveForPutAsync(
                     A<MappingSet>._,
                     A<QualifiedResourceName>._,
                     A<DocumentUuid>._,

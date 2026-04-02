@@ -8,9 +8,9 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
-public interface IRelationalWriteTargetContextResolver
+public interface IRelationalWriteTargetLookupResolver
 {
-    Task<RelationalWriteTargetContext> ResolveForPostAsync(
+    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
@@ -18,7 +18,7 @@ public interface IRelationalWriteTargetContextResolver
         CancellationToken cancellationToken = default
     );
 
-    Task<RelationalWriteTargetContext> ResolveForPutAsync(
+    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
@@ -26,8 +26,8 @@ public interface IRelationalWriteTargetContextResolver
     );
 }
 
-internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExecutor commandExecutor)
-    : IRelationalWriteTargetContextResolver
+internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExecutor commandExecutor)
+    : IRelationalWriteTargetLookupResolver
 {
     private const string ReferentialIdParameterName = "@referentialId";
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -36,7 +36,7 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-    public async Task<RelationalWriteTargetContext> ResolveForPostAsync(
+    public async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
@@ -54,14 +54,15 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
         );
 
         return existingDocument is null
-            ? new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid)
-            : new RelationalWriteTargetContext.ExistingDocument(
+            ? new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
                 existingDocument.DocumentId,
-                existingDocument.DocumentUuid
+                existingDocument.DocumentUuid,
+                existingDocument.ObservedContentVersion
             );
     }
 
-    public async Task<RelationalWriteTargetContext> ResolveForPutAsync(
+    public async Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
@@ -78,10 +79,11 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
         );
 
         return existingDocument is null
-            ? new RelationalWriteTargetContext.CreateNew(documentUuid)
-            : new RelationalWriteTargetContext.ExistingDocument(
+            ? new RelationalWriteTargetLookupResult.NotFound()
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
                 existingDocument.DocumentId,
-                existingDocument.DocumentUuid
+                existingDocument.DocumentUuid,
+                existingDocument.ObservedContentVersion
             );
     }
 
@@ -100,7 +102,7 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
                 SqlDialect.Pgsql => BuildPostgresqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
                 SqlDialect.Mssql => BuildMssqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
                 _ => throw new NotSupportedException(
-                    $"Relational POST target-context resolution does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                    $"Relational POST target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
                 ),
             },
             $"resource '{RelationalWriteSupport.FormatResource(resource)}' and referential id '{referentialId.Value}'",
@@ -123,7 +125,7 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
                 SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
                 SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
                 _ => throw new NotSupportedException(
-                    $"Relational PUT target-context resolution does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                    $"Relational PUT target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
                 ),
             },
             $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
@@ -148,13 +150,14 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
 
                 var resolvedDocument = new ResolvedExistingDocument(
                     reader.GetRequiredFieldValue<long>("DocumentId"),
-                    new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid"))
+                    new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
+                    reader.GetRequiredFieldValue<long>("ContentVersion")
                 );
 
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     throw new InvalidOperationException(
-                        $"Relational write target-context resolution returned multiple rows for {lookupDescription}."
+                        $"Relational write target lookup returned multiple rows for {lookupDescription}."
                     );
                 }
 
@@ -173,7 +176,8 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
             """
             SELECT
                 document."DocumentId" AS "DocumentId",
-                document."DocumentUuid" AS "DocumentUuid"
+                document."DocumentUuid" AS "DocumentUuid",
+                document."ContentVersion" AS "ContentVersion"
             FROM dms."ReferentialIdentity" referentialIdentity
             INNER JOIN dms."Document" document
                 ON document."DocumentId" = referentialIdentity."DocumentId"
@@ -196,7 +200,8 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
             """
             SELECT
                 document."DocumentId" AS "DocumentId",
-                document."DocumentUuid" AS "DocumentUuid"
+                document."DocumentUuid" AS "DocumentUuid",
+                document."ContentVersion" AS "ContentVersion"
             FROM dms."Document" document
             WHERE document."DocumentUuid" = @documentUuid
                 AND document."ResourceKeyId" = @resourceKeyId
@@ -217,7 +222,8 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
             """
             SELECT
                 document.[DocumentId] AS [DocumentId],
-                document.[DocumentUuid] AS [DocumentUuid]
+                document.[DocumentUuid] AS [DocumentUuid],
+                document.[ContentVersion] AS [ContentVersion]
             FROM [dms].[ReferentialIdentity] referentialIdentity
             INNER JOIN [dms].[Document] document
                 ON document.[DocumentId] = referentialIdentity.[DocumentId]
@@ -240,7 +246,8 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
             """
             SELECT
                 document.[DocumentId] AS [DocumentId],
-                document.[DocumentUuid] AS [DocumentUuid]
+                document.[DocumentUuid] AS [DocumentUuid],
+                document.[ContentVersion] AS [ContentVersion]
             FROM [dms].[Document] document
             WHERE document.[DocumentUuid] = @documentUuid
                 AND document.[ResourceKeyId] = @resourceKeyId
@@ -252,5 +259,9 @@ internal sealed class RelationalWriteTargetContextResolver(IRelationalCommandExe
         );
     }
 
-    private sealed record ResolvedExistingDocument(long DocumentId, DocumentUuid DocumentUuid);
+    private sealed record ResolvedExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ObservedContentVersion
+    );
 }

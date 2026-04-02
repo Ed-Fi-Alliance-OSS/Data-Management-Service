@@ -43,8 +43,8 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteFlattener, RelationalWriteFlattener>());
         services.TryAdd(
             ServiceDescriptor.Scoped<
-                IRelationalWriteTargetContextResolver,
-                RelationalWriteTargetContextResolver
+                IRelationalWriteTargetLookupResolver,
+                RelationalWriteTargetLookupResolver
             >()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());

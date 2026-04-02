@@ -11,7 +11,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
-public class Given_RelationalWriteTargetContextResolver
+public class Given_RelationalWriteTargetLookupResolver
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
 
@@ -23,7 +23,7 @@ public class Given_RelationalWriteTargetContextResolver
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
-        var sut = new RelationalWriteTargetContextResolver(executor);
+        var sut = new RelationalWriteTargetLookupResolver(executor);
 
         var result = await sut.ResolveForPostAsync(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -32,7 +32,9 @@ public class Given_RelationalWriteTargetContextResolver
             candidateDocumentUuid
         );
 
-        result.Should().BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid));
+        result
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid));
         executor.Commands.Should().ContainSingle();
         executor.Commands[0].CommandText.Should().Contain("dms.\"ReferentialIdentity\"");
         executor
@@ -48,17 +50,19 @@ public class Given_RelationalWriteTargetContextResolver
         var referentialId = new ReferentialId(Guid.NewGuid());
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
         var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        const long observedContentVersion = 701L;
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     RelationalAccessTestData.CreateRow(
                         ("DocumentId", 101L),
-                        ("DocumentUuid", existingDocumentUuid.Value)
+                        ("DocumentUuid", existingDocumentUuid.Value),
+                        ("ContentVersion", observedContentVersion)
                     )
                 ),
             ]),
         ]);
-        var sut = new RelationalWriteTargetContextResolver(executor);
+        var sut = new RelationalWriteTargetLookupResolver(executor);
 
         var result = await sut.ResolveForPostAsync(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -69,12 +73,18 @@ public class Given_RelationalWriteTargetContextResolver
 
         result
             .Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(101L, existingDocumentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(
+                    101L,
+                    existingDocumentUuid,
+                    observedContentVersion
+                )
+            );
     }
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_returns_create_new_for_put_when_requested_document_uuid_does_not_match_a_persisted_document(
+    public async Task It_returns_not_found_for_put_when_requested_document_uuid_does_not_match_a_persisted_document(
         SqlDialect dialect,
         string expectedTableFragment
     )
@@ -83,11 +93,11 @@ public class Given_RelationalWriteTargetContextResolver
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
-        var sut = new RelationalWriteTargetContextResolver(executor);
+        var sut = new RelationalWriteTargetLookupResolver(executor);
 
         var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
 
-        result.Should().BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
+        result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
         executor.Commands.Should().ContainSingle();
         executor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         executor
@@ -105,21 +115,31 @@ public class Given_RelationalWriteTargetContextResolver
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        const long observedContentVersion = 907L;
         var executor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     RelationalAccessTestData.CreateRow(
                         ("DocumentId", 404L),
-                        ("DocumentUuid", documentUuid.Value)
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ContentVersion", observedContentVersion)
                     )
                 ),
             ]),
         ]);
-        var sut = new RelationalWriteTargetContextResolver(executor);
+        var sut = new RelationalWriteTargetLookupResolver(executor);
 
         var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
 
-        result.Should().BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(404L, documentUuid));
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(
+                    404L,
+                    documentUuid,
+                    observedContentVersion
+                )
+            );
         executor.Commands.Should().ContainSingle();
         executor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         executor

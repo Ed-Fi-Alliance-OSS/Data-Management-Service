@@ -350,9 +350,9 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-                var targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
+                var targetLookupResolver = A.Fake<IRelationalWriteTargetLookupResolver>();
                 A.CallTo(() =>
-                        targetContextResolver.ResolveForPostAsync(
+                        targetLookupResolver.ResolveForPostAsync(
                             A<MappingSet>._,
                             A<QualifiedResourceName>._,
                             A<ReferentialId>._,
@@ -361,12 +361,12 @@ public class Given_A_Host_Using_The_Relational_Backend
                         )
                     )
                     .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetContext>(
-                            new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(3))
+                        Task.FromResult<RelationalWriteTargetLookupResult>(
+                            new RelationalWriteTargetLookupResult.CreateNew(call.GetArgument<DocumentUuid>(3))
                         )
                     );
                 A.CallTo(() =>
-                        targetContextResolver.ResolveForPutAsync(
+                        targetLookupResolver.ResolveForPutAsync(
                             A<MappingSet>._,
                             A<QualifiedResourceName>._,
                             A<DocumentUuid>._,
@@ -374,10 +374,11 @@ public class Given_A_Host_Using_The_Relational_Backend
                         )
                     )
                     .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetContext>(
-                            new RelationalWriteTargetContext.ExistingDocument(
+                        Task.FromResult<RelationalWriteTargetLookupResult>(
+                            new RelationalWriteTargetLookupResult.ExistingDocument(
                                 345L,
-                                call.GetArgument<DocumentUuid>(2)
+                                call.GetArgument<DocumentUuid>(2),
+                                0L
                             )
                         )
                     );
@@ -395,7 +396,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IDatabaseFingerprintReader>();
                 services.RemoveAll<IResourceKeyValidator>();
                 services.RemoveAll<IMappingSetProvider>();
-                services.RemoveAll<IRelationalWriteTargetContextResolver>();
+                services.RemoveAll<IRelationalWriteTargetLookupResolver>();
                 services.RemoveAll<IReferenceResolver>();
                 services.RemoveAll<IRelationalWriteFlattener>();
                 services.RemoveAll<IRelationalWriteExecutor>();
@@ -407,7 +408,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);
                 services.AddSingleton(mappingSetProvider);
-                services.AddSingleton(targetContextResolver);
+                services.AddSingleton(targetLookupResolver);
                 services.AddSingleton(referenceResolver);
                 services.AddSingleton(flattener);
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
