@@ -270,7 +270,7 @@ public class Given_Relational_Write_Non_Collection_Persister
     }
 
     [Test]
-    public async Task It_returns_false_without_emitting_dml_when_extension_collection_changes_remain()
+    public async Task It_deletes_updates_and_inserts_root_extension_collection_rows_using_stable_row_identity()
     {
         var rootPlan = CreateRootPlan();
         var extensionCollectionPlan = CreateExtensionCollectionPlan();
@@ -284,16 +284,165 @@ public class Given_Relational_Write_Non_Collection_Persister
             ),
             new RelationalWriteNoProfileTableState(
                 extensionCollectionPlan,
-                [],
-                [CreateRow(NewCollectionItemId(), 345L, 0, "Tutor")]
+                [CreateRow(44L, 345L, 0, "Tutor"), CreateRow(45L, 345L, 1, "Mentor")],
+                [
+                    CreateRow(45L, 345L, 0, "Mentor Updated"),
+                    CreateRow(NewCollectionItemId(), 345L, 1, "Coach"),
+                ]
             ),
         ]);
-        var writeSession = new RecordingRelationalWriteSession([]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 91L),
+            new CommandResponse(),
+        ]);
 
         var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
 
-        persisted.Should().BeFalse();
-        writeSession.Commands.Should().BeEmpty();
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(4);
+
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(extensionCollectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId").Should().Be(44L);
+
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(extensionCollectionPlan.CollectionMergePlan!.UpdateByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@InterventionCode").Should().Be("Mentor Updated");
+
+        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[3].CommandText.Should().Be(extensionCollectionPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
+        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[3], "@InterventionCode").Should().Be("Coach");
+    }
+
+    [Test]
+    public async Task It_deletes_updates_and_inserts_collection_aligned_extension_child_rows_using_base_row_identity()
+    {
+        var rootPlan = CreateRootPlan();
+        var addressPlan = CreateCollectionPlan();
+        var collectionAlignedExtensionChildPlan = CreateCollectionAlignedExtensionChildCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, addressPlan, collectionAlignedExtensionChildPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                addressPlan,
+                [CreateRow(44L, 345L, 0, "Home")],
+                [CreateRow(44L, 345L, 0, "Home")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionAlignedExtensionChildPlan,
+                [CreateRow(500L, 345L, 44L, 0, "Bus"), CreateRow(501L, 345L, 44L, 1, "Meal")],
+                [
+                    CreateRow(501L, 345L, 44L, 0, "Meal Updated"),
+                    CreateRow(NewCollectionItemId(), 345L, 44L, 1, "Tutor"),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 91L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(4);
+
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(collectionAlignedExtensionChildPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId").Should().Be(500L);
+
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(collectionAlignedExtensionChildPlan.CollectionMergePlan!.UpdateByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(501L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@ServiceName").Should().Be("Meal Updated");
+
+        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[3].CommandText.Should().Be(collectionAlignedExtensionChildPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
+        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Tutor");
+    }
+
+    [Test]
+    public async Task It_resolves_new_parent_collection_ids_for_collection_aligned_extension_child_inserts()
+    {
+        var rootPlan = CreateRootPlan();
+        var addressPlan = CreateCollectionPlan();
+        var collectionAlignedExtensionChildPlan = CreateCollectionAlignedExtensionChildCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, addressPlan, collectionAlignedExtensionChildPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var addressCollectionItemId = NewCollectionItemId();
+        var serviceCollectionItemId = NewCollectionItemId();
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                addressPlan,
+                [],
+                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionAlignedExtensionChildPlan,
+                [],
+                [CreateRow(serviceCollectionItemId, 345L, addressCollectionItemId, 0, "Bus")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ScalarResult: 910L),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 911L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
+
+        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[3].CommandText.Should().Be(collectionAlignedExtensionChildPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(911L);
+        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[3], "@BaseCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Bus");
     }
 
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
@@ -432,6 +581,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             "SchoolAddressPeriod" => CreatePeriodPlan(),
             "SchoolExtensionIntervention" => CreateExtensionCollectionPlan(),
             "SchoolExtensionAddress" => CreateCollectionExtensionScopePlan(),
+            "SchoolExtensionAddressService" => CreateCollectionAlignedExtensionChildCollectionPlan(),
             _ => throw new InvalidOperationException($"Unsupported table '{tableModel.Table.Name}'."),
         };
     }
@@ -896,6 +1046,94 @@ public class Given_Relational_Write_Non_Collection_Persister
                 ),
             ],
             KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan CreateCollectionAlignedExtensionChildCollectionPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("sample"), "SchoolExtensionAddressService"),
+            new JsonPathExpression("$.addresses[*]._ext.sample.services[*]", []),
+            new TableKey(
+                "PK_SchoolExtensionAddressService",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("School_DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("BaseCollectionItemId", ColumnKind.ParentKeyPart),
+                CreateColumn("Ordinal", ColumnKind.Ordinal),
+                CreateColumn("ServiceName", ColumnKind.Scalar),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("BaseCollectionItemId")],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression("$.serviceName", []),
+                        new DbColumnName("ServiceName")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: """
+            insert into sample."SchoolExtensionAddressService" values (@CollectionItemId, @School_DocumentId, @BaseCollectionItemId, @Ordinal, @ServiceName)
+            """,
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 5, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.DocumentId(),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "BaseCollectionItemId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[3], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.serviceName", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "ServiceName"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                [new CollectionMergeSemanticIdentityBinding(new JsonPathExpression("$.serviceName", []), 4)],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: """
+                update sample."SchoolExtensionAddressService" set "Ordinal" = @Ordinal, "ServiceName" = @ServiceName where "CollectionItemId" = @CollectionItemId
+                """,
+                DeleteByStableRowIdentitySql: """
+                delete from sample."SchoolExtensionAddressService" where "CollectionItemId" = @CollectionItemId
+                """,
+                OrdinalBindingIndex: 3,
+                CompareBindingIndexesInOrder: [3, 4]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
         );
     }
 

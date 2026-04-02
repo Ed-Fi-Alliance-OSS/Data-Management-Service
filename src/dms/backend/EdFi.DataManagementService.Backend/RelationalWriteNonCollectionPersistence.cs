@@ -33,11 +33,6 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         ArgumentNullException.ThrowIfNull(mergeResult);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        if (HasPendingUnsupportedCollectionChanges(mergeResult))
-        {
-            return false;
-        }
-
         var rootDocumentId = await ResolveRootDocumentIdAsync(
                 request.MappingSet,
                 request.WritePlan.Model.Resource,
@@ -70,54 +65,6 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         return true;
     }
 
-    private static bool HasPendingUnsupportedCollectionChanges(
-        RelationalWriteNoProfileMergeResult mergeResult
-    )
-    {
-        foreach (var tableState in mergeResult.TablesInDependencyOrder)
-        {
-            if (tableState.TableWritePlan.CollectionMergePlan is null)
-            {
-                continue;
-            }
-
-            if (
-                tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind
-                is not DbTableKind.ExtensionCollection
-            )
-            {
-                continue;
-            }
-
-            if (TableRequiresChange(tableState))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TableRequiresChange(RelationalWriteNoProfileTableState tableState)
-    {
-        if (tableState.CurrentRows.Length != tableState.MergedRows.Length)
-        {
-            return true;
-        }
-
-        for (var rowIndex = 0; rowIndex < tableState.CurrentRows.Length; rowIndex++)
-        {
-            if (
-                !tableState.CurrentRows[rowIndex].Values.SequenceEqual(tableState.MergedRows[rowIndex].Values)
-            )
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private static async Task ExecuteDeletesAsync(
         RelationalWriteNoProfileMergeResult mergeResult,
         long rootDocumentId,
@@ -132,7 +79,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             {
                 if (
                     tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind
-                    is not DbTableKind.Collection
+                    is not (DbTableKind.Collection or DbTableKind.ExtensionCollection)
                 )
                 {
                     continue;
@@ -176,7 +123,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             {
                 if (
                     tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind
-                    is not DbTableKind.Collection
+                    is not (DbTableKind.Collection or DbTableKind.ExtensionCollection)
                 )
                 {
                     continue;
