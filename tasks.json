@@ -80,7 +80,7 @@
       "Add backend unit tests for internal attempt outcome mapping, unchanged PUT, unchanged POST-as-update, no-DML short-circuiting, and stale compare classification after freshness recheck.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Stale No-Op Retry Outcomes",

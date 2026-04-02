@@ -158,6 +158,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteCurrentStateLoader>();
             scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>()
+                .Should()
+                .BeOfType<RelationalWriteFreshnessChecker>();
+            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
                 .Should()
                 .BeOfType<RelationalWriteTargetLookupResolver>();
@@ -247,6 +251,10 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>()
                 .Should()
                 .BeOfType<RelationalWriteCurrentStateLoader>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>()
+                .Should()
+                .BeOfType<RelationalWriteFreshnessChecker>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
                 .Should()

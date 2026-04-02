@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -12,6 +13,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
+    IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer
 ) : IRelationalWriteExecutor
 {
@@ -27,6 +29,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
+
+    private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
+        writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
 
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
@@ -113,6 +118,25 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return identityStabilityFailure;
             }
 
+            if (
+                request.TargetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(noProfileMergeResult)
+            )
+            {
+                var isCurrent = await _writeFreshnessChecker
+                    .IsCurrentAsync(request, guardedTarget, writeSession, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!isCurrent)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildStaleNoOpCompareResult(request.OperationKind);
+                }
+
+                await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
+            }
+
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,
                 resource,
@@ -143,6 +167,43 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
+        RelationalWriteOperationKind operationKind,
+        DocumentUuid documentUuid
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpdateSuccess(documentUuid),
+                RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid),
+                RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict(),
+                RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict(),
+                RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
     }
 
     private static RelationalWriteExecutorResult BuildReferenceFailureResult(

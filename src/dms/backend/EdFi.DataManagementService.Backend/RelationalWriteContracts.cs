@@ -549,19 +549,127 @@ public sealed record RelationalWriteExecutorRequest
 }
 
 /// <summary>
+/// Backend-local classification of one executor attempt.
+/// </summary>
+public abstract record RelationalWriteExecutorAttemptOutcome
+{
+    /// <summary>
+    /// The executor applied a real relational write.
+    /// </summary>
+    public sealed record AppliedWrite : RelationalWriteExecutorAttemptOutcome
+    {
+        private AppliedWrite() { }
+
+        public static AppliedWrite Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// The executor proved the request was unchanged and committed a guarded no-op.
+    /// </summary>
+    public sealed record GuardedNoOp : RelationalWriteExecutorAttemptOutcome
+    {
+        private GuardedNoOp() { }
+
+        public static GuardedNoOp Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// The executor detected an unchanged compare, but freshness was lost before success could be returned.
+    /// </summary>
+    public sealed record StaleNoOpCompare : RelationalWriteExecutorAttemptOutcome
+    {
+        private StaleNoOpCompare() { }
+
+        public static StaleNoOpCompare Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// The executor exited through a non-attempt-success path such as validation or not-yet-implemented work.
+    /// </summary>
+    public sealed record Failed : RelationalWriteExecutorAttemptOutcome
+    {
+        private Failed() { }
+
+        public static Failed Instance { get; } = new();
+    }
+}
+
+/// <summary>
 /// Executor result wrapper that preserves the repository's POST/PUT result split.
 /// </summary>
 public abstract record RelationalWriteExecutorResult
 {
+    protected RelationalWriteExecutorResult(RelationalWriteExecutorAttemptOutcome attemptOutcome)
+    {
+        AttemptOutcome = attemptOutcome ?? throw new ArgumentNullException(nameof(attemptOutcome));
+    }
+
+    /// <summary>
+    /// Internal classification of the executor attempt.
+    /// </summary>
+    public RelationalWriteExecutorAttemptOutcome AttemptOutcome { get; init; }
+
     /// <summary>
     /// The executor completed a POST write path.
     /// </summary>
-    public sealed record Upsert(UpsertResult Result) : RelationalWriteExecutorResult;
+    public sealed record Upsert : RelationalWriteExecutorResult
+    {
+        public Upsert(UpsertResult result)
+            : this(result, RelationalWriteExecutorAttemptOutcome.Failed.Instance) { }
+
+        public Upsert(UpsertResult result, RelationalWriteExecutorAttemptOutcome attemptOutcome)
+            : base(attemptOutcome)
+        {
+            Result = result ?? throw new ArgumentNullException(nameof(result));
+        }
+
+        public UpsertResult Result { get; init; }
+
+        public void Deconstruct(out UpsertResult result)
+        {
+            result = Result;
+        }
+
+        public void Deconstruct(
+            out UpsertResult result,
+            out RelationalWriteExecutorAttemptOutcome attemptOutcome
+        )
+        {
+            result = Result;
+            attemptOutcome = AttemptOutcome;
+        }
+    }
 
     /// <summary>
     /// The executor completed a PUT write path.
     /// </summary>
-    public sealed record Update(UpdateResult Result) : RelationalWriteExecutorResult;
+    public sealed record Update : RelationalWriteExecutorResult
+    {
+        public Update(UpdateResult result)
+            : this(result, RelationalWriteExecutorAttemptOutcome.Failed.Instance) { }
+
+        public Update(UpdateResult result, RelationalWriteExecutorAttemptOutcome attemptOutcome)
+            : base(attemptOutcome)
+        {
+            Result = result ?? throw new ArgumentNullException(nameof(result));
+        }
+
+        public UpdateResult Result { get; init; }
+
+        public void Deconstruct(out UpdateResult result)
+        {
+            result = Result;
+        }
+
+        public void Deconstruct(
+            out UpdateResult result,
+            out RelationalWriteExecutorAttemptOutcome attemptOutcome
+        )
+        {
+            result = Result;
+            attemptOutcome = AttemptOutcome;
+        }
+    }
 }
 
 /// <summary>
