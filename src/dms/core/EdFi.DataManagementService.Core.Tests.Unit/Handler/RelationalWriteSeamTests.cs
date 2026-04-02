@@ -82,7 +82,6 @@ public class Given_Relational_Write_Seam
         request.SelectedBody.Should().BeSameAs(requestInfo.ParsedBody);
         request.TargetContext.Should().BeOfType<RelationalWriteTargetContext.CreateNew>();
         request.ReadPlan.Should().BeNull();
-        request.PreparedData.Should().BeNull();
         request
             .ReferenceResolutionRequest.RequestResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "Student"));
@@ -131,7 +130,6 @@ public class Given_Relational_Write_Seam
                 new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 18L)
             );
         request.ReadPlan.Should().NotBeNull();
-        request.PreparedData.Should().BeNull();
         request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
         request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
         requestInfo

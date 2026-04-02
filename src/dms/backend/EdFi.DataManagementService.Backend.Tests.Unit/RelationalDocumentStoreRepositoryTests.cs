@@ -194,7 +194,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
         _capturedExecutorRequest.ReadPlan.Should().BeNull();
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
-        _capturedExecutorRequest.PreparedData.Should().BeNull();
         _capturedExecutorRequest.ReferenceResolutionRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest
             .ReferenceResolutionRequest.RequestResource.Should()
@@ -275,7 +274,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
         _capturedExecutorRequest.ReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
-        _capturedExecutorRequest.PreparedData.Should().BeNull();
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
     }
 
@@ -350,7 +348,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             );
         _capturedExecutorRequest.ReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
-        _capturedExecutorRequest.PreparedData.Should().BeNull();
         _capturedExecutorRequest
             .ReferenceResolutionRequest.DocumentReferences.Should()
             .ContainSingle()
@@ -471,6 +468,68 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result
             .Should()
             .BeEquivalentTo(new UpdateResult.UpdateFailureReference([], [invalidDescriptorReference]));
+    }
+
+    [Test]
+    public async Task It_preserves_post_validation_results_returned_by_the_executor()
+    {
+        var validationFailure = new WriteValidationFailure(
+            new JsonPath("$.schoolYear"),
+            "Column 'SchoolYear' expected an integer."
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureValidation([validationFailure])
+                    )
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.UpsertFailureValidation([validationFailure]));
+    }
+
+    [Test]
+    public async Task It_preserves_put_validation_results_returned_by_the_executor()
+    {
+        var validationFailure = new WriteValidationFailure(
+            new JsonPath("$.addresses[1]"),
+            "Duplicate submitted semantic identity values are not allowed."
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateFailureValidation([validationFailure])
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateFailureValidation([validationFailure]));
     }
 
     [Test]

@@ -435,28 +435,6 @@ public sealed record CandidateAttachedAlignedScopeData
 }
 
 /// <summary>
-/// Optional write data the repository has already prepared for the executor.
-/// </summary>
-public sealed record RelationalWritePreparedData
-{
-    public RelationalWritePreparedData(FlatteningInput flatteningInput, FlattenedWriteSet flattenedWriteSet)
-    {
-        FlatteningInput = flatteningInput ?? throw new ArgumentNullException(nameof(flatteningInput));
-        FlattenedWriteSet = flattenedWriteSet ?? throw new ArgumentNullException(nameof(flattenedWriteSet));
-    }
-
-    /// <summary>
-    /// The selected write inputs used to produce <see cref="FlattenedWriteSet" />.
-    /// </summary>
-    public FlatteningInput FlatteningInput { get; init; }
-
-    /// <summary>
-    /// The flattened write tree produced from <see cref="FlatteningInput" />.
-    /// </summary>
-    public FlattenedWriteSet FlattenedWriteSet { get; init; }
-}
-
-/// <summary>
 /// Input contract for executor-owned relational write orchestration.
 /// </summary>
 public sealed record RelationalWriteExecutorRequest
@@ -470,7 +448,6 @@ public sealed record RelationalWriteExecutorRequest
         JsonNode selectedBody,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
-        RelationalWritePreparedData? preparedData = null,
         string? diagnosticIdentifier = null
     )
     {
@@ -483,7 +460,6 @@ public sealed record RelationalWriteExecutorRequest
         TraceId = traceId;
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
-        PreparedData = preparedData;
         DiagnosticIdentifier = diagnosticIdentifier;
 
         if (!ReferenceEquals(MappingSet, ReferenceResolutionRequest.MappingSet))
@@ -542,11 +518,6 @@ public sealed record RelationalWriteExecutorRequest
     /// Reference-resolution inputs the executor must resolve inside the shared write session.
     /// </summary>
     public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
-
-    /// <summary>
-    /// Optional repository-prepared inputs that later executor stages can reuse directly.
-    /// </summary>
-    public RelationalWritePreparedData? PreparedData { get; init; }
 
     /// <summary>
     /// Optional caller-supplied diagnostic identifier for logs or tracing.

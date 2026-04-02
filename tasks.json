@@ -42,7 +42,7 @@
       "Add backend unit tests that prove the executor constructs `FlatteningInput` only after successful reference resolution and that repository-level result mapping stays unchanged for flattener validation failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Current State Loader",

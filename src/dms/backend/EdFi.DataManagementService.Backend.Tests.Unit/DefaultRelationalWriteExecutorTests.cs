@@ -64,7 +64,7 @@ public class Given_Default_Relational_Write_Executor
         );
         _referenceResolverAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, false, "$$.schoolId=255901"),
             new ReferenceLookupResult(
                 descriptorReferentialId,
                 202L,
@@ -98,6 +98,25 @@ public class Given_Default_Relational_Write_Executor
             .BeSameAs(_writeSessionFactory.Session.Transaction);
         _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
         _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.OperationKind.Should().Be(request.OperationKind);
+        _writeFlattener.CapturedInput.TargetContext.Should().BeSameAs(request.TargetContext);
+        _writeFlattener.CapturedInput.WritePlan.Should().BeSameAs(request.WritePlan);
+        _writeFlattener.CapturedInput.SelectedBody.Should().BeSameAs(request.SelectedBody);
+        _writeFlattener.CapturedInput.ResolvedReferences.DocumentReferenceOccurrences.Should().HaveCount(2);
+        _writeFlattener
+            .CapturedInput.ResolvedReferences.DescriptorReferenceOccurrences.Should()
+            .ContainSingle();
+        _writeFlattener
+            .CapturedInput.ResolvedReferences.SuccessfulDocumentReferencesByPath.Keys.Should()
+            .BeEquivalentTo([
+                new JsonPath("$.schoolReference"),
+                new JsonPath("$.educationOrganizationReference"),
+            ]);
+        _writeFlattener
+            .CapturedInput.ResolvedReferences.SuccessfulDescriptorReferencesByPath.Keys.Should()
+            .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
