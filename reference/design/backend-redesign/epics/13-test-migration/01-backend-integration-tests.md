@@ -33,7 +33,7 @@ Fixture names and helper APIs in this story should use the shared scenario names
   - reference validation works (missing refs fail),
   - delete conflicts are reported correctly,
   - the shared profile scenario matrix from `02-parity-and-fixtures.md` runs end-to-end,
-  - `NoProfileWriteBehavior` includes one `FullSurfaceCollectionReorder` case that proves semantic-identity-based row matching rather than request ordinal,
+  - `NoProfileWriteBehavior` includes one omitted non-collection scope case, one no-profile `_ext` case, and one `FullSurfaceCollectionReorder` case that proves semantic-identity-based row matching rather than request ordinal,
   - `ProfileVisibleRowUpdateWithHiddenRowPreservation` covers no-previously-visible, interleaved update-plus-insert, nested collection, and extension child-collection variants under the deterministic hidden-gap ordering rule,
   - `ProfileVisibleRowDeleteWithHiddenRowPreservation` covers the delete-all-visible-while-hidden-rows-remain case,
   - hidden-member preservation assertions cover key-unified canonical storage, synthetic presence flags, and hidden reference/descriptor bindings where those bindings are driven by hidden profiled members,
@@ -50,4 +50,4 @@ Fixture names and helper APIs in this story should use the shared scenario names
    - run DMS with the relational backend,
    - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
-4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes plus key-unified/presence/FK/descriptor bindings, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings including the three-level chain, and unchanged-write guarded no-op behavior.
+4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including no-profile omitted-scope and `_ext` coverage, semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes plus key-unified/presence/FK/descriptor bindings, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings including the three-level chain, and unchanged-write guarded no-op behavior.
