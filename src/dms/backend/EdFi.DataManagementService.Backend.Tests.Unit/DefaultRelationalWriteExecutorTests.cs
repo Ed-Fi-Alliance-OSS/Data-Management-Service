@@ -327,6 +327,77 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_a_guarded_no_op_for_unchanged_sql_server_date_and_time_writes()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            rootWritePlan: CreateDateAndTimeRootPlan(),
+            selectedBody: JsonNode.Parse("""{"sessionDate":"2026-08-20","startTime":"14:05:07"}""")!,
+            dialect: SqlDialect.Mssql
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                request.WritePlan.TablePlansInDependencyOrder.Single(),
+                [
+                    new FlattenedWriteValue.Literal(345L),
+                    new FlattenedWriteValue.Literal(new DateOnly(2026, 8, 20)),
+                    new FlattenedWriteValue.Literal(new TimeOnly(14, 5, 7)),
+                ]
+            )
+        );
+        _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    request.WritePlan.Model.Root,
+                    [
+                        [
+                            345L,
+                            new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Unspecified),
+                            new TimeSpan(14, 5, 7),
+                        ],
+                    ]
+                ),
+            ]
+        );
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener,
+            _currentStateLoader,
+            _targetLookupResolver,
+            _writeFreshnessChecker,
+            new RelationalWriteNoProfileMergeSynthesizer(),
+            _nonCollectionPersister
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_not_exists_when_the_existing_put_target_disappears_before_current_state_load()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
@@ -747,13 +818,16 @@ public class Given_Default_Relational_Write_Executor
         bool allowIdentityUpdates = false,
         IReadOnlyList<DocumentReference>? documentReferences = null,
         IReadOnlyList<DescriptorReference>? descriptorReferences = null,
-        RelationalWriteTargetContext? targetContext = null
+        RelationalWriteTargetContext? targetContext = null,
+        TableWritePlan? rootWritePlan = null,
+        JsonNode? selectedBody = null,
+        SqlDialect dialect = SqlDialect.Pgsql
     )
     {
-        var writePlan = CreateRootPlan();
-        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
-        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
-        var mappingSet = CreateMappingSet(resourceModel);
+        var resolvedRootWritePlan = rootWritePlan ?? CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(resolvedRootWritePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [resolvedRootWritePlan]);
+        var mappingSet = CreateMappingSet(resourceModel, [resolvedRootWritePlan], dialect);
         var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var resolvedTargetContext =
@@ -774,8 +848,8 @@ public class Given_Default_Relational_Write_Executor
                     createDocumentUuid
                 ),
             resourceWritePlan,
-            CreateReadPlan(resourceModel),
-            JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+            CreateReadPlan(resourceModel, dialect),
+            selectedBody ?? JsonNode.Parse("""{"name":"Lincoln High"}""")!,
             allowIdentityUpdates,
             new TraceId("write-executor-test"),
             new ReferenceResolverRequest(
@@ -788,15 +862,25 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static MappingSet CreateMappingSet(RelationalResourceModel resourceModel)
+    private static MappingSet CreateMappingSet(
+        RelationalResourceModel resourceModel,
+        IReadOnlyList<TableWritePlan>? tableWritePlans = null,
+        SqlDialect dialect = SqlDialect.Pgsql
+    )
     {
+        var resolvedTableWritePlans = tableWritePlans ?? [CreateRootPlan()];
         var resource = resourceModel.Resource;
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
         var descriptorKey = new ResourceKeyEntry(13, descriptorResource, "1.0.0", true);
+        var identityProjectionColumns = resourceModel
+            .Root.Columns.Where(columnModel => columnModel.Kind == ColumnKind.Scalar)
+            .Select(columnModel => columnModel.ColumnName)
+            .Take(1)
+            .ToArray();
 
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
             Model: new DerivedRelationalModelSet(
                 EffectiveSchema: new EffectiveSchemaInfo(
                     ApiSchemaFormatVersion: "1.0",
@@ -810,7 +894,7 @@ public class Given_Default_Relational_Write_Executor
                     ],
                     ResourceKeysInIdOrder: [resourceKey, descriptorKey]
                 ),
-                Dialect: SqlDialect.Pgsql,
+                Dialect: dialect,
                 ProjectSchemasInEndpointOrder:
                 [
                     new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
@@ -832,14 +916,14 @@ public class Given_Default_Relational_Write_Executor
                         new DbTriggerName("TR_School_DocumentStamping"),
                         resourceModel.Root.Table,
                         [new DbColumnName("DocumentId")],
-                        [new DbColumnName("SchoolId")],
+                        identityProjectionColumns,
                         new TriggerKindParameters.DocumentStamping()
                     ),
                 ]
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {
-                [resource] = new ResourceWritePlan(resourceModel, [CreateRootPlan()]),
+                [resource] = new ResourceWritePlan(resourceModel, resolvedTableWritePlans),
             },
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
@@ -859,17 +943,23 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static ResourceReadPlan CreateReadPlan(RelationalResourceModel resourceModel)
+    private static ResourceReadPlan CreateReadPlan(
+        RelationalResourceModel resourceModel,
+        SqlDialect dialect = SqlDialect.Pgsql
+    )
     {
+        var selectColumns = string.Join(
+            ", ",
+            resourceModel.Root.Columns.Select(column => QuoteIdentifier(column.ColumnName.Value, dialect))
+        );
+        var selectSql =
+            $"select {selectColumns} from {QuoteIdentifier(resourceModel.Root.Table.Schema.Value, dialect)}."
+            + $"{QuoteIdentifier(resourceModel.Root.Table.Name, dialect)}";
+
         return new ResourceReadPlan(
             resourceModel,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [
-                new TableReadPlan(
-                    resourceModel.Root,
-                    "select \"DocumentId\", \"SchoolId\", \"Name\" from edfi.\"School\""
-                ),
-            ],
+            KeysetTableConventions.GetKeysetTableContract(dialect),
+            [new TableReadPlan(resourceModel.Root, selectSql)],
             [],
             []
         );
@@ -974,6 +1064,96 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
+    private static TableWritePlan CreateDateAndTimeRootPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SessionDate"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Date),
+                    false,
+                    new JsonPathExpression("$.sessionDate", [new JsonPathSegment.Property("sessionDate")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("StartTime"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Time),
+                    false,
+                    new JsonPathExpression("$.startTime", [new JsonPathSegment.Property("startTime")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@DocumentId, @SessionDate, @StartTime)",
+            UpdateSql: "update edfi.\"School\" set \"SessionDate\" = @SessionDate, \"StartTime\" = @StartTime where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.sessionDate",
+                            [new JsonPathSegment.Property("sessionDate")]
+                        ),
+                        new RelationalScalarType(ScalarKind.Date)
+                    ),
+                    "SessionDate"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.startTime", [new JsonPathSegment.Property("startTime")]),
+                        new RelationalScalarType(ScalarKind.Time)
+                    ),
+                    "StartTime"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static string QuoteIdentifier(string identifier, SqlDialect dialect) =>
+        dialect == SqlDialect.Mssql ? $"[{identifier}]" : $"\"{identifier}\"";
+
     private sealed class RecordingReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
     {
         public RecordingReferenceResolverAdapter Adapter { get; } = new();
@@ -1057,6 +1237,8 @@ public class Given_Default_Relational_Write_Executor
 
         public Exception? ExceptionToThrow { get; set; }
 
+        public FlattenedWriteSet? ResultToReturn { get; set; }
+
         public FlattenedWriteSet Flatten(FlatteningInput flatteningInput)
         {
             FlattenCallCount++;
@@ -1067,18 +1249,19 @@ public class Given_Default_Relational_Write_Executor
                 throw ExceptionToThrow;
             }
 
-            return new FlattenedWriteSet(
-                new RootWriteRowBuffer(
-                    flatteningInput.WritePlan.TablePlansInDependencyOrder.Single(),
-                    [
-                        flatteningInput.OperationKind == RelationalWriteOperationKind.Put
-                            ? new FlattenedWriteValue.Literal(345L)
-                            : FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                        new FlattenedWriteValue.Literal(255901),
-                        new FlattenedWriteValue.Literal("Lincoln High"),
-                    ]
-                )
-            );
+            return ResultToReturn
+                ?? new FlattenedWriteSet(
+                    new RootWriteRowBuffer(
+                        flatteningInput.WritePlan.TablePlansInDependencyOrder.Single(),
+                        [
+                            flatteningInput.OperationKind == RelationalWriteOperationKind.Put
+                                ? new FlattenedWriteValue.Literal(345L)
+                                : FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                            new FlattenedWriteValue.Literal(255901),
+                            new FlattenedWriteValue.Literal("Lincoln High"),
+                        ]
+                    )
+                );
         }
     }
 

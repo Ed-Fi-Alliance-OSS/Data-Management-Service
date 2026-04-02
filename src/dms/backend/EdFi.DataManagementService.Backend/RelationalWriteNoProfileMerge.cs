@@ -564,7 +564,9 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                         tableWritePlan.TableModel,
                         binding.Column.ColumnName
                     );
-                    bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(hydratedRow[columnOrdinal]);
+                    bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(
+                        NormalizeHydratedValue(binding.Column, hydratedRow[columnOrdinal])
+                    );
                 }
 
                 projectedRows.Add(
@@ -592,6 +594,42 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 $"Hydrated table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}' does not contain column '{columnName.Value}'."
             );
         }
+
+        private static object? NormalizeHydratedValue(DbColumnModel column, object? value)
+        {
+            ArgumentNullException.ThrowIfNull(column);
+
+            if (value is null || column.ScalarType is null)
+            {
+                return value;
+            }
+
+            return column.ScalarType.Kind switch
+            {
+                ScalarKind.Date => NormalizeDateValue(value),
+                ScalarKind.Time => NormalizeTimeValue(value),
+                _ => value,
+            };
+        }
+
+        private static object NormalizeDateValue(object value) =>
+            value switch
+            {
+                DateOnly => value,
+                DateTime dateTime => DateOnly.FromDateTime(dateTime),
+                DateTimeOffset dateTimeOffset => DateOnly.FromDateTime(dateTimeOffset.DateTime),
+                _ => value,
+            };
+
+        private static object NormalizeTimeValue(object value) =>
+            value switch
+            {
+                TimeOnly => value,
+                TimeSpan timeSpan => TimeOnly.FromTimeSpan(timeSpan),
+                DateTime dateTime => TimeOnly.FromDateTime(dateTime),
+                DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.DateTime),
+                _ => value,
+            };
     }
 
     private sealed class ProjectedCollectionTableState

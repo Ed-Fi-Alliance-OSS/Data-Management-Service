@@ -318,5 +318,48 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Code Review Follow-Up - Reopen SQL Server Current-State Scalar Normalization",
+    "description": "Finish the still-open SQL Server no-profile compare and merge fix. Acceptance: current-state projection no longer wraps raw hydrated ADO values directly into `FlattenedWriteValue.Literal` for compare and semantic-identity matching; instead it normalizes hydrated values into the same storage-space types the write flattener emits, including `DateOnly` for `ScalarKind.Date` and `TimeOnly` for `ScalarKind.Time`; unchanged existing-document SQL Server writes with `date` and `time` bindings classify as guarded no-op instead of changed-write; collection semantic-identity matching uses the same normalized value space on both PostgreSQL and SQL Server so unchanged collection rows do not degrade into delete plus insert behavior.",
+    "steps-to-verify": [
+      "Add backend unit tests that hydrate SQL Server-shaped `date` and `time` values (`DateTime` and `TimeSpan`) and prove merge synthesis produces the same comparable and semantic-identity values as the flattener (`DateOnly` and `TimeOnly`).",
+      "Add backend unit or contract coverage that proves unchanged existing-document writes with SQL Server `date` and `time` bindings return the guarded no-op path instead of falling through to persistence.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Code Review Follow-Up - Batch Collection-Aligned Extension Scope Persistence",
+    "description": "Remove the remaining N+1 persistence path for collection-aligned extension scopes. Acceptance: `DbTableKind.CollectionExtensionScope` rows no longer execute one insert, update, or delete command per row when large no-profile writes touch collection-aligned `_ext` scopes; collection-aligned scope persistence uses bounded batch execution that respects the compiled dialect batching limits and parameter ceilings already carried on the table plans; the batched path preserves existing behavior for `BaseCollectionItemId`, newly reserved `CollectionItemId` values, and matched-row update semantics; no-profile writes with large collection-aligned `_ext` payloads stay inside one transaction without falling back to per-row DML.",
+    "steps-to-verify": [
+      "Refactor collection-aligned extension scope delete and upsert paths to batch commands using the same bounded command-count rules expected of the rest of DMS-984 persistence.",
+      "Add backend unit tests that cover multi-row insert, update, and delete behavior for collection-aligned extension scopes and would fail on a one-command-per-row fallback.",
+      "Add PostgreSQL integration coverage for a collection-aligned `_ext` write large enough to cross one batch boundary and assert both persisted row state and bounded command execution.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Review Follow-Up - Remove Dead Session PUT Lookup Surface",
+    "description": "Delete the unused session-side PUT lookup path left behind after restoring repository-owned target lookup. Acceptance: production write orchestration no longer exposes or carries an executor-session `ResolveForPutAsync(...)` surface that nothing in the runtime uses; the repository remains the only owner of PUT not-found lookup policy; executor recovery keeps only the session-side POST re-evaluation path needed after current-state load misses; contracts, registrations, and tests are simplified so the codebase no longer suggests that PUT lookup can occur on both repository and executor seams.",
+    "steps-to-verify": [
+      "Remove the unused session PUT lookup entrypoint and update runtime wiring so only the actually used lookup surfaces remain.",
+      "Add or update backend unit tests to prove PUT not-found short-circuiting still occurs at the repository boundary and POST existing-target re-evaluation still works inside the executor session.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Review Follow-Up - Deduplicate Session Command Construction",
+    "description": "Simplify the duplicated session command-building logic shared by `RelationalWriteSession.CreateCommand(...)` and `SessionRelationalCommandExecutor.ExecuteReaderAsync(...)`. Acceptance: one shared helper owns session-bound `DbCommand` creation and parameter binding for `RelationalCommand`; both the write-session and session command-executor paths use that shared helper instead of keeping parallel parameter loops; behavior stays unchanged for command text, transaction binding, null handling, and optional parameter configuration; the codebase no longer has two independent implementations that can drift apart.",
+    "steps-to-verify": [
+      "Extract the common session command creation and parameter-binding logic into one shared helper and update both call sites to use it.",
+      "Add or update backend unit tests that cover command text, transaction assignment, parameter naming, null handling, and parameter configurator behavior through both call sites.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
