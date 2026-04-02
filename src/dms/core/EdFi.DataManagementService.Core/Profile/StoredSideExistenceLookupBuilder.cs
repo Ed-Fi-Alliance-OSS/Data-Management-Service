@@ -275,6 +275,20 @@ public static class StoredSideExistenceLookupBuilder
                 visibleRowAddresses
             );
         }
+        else
+        {
+            // Scope is hidden or absent — recursively emit states for descendant
+            // non-collection scopes that cannot be encountered during the walk.
+            EmitAbsentChildScopeStates(
+                jsonScope,
+                ancestorItems,
+                classifier,
+                addressEngine,
+                scopesByJsonScope,
+                classifiedScopes,
+                []
+            );
+        }
     }
 
     /// <summary>
