@@ -122,9 +122,9 @@
   },
   {
     "category": "Batching And Dialect Limits",
-    "description": "Implement batched relational DML that respects dialect-specific parameter limits without introducing provider-specific bulk-loader paths in this story. Acceptance: inserts and updates are grouped to avoid N+1 execution patterns; multi-row insert chunking and parameter partitioning honor PostgreSQL and SQL Server parameter limits; `CollectionItemId` reservation is batched by table or scope as needed; large collections that exceed one batch are persisted through multiple bounded batches inside the same transaction; provider-specific `COPY` and `SqlBulkCopy` optimizations remain out of scope for DMS-984.",
+    "description": "Implement batched relational DML that respects dialect-specific parameter limits without introducing provider-specific bulk-loader paths in this story. Acceptance: inserts and updates are grouped to avoid N+1 execution patterns; multi-row insert chunking and parameter partitioning honor PostgreSQL and SQL Server parameter limits; update execution proves changed rows are applied through bounded grouped commands rather than one command per row; `CollectionItemId` reservation is batched by table or scope as needed; large collections that exceed one batch are persisted through multiple bounded batches inside the same transaction; provider-specific `COPY` and `SqlBulkCopy` optimizations remain out of scope for DMS-984.",
     "steps-to-verify": [
-      "Add backend unit tests for batch partitioning decisions, parameter-limit handling, and multi-batch collection insert behavior.",
+      "Add backend unit tests for batch partitioning decisions, parameter-limit handling, multi-batch collection insert behavior, and update-side batching or command-count behavior that would catch a per-row update fallback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
