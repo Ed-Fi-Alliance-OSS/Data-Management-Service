@@ -122,6 +122,166 @@ file sealed class GuardedNoOpConcurrentContentVersionBumpFreshnessChecker(
     }
 }
 
+internal sealed class GuardedNoOpCommitWindowProbe
+{
+    public int IsCurrentCallCount { get; private set; }
+
+    public List<bool> Results { get; } = [];
+
+    public void Record(bool result)
+    {
+        IsCurrentCallCount++;
+        Results.Add(result);
+    }
+}
+
+internal sealed class GuardedNoOpCommitWindowCoordinator(NpgsqlDataSourceProvider dataSourceProvider)
+    : IAsyncDisposable
+{
+    private readonly NpgsqlDataSourceProvider _dataSourceProvider =
+        dataSourceProvider ?? throw new ArgumentNullException(nameof(dataSourceProvider));
+
+    private readonly TaskCompletionSource _writePending = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    private readonly TaskCompletionSource _allowCommit = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    private readonly TaskCompletionSource _committed = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    private NpgsqlConnection? _connection;
+    private NpgsqlTransaction? _transaction;
+    private bool _commitCompleted;
+
+    public int CommitCallCount { get; private set; }
+
+    public async Task BeginPendingContentVersionBumpAsync(
+        long documentId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(cancellationToken);
+        _transaction = await _connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken
+        );
+
+        await using var command = _connection.CreateCommand();
+        command.Transaction = _transaction;
+        command.CommandText = """
+            UPDATE "dms"."Document"
+            SET "ContentVersion" = "ContentVersion" + 1
+            WHERE "DocumentId" = @documentId;
+            """;
+        command.Parameters.Add(new NpgsqlParameter("documentId", documentId));
+
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (rowsAffected != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one pending document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+            );
+        }
+
+        _writePending.TrySetResult();
+        await _allowCommit.Task.WaitAsync(cancellationToken);
+        await _transaction.CommitAsync(cancellationToken);
+        _commitCompleted = true;
+        CommitCallCount++;
+        _committed.TrySetResult();
+    }
+
+    public Task WaitUntilWriteIsPendingAsync(CancellationToken cancellationToken = default) =>
+        _writePending.Task.WaitAsync(cancellationToken);
+
+    public void ReleaseCommit() => _allowCommit.TrySetResult();
+
+    public Task WaitUntilCommittedAsync(CancellationToken cancellationToken = default) =>
+        _committed.Task.WaitAsync(cancellationToken);
+
+    public async ValueTask DisposeAsync()
+    {
+        ReleaseCommit();
+
+        if (_transaction is not null && !_commitCompleted)
+        {
+            try
+            {
+                await _transaction.RollbackAsync();
+            }
+            catch
+            {
+                // Best-effort cleanup for test-owned pending transactions.
+            }
+        }
+
+        if (_transaction is not null)
+        {
+            await _transaction.DisposeAsync();
+        }
+
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync();
+        }
+    }
+}
+
+internal sealed class GuardedNoOpCommitWindowFreshnessChecker(
+    GuardedNoOpCommitWindowCoordinator coordinator,
+    GuardedNoOpCommitWindowProbe probe
+) : IRelationalWriteFreshnessChecker
+{
+    private readonly GuardedNoOpCommitWindowCoordinator _coordinator =
+        coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+
+    private readonly GuardedNoOpCommitWindowProbe _probe =
+        probe ?? throw new ArgumentNullException(nameof(probe));
+
+    private readonly RelationalWriteFreshnessChecker _innerChecker = new();
+
+    public async Task<bool> IsCurrentAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (_probe.IsCurrentCallCount == 0)
+        {
+            var isCurrentTask = _innerChecker.IsCurrentAsync(
+                request,
+                targetContext,
+                writeSession,
+                cancellationToken
+            );
+
+            _coordinator.ReleaseCommit();
+
+            var isCurrent = await isCurrentTask;
+            _probe.Record(isCurrent);
+            await _coordinator.WaitUntilCommittedAsync(cancellationToken);
+
+            return isCurrent;
+        }
+
+        var retryResult = await _innerChecker.IsCurrentAsync(
+            request,
+            targetContext,
+            writeSession,
+            cancellationToken
+        );
+
+        _probe.Record(retryResult);
+        return retryResult;
+    }
+}
+
 internal sealed record GuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
@@ -236,6 +396,15 @@ file static class GuardedNoOpIntegrationTestSupport
                 IRelationalWriteFreshnessChecker,
                 GuardedNoOpConcurrentContentVersionBumpFreshnessChecker
             >();
+        });
+
+    public static ServiceProvider CreateCommitWindowServiceProvider() =>
+        CreateServiceProvider(static services =>
+        {
+            services.AddSingleton<GuardedNoOpCommitWindowProbe>();
+            services.AddScoped<GuardedNoOpCommitWindowCoordinator>();
+            services.RemoveAll<IRelationalWriteFreshnessChecker>();
+            services.AddScoped<IRelationalWriteFreshnessChecker, GuardedNoOpCommitWindowFreshnessChecker>();
         });
 
     public static UpsertRequest CreateCreateRequest(
@@ -596,7 +765,7 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stab
 
     private async Task ExecuteCreateAsync()
     {
-        using var scope = _serviceProvider.CreateScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
             .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
@@ -745,7 +914,7 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_F
 
     private async Task ExecuteCreateAsync()
     {
-        using var scope = _serviceProvider.CreateScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
             .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
@@ -882,7 +1051,7 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focuse
 
     private async Task ExecuteCreateAsync()
     {
-        using var scope = _serviceProvider.CreateScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
             .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
@@ -1042,7 +1211,7 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_Wi
 
     private async Task ExecuteCreateAsync()
     {
-        using var scope = _serviceProvider.CreateScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
 
         scope
             .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
@@ -1094,5 +1263,335 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_Wi
                 referentialId
             )
         );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000007")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpCommitWindowProbe _freshnessProbe = null!;
+    private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
+        _freshnessProbe = _serviceProvider.GetRequiredService<GuardedNoOpCommitWindowProbe>();
+
+        await ExecuteCreateAsync();
+        _stateBeforeUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+
+        _updateResult = await ExecuteUpdateAsync(_stateBeforeUpdate.Document.DocumentId);
+        _stateAfterUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_retries_the_no_op_after_the_commit_window_race_and_returns_update_success()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+        _freshnessProbe.IsCurrentCallCount.Should().Be(2);
+        _freshnessProbe.Results.Should().Equal(false, true);
+    }
+
+    [Test]
+    public void It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump()
+    {
+        var adjustedAfterState = _stateAfterUpdate with
+        {
+            Document = _stateAfterUpdate.Document with
+            {
+                ContentVersion = _stateBeforeUpdate.Document.ContentVersion,
+            },
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
+        _stateAfterUpdate
+            .Document.ResourceKeyId.Should()
+            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-guarded-no-op-commit-window-put-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteUpdateAsync(long documentId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var coordinator = scope.ServiceProvider.GetRequiredService<GuardedNoOpCommitWindowCoordinator>();
+        var pendingCommitTask = coordinator.BeginPendingContentVersionBumpAsync(documentId);
+
+        await coordinator.WaitUntilWriteIsPendingAsync();
+
+        try
+        {
+            return await repository.UpdateDocumentById(
+                GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                    _mappingSet,
+                    SchoolDocumentUuid,
+                    "pg-guarded-no-op-commit-window-put-update"
+                )
+            );
+        }
+        finally
+        {
+            coordinator.ReleaseCommit();
+            await pendingCommitTask;
+        }
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race
+{
+    private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000008")
+    );
+    private static readonly DocumentUuid IncomingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000009")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpCommitWindowProbe _freshnessProbe = null!;
+    private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private long _incomingDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
+        _freshnessProbe = _serviceProvider.GetRequiredService<GuardedNoOpCommitWindowProbe>();
+
+        await ExecuteCreateAsync();
+        _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+
+        var persistedReferentialIdentity =
+            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
+                _database,
+                _stateBeforePostAsUpdate.Document.DocumentId,
+                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
+            );
+
+        _postAsUpdateResult = await ExecutePostAsUpdateAsync(
+            _stateBeforePostAsUpdate.Document.DocumentId,
+            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+        );
+
+        _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+        _incomingDocumentUuidCount = await GuardedNoOpIntegrationTestSupport.ReadDocumentCountAsync(
+            _database,
+            IncomingSchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_retries_the_no_op_after_the_commit_window_race_and_preserves_the_existing_document()
+    {
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingSchoolDocumentUuid);
+        _incomingDocumentUuidCount.Should().Be(0);
+        _freshnessProbe.IsCurrentCallCount.Should().Be(2);
+        _freshnessProbe.Results.Should().Equal(false, true);
+    }
+
+    [Test]
+    public void It_preserves_existing_rowsets_but_keeps_the_concurrent_content_version_bump()
+    {
+        var adjustedAfterState = _stateAfterPostAsUpdate with
+        {
+            Document = _stateAfterPostAsUpdate.Document with
+            {
+                ContentVersion = _stateBeforePostAsUpdate.Document.ContentVersion,
+            },
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
+        _stateAfterPostAsUpdate
+            .Document.ContentVersion.Should()
+            .Be(_stateBeforePostAsUpdate.Document.ContentVersion + 1);
+        _stateAfterPostAsUpdate
+            .Document.ResourceKeyId.Should()
+            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                ExistingSchoolDocumentUuid,
+                "pg-guarded-no-op-commit-window-post-as-update-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpsertResult> ExecutePostAsUpdateAsync(long documentId, ReferentialId referentialId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpCommitWindowPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var coordinator = scope.ServiceProvider.GetRequiredService<GuardedNoOpCommitWindowCoordinator>();
+        var pendingCommitTask = coordinator.BeginPendingContentVersionBumpAsync(documentId);
+
+        await coordinator.WaitUntilWriteIsPendingAsync();
+
+        try
+        {
+            return await repository.UpsertDocument(
+                GuardedNoOpIntegrationTestSupport.CreatePostAsUpdateRequest(
+                    _mappingSet,
+                    IncomingSchoolDocumentUuid,
+                    "pg-guarded-no-op-commit-window-post-as-update",
+                    referentialId
+                )
+            );
+        }
+        finally
+        {
+            coordinator.ReleaseCommit();
+            await pendingCommitTask;
+        }
     }
 }

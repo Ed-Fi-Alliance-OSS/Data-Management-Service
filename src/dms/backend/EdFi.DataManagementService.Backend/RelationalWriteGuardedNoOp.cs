@@ -89,6 +89,7 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
                     document."ContentVersion" AS "ContentVersion"
                 FROM dms."Document" document
                 WHERE document."DocumentId" = @documentId
+                FOR UPDATE
                 """,
                 [new RelationalParameter(DocumentIdParameterName, documentId)]
             ),
@@ -96,7 +97,7 @@ internal sealed class RelationalWriteFreshnessChecker : IRelationalWriteFreshnes
                 """
                 SELECT
                     document.[ContentVersion] AS [ContentVersion]
-                FROM [dms].[Document] document
+                FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
                 WHERE document.[DocumentId] = @documentId
                 """,
                 [new RelationalParameter(DocumentIdParameterName, documentId)]
