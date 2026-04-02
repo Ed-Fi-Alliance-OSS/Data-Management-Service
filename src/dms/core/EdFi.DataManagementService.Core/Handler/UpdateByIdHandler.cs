@@ -68,7 +68,8 @@ internal class UpdateByIdHandler(
                             requestInfo.ScopedServiceProvider,
                             _logger
                         ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
+                        BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                 ),
             requestInfo

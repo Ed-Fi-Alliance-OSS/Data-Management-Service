@@ -4,24 +4,23 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Profile;
 
-namespace EdFi.DataManagementService.Backend.Profile;
+namespace EdFi.DataManagementService.Backend.External.Profile;
 
 /// <summary>
 /// Builds a <see cref="CompiledScopeDescriptor"/> array from a <see cref="ResourceWritePlan"/>,
 /// bridging backend relational plan types into Core's profile address derivation vocabulary.
 /// </summary>
-internal static class CompiledScopeAdapterFactory
+public static class CompiledScopeAdapterFactory
 {
     /// <summary>
     /// Builds compiled scope descriptors from the given <see cref="ResourceWritePlan"/>.
     /// </summary>
     public static CompiledScopeDescriptor[] BuildFromWritePlan(ResourceWritePlan plan)
     {
-        // Build a lookup of JsonScope canonical string → ScopeKind for parent resolution
+        // Build a lookup of JsonScope canonical string -> ScopeKind for parent resolution
         var scopeKindByCanonical = plan
             .TablePlansInDependencyOrder.Select(tp => tp.TableModel)
             .ToDictionary(tm => tm.JsonScope.Canonical, tm => ToScopeKind(tm.IdentityMetadata.TableKind));
@@ -89,7 +88,7 @@ internal static class CompiledScopeAdapterFactory
 
         // Split on '.' and walk back segment by segment to find the closest ancestor
         // that is in the table set.
-        // e.g. "$.addresses[*]._ext.sample" → try "$._ext" (not in set), try "$.addresses[*]" (in set)
+        // e.g. "$.addresses[*]._ext.sample" -> try "$._ext" (not in set), try "$.addresses[*]" (in set)
         // We need to reconstruct candidates by stripping the last segment each time.
         var segments = jsonScopeCanonical.Split('.');
 
