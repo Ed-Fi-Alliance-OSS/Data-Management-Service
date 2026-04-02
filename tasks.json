@@ -164,7 +164,7 @@
       "Add PostgreSQL integration tests that execute POST-as-update flows through the repository and executor and assert directly against database state, including one authoritative production-like fixture smoke.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Guarded No-Op",
