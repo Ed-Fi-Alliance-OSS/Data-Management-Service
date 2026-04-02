@@ -227,7 +227,7 @@
       "Add PostgreSQL integration tests that exercise authoritative sample create and PUT or POST-as-update flows through the real relational repository and assert directly against authoritative sample tables after each write.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Expanded Authoritative DS 5.2 Writes",
