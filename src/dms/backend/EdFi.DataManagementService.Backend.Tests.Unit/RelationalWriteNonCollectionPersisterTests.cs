@@ -660,6 +660,57 @@ public class Given_Relational_Write_Non_Collection_Persister
     }
 
     [Test]
+    public async Task It_uses_temporary_negative_ordinals_before_final_batch_updates_for_collection_reorders()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                [CreateRow(45L, 345L, 0, "Home"), CreateRow(44L, 345L, 1, "Mailing")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(2);
+
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@Ordinal_0").Should().Be(-1);
+        GetParameterValue(writeSession.Commands[0], "@Ordinal_1").Should().Be(-2);
+
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal_0").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal_1").Should().Be(1);
+    }
+
+    [Test]
     public async Task It_batches_collection_id_reservations_and_insert_commands_for_large_collection_inserts()
     {
         var rootPlan = CreateRootPlan();

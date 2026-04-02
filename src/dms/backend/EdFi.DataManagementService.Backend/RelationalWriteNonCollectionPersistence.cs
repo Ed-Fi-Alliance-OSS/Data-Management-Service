@@ -620,6 +620,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         );
         List<RelationalWriteNoProfileTableRow> rowsToUpdate = [];
         List<RelationalWriteNoProfileTableRow> rowsToInsert = [];
+        var hasOrdinalReorder = false;
 
         foreach (var mergedRow in tableState.MergedRows)
         {
@@ -650,18 +651,24 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             }
 
             rowsToUpdate.Add(mergedRow);
+
+            if (
+                !Equals(
+                    currentRow.Values[mergePlan.OrdinalBindingIndex],
+                    mergedRow.Values[mergePlan.OrdinalBindingIndex]
+                )
+            )
+            {
+                hasOrdinalReorder = true;
+            }
         }
 
-        foreach (
-            var updateBatch in rowsToUpdate.Chunk(
-                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
-            )
-        )
+        if (rowsToUpdate.Count > 1 && hasOrdinalReorder)
         {
-            await ExecuteCollectionUpdateBatchAsync(
+            await ExecuteCollectionUpdateBatchesAsync(
                     tableState.TableWritePlan,
                     mergePlan.UpdateByStableRowIdentitySql,
-                    updateBatch,
+                    CreateTemporaryOrdinalRows(rowsToUpdate, mergePlan.OrdinalBindingIndex),
                     rootDocumentId,
                     reservedCollectionItemIds,
                     writeSession,
@@ -669,6 +676,17 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 )
                 .ConfigureAwait(false);
         }
+
+        await ExecuteCollectionUpdateBatchesAsync(
+                tableState.TableWritePlan,
+                mergePlan.UpdateByStableRowIdentitySql,
+                rowsToUpdate,
+                rootDocumentId,
+                reservedCollectionItemIds,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         foreach (
             var insertBatch in rowsToInsert.Chunk(
@@ -995,6 +1013,31 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             .ConfigureAwait(false);
     }
 
+    private static async Task ExecuteCollectionUpdateBatchesAsync(
+        TableWritePlan tableWritePlan,
+        string updateSql,
+        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        long rootDocumentId,
+        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var updateBatch in rows.Chunk(tableWritePlan.BulkInsertBatching.MaxRowsPerBatch))
+        {
+            await ExecuteCollectionUpdateBatchAsync(
+                    tableWritePlan,
+                    updateSql,
+                    updateBatch,
+                    rootDocumentId,
+                    reservedCollectionItemIds,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
     private static async Task ExecuteCollectionInsertBatchAsync(
         SqlDialect dialect,
         TableWritePlan tableWritePlan,
@@ -1234,6 +1277,27 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         return new RelationalCommand(sql, parameters);
+    }
+
+    private static IReadOnlyList<RelationalWriteNoProfileTableRow> CreateTemporaryOrdinalRows(
+        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        int ordinalBindingIndex
+    )
+    {
+        RelationalWriteNoProfileTableRow[] temporaryRows = new RelationalWriteNoProfileTableRow[rows.Count];
+
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            var temporaryValues = rows[rowIndex].Values.ToArray();
+            temporaryValues[ordinalBindingIndex] = new FlattenedWriteValue.Literal(-1 - rowIndex);
+
+            temporaryRows[rowIndex] = new RelationalWriteNoProfileTableRow(
+                temporaryValues,
+                rows[rowIndex].ComparableValues
+            );
+        }
+
+        return temporaryRows;
     }
 
     private static string BuildInsertBatchSql(SqlDialect dialect, TableWritePlan tableWritePlan, int rowCount)
