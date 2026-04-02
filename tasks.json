@@ -173,7 +173,7 @@
       "Add PostgreSQL integration tests that execute unchanged-write scenarios through the repository and executor and assert directly against row contents and `ContentVersion` behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Full-Surface Collection Reorder",
