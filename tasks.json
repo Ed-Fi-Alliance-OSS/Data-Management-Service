@@ -275,6 +275,6 @@
     "steps-to-verify": [
       "Update the E13 summary row in `reference/design/backend-redesign/epics/DEPENDENCIES.md` and confirm it matches the detailed hard-dependency entries for `E13-S01` later in the same document."
     ],
-    "completed": false
+    "completed": true
   }
 ]

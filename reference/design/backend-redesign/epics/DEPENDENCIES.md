@@ -298,7 +298,7 @@ Epic: `13-test-migration/EPIC.md`
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E13-S00 | [`00-e2e-environment-updates.md`](13-test-migration/00-e2e-environment-updates.md) | E03-S01, E06-S04 | — | E2E docker/scripts updated for per-schema provisioning (no hot reload) |
-| E13-S01 | [`01-backend-integration-tests.md`](13-test-migration/01-backend-integration-tests.md) | E07-S03, E08-S01, E11-S01 | — | End-to-end runtime CRUD/query integration tests (docker compose, no Testcontainers) |
+| E13-S01 | [`01-backend-integration-tests.md`](13-test-migration/01-backend-integration-tests.md) | E07-S03, E07-S03b, E07-S05b, E08-S01, E11-S01 | — | End-to-end runtime CRUD/query integration tests (docker compose, no Testcontainers) |
 | E13-S02 | [`02-parity-and-fixtures.md`](13-test-migration/02-parity-and-fixtures.md) | E13-S01 | — | Cross-engine parity tests and shared fixtures |
 | E13-S03 | [`03-developer-docs.md`](13-test-migration/03-developer-docs.md) | E13-S00 | E03-S00, E05-S03 | Dev docs/runbooks for provisioning, packs (optional), debugging |
 | E13-S04 | [`04-descriptor-tests.md`](13-test-migration/04-descriptor-tests.md) | E07-S06, E08-S05 | E03-S05 | Descriptor integration coverage (writes, queries, optional seeding) |
