@@ -200,7 +200,7 @@
       "Add PostgreSQL integration tests that execute large-collection scenarios through the repository and executor and assert directly against stored collection rows after multi-batch persistence.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Rollback Safety",
