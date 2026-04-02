@@ -243,6 +243,7 @@ public sealed class RelationalDocumentStoreRepository(
                         writePlan,
                         readPlanResult.ReadPlan,
                         requestBody,
+                        resourceInfo.AllowIdentityUpdates,
                         traceId,
                         new ReferenceResolverRequest(
                             MappingSet: mappingSet,

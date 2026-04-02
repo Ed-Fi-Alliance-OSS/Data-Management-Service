@@ -98,9 +98,20 @@ internal sealed class DefaultRelationalWriteExecutor(
                     .ConfigureAwait(false);
             }
 
-            _ = _noProfileMergeSynthesizer.Synthesize(
+            var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
                 new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
             );
+
+            var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
+                request,
+                noProfileMergeResult
+            );
+
+            if (identityStabilityFailure is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return identityStabilityFailure;
+            }
 
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,

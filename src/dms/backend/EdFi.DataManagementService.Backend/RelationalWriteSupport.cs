@@ -35,6 +35,13 @@ internal static class RelationalWriteSupport
         $"Relational write executor requires a compiled relational-table read plan for existing-document writes on resource '{FormatResource(resource)}'. "
         + "This indicates an internal request-shaping or guard-rail bug.";
 
+    public static string BuildImmutableIdentityFailureMessage(QualifiedResourceName resource) =>
+        $"Identifying values for the {resource.ResourceName} resource cannot be changed. Delete and recreate the resource item instead.";
+
+    public static string BuildIdentityUpdatesNotYetSupportedMessage(QualifiedResourceName resource) =>
+        $"Relational existing-document writes do not yet support identity-changing operations for resource '{FormatResource(resource)}' when allowIdentityUpdates=true. "
+        + "Keep the identity projection stable until the strict identity-maintenance work lands.";
+
     public static string BuildWriteExecutionNotImplementedMessage(
         RelationalWriteOperationKind operationKind,
         QualifiedResourceName resource,

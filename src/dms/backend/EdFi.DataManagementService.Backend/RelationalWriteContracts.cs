@@ -446,6 +446,7 @@ public sealed record RelationalWriteExecutorRequest
         ResourceWritePlan writePlan,
         ResourceReadPlan? readPlan,
         JsonNode selectedBody,
+        bool allowIdentityUpdates,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
         string? diagnosticIdentifier = null
@@ -457,6 +458,7 @@ public sealed record RelationalWriteExecutorRequest
         WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
         ReadPlan = readPlan;
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
+        AllowIdentityUpdates = allowIdentityUpdates;
         TraceId = traceId;
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
@@ -524,6 +526,11 @@ public sealed record RelationalWriteExecutorRequest
     /// The caller-selected body the executor will eventually persist.
     /// </summary>
     public JsonNode SelectedBody { get; init; }
+
+    /// <summary>
+    /// Whether identity-changing writes are allowed for this resource once the executor supports them.
+    /// </summary>
+    public bool AllowIdentityUpdates { get; init; }
 
     /// <summary>
     /// The request trace id for diagnostics.

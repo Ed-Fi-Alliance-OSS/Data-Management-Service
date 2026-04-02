@@ -182,7 +182,14 @@ public class Given_Default_Relational_Write_Executor
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
             ),
-            [new HydratedTableRows(request.WritePlan.Model.Root, [])]
+            [
+                new HydratedTableRows(
+                    request.WritePlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High"],
+                    ]
+                ),
+            ]
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -208,6 +215,91 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
             .BeSameAs(_currentStateLoader.ResultToReturn);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_allows_identity_stable_existing_document_writes_to_continue_to_the_pending_executor_path()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UnknownFailure(
+                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
+                            + "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
+                    )
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_immutable_identity_failure_when_existing_document_identity_changes_and_updates_are_disallowed()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureImmutableIdentity(
+                        "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+                    )
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_not_yet_supported_failure_when_existing_document_identity_changes_and_updates_are_allowed()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put, allowIdentityUpdates: true);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UnknownFailure(
+                        "Relational existing-document writes do not yet support identity-changing operations for resource 'Ed-Fi.School' when allowIdentityUpdates=true. "
+                            + "Keep the identity projection stable until the strict identity-maintenance work lands."
+                    )
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -258,6 +350,7 @@ public class Given_Default_Relational_Write_Executor
                 resourceWritePlan,
                 null,
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                false,
                 new TraceId("write-executor-test"),
                 new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
             );
@@ -267,6 +360,7 @@ public class Given_Default_Relational_Write_Executor
 
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
+        bool allowIdentityUpdates = false,
         IReadOnlyList<DocumentReference>? documentReferences = null,
         IReadOnlyList<DescriptorReference>? descriptorReferences = null
     )
@@ -290,6 +384,7 @@ public class Given_Default_Relational_Write_Executor
             resourceWritePlan,
             operationKind == RelationalWriteOperationKind.Put ? CreateReadPlan(resourceModel) : null,
             JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+            allowIdentityUpdates,
             new TraceId("write-executor-test"),
             new ReferenceResolverRequest(
                 mappingSet,
@@ -338,7 +433,16 @@ public class Given_Default_Relational_Write_Executor
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
+                TriggersInCreateOrder:
+                [
+                    new DbTriggerInfo(
+                        new DbTriggerName("TR_School_DocumentStamping"),
+                        resourceModel.Root.Table,
+                        [new DbColumnName("DocumentId")],
+                        [new DbColumnName("SchoolId")],
+                        new TriggerKindParameters.DocumentStamping()
+                    ),
+                ]
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {
@@ -367,7 +471,12 @@ public class Given_Default_Relational_Write_Executor
         return new ResourceReadPlan(
             resourceModel,
             KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
+            [
+                new TableReadPlan(
+                    resourceModel.Root,
+                    "select \"DocumentId\", \"SchoolId\", \"Name\" from edfi.\"School\""
+                ),
+            ],
             [],
             []
         );
@@ -408,6 +517,15 @@ public class Given_Default_Relational_Write_Executor
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.schoolId", []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Name"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75),
@@ -431,10 +549,10 @@ public class Given_Default_Relational_Write_Executor
 
         return new TableWritePlan(
             tableModel,
-            InsertSql: "insert into edfi.\"School\" values (@DocumentId, @Name)",
-            UpdateSql: "update edfi.\"School\" set \"Name\" = @Name where \"DocumentId\" = @DocumentId",
+            InsertSql: "insert into edfi.\"School\" values (@DocumentId, @SchoolId, @Name)",
+            UpdateSql: "update edfi.\"School\" set \"SchoolId\" = @SchoolId, \"Name\" = @Name where \"DocumentId\" = @DocumentId",
             DeleteByParentSql: null,
-            BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
             ColumnBindings:
             [
                 new WriteColumnBinding(
@@ -444,6 +562,14 @@ public class Given_Default_Relational_Write_Executor
                 ),
                 new WriteColumnBinding(
                     tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.schoolId", []),
+                        new RelationalScalarType(ScalarKind.Int32)
+                    ),
+                    "SchoolId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
                     new WriteValueSource.Scalar(
                         new JsonPathExpression("$.name", []),
                         new RelationalScalarType(ScalarKind.String, MaxLength: 75)
@@ -526,6 +652,7 @@ public class Given_Default_Relational_Write_Executor
                         flatteningInput.OperationKind == RelationalWriteOperationKind.Put
                             ? new FlattenedWriteValue.Literal(345L)
                             : FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                        new FlattenedWriteValue.Literal(255901),
                         new FlattenedWriteValue.Literal("Lincoln High"),
                     ]
                 )
@@ -565,7 +692,14 @@ public class Given_Default_Relational_Write_Executor
                             DateTimeOffset.UnixEpoch,
                             DateTimeOffset.UnixEpoch
                         ),
-                        [new HydratedTableRows(request.ReadPlan.Model.Root, [])]
+                        [
+                            new HydratedTableRows(
+                                request.ReadPlan.Model.Root,
+                                [
+                                    [345L, 255901, "Lincoln High"],
+                                ]
+                            ),
+                        ]
                     )
             );
         }
@@ -578,25 +712,66 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteNoProfileMergeRequest? CapturedRequest { get; private set; }
 
+        public RelationalWriteNoProfileMergeResult? ResultToReturn { get; set; }
+
         public RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
 
-            return new RelationalWriteNoProfileMergeResult([
-                new RelationalWriteNoProfileTableState(
-                    request.WritePlan.TablePlansInDependencyOrder[0],
-                    [],
-                    [
-                        new RelationalWriteNoProfileTableRow(
-                            request.FlattenedWriteSet.RootRow.Values,
-                            request.FlattenedWriteSet.RootRow.Values
-                        ),
-                    ]
-                ),
-            ]);
+            return ResultToReturn
+                ?? new RelationalWriteNoProfileMergeResult([
+                    new RelationalWriteNoProfileTableState(
+                        request.WritePlan.TablePlansInDependencyOrder[0],
+                        [
+                            new RelationalWriteNoProfileTableRow(
+                                request.FlattenedWriteSet.RootRow.Values,
+                                request.FlattenedWriteSet.RootRow.Values
+                            ),
+                        ],
+                        [
+                            new RelationalWriteNoProfileTableRow(
+                                request.FlattenedWriteSet.RootRow.Values,
+                                request.FlattenedWriteSet.RootRow.Values
+                            ),
+                        ]
+                    ),
+                ]);
         }
     }
+
+    private static RelationalWriteNoProfileMergeResult CreateMergeResult(
+        TableWritePlan rootTableWritePlan,
+        int currentSchoolId,
+        int mergedSchoolId,
+        string currentName = "Lincoln High",
+        string mergedName = "Lincoln High"
+    ) =>
+        new([
+            new RelationalWriteNoProfileTableState(
+                rootTableWritePlan,
+                [CreateRootTableRow(345L, currentSchoolId, currentName)],
+                [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
+            ),
+        ]);
+
+    private static RelationalWriteNoProfileTableRow CreateRootTableRow(
+        long documentId,
+        int schoolId,
+        string name
+    ) =>
+        new(
+            [
+                new FlattenedWriteValue.Literal(documentId),
+                new FlattenedWriteValue.Literal(schoolId),
+                new FlattenedWriteValue.Literal(name),
+            ],
+            [
+                new FlattenedWriteValue.Literal(documentId),
+                new FlattenedWriteValue.Literal(schoolId),
+                new FlattenedWriteValue.Literal(name),
+            ]
+        );
 
     private sealed class RecordingRelationalWriteSessionFactory : IRelationalWriteSessionFactory
     {
