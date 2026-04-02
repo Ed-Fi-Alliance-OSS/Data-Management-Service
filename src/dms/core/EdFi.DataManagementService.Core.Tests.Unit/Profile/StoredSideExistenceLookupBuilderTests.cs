@@ -703,7 +703,130 @@ public abstract class StoredSideExistenceLookupBuilderTests
     }
 
     // -----------------------------------------------------------------------
-    //  9. Per-item absent child scope states under collection ancestry
+    //  9. HiddenMemberPaths for extension scope under collection item
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Item_With_Hidden_Extension_Reports_Hidden_Member_Paths
+        : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        /// <summary>
+        /// IncludeOnly profile that includes root extension (sampleField) and
+        /// classPeriods (classPeriodName), but does NOT include the collection-item
+        /// extension — making $.classPeriods[*]._ext.sample hidden.
+        /// </summary>
+        private static ContentTypeDefinition BuildExtensionProfileWithHiddenItemExtension() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions:
+                [
+                    new ExtensionRule(
+                        Name: "sample",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("sampleField")],
+                        Objects: null,
+                        Collections: null
+                    ),
+                ]
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // Stored document has a collection item with extension data
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": {
+                            "sampleField": "rootExtValue"
+                        }
+                    },
+                    "classPeriods": [
+                        {
+                            "classPeriodName": "Period1",
+                            "_ext": {
+                                "sample": {
+                                    "extraField": "itemExtValue"
+                                }
+                            }
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = BuildLookup(
+                storedDoc,
+                ProfileTestFixtures.ExtensionFixtureScopes,
+                BuildExtensionProfileWithHiddenItemExtension()
+            );
+        }
+
+        [Test]
+        public void It_should_classify_collection_item_extension_scope()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.classPeriods[*]._ext.sample")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_collection_item_extension_as_hidden()
+        {
+            var extScope = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+            );
+            extScope.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
+        }
+
+        [Test]
+        public void It_should_include_extension_member_in_hidden_member_paths()
+        {
+            var extScope = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+            );
+            extScope.HiddenMemberPaths.Should().Contain("extraField");
+        }
+
+        [Test]
+        public void It_should_classify_root_extension_as_visible()
+        {
+            var rootExt = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$._ext.sample");
+            rootExt.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+        }
+
+        [Test]
+        public void It_should_have_empty_hidden_paths_for_visible_root_extension()
+        {
+            var rootExt = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$._ext.sample");
+            rootExt.HiddenMemberPaths.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  10. Per-item absent child scope states under collection ancestry
     // -----------------------------------------------------------------------
 
     [TestFixture]

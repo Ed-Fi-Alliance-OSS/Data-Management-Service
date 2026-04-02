@@ -498,6 +498,26 @@ public abstract class ProfileWritePipelineTests
         {
             _result.Context!.VisibleStoredCollectionRows.Should().NotBeEmpty();
         }
+
+        [Test]
+        public void It_should_include_hidden_collection_member_in_hidden_member_paths()
+        {
+            // officialAttendancePeriod is hidden by the IncludeOnly profile (only classPeriodName is included)
+            _result
+                .Context!.VisibleStoredCollectionRows.Should()
+                .ContainSingle()
+                .Which.HiddenMemberPaths.Should()
+                .Contain("officialAttendancePeriod");
+        }
+
+        [Test]
+        public void It_should_include_hidden_root_members_in_stored_scope_state_hidden_paths()
+        {
+            // entryDate, entryTypeDescriptor, calendarReference are all hidden at root scope
+            var rootScope = _result.Context!.StoredScopeStates.First(s => s.Address.JsonScope == "$");
+            rootScope.HiddenMemberPaths.Should().Contain("entryDate");
+            rootScope.HiddenMemberPaths.Should().Contain("entryTypeDescriptor");
+        }
     }
 
     // -----------------------------------------------------------------------
