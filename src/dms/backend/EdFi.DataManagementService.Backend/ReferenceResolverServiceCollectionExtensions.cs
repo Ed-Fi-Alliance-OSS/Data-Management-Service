@@ -33,11 +33,13 @@ public static class ReferenceResolverServiceCollectionExtensions
     internal static IServiceCollection AddReferenceResolver<
         TReferenceResolverAdapterFactory,
         TRelationalCommandExecutor,
-        TRelationalWriteSessionFactory
+        TRelationalWriteSessionFactory,
+        TSessionDocumentHydrator
     >(this IServiceCollection services)
         where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
         where TRelationalCommandExecutor : class, IRelationalCommandExecutor
         where TRelationalWriteSessionFactory : class, IRelationalWriteSessionFactory
+        where TSessionDocumentHydrator : class, ISessionDocumentHydrator
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -47,6 +49,10 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalWriteSessionFactory, TRelationalWriteSessionFactory>()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteFlattener, RelationalWriteFlattener>());
+        services.TryAdd(ServiceDescriptor.Scoped<ISessionDocumentHydrator, TSessionDocumentHydrator>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()
+        );
         services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationalWriteTargetLookupResolver,

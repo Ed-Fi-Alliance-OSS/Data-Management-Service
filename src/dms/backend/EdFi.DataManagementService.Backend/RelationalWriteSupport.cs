@@ -31,9 +31,14 @@ internal static class RelationalWriteSupport
     public static string FormatResource(QualifiedResourceName resource) =>
         $"{resource.ProjectName}.{resource.ResourceName}";
 
+    public static string BuildMissingExistingDocumentReadPlanMessage(QualifiedResourceName resource) =>
+        $"Relational write executor requires a compiled relational-table read plan for existing-document writes on resource '{FormatResource(resource)}'. "
+        + "This indicates an internal request-shaping or guard-rail bug.";
+
     public static string BuildWriteExecutionNotImplementedMessage(
         RelationalWriteOperationKind operationKind,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        bool currentStateLoaded = false
     )
     {
         var operationLabel = operationKind switch
@@ -43,8 +48,12 @@ internal static class RelationalWriteSupport
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
+        var completedStages = currentStateLoaded
+            ? "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
+            : "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending.";
+
         return $"Relational {operationLabel} write executor is not implemented for resource '{FormatResource(resource)}'. "
-            + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending.";
+            + completedStages;
     }
 
     public static string FormatMappingSetKey(MappingSetKey key) =>

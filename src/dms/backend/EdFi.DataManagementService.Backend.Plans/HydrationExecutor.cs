@@ -35,11 +35,32 @@ public static class HydrationExecutor
     /// <param name="dialect">The SQL dialect.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
+    public static Task<HydratedPage> ExecuteAsync(
+        DbConnection connection,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        CancellationToken ct
+    ) => ExecuteAsync(connection, plan, keyset, dialect, transaction: null, ct);
+
+    /// <summary>
+    /// Executes the hydration batch and returns the structured page result.
+    /// </summary>
+    /// <param name="connection">An already-opened database connection.</param>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="keyset">The page keyset specification.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="transaction">
+    /// Optional transaction bound to the hydration command so write attempts can reuse one session boundary.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
     public static async Task<HydratedPage> ExecuteAsync(
         DbConnection connection,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
         SqlDialect dialect,
+        DbTransaction? transaction,
         CancellationToken ct
     )
     {
@@ -50,6 +71,7 @@ public static class HydrationExecutor
         var batchSql = HydrationBatchBuilder.Build(plan, keyset, dialect);
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = batchSql;
         HydrationBatchBuilder.AddParameters(command, keyset);
 

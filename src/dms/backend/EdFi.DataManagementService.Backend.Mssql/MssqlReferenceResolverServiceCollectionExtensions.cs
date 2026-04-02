@@ -5,6 +5,9 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
@@ -18,7 +21,8 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
             MssqlRelationalCommandExecutor,
-            MssqlRelationalWriteSessionFactory
+            MssqlRelationalWriteSessionFactory,
+            MssqlSessionDocumentHydrator
         >();
     }
 }
@@ -40,4 +44,23 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
             new SessionRelationalCommandExecutor(connection, transaction)
         );
     }
+}
+
+internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
+{
+    public Task<HydratedPage> HydrateAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        CancellationToken cancellationToken = default
+    ) =>
+        HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction,
+            cancellationToken
+        );
 }

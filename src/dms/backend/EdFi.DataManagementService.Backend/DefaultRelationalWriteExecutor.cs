@@ -10,7 +10,8 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
-    IRelationalWriteFlattener writeFlattener
+    IRelationalWriteFlattener writeFlattener,
+    IRelationalWriteCurrentStateLoader currentStateLoader
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -22,6 +23,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteFlattener _writeFlattener =
         writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
+
+    private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
+        currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -69,9 +73,31 @@ internal sealed class DefaultRelationalWriteExecutor(
             );
 
             var resource = request.WritePlan.Model.Resource;
+
+            RelationalWriteCurrentState? currentState = null;
+
+            if (request.TargetContext is RelationalWriteTargetContext.ExistingDocument existingDocument)
+            {
+                if (request.ReadPlan is null)
+                {
+                    throw new InvalidOperationException(
+                        RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
+                    );
+                }
+
+                currentState = await _currentStateLoader
+                    .LoadAsync(
+                        new RelationalWriteCurrentStateLoadRequest(request.ReadPlan, existingDocument),
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,
-                resource
+                resource,
+                currentStateLoaded: currentState is not null
             );
 
             var result = request.OperationKind switch

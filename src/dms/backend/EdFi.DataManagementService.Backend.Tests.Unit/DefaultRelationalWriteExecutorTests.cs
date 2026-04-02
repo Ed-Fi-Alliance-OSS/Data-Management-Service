@@ -23,6 +23,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
     private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
+    private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -31,10 +32,12 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
         _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
         _writeFlattener = new RecordingRelationalWriteFlattener();
+        _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
-            _writeFlattener
+            _writeFlattener,
+            _currentStateLoader
         );
     }
 
@@ -117,6 +120,7 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener
             .CapturedInput.ResolvedReferences.SuccessfulDescriptorReferencesByPath.Keys.Should()
             .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -152,6 +156,45 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _writeFlattener.FlattenCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_loads_current_state_once_for_existing_document_requests()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [new HydratedTableRows(request.WritePlan.Model.Root, [])]
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UnknownFailure(
+                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
+                            + "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
+                    )
+                )
+            );
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _currentStateLoader.CapturedRequest.Should().NotBeNull();
+        _currentStateLoader.CapturedRequest!.ReadPlan.Should().BeSameAs(request.ReadPlan);
+        _currentStateLoader.CapturedRequest!.TargetContext.DocumentId.Should().Be(345L);
+        _currentStateLoader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -177,8 +220,35 @@ public class Given_Default_Relational_Write_Executor
             );
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public void It_requires_a_read_plan_for_existing_document_requests()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
+
+        var act = () =>
+            new RelationalWriteExecutorRequest(
+                mappingSet,
+                RelationalWriteOperationKind.Put,
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                ),
+                resourceWritePlan,
+                null,
+                JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+                new TraceId("write-executor-test"),
+                new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("readPlan");
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
@@ -204,7 +274,7 @@ public class Given_Default_Relational_Write_Executor
                     new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
                 ),
             resourceWritePlan,
-            null,
+            operationKind == RelationalWriteOperationKind.Put ? CreateReadPlan(resourceModel) : null,
             JsonNode.Parse("""{"name":"Lincoln High"}""")!,
             new TraceId("write-executor-test"),
             new ReferenceResolverRequest(
@@ -275,6 +345,17 @@ public class Given_Default_Relational_Write_Executor
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
+        );
+    }
+
+    private static ResourceReadPlan CreateReadPlan(RelationalResourceModel resourceModel)
+    {
+        return new ResourceReadPlan(
+            resourceModel,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
+            [],
+            []
         );
     }
 
@@ -434,6 +515,44 @@ public class Given_Default_Relational_Write_Executor
                         new FlattenedWriteValue.Literal("Lincoln High"),
                     ]
                 )
+            );
+        }
+    }
+
+    private sealed class RecordingRelationalWriteCurrentStateLoader : IRelationalWriteCurrentStateLoader
+    {
+        public int LoadCallCount { get; private set; }
+
+        public RelationalWriteCurrentStateLoadRequest? CapturedRequest { get; private set; }
+
+        public IRelationalWriteSession? CapturedWriteSession { get; private set; }
+
+        public RelationalWriteCurrentState? ResultToReturn { get; set; }
+
+        public Task<RelationalWriteCurrentState> LoadAsync(
+            RelationalWriteCurrentStateLoadRequest request,
+            IRelationalWriteSession writeSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LoadCallCount++;
+            CapturedRequest = request;
+            CapturedWriteSession = writeSession;
+
+            return Task.FromResult(
+                ResultToReturn
+                    ?? new RelationalWriteCurrentState(
+                        new DocumentMetadataRow(
+                            request.TargetContext.DocumentId,
+                            request.TargetContext.DocumentUuid.Value,
+                            request.TargetContext.ObservedContentVersion,
+                            request.TargetContext.ObservedContentVersion,
+                            DateTimeOffset.UnixEpoch,
+                            DateTimeOffset.UnixEpoch
+                        ),
+                        [new HydratedTableRows(request.ReadPlan.Model.Root, [])]
+                    )
             );
         }
     }

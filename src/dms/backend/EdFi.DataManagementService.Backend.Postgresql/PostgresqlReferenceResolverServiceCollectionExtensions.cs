@@ -5,6 +5,9 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -18,7 +21,8 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
             PostgresqlRelationalCommandExecutor,
-            PostgresqlRelationalWriteSessionFactory
+            PostgresqlRelationalWriteSessionFactory,
+            PostgresqlSessionDocumentHydrator
         >();
     }
 }
@@ -40,4 +44,23 @@ internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalComma
             new SessionRelationalCommandExecutor(connection, transaction)
         );
     }
+}
+
+internal sealed class PostgresqlSessionDocumentHydrator : ISessionDocumentHydrator
+{
+    public Task<HydratedPage> HydrateAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        CancellationToken cancellationToken = default
+    ) =>
+        HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            transaction,
+            cancellationToken
+        );
 }

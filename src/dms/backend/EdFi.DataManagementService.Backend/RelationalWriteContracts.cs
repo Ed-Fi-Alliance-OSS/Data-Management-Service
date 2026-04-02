@@ -462,6 +462,22 @@ public sealed record RelationalWriteExecutorRequest
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         DiagnosticIdentifier = diagnosticIdentifier;
 
+        if (TargetContext is RelationalWriteTargetContext.ExistingDocument && ReadPlan is null)
+        {
+            throw new ArgumentException(
+                RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(WritePlan.Model.Resource),
+                nameof(readPlan)
+            );
+        }
+
+        if (ReadPlan is not null && ReadPlan.Model.Resource != WritePlan.Model.Resource)
+        {
+            throw new ArgumentException(
+                $"{nameof(readPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
+                nameof(readPlan)
+            );
+        }
+
         if (!ReferenceEquals(MappingSet, ReferenceResolutionRequest.MappingSet))
         {
             throw new ArgumentException(
