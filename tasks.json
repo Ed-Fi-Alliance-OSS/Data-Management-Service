@@ -236,7 +236,7 @@
       "Add PostgreSQL integration tests that expand authoritative DS 5.2 coverage to at least one additional write scenario and one additional resource shape beyond the current `SchoolYearType` post-as-update smoke.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Concurrency - Guarded No-Op Commit Window",
