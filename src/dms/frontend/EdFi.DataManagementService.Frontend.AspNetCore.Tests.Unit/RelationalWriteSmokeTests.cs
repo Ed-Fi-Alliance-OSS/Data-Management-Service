@@ -354,39 +354,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-                var targetLookupResolver = A.Fake<IRelationalWriteTargetLookupResolver>();
-                A.CallTo(() =>
-                        targetLookupResolver.ResolveForPostAsync(
-                            A<MappingSet>._,
-                            A<QualifiedResourceName>._,
-                            A<ReferentialId>._,
-                            A<DocumentUuid>._,
-                            A<CancellationToken>._
-                        )
-                    )
-                    .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetLookupResult>(
-                            new RelationalWriteTargetLookupResult.CreateNew(call.GetArgument<DocumentUuid>(3))
-                        )
-                    );
-                A.CallTo(() =>
-                        targetLookupResolver.ResolveForPutAsync(
-                            A<MappingSet>._,
-                            A<QualifiedResourceName>._,
-                            A<DocumentUuid>._,
-                            A<CancellationToken>._
-                        )
-                    )
-                    .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetLookupResult>(
-                            new RelationalWriteTargetLookupResult.ExistingDocument(
-                                345L,
-                                call.GetArgument<DocumentUuid>(2),
-                                0L
-                            )
-                        )
-                    );
-
                 services.RemoveAll<IJwtValidationService>();
                 services.RemoveAll<IClaimSetProvider>();
                 services.RemoveAll<IApplicationContextProvider>();
@@ -394,7 +361,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IDatabaseFingerprintReader>();
                 services.RemoveAll<IResourceKeyValidator>();
                 services.RemoveAll<IMappingSetProvider>();
-                services.RemoveAll<IRelationalWriteTargetLookupResolver>();
                 services.RemoveAll<IRelationalWriteExecutor>();
 
                 services.AddSingleton(jwtValidationService);
@@ -404,7 +370,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);
                 services.AddSingleton(mappingSetProvider);
-                services.AddSingleton(targetLookupResolver);
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
             });
         });
@@ -482,13 +447,23 @@ public class Given_A_Host_Using_The_Relational_Backend
         )
         {
             Requests.Add(request);
+            RelationalWriteTargetContext targetContext = request.TargetRequest switch
+            {
+                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid) =>
+                    new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid),
+                RelationalWriteTargetRequest.Put(var documentUuid) =>
+                    new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported target request type '{request.TargetRequest.GetType().Name}'."
+                ),
+            };
 
             try
             {
                 _ = _flattener.Flatten(
                     new FlatteningInput(
                         request.OperationKind,
-                        request.TargetContext,
+                        targetContext,
                         request.WritePlan,
                         request.SelectedBody,
                         _resolvedReferences
@@ -507,7 +482,7 @@ public class Given_A_Host_Using_The_Relational_Backend
             return Task.FromResult<RelationalWriteExecutorResult>(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
-                        ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
+                        ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
                     )
                 )
             );

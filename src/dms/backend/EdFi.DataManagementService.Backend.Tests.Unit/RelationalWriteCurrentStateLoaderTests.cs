@@ -42,7 +42,7 @@ public class Given_Relational_Write_Current_State_Loader
         var session = new TestRelationalWriteSession(connection, transaction);
         var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
 
-        var result = await sut.LoadAsync(request, session);
+        var result = (await sut.LoadAsync(request, session))!;
 
         result.DocumentMetadata.DocumentId.Should().Be(345L);
         result.DocumentMetadata.ContentVersion.Should().Be(44L);
@@ -59,7 +59,7 @@ public class Given_Relational_Write_Current_State_Loader
     }
 
     [Test]
-    public async Task It_rejects_missing_or_duplicate_document_metadata_rows()
+    public async Task It_returns_null_for_missing_targets_and_rejects_duplicate_document_metadata_rows()
     {
         var request = CreateLoadRequest();
         var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
@@ -102,15 +102,10 @@ public class Given_Relational_Write_Current_State_Loader
             new RecordingDbTransaction(duplicateConnection, IsolationLevel.ReadCommitted)
         );
 
-        var missingAct = async () => await sut.LoadAsync(request, missingSession);
+        var missingResult = await sut.LoadAsync(request, missingSession);
         var duplicateAct = async () => await sut.LoadAsync(request, duplicateSession);
 
-        await missingAct
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage(
-                "Current-state load for document id 345 returned 0 metadata rows, but exactly 1 was expected."
-            );
+        missingResult.Should().BeNull();
         await duplicateAct
             .Should()
             .ThrowAsync<InvalidOperationException>()

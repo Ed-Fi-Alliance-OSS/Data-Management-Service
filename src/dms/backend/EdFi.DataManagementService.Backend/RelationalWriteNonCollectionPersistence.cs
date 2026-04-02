@@ -40,11 +40,16 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(mergeResult);
         ArgumentNullException.ThrowIfNull(writeSession);
+        var targetContext =
+            request.TargetContext
+            ?? throw new InvalidOperationException(
+                "Relational non-collection persistence requires an executor-resolved target context."
+            );
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
                 request.MappingSet,
                 request.WritePlan.Model.Resource,
-                request.TargetContext,
+                targetContext,
                 writeSession,
                 cancellationToken
             )

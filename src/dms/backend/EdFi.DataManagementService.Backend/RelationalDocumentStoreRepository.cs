@@ -15,14 +15,11 @@ namespace EdFi.DataManagementService.Backend;
 
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
-    IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteExecutor writeExecutor
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
-        targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
     private readonly IRelationalWriteExecutor _writeExecutor =
         writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
 
@@ -47,20 +44,14 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             relationalUpsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetRequest.Post(
+                relationalUpsertRequest.DocumentInfo.ReferentialId,
+                relationalUpsertRequest.DocumentUuid
+            ),
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
-            notFoundFailureFactory: null,
-            async (mappingSet, resource) =>
-                await _targetLookupResolver
-                    .ResolveForPostAsync(
-                        mappingSet,
-                        resource,
-                        relationalUpsertRequest.DocumentInfo.ReferentialId,
-                        relationalUpsertRequest.DocumentUuid
-                    )
-                    .ConfigureAwait(false),
             static executorResult =>
                 executorResult switch
                 {
@@ -112,15 +103,11 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             relationalUpdateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
-            notFoundFailureFactory: static () => new UpdateResult.UpdateFailureNotExists(),
-            async (mappingSet, resource) =>
-                await _targetLookupResolver
-                    .ResolveForPutAsync(mappingSet, resource, relationalUpdateRequest.DocumentUuid)
-                    .ConfigureAwait(false),
             static executorResult =>
                 executorResult switch
                 {
@@ -173,16 +160,11 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest,
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
         Func<WriteValidationFailure[], TResult> validationFailureFactory,
-        Func<TResult>? notFoundFailureFactory,
-        Func<
-            MappingSet,
-            QualifiedResourceName,
-            Task<RelationalWriteTargetLookupResult>
-        > resolveTargetLookupAsync,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector
     )
     {
@@ -192,7 +174,6 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(validationFailureFactory);
-        ArgumentNullException.ThrowIfNull(resolveTargetLookupAsync);
         ArgumentNullException.ThrowIfNull(executorResultProjector);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
@@ -211,39 +192,20 @@ public sealed class RelationalDocumentStoreRepository(
             return failureFactory(ex.Message);
         }
 
+        var readPlanPreparation = PrepareExistingDocumentReadPlan(mappingSet, resource);
+
         try
         {
             for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
             {
-                var targetLookupResult = await resolveTargetLookupAsync(mappingSet, resource)
-                    .ConfigureAwait(false);
-                var targetLookupSelection = TranslateTargetLookupResult(
-                    targetLookupResult,
-                    operationKind,
-                    notFoundFailureFactory
-                );
-
-                if (targetLookupSelection.HasFailure)
-                {
-                    return targetLookupSelection.FailureResult!;
-                }
-
-                var targetContext = targetLookupSelection.TargetContext!;
-                var readPlanResult = TryGetReadPlan(targetContext, mappingSet, resource, failureFactory);
-
-                if (readPlanResult.HasFailure)
-                {
-                    return readPlanResult.FailureResult!;
-                }
-
                 var executorResult = await _writeExecutor
                     .ExecuteAsync(
                         new RelationalWriteExecutorRequest(
                             mappingSet,
                             operationKind,
-                            targetContext,
+                            targetRequest,
                             writePlan,
-                            readPlanResult.ReadPlan,
+                            readPlanPreparation.ReadPlan,
                             requestBody,
                             resourceInfo.AllowIdentityUpdates,
                             traceId,
@@ -252,7 +214,8 @@ public sealed class RelationalDocumentStoreRepository(
                                 RequestResource: resource,
                                 DocumentReferences: documentReferences,
                                 DescriptorReferences: descriptorReferences
-                            )
+                            ),
+                            readPlanPreparation.FailureMessage
                         )
                     )
                     .ConfigureAwait(false);
@@ -278,77 +241,24 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static TargetLookupSelectionResult<TResult> TranslateTargetLookupResult<TResult>(
-        RelationalWriteTargetLookupResult targetLookupResult,
-        RelationalWriteOperationKind operationKind,
-        Func<TResult>? notFoundFailureFactory
-    )
-    {
-        ArgumentNullException.ThrowIfNull(targetLookupResult);
-
-        return targetLookupResult switch
-        {
-            RelationalWriteTargetLookupResult.CreateNew(var documentUuid) =>
-                new TargetLookupSelectionResult<TResult>(
-                    new RelationalWriteTargetContext.CreateNew(documentUuid),
-                    default,
-                    false
-                ),
-            RelationalWriteTargetLookupResult.ExistingDocument(
-                var documentId,
-                var documentUuid,
-                var observedContentVersion
-            ) => new TargetLookupSelectionResult<TResult>(
-                new RelationalWriteTargetContext.ExistingDocument(
-                    documentId,
-                    documentUuid,
-                    observedContentVersion
-                ),
-                default,
-                false
-            ),
-            RelationalWriteTargetLookupResult.NotFound when notFoundFailureFactory is not null =>
-                new TargetLookupSelectionResult<TResult>(null, notFoundFailureFactory(), true),
-            RelationalWriteTargetLookupResult.NotFound => throw new InvalidOperationException(
-                $"Relational {operationKind} target lookup returned NotFound without a configured not-found result mapping."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Relational {operationKind} target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
-            ),
-        };
-    }
-
-    private static ReadPlanSelectionResult<TResult> TryGetReadPlan<TResult>(
-        RelationalWriteTargetContext targetContext,
+    private static ExistingDocumentReadPlanPreparation PrepareExistingDocumentReadPlan(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        Func<string, TResult> failureFactory
+        QualifiedResourceName resource
     )
     {
-        ArgumentNullException.ThrowIfNull(targetContext);
         ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(failureFactory);
-
-        if (targetContext is not RelationalWriteTargetContext.ExistingDocument)
-        {
-            return new ReadPlanSelectionResult<TResult>(null, default, false);
-        }
 
         try
         {
-            return new ReadPlanSelectionResult<TResult>(
-                GetReadPlanOrThrow(mappingSet, resource),
-                default,
-                false
-            );
+            return new ExistingDocumentReadPlanPreparation(GetReadPlanOrThrow(mappingSet, resource), null);
         }
         catch (NotSupportedException ex)
         {
-            return new ReadPlanSelectionResult<TResult>(null, failureFactory(ex.Message), true);
+            return new ExistingDocumentReadPlanPreparation(null, ex.Message);
         }
         catch (InvalidOperationException ex)
         {
-            return new ReadPlanSelectionResult<TResult>(null, failureFactory(ex.Message), true);
+            return new ExistingDocumentReadPlanPreparation(null, ex.Message);
         }
     }
 
@@ -396,16 +306,9 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    private sealed record ReadPlanSelectionResult<TResult>(
+    private sealed record ExistingDocumentReadPlanPreparation(
         ResourceReadPlan? ReadPlan,
-        TResult? FailureResult,
-        bool HasFailure
-    );
-
-    private sealed record TargetLookupSelectionResult<TResult>(
-        RelationalWriteTargetContext? TargetContext,
-        TResult? FailureResult,
-        bool HasFailure
+        string? FailureMessage
     );
 
     private static string FormatResource(QualifiedResourceName resource) =>

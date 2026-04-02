@@ -961,11 +961,11 @@ public class Given_Relational_Write_Non_Collection_Persister
             mappingSet,
             operationKind,
             operationKind == RelationalWriteOperationKind.Put
-                ? new RelationalWriteTargetContext.ExistingDocument(
-                    345L,
+                ? new RelationalWriteTargetRequest.Put(
                     new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
                 )
-                : new RelationalWriteTargetContext.CreateNew(
+                : new RelationalWriteTargetRequest.Post(
+                    new ReferentialId(Guid.NewGuid()),
                     new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
                 ),
             writePlan,
@@ -975,7 +975,15 @@ public class Given_Relational_Write_Non_Collection_Persister
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             false,
             new TraceId("non-collection-persister-test"),
-            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], [])
+            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], []),
+            targetContext: operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                )
+                : new RelationalWriteTargetContext.CreateNew(
+                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                )
         );
     }
 

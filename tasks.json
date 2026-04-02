@@ -218,7 +218,7 @@
       "Refactor or add shared PostgreSQL integration test helpers that can stand up authoritative write-fixture scenarios for both `src/dms/backend/Fixtures/authoritative/sample` and `src/dms/backend/Fixtures/authoritative/ds-5.2`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Authoritative Sample Write Smoke",

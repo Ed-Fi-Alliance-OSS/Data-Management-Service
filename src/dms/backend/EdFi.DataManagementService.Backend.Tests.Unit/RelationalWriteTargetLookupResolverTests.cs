@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -20,26 +22,25 @@ public class Given_RelationalWriteTargetLookupResolver
     {
         var referentialId = new ReferentialId(Guid.NewGuid());
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
-        var sut = new RelationalWriteTargetLookupResolver(executor);
+        var writeSession = CreateWriteSession(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupResolver();
 
         var result = await sut.ResolveForPostAsync(
             CreateMappingSet(SqlDialect.Pgsql),
             _requestResource,
             referentialId,
-            candidateDocumentUuid
+            candidateDocumentUuid,
+            writeSession.Connection,
+            writeSession.Transaction
         );
 
         result
             .Should()
             .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid));
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain("dms.\"ReferentialIdentity\"");
-        executor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
+        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
+        writeSession.Connection.Command.CommandText.Should().Contain("dms.\"ReferentialIdentity\"");
+        writeSession
+            .Connection.Command.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(referentialId.Value, (short)1);
     }
@@ -51,24 +52,18 @@ public class Given_RelationalWriteTargetLookupResolver
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
         var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
         const long observedContentVersion = 701L;
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("DocumentId", 101L),
-                        ("DocumentUuid", existingDocumentUuid.Value),
-                        ("ContentVersion", observedContentVersion)
-                    )
-                ),
-            ]),
-        ]);
-        var sut = new RelationalWriteTargetLookupResolver(executor);
+        var writeSession = CreateWriteSession(
+            CreateLookupReader((101L, existingDocumentUuid.Value, observedContentVersion))
+        );
+        var sut = new RelationalWriteTargetLookupResolver();
 
         var result = await sut.ResolveForPostAsync(
             CreateMappingSet(SqlDialect.Pgsql),
             _requestResource,
             referentialId,
-            candidateDocumentUuid
+            candidateDocumentUuid,
+            writeSession.Connection,
+            writeSession.Transaction
         );
 
         result
@@ -90,19 +85,22 @@ public class Given_RelationalWriteTargetLookupResolver
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
-        var sut = new RelationalWriteTargetLookupResolver(executor);
+        var writeSession = CreateWriteSession(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupResolver();
 
-        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+        var result = await sut.ResolveForPutAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            documentUuid,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
 
         result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
-        executor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
+        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
+        writeSession.Connection.Command.CommandText.Should().Contain(expectedTableFragment);
+        writeSession
+            .Connection.Command.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
     }
@@ -116,20 +114,18 @@ public class Given_RelationalWriteTargetLookupResolver
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         const long observedContentVersion = 907L;
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("DocumentId", 404L),
-                        ("DocumentUuid", documentUuid.Value),
-                        ("ContentVersion", observedContentVersion)
-                    )
-                ),
-            ]),
-        ]);
-        var sut = new RelationalWriteTargetLookupResolver(executor);
+        var writeSession = CreateWriteSession(
+            CreateLookupReader((404L, documentUuid.Value, observedContentVersion))
+        );
+        var sut = new RelationalWriteTargetLookupResolver();
 
-        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+        var result = await sut.ResolveForPutAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            documentUuid,
+            writeSession.Connection,
+            writeSession.Transaction
+        );
 
         result
             .Should()
@@ -140,11 +136,10 @@ public class Given_RelationalWriteTargetLookupResolver
                     observedContentVersion
                 )
             );
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
-        executor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
+        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
+        writeSession.Connection.Command.CommandText.Should().Contain(expectedTableFragment);
+        writeSession
+            .Connection.Command.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
     }
@@ -162,5 +157,53 @@ public class Given_RelationalWriteTargetLookupResolver
             ),
             Model = mappingSet.Model with { Dialect = dialect },
         };
+    }
+
+    private static DataTableReader CreateLookupReader(
+        params (long DocumentId, Guid DocumentUuid, long ContentVersion)[] rows
+    )
+    {
+        var table = new DataTable();
+        table.Columns.Add("DocumentId", typeof(long));
+        table.Columns.Add("DocumentUuid", typeof(Guid));
+        table.Columns.Add("ContentVersion", typeof(long));
+
+        foreach (var row in rows)
+        {
+            table.Rows.Add(row.DocumentId, row.DocumentUuid, row.ContentVersion);
+        }
+
+        return table.CreateDataReader();
+    }
+
+    private static TestRelationalWriteSession CreateWriteSession(DataTableReader reader)
+    {
+        var command = new RecordingDbCommand(reader);
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+
+        return new TestRelationalWriteSession(connection, transaction);
+    }
+
+    private sealed class TestRelationalWriteSession(
+        RecordingDbConnection connection,
+        RecordingDbTransaction transaction
+    ) : IRelationalWriteSession
+    {
+        public RecordingDbConnection Connection { get; } = connection;
+
+        DbConnection IRelationalWriteSession.Connection => Connection;
+
+        public DbTransaction Transaction { get; } = transaction;
+
+        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+
+        public Task CommitAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

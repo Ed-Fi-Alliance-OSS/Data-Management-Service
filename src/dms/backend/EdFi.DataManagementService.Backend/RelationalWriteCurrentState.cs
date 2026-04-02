@@ -44,7 +44,7 @@ internal sealed record RelationalWriteCurrentState
 
 internal interface IRelationalWriteCurrentStateLoader
 {
-    Task<RelationalWriteCurrentState> LoadAsync(
+    Task<RelationalWriteCurrentState?> LoadAsync(
         RelationalWriteCurrentStateLoadRequest request,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
@@ -72,7 +72,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             sessionDocumentHydrator ?? throw new ArgumentNullException(nameof(sessionDocumentHydrator));
     }
 
-    public async Task<RelationalWriteCurrentState> LoadAsync(
+    public async Task<RelationalWriteCurrentState?> LoadAsync(
         RelationalWriteCurrentStateLoadRequest request,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
@@ -93,6 +93,11 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
 
         if (hydratedPage.DocumentMetadata.Count != 1)
         {
+            if (hydratedPage.DocumentMetadata.Count == 0)
+            {
+                return null;
+            }
+
             throw new InvalidOperationException(
                 $"Current-state load for document id {request.TargetContext.DocumentId} returned "
                     + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."

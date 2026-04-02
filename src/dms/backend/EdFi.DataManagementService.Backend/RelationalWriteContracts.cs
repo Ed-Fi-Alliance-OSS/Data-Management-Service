@@ -55,6 +55,28 @@ public abstract record RelationalWriteTargetContext
 }
 
 /// <summary>
+/// Executor-facing target selection inputs before lookup occurs inside the write session.
+/// </summary>
+public abstract record RelationalWriteTargetRequest
+{
+    /// <summary>
+    /// POST may create a brand-new document or update an existing document resolved by referential id.
+    /// </summary>
+    /// <param name="ReferentialId">The natural-identity lookup key for POST upsert semantics.</param>
+    /// <param name="CandidateDocumentUuid">
+    /// The caller-reserved document uuid to use when lookup resolves to a new document.
+    /// </param>
+    public sealed record Post(ReferentialId ReferentialId, DocumentUuid CandidateDocumentUuid)
+        : RelationalWriteTargetRequest;
+
+    /// <summary>
+    /// PUT must resolve an already persisted document by external document uuid.
+    /// </summary>
+    /// <param name="DocumentUuid">The externally visible document id addressed by the caller.</param>
+    public sealed record Put(DocumentUuid DocumentUuid) : RelationalWriteTargetRequest;
+}
+
+/// <summary>
 /// Operation-correct relational write lookup result before translation to executor-facing target context.
 /// </summary>
 public abstract record RelationalWriteTargetLookupResult
@@ -442,41 +464,73 @@ public sealed record RelationalWriteExecutorRequest
     public RelationalWriteExecutorRequest(
         MappingSet mappingSet,
         RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetContext targetContext,
+        RelationalWriteTargetRequest targetRequest,
         ResourceWritePlan writePlan,
-        ResourceReadPlan? readPlan,
+        ResourceReadPlan? existingDocumentReadPlan,
         JsonNode selectedBody,
         bool allowIdentityUpdates,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
+        string? missingExistingDocumentReadPlanFailureMessage = null,
+        RelationalWriteTargetContext? targetContext = null,
         string? diagnosticIdentifier = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         OperationKind = operationKind;
-        TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        TargetRequest = targetRequest ?? throw new ArgumentNullException(nameof(targetRequest));
         WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
-        ReadPlan = readPlan;
+        ExistingDocumentReadPlan = existingDocumentReadPlan;
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         AllowIdentityUpdates = allowIdentityUpdates;
         TraceId = traceId;
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
+        MissingExistingDocumentReadPlanFailureMessage = missingExistingDocumentReadPlanFailureMessage;
+        TargetContext = targetContext;
         DiagnosticIdentifier = diagnosticIdentifier;
 
-        if (TargetContext is RelationalWriteTargetContext.ExistingDocument && ReadPlan is null)
+        if (
+            (OperationKind, TargetRequest)
+            is not
+                (RelationalWriteOperationKind.Post, RelationalWriteTargetRequest.Post)
+                and not
+                (RelationalWriteOperationKind.Put, RelationalWriteTargetRequest.Put)
+        )
         {
             throw new ArgumentException(
-                RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(WritePlan.Model.Resource),
-                nameof(readPlan)
+                $"{nameof(targetRequest)} must match relational write operation '{OperationKind}'.",
+                nameof(targetRequest)
             );
         }
 
-        if (ReadPlan is not null && ReadPlan.Model.Resource != WritePlan.Model.Resource)
+        if (
+            TargetContext is RelationalWriteTargetContext.CreateNew
+            && OperationKind != RelationalWriteOperationKind.Post
+        )
         {
             throw new ArgumentException(
-                $"{nameof(readPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
-                nameof(readPlan)
+                $"{nameof(targetContext)} cannot be CreateNew for relational write operation '{OperationKind}'.",
+                nameof(targetContext)
+            );
+        }
+
+        if (
+            ExistingDocumentReadPlan is not null
+            && ExistingDocumentReadPlan.Model.Resource != WritePlan.Model.Resource
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(existingDocumentReadPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
+                nameof(existingDocumentReadPlan)
+            );
+        }
+
+        if (ExistingDocumentReadPlan is not null && missingExistingDocumentReadPlanFailureMessage is not null)
+        {
+            throw new ArgumentException(
+                $"{nameof(missingExistingDocumentReadPlanFailureMessage)} cannot be supplied when {nameof(existingDocumentReadPlan)} is present.",
+                nameof(missingExistingDocumentReadPlanFailureMessage)
             );
         }
 
@@ -508,9 +562,15 @@ public sealed record RelationalWriteExecutorRequest
     public RelationalWriteOperationKind OperationKind { get; init; }
 
     /// <summary>
-    /// The resolved target document context for the write.
+    /// The executor-facing target selection input the write session must resolve.
     /// </summary>
-    public RelationalWriteTargetContext TargetContext { get; init; }
+    public RelationalWriteTargetRequest TargetRequest { get; init; }
+
+    /// <summary>
+    /// The resolved target document context for the active executor attempt.
+    /// Repository-created requests leave this null; the executor stamps it in after session-bound lookup.
+    /// </summary>
+    public RelationalWriteTargetContext? TargetContext { get; init; }
 
     /// <summary>
     /// The compiled write plan selected for the write resource.
@@ -518,9 +578,14 @@ public sealed record RelationalWriteExecutorRequest
     public ResourceWritePlan WritePlan { get; init; }
 
     /// <summary>
-    /// The compiled read plan selected for existing-document flows, when required.
+    /// The compiled read plan selected for existing-document flows, when available.
     /// </summary>
-    public ResourceReadPlan? ReadPlan { get; init; }
+    public ResourceReadPlan? ExistingDocumentReadPlan { get; init; }
+
+    /// <summary>
+    /// A repository-prepared failure message to surface if lookup resolves to an existing document but no read plan is available.
+    /// </summary>
+    public string? MissingExistingDocumentReadPlanFailureMessage { get; init; }
 
     /// <summary>
     /// The caller-selected body the executor will eventually persist.

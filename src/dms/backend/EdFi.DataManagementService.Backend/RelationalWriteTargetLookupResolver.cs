@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -15,6 +16,8 @@ public interface IRelationalWriteTargetLookupResolver
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default
     );
 
@@ -22,34 +25,38 @@ public interface IRelationalWriteTargetLookupResolver
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default
     );
 }
 
-internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExecutor commandExecutor)
-    : IRelationalWriteTargetLookupResolver
+internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTargetLookupResolver
 {
     private const string ReferentialIdParameterName = "@referentialId";
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
-
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
     public async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
         var existingDocument = await TryResolveExistingDocumentByReferentialIdAsync(
             mappingSet,
             resource,
             referentialId,
+            connection,
+            transaction,
             cancellationToken
         );
 
@@ -66,15 +73,21 @@ internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExec
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
         var existingDocument = await TryResolveExistingDocumentByDocumentUuidAsync(
             mappingSet,
             resource,
             documentUuid,
+            connection,
+            transaction,
             cancellationToken
         );
 
@@ -87,10 +100,12 @@ internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExec
             );
     }
 
-    private Task<ResolvedExistingDocument?> TryResolveExistingDocumentByReferentialIdAsync(
+    private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByReferentialIdAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ReferentialId referentialId,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken
     )
     {
@@ -106,14 +121,18 @@ internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExec
                 ),
             },
             $"resource '{RelationalWriteSupport.FormatResource(resource)}' and referential id '{referentialId.Value}'",
+            connection,
+            transaction,
             cancellationToken
         );
     }
 
-    private Task<ResolvedExistingDocument?> TryResolveExistingDocumentByDocumentUuidAsync(
+    private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByDocumentUuidAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken
     )
     {
@@ -129,17 +148,23 @@ internal sealed class RelationalWriteTargetLookupResolver(IRelationalCommandExec
                 ),
             },
             $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
+            connection,
+            transaction,
             cancellationToken
         );
     }
 
-    private Task<ResolvedExistingDocument?> ExecuteLookupAsync(
+    private static Task<ResolvedExistingDocument?> ExecuteLookupAsync(
         RelationalCommand command,
         string lookupDescription,
+        DbConnection connection,
+        DbTransaction transaction,
         CancellationToken cancellationToken
     )
     {
-        return _commandExecutor.ExecuteReaderAsync(
+        var sessionCommandExecutor = new SessionRelationalCommandExecutor(connection, transaction);
+
+        return sessionCommandExecutor.ExecuteReaderAsync(
             command,
             async (reader, ct) =>
             {
