@@ -1,9 +1,9 @@
 [
   {
     "category": "Orchestration Contracts",
-    "description": "Replace the DMS-983 terminal-stage seam with an executor-facing write request for DMS-984. Acceptance: `RelationalDocumentStoreRepository` selects the active `MappingSet`, `ResourceWritePlan`, and, for existing-document flows, the `ResourceReadPlan`, then hands one executor request into a new relational write executor service instead of calling the reference resolver, flattener, and terminal stage directly. Introduce executor-facing contracts that carry the selected body, operation kind, target lookup result, mapping-set-scoped plans, trace metadata, and any executor-only diagnostics without forcing later runtime stages to rediscover them. `FlatteningInput`, `FlattenedWriteSet`, and the candidate row-buffer contracts remain usable by the executor, but `IRelationalWriteTerminalStage` is removed or demoted so it is no longer the architectural boundary for persistence orchestration.",
+    "description": "Replace the DMS-983 terminal-stage seam with an executor-facing write request for DMS-984. Acceptance: `RelationalDocumentStoreRepository` selects the active `MappingSet`, `ResourceWritePlan`, and, for existing-document flows, the `ResourceReadPlan`, then hands one executor request into a new relational write executor service instead of calling a terminal stage directly. Introduce executor-facing contracts that carry the selected body, operation kind, target lookup result, mapping-set-scoped plans, trace metadata, and any executor-only diagnostics without forcing later runtime stages to rediscover them. `FlatteningInput`, `FlattenedWriteSet`, and the candidate row-buffer contracts remain usable by the executor, but `IRelationalWriteTerminalStage` is removed or demoted so it is no longer the architectural boundary for persistence orchestration.",
     "steps-to-verify": [
-      "Add backend unit tests that prove the repository still enforces write-plan/read-plan guard rails, shapes the new executor request correctly, and no longer constructs `FlatteningInput` itself.",
+      "Add backend unit tests that prove the repository still enforces write-plan and read-plan guard rails, shapes the new executor request correctly, and no longer depends on `IRelationalWriteTerminalStage`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -19,25 +19,34 @@
   },
   {
     "category": "Write Session",
-    "description": "Introduce a request-scoped relational write session that owns one open connection and transaction per executor attempt. Acceptance: the write executor can use a shared connection/transaction for prerequisite lookups, current-state hydration, `CollectionItemId` reservation, and final DML on both PostgreSQL and SQL Server; commit and rollback are explicit and attempt-scoped; the old one-command-one-connection pattern no longer dictates write orchestration; low-level command executors may remain as utilities, but orchestration no longer depends on them as the primary seam.",
+    "description": "Introduce a request-scoped relational write session that owns one open connection and transaction per executor attempt. Acceptance: the write executor can use a shared connection and transaction for prerequisite lookups, current-state hydration, `CollectionItemId` reservation, and final DML on both PostgreSQL and SQL Server; commit and rollback are explicit and attempt-scoped; the old one-command-one-connection pattern no longer dictates write orchestration; low-level command executors may remain as utilities, but orchestration no longer depends on them as the primary seam; the session seam leaves room for future authorization statements to be prepended into the same roundtrip without another boundary redesign.",
     "steps-to-verify": [
-      "Add backend unit tests for session lifecycle, commit/rollback behavior, and dialect selection for executor attempts.",
+      "Add backend unit tests for session lifecycle, commit and rollback behavior, and dialect selection for executor attempts.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Session-Oriented Reference Resolution And Flattening",
-    "description": "Move request-scoped reference resolution and flattener invocation under the write executor so they can share the executor-owned session. Acceptance: the executor resolves document and descriptor references through the shared session without opening independent connections, preserves existing request-local memoization and reference-failure classification semantics, and only calls the flattener after reference resolution succeeds. The flattener still receives the same backend-local contracts and remains pure request-body to row-buffer transformation. Reference failures still short-circuit before any DML is issued and continue to map to the current public `UpsertFailureReference` and `UpdateFailureReference` results.",
+    "category": "Session-Oriented Reference Resolution",
+    "description": "Move request-scoped reference resolution under the write executor so it can share the executor-owned session. Acceptance: the executor resolves document and descriptor references through the shared session without opening independent connections, preserves existing request-local memoization and reference-failure classification semantics, and short-circuits before flattening or DML when reference resolution fails. Reference failures continue to map to the current public `UpsertFailureReference` and `UpdateFailureReference` results.",
     "steps-to-verify": [
-      "Add backend unit tests that prove the executor resolves references before flattening, preserves memoization behavior, and exits before DML on reference failures.",
+      "Add backend unit tests that prove the executor resolves references through the shared attempt boundary, preserves memoization behavior, and exits before flattening or DML on reference failures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Executor-Owned Flattening",
+    "description": "Move flattener invocation under the write executor after reference resolution succeeds. Acceptance: the repository no longer constructs `FlatteningInput` or `FlattenedWriteSet`; the executor builds `FlatteningInput` from the selected request body, resolved references, and executor-facing target context; the flattener contract remains pure request-body to row-buffer transformation with no session ownership; validation failures still short-circuit before any DML and continue to map to the current public validation results.",
+    "steps-to-verify": [
+      "Add backend unit tests that prove the executor constructs `FlatteningInput` only after successful reference resolution and that repository-level result mapping stays unchanged for flattener validation failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Current State Loader",
-    "description": "Add a write-path-local, session-aware current-state loader for one existing document using the compiled read plan and `HydrationExecutor`. Acceptance: DMS-984 can load `DocumentMetadataRow` plus hydrated table rows for a single `DocumentId` through the executor-owned connection/transaction using `PageKeysetSpec.Single`; the loader is narrow and rowset-first, with no profile projection or JSON reconstitution requirements; public `IDocumentHydrator` stays unchanged for the read path; existing-document write attempts fail deterministically when a required `ResourceReadPlan` is missing; the loaded current state is reusable by both guarded no-op comparison and later DMS-1105 work.",
+    "description": "Add a write-path-local, session-aware current-state loader for one existing document using the compiled read plan and `HydrationExecutor`. Acceptance: DMS-984 can load `DocumentMetadataRow` plus hydrated table rows for a single `DocumentId` through the executor-owned connection and transaction using `PageKeysetSpec.Single`; the loader is narrow and rowset-first, with no profile projection or JSON reconstitution requirements; public `IDocumentHydrator` stays unchanged for the read path; existing-document write attempts fail deterministically when a required `ResourceReadPlan` is missing; the loaded current state is reusable by both guarded no-op comparison and later DMS-1105 work.",
     "steps-to-verify": [
       "Add backend or plans tests that prove an existing-document write attempt can materialize current metadata plus table rows from the selected read plan without opening a second connection seam.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
@@ -46,18 +55,36 @@
     "completed": false
   },
   {
-    "category": "Merge Planning And Guarded No-Op",
-    "description": "Implement the shared no-profile post-merge rowset synthesis and guarded no-op comparison path for existing-document writes. Acceptance: PUT and POST-as-update use one shared helper for merge matching, deterministic sibling ordering, compare projection, and no-op equality rather than separate compare-only logic; comparison consumes `CollectionMergePlan.CompareBindingIndexesInOrder` and the same stable-identity metadata used by the real executor; unchanged writes short-circuit as guarded no-ops without issuing DML or bumping `dms.Document.ContentVersion`; existing-document writes only proceed when the post-merge identity projection matches the stored identity projection; `allowIdentityUpdates=false` yields the normal immutable-identity failure path, while `allowIdentityUpdates=true` yields a deterministic not-yet-supported failure until the E09 identity-maintenance stories land.",
+    "category": "No-Profile Merge Synthesis",
+    "description": "Implement the shared no-profile post-merge rowset synthesis helper for existing-document writes. Acceptance: PUT and POST-as-update use one shared helper for merge matching, deterministic sibling ordering, compare projection, and execution-ready rowset synthesis rather than separate compare-only logic; synthesis consumes `CollectionMergePlan.CompareBindingIndexesInOrder` and the same stable-identity metadata used by the real executor; the helper can project both non-collection scopes and collection scopes into the same stored and writable comparison space that later DML execution will use.",
     "steps-to-verify": [
-      "Add backend and plans unit tests for unchanged PUT, unchanged POST-as-update, compare-order reuse, identity-stable matching, and identity-changing guard rails.",
+      "Add backend and plans unit tests for compare-order reuse, deterministic sibling ordering, and shared rowset synthesis for non-collection and collection paths.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Concurrency Outcomes",
-    "description": "Introduce internal executor attempt outcomes and repository-level stale-no-op handling. Acceptance: the executor returns internal attempt results such as applied write, guarded no-op, and stale no-op compare rather than only public `UpsertResult` and `UpdateResult`; the repository maps successful attempts back to `InsertSuccess`, `UpdateSuccess`, or successful PUT responses; when a no-op compare goes stale and there is no external `If-Match` policy yet, the repository reruns exactly one full executor attempt against fresh state; if the retry also goes stale or hits retryable contention, the request maps to a write-conflict outcome rather than returning success from stale state; the internal stale result remains reusable by DMS-1005 later.",
+    "category": "Identity Stability Guard Rails",
+    "description": "Enforce the DMS-984 identity-stable boundary for existing-document writes. Acceptance: existing-document writes only proceed when the post-merge identity projection matches the stored identity projection; `allowIdentityUpdates=false` yields the normal immutable-identity failure path; resources that may eventually allow identity updates yield a deterministic relational not-yet-supported failure until the E09 identity-maintenance stories land; identity-changing cases are rejected before changed-write DML or guarded no-op success is returned.",
+    "steps-to-verify": [
+      "Add backend unit tests for identity-stable success, immutable-identity failure for `allowIdentityUpdates=false`, and deterministic not-yet-supported failure for `allowIdentityUpdates=true`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Guarded No-Op And Freshness Recheck",
+    "description": "Implement the guarded no-op fast path for unchanged existing-document writes. Acceptance: unchanged PUT and unchanged POST-as-update requests short-circuit as successful no-ops without issuing DML or bumping `dms.Document.ContentVersion`; the compare path reuses the same shared post-merge synthesis logic as execution; before returning success, the executor revalidates that the observed `ContentVersion` is still current for the target document; stale compares surface an internal stale outcome instead of returning success from stale state.",
+    "steps-to-verify": [
+      "Add backend unit tests for unchanged PUT, unchanged POST-as-update, no-DML short-circuiting, and stale compare classification after freshness recheck.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Stale No-Op Retry Outcomes",
+    "description": "Introduce internal executor attempt outcomes and repository-level stale-no-op retry handling. Acceptance: the executor returns internal attempt results such as applied write, guarded no-op, and stale no-op compare rather than only public `UpsertResult` and `UpdateResult`; the repository maps successful attempts back to `InsertSuccess`, `UpdateSuccess`, or successful PUT responses; when a no-op compare goes stale and there is no external `If-Match` policy yet, the repository reruns exactly one full executor attempt against fresh state; if the retry also goes stale, the request maps to a write-conflict outcome rather than returning success from stale state; database exception classification and general retry-loop policy remain out of scope for this task.",
     "steps-to-verify": [
       "Add backend unit tests for stale-no-op classification, one-time retry behavior, and result mapping back to public repository outcomes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
@@ -66,18 +93,28 @@
   },
   {
     "category": "Non-Collection Persistence",
-    "description": "Implement transactional DML for `dms.Document`, the resource root row, root extension rows, and non-collection separate-table or inlined scopes on the no-profile path. Acceptance: create flows insert `dms.Document` and the required relational rows in dependency order; update flows update matched rows, insert newly present separate-table rows, delete omitted separate-table rows, and clear compiled bindings for omitted inlined scopes instead of preserving hidden data; no-profile root `_ext` rows and aligned one-to-one extension scopes follow the same present/absent semantics as base data; the executor commits all changed rows in one transaction and rolls back fully on failure with no partial writes left behind.",
+    "description": "Implement transactional DML for `dms.Document`, the resource root row, root extension rows, and non-collection separate-table or inlined scopes on the no-profile path. Acceptance: create flows insert `dms.Document` and the required relational rows in dependency order; update flows update matched rows, insert newly present separate-table rows, delete omitted separate-table rows, and clear compiled bindings for omitted inlined scopes instead of preserving hidden data; no-profile root `_ext` rows and aligned one-to-one extension scopes follow the same present and absent semantics as base data; the executor commits all changed rows in one transaction and rolls back fully on failure with no partial writes left behind.",
     "steps-to-verify": [
-      "Add backend unit tests for non-collection present/absent handling, inlined clear behavior, root extension row handling, and rollback-on-failure behavior using an injected failure hook.",
+      "Add backend unit tests for non-collection present and absent handling, inlined clear behavior, root extension row handling, and rollback-on-failure behavior using an injected failure hook.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Stable-Identity Collection Merge",
-    "description": "Implement stable-identity collection/common-type/extension-collection merge execution for no-profile writes. Acceptance: the executor loads the current sibling set from the current-state loader, matches request candidates to stored rows by compiled semantic identity, updates matched rows in place, deletes omitted rows by stable row identity, reserves new `CollectionItemId` values only for unmatched inserts, and applies the same logic to nested collections, root-level extension child collections, and collection-aligned extension child collections. `Ordinal` recomputation uses the same deterministic post-merge ordering helper used by the guarded no-op compare path. `FullSurfaceCollectionReorder` must prove matched rows keep their existing `CollectionItemId` values while only `Ordinal` changes.",
+    "category": "Base Stable-Identity Collection Merge",
+    "description": "Implement stable-identity merge execution for base collection and common-type tables on the no-profile path. Acceptance: the executor loads the current sibling set from the current-state loader, matches request candidates to stored rows by compiled semantic identity, updates matched rows in place, deletes omitted rows by stable row identity, reserves new `CollectionItemId` values only for unmatched inserts, and applies the same logic to both top-level and nested collection scopes. `Ordinal` recomputation uses the same deterministic post-merge ordering helper used by the guarded no-op compare path. `FullSurfaceCollectionReorder` at base collection scopes must prove matched rows keep their existing `CollectionItemId` values while only `Ordinal` changes.",
     "steps-to-verify": [
-      "Add backend and plans unit tests for semantic-identity matching, matched-row preservation, delete-plus-insert on identity changes, ordinal recomputation, and extension child collection handling.",
+      "Add backend and plans unit tests for semantic-identity matching, matched-row preservation, delete-plus-insert on semantic identity changes, nested collection handling, and ordinal recomputation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Extension Collection Merge",
+    "description": "Extend stable-identity merge execution to no-profile extension child collections. Acceptance: root-level extension child collections and collection-aligned extension child collections use the same semantic-identity matching, matched-row preservation, delete, insert, `CollectionItemId` reservation, and ordinal recomputation rules as base collections; collection-aligned extension child collections remain keyed to the owning base row's stable identity rather than request ordinals; executor-side merge helpers stay shared instead of forking an extension-only implementation.",
+    "steps-to-verify": [
+      "Add backend and plans unit tests for root-level extension child collections, collection-aligned extension child collections, and stable ordering and identity preservation across those scopes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
@@ -93,19 +130,38 @@
     "completed": false
   },
   {
-    "category": "Unit And Contract Coverage",
-    "description": "Add fast verification coverage for DMS-984 orchestration and dialect-specific contract behavior. Acceptance: backend unit tests cover target lookup mapping, executor request shaping, session lifecycle, reference-resolution short-circuiting, stale-no-op retry policy, identity-stability guard rails, non-collection present/absent semantics, collection match classification, and batch partitioning. Plans unit tests cover stable merge metadata consumption, compare-order reuse, and deterministic no-op projection behavior. SQL Server receives a smaller safety net in unit or contract coverage for generated SQL and batching behavior without requiring full SQL Server end-to-end integration in this story.",
+    "category": "SQL Server Contract Safety Net",
+    "description": "Add the smaller SQL Server safety net this story needs without full SQL Server end-to-end integration. Acceptance: unit or contract tests cover SQL Server generated SQL shape, compare-order metadata consumption, batching and parameter partitioning behavior, and any dialect-specific `CollectionItemId` reservation assumptions touched by DMS-984; PostgreSQL remains the deep end-to-end gate for runtime behavior in this story.",
     "steps-to-verify": [
+      "Add backend and plans unit or contract tests that exercise the DMS-984 SQL Server-specific SQL and batching paths.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration Coverage",
-    "description": "Add end-to-end PostgreSQL integration coverage for the DMS-984 no-profile runtime baseline using compiled schema and plan fixtures rather than hand-written table definitions. Acceptance: integration tests cover `NoProfileWriteBehavior` with changed writes, nested collections, omitted non-collection scope semantics, no-profile `_ext` handling, PUT update, and POST-as-update; `FullSurfaceCollectionReorder` proving stable `CollectionItemId` preservation plus ordinal recomputation; unchanged PUT and unchanged POST-as-update guarded no-op behavior with unchanged `dms.Document.ContentVersion`; stale compare recheck with a concurrent content-version bump; batch-threshold crossing for large collections; and rollback verification proving no partial rows commit when an injected failure occurs. Assertions are database-first: actual rows, delete-vs-clear semantics, `CollectionItemId` reuse, `Ordinal` values, and changed-vs-unchanged `ContentVersion` behavior.",
+    "category": "PostgreSQL Integration - Changed Write Baseline",
+    "description": "Add PostgreSQL integration coverage for the changed-write portion of the DMS-984 no-profile runtime baseline using compiled schema and plan fixtures rather than hand-written table definitions. Acceptance: integration tests cover `NoProfileWriteBehavior` create and changed-update cases, including POST create with nested collections, root `_ext`, collection `_ext`, and an extension child collection; PUT update with one omitted separate-table scope and one omitted inlined scope proving delete-vs-clear semantics; and POST-as-update on an existing document. Assertions are database-first: actual rows, present-vs-absent semantics, and stored values after each write. Coverage includes at least one focused stable-key fixture and one authoritative DS 5.2 or extension-style smoke so the executor is proven against both focused and production-like compiled resource shapes.",
     "steps-to-verify": [
-      "Add PostgreSQL integration tests that provision the compiled relational model, execute the write path through the repository and executor, and assert directly against database state for the accepted scenario names.",
+      "Add PostgreSQL integration tests that provision the compiled relational model, execute the changed-write path through the repository and executor, and assert directly against database state for the accepted scenario names.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Guarded No-Op And Reorder",
+    "description": "Add PostgreSQL integration coverage for guarded no-op success and full-surface collection reorder behavior. Acceptance: integration tests cover unchanged PUT guarded no-op, unchanged POST-as-update guarded no-op, and `FullSurfaceCollectionReorder`; unchanged writes prove unchanged rowsets and unchanged `dms.Document.ContentVersion`; reorder coverage proves matched rows keep the same `CollectionItemId` values while only `Ordinal` changes. Assertions remain database-first and verify both the public result type and the stored relational state.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute unchanged-write and reorder scenarios through the repository and executor and assert directly against row contents, `CollectionItemId` reuse, `Ordinal` values, and `ContentVersion` behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Stale Compare, Batching, And Rollback",
+    "description": "Add PostgreSQL integration coverage for stale compare handling, multi-batch writes, and transaction rollback. Acceptance: integration tests cover stale compare recheck with a concurrent content-version bump between compare and guarded short-circuit, batch-threshold crossing with a collection large enough to require multiple bounded insert batches, and rollback verification proving no partial rows commit when an injected failure occurs after an early write. Assertions are database-first and prove stale no-op does not return success from stale state, large collections persist correctly across batches, and failed attempts leave no partial relational state behind.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute stale-compare, large-batch, and injected-failure scenarios through the repository and executor and assert directly against final database state.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
     "completed": false
