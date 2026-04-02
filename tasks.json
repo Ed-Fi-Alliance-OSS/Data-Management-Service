@@ -98,7 +98,7 @@
       "Add backend unit tests for non-collection present and absent handling, inlined clear behavior, root extension row handling, and rollback-on-failure behavior using an injected failure hook.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Base Stable-Identity Collection Merge",

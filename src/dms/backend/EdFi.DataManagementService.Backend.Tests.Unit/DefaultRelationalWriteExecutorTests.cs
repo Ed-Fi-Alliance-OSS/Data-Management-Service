@@ -26,6 +26,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
+    private RecordingRelationalWriteNonCollectionPersister _nonCollectionPersister = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -37,13 +38,15 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
+        _nonCollectionPersister = new RecordingRelationalWriteNonCollectionPersister();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
             _writeFlattener,
             _currentStateLoader,
             _writeFreshnessChecker,
-            _noProfileMergeSynthesizer
+            _noProfileMergeSynthesizer,
+            _nonCollectionPersister
         );
     }
 
@@ -128,6 +131,7 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
         _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
@@ -221,6 +225,7 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.CapturedRequest!.TargetContext.DocumentId.Should().Be(345L);
         _currentStateLoader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
@@ -250,6 +255,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeFreshnessChecker.CapturedRequest.Should().BeSameAs(request);
         _writeFreshnessChecker
@@ -292,6 +298,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -317,9 +324,72 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_insert_success_when_non_collection_create_dml_is_applied()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _nonCollectionPersister.TryPersistResult = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.InsertSuccess(
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _nonCollectionPersister.CapturedRequest.Should().BeSameAs(request);
+        _nonCollectionPersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_update_success_when_non_collection_put_dml_is_applied()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _nonCollectionPersister.TryPersistResult = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _nonCollectionPersister.CapturedRequest.Should().BeSameAs(request);
+        _nonCollectionPersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
+        _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
@@ -349,7 +419,30 @@ public class Given_Default_Relational_Write_Executor
             );
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_when_non_collection_persistence_throws()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _nonCollectionPersister.ExceptionToThrow = new InvalidOperationException("boom");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -880,6 +973,43 @@ public class Given_Default_Relational_Write_Executor
                         ]
                     ),
                 ]);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteNonCollectionPersister
+        : IRelationalWriteNonCollectionPersister
+    {
+        public int TryPersistCallCount { get; private set; }
+
+        public RelationalWriteExecutorRequest? CapturedRequest { get; private set; }
+
+        public RelationalWriteNoProfileMergeResult? CapturedMergeResult { get; private set; }
+
+        public IRelationalWriteSession? CapturedWriteSession { get; private set; }
+
+        public bool TryPersistResult { get; set; }
+
+        public Exception? ExceptionToThrow { get; set; }
+
+        public Task<bool> TryPersistAsync(
+            RelationalWriteExecutorRequest request,
+            RelationalWriteNoProfileMergeResult mergeResult,
+            IRelationalWriteSession writeSession,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TryPersistCallCount++;
+            CapturedRequest = request;
+            CapturedMergeResult = mergeResult;
+            CapturedWriteSession = writeSession;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return Task.FromResult(TryPersistResult);
         }
     }
 

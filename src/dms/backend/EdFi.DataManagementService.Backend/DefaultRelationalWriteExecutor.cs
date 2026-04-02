@@ -14,7 +14,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
-    IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer
+    IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
+    IRelationalWriteNonCollectionPersister nonCollectionPersister
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -35,6 +36,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
+
+    private readonly IRelationalWriteNonCollectionPersister _nonCollectionPersister =
+        nonCollectionPersister ?? throw new ArgumentNullException(nameof(nonCollectionPersister));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -137,6 +141,16 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
             }
 
+            var persisted = await _nonCollectionPersister
+                .TryPersistAsync(request, noProfileMergeResult, writeSession, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (persisted)
+            {
+                await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return BuildAppliedWriteSuccessResult(request.OperationKind, request.TargetContext);
+            }
+
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,
                 resource,
@@ -185,6 +199,38 @@ internal sealed class DefaultRelationalWriteExecutor(
                 RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildAppliedWriteSuccessResult(
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetContext targetContext
+    )
+    {
+        return (operationKind, targetContext) switch
+        {
+            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.CreateNew(var documentUuid)) =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.InsertSuccess(documentUuid),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
+            (
+                RelationalWriteOperationKind.Post,
+                RelationalWriteTargetContext.ExistingDocument
+                (_, var documentUuid, _)
+            ) => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpdateSuccess(documentUuid),
+                RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+            ),
+            (
+                RelationalWriteOperationKind.Put,
+                RelationalWriteTargetContext.ExistingDocument
+                (_, var documentUuid, _)
+            ) => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid),
+                RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
         };
     }
 
