@@ -96,12 +96,13 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UnknownFailure(
-                        "Relational POST write executor is not implemented for resource 'Ed-Fi.School'. "
-                            + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending."
-                    )
+                    new UpsertResult.InsertSuccess(
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
         _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
@@ -151,8 +152,8 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver
             .CapturedWriteSession!.Transaction.Should()
             .BeSameAs(_writeSessionFactory.Session.Transaction);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
@@ -229,12 +230,13 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UnknownFailure(
-                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
-                            + "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
-                    )
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _currentStateLoader.CapturedRequest.Should().NotBeNull();
@@ -255,7 +257,8 @@ public class Given_Default_Relational_Write_Executor
             .CapturedWriteSession!.Transaction.Should()
             .BeSameAs(_writeSessionFactory.Session.Transaction);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
@@ -371,8 +374,6 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
         );
         _currentStateLoader.ReturnMissingTarget = true;
-        _nonCollectionPersister.TryPersistResult = true;
-
         var result = await _sut.ExecuteAsync(request);
 
         result
@@ -449,8 +450,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_returns_insert_success_when_non_collection_create_dml_is_applied()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
-        _nonCollectionPersister.TryPersistResult = true;
-
         var result = await _sut.ExecuteAsync(request);
 
         result
@@ -484,8 +483,6 @@ public class Given_Default_Relational_Write_Executor
             currentName: "Lincoln High",
             mergedName: "Lincoln High Updated"
         );
-        _nonCollectionPersister.TryPersistResult = true;
-
         var result = await _sut.ExecuteAsync(request);
 
         result
@@ -527,17 +524,19 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UnknownFailure(
-                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
-                            + "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
-                    )
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
@@ -1175,11 +1174,9 @@ public class Given_Default_Relational_Write_Executor
 
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
-        public bool TryPersistResult { get; set; }
-
         public Exception? ExceptionToThrow { get; set; }
 
-        public Task<bool> TryPersistAsync(
+        public Task PersistAsync(
             RelationalWriteExecutorRequest request,
             RelationalWriteNoProfileMergeResult mergeResult,
             IRelationalWriteSession writeSession,
@@ -1197,7 +1194,7 @@ public class Given_Default_Relational_Write_Executor
                 throw ExceptionToThrow;
             }
 
-            return Task.FromResult(TryPersistResult);
+            return Task.CompletedTask;
         }
     }
 

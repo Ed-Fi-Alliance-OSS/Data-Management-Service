@@ -42,27 +42,6 @@ internal static class RelationalWriteSupport
         $"Relational existing-document writes do not yet support identity-changing operations for resource '{FormatResource(resource)}' when allowIdentityUpdates=true. "
         + "Keep the identity projection stable until the strict identity-maintenance work lands.";
 
-    public static string BuildWriteExecutionNotImplementedMessage(
-        RelationalWriteOperationKind operationKind,
-        QualifiedResourceName resource,
-        bool currentStateLoaded = false
-    )
-    {
-        var operationLabel = operationKind switch
-        {
-            RelationalWriteOperationKind.Post => "POST",
-            RelationalWriteOperationKind.Put => "PUT",
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-
-        var completedStages = currentStateLoaded
-            ? "Write-plan selection, target-context resolution, reference resolution, flattening, and current-state load succeeded, but relational command execution is still pending."
-            : "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending.";
-
-        return $"Relational {operationLabel} write executor is not implemented for resource '{FormatResource(resource)}'. "
-            + completedStages;
-    }
-
     public static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
 }

@@ -123,7 +123,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
             );
 
-            var resource = request.WritePlan.Model.Resource;
             var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
                 new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
             );
@@ -158,35 +157,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
             }
 
-            var persisted = await _nonCollectionPersister
-                .TryPersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
+            await _nonCollectionPersister
+                .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (persisted)
-            {
-                await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext!);
-            }
-
-            var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
-                request.OperationKind,
-                resource,
-                currentStateLoaded: currentState is not null
-            );
-
-            var result = request.OperationKind switch
-            {
-                RelationalWriteOperationKind.Post => (RelationalWriteExecutorResult)
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UnknownFailure(failureMessage)),
-                RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UnknownFailure(failureMessage)
-                ),
-                _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
-            };
-
-            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-            return result;
+            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext!);
         }
         catch (RelationalWriteRequestValidationException ex)
         {

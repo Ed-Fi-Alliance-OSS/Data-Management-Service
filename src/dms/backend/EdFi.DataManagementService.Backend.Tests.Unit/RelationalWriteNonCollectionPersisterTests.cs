@@ -53,9 +53,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
         writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO dms.\"Document\"");
         GetParameterValue(writeSession.Commands[0], "@documentUuid")
@@ -88,9 +86,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         ]);
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Be(rootPlan.UpdateSql);
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
@@ -116,9 +112,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         ]);
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Be(rootExtensionPlan.DeleteByParentSql);
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
@@ -152,9 +146,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         ]);
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.UpdateSql);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(44L);
@@ -191,9 +183,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
         writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(44L);
@@ -236,9 +226,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(collectionPlan.InsertSql);
@@ -291,9 +279,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
 
         writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.DeleteByParentSql);
@@ -335,9 +321,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(4);
 
         writeSession
@@ -397,9 +381,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(4);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
@@ -446,9 +428,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(4);
 
         writeSession
@@ -509,9 +489,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(4);
 
         writeSession
@@ -573,9 +551,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(4);
         writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
         writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
@@ -637,9 +613,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
         writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
         writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
@@ -690,9 +664,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
 
         writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
@@ -763,9 +735,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(6);
 
         writeSession.Commands[0].CommandText.Should().Contain("generate_series");
@@ -834,9 +804,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
         writeSession
             .Commands[0]
@@ -904,9 +872,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
         ]);
 
-        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
-
-        persisted.Should().BeTrue();
+        await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(6);
 
         writeSession

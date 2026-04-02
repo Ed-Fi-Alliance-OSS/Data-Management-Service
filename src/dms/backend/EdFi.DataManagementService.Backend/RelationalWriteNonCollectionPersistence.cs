@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal interface IRelationalWriteNonCollectionPersister
 {
-    Task<bool> TryPersistAsync(
+    Task PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteNoProfileMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -30,7 +30,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         RegexOptions.Compiled | RegexOptions.CultureInvariant
     );
 
-    public async Task<bool> TryPersistAsync(
+    public async Task PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteNoProfileMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -74,8 +74,6 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        return true;
     }
 
     private static async Task ExecuteDeletesAsync(

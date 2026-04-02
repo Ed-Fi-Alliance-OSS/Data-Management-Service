@@ -267,7 +267,7 @@
       "Refactor the persister and executor contracts to eliminate the boolean fallback path and update unit tests to assert the simplified success and failure behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Dependency Docs - E13-S01 Summary Row",
