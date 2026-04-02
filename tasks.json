@@ -46,9 +46,9 @@
   },
   {
     "category": "Current State Loader",
-    "description": "Add a write-path-local, session-aware current-state loader for one existing document using the compiled read plan and `HydrationExecutor`. Acceptance: DMS-984 can load `DocumentMetadataRow` plus hydrated table rows for a single `DocumentId` through the executor-owned connection and transaction using `PageKeysetSpec.Single`; the loader is narrow and rowset-first, with no profile projection or JSON reconstitution requirements; public `IDocumentHydrator` stays unchanged for the read path; existing-document write attempts fail deterministically when a required `ResourceReadPlan` is missing; the loaded current state is reusable by both guarded no-op comparison and later DMS-1105 work.",
+    "description": "Add a write-path-local, session-aware current-state loader for one existing document using the compiled read plan and `HydrationExecutor`. Acceptance: DMS-984 can load `DocumentMetadataRow` plus hydrated table rows for a single `DocumentId` through the executor-owned connection and transaction using `PageKeysetSpec.Single`; the loader is narrow and rowset-first, with no profile projection or JSON reconstitution requirements; public `IDocumentHydrator` stays unchanged for the read path; existing-document write attempts fail deterministically when a required `ResourceReadPlan` is missing; the loaded current state is reusable by both guarded no-op comparison and later DMS-1105 work; tests prove the guarded no-op path reuses this same current-state load rather than issuing a dedicated extra compare-only roundtrip.",
     "steps-to-verify": [
-      "Add backend or plans tests that prove an existing-document write attempt can materialize current metadata plus table rows from the selected read plan without opening a second connection seam.",
+      "Add backend or plans tests that prove an existing-document write attempt can materialize current metadata plus table rows from the selected read plan without opening a second connection seam, and that guarded no-op preparation reuses this load instead of performing a second compare-only load.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
@@ -75,16 +75,16 @@
   },
   {
     "category": "Guarded No-Op And Freshness Recheck",
-    "description": "Implement the guarded no-op fast path for unchanged existing-document writes. Acceptance: unchanged PUT and unchanged POST-as-update requests short-circuit as successful no-ops without issuing DML or bumping `dms.Document.ContentVersion`; the compare path reuses the same shared post-merge synthesis logic as execution; before returning success, the executor revalidates that the observed `ContentVersion` is still current for the target document; stale compares surface an internal stale outcome instead of returning success from stale state.",
+    "description": "Introduce internal executor attempt outcomes and implement the guarded no-op fast path for unchanged existing-document writes. Acceptance: the executor returns internal attempt results such as applied write, guarded no-op, and stale no-op compare rather than only public `UpsertResult` and `UpdateResult`; unchanged PUT and unchanged POST-as-update requests short-circuit as successful no-ops without issuing DML or bumping `dms.Document.ContentVersion`; the compare path reuses the same shared post-merge synthesis logic as execution; before returning success, the executor revalidates that the observed `ContentVersion` is still current for the target document; stale compares surface an internal stale outcome instead of returning success from stale state.",
     "steps-to-verify": [
-      "Add backend unit tests for unchanged PUT, unchanged POST-as-update, no-DML short-circuiting, and stale compare classification after freshness recheck.",
+      "Add backend unit tests for internal attempt outcome mapping, unchanged PUT, unchanged POST-as-update, no-DML short-circuiting, and stale compare classification after freshness recheck.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Stale No-Op Retry Outcomes",
-    "description": "Introduce internal executor attempt outcomes and repository-level stale-no-op retry handling. Acceptance: the executor returns internal attempt results such as applied write, guarded no-op, and stale no-op compare rather than only public `UpsertResult` and `UpdateResult`; the repository maps successful attempts back to `InsertSuccess`, `UpdateSuccess`, or successful PUT responses; when a no-op compare goes stale and there is no external `If-Match` policy yet, the repository reruns exactly one full executor attempt against fresh state; if the retry also goes stale, the request maps to a write-conflict outcome rather than returning success from stale state; database exception classification and general retry-loop policy remain out of scope for this task.",
+    "description": "Implement repository-level stale-no-op retry handling on top of the executor's internal attempt outcomes. Acceptance: the repository maps successful attempts back to `InsertSuccess`, `UpdateSuccess`, or successful PUT responses; when a no-op compare goes stale and there is no external `If-Match` policy yet, the repository reruns exactly one full executor attempt against fresh state; if the retry also goes stale, the request maps to a write-conflict outcome rather than returning success from stale state; database exception classification and general retry-loop policy remain out of scope for this task.",
     "steps-to-verify": [
       "Add backend unit tests for stale-no-op classification, one-time retry behavior, and result mapping back to public repository outcomes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
@@ -140,28 +140,73 @@
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration - Changed Write Baseline",
-    "description": "Add PostgreSQL integration coverage for the changed-write portion of the DMS-984 no-profile runtime baseline using compiled schema and plan fixtures rather than hand-written table definitions. Acceptance: integration tests cover `NoProfileWriteBehavior` create and changed-update cases, including POST create with nested collections, root `_ext`, collection `_ext`, and an extension child collection; PUT update with one omitted separate-table scope and one omitted inlined scope proving delete-vs-clear semantics; and POST-as-update on an existing document. Assertions are database-first: actual rows, present-vs-absent semantics, and stored values after each write. Coverage includes at least one focused stable-key fixture and one authoritative DS 5.2 or extension-style smoke so the executor is proven against both focused and production-like compiled resource shapes.",
+    "category": "PostgreSQL Integration - Create Baseline",
+    "description": "Add PostgreSQL integration coverage for the create half of the DMS-984 no-profile runtime baseline using compiled schema and plan fixtures rather than hand-written table definitions. Acceptance: integration tests cover `NoProfileWriteBehavior` POST create with nested collections, root `_ext`, collection `_ext`, and an extension child collection. Assertions are database-first and verify inserted rows, collection identities, extension persistence, and stored values after the write using at least one focused stable-key fixture.",
     "steps-to-verify": [
-      "Add PostgreSQL integration tests that provision the compiled relational model, execute the changed-write path through the repository and executor, and assert directly against database state for the accepted scenario names.",
+      "Add PostgreSQL integration tests that provision the compiled relational model, execute create flows through the repository and executor, and assert directly against database state for nested and `_ext` create scenarios.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration - Guarded No-Op And Reorder",
-    "description": "Add PostgreSQL integration coverage for guarded no-op success and full-surface collection reorder behavior. Acceptance: integration tests cover unchanged PUT guarded no-op, unchanged POST-as-update guarded no-op, and `FullSurfaceCollectionReorder`; unchanged writes prove unchanged rowsets and unchanged `dms.Document.ContentVersion`; reorder coverage proves matched rows keep the same `CollectionItemId` values while only `Ordinal` changes. Assertions remain database-first and verify both the public result type and the stored relational state.",
+    "category": "PostgreSQL Integration - Update Semantics",
+    "description": "Add PostgreSQL integration coverage for the changed-update half of the DMS-984 no-profile runtime baseline. Acceptance: integration tests cover `NoProfileWriteBehavior` PUT update with one omitted separate-table scope and one omitted inlined scope proving delete-vs-clear semantics. Assertions are database-first and verify actual rows, present-vs-absent behavior, and stored values after update using a focused stable-key fixture.",
     "steps-to-verify": [
-      "Add PostgreSQL integration tests that execute unchanged-write and reorder scenarios through the repository and executor and assert directly against row contents, `CollectionItemId` reuse, `Ordinal` values, and `ContentVersion` behavior.",
+      "Add PostgreSQL integration tests that execute changed PUT flows through the repository and executor and assert directly against database state for omitted separate-table and omitted inlined-scope cases.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration - Stale Compare, Batching, And Rollback",
-    "description": "Add PostgreSQL integration coverage for stale compare handling, multi-batch writes, and transaction rollback. Acceptance: integration tests cover stale compare recheck with a concurrent content-version bump between compare and guarded short-circuit, batch-threshold crossing with a collection large enough to require multiple bounded insert batches, and rollback verification proving no partial rows commit when an injected failure occurs after an early write. Assertions are database-first and prove stale no-op does not return success from stale state, large collections persist correctly across batches, and failed attempts leave no partial relational state behind.",
+    "category": "PostgreSQL Integration - Post-As-Update And Authoritative Smoke",
+    "description": "Add PostgreSQL integration coverage for POST-as-update on an existing document and a production-like compiled resource shape. Acceptance: integration tests cover `NoProfileWriteBehavior` POST-as-update on an existing document and include one authoritative DS 5.2 or extension-style smoke in addition to the focused fixtures already used elsewhere. Assertions are database-first and verify the public result type plus stored relational state after the write.",
     "steps-to-verify": [
-      "Add PostgreSQL integration tests that execute stale-compare, large-batch, and injected-failure scenarios through the repository and executor and assert directly against final database state.",
+      "Add PostgreSQL integration tests that execute POST-as-update flows through the repository and executor and assert directly against database state, including one authoritative production-like fixture smoke.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Guarded No-Op",
+    "description": "Add PostgreSQL integration coverage for guarded no-op success. Acceptance: integration tests cover unchanged PUT guarded no-op and unchanged POST-as-update guarded no-op; unchanged writes prove unchanged rowsets and unchanged `dms.Document.ContentVersion`. Assertions remain database-first and verify both the public result type and the stored relational state.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute unchanged-write scenarios through the repository and executor and assert directly against row contents and `ContentVersion` behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Full-Surface Collection Reorder",
+    "description": "Add PostgreSQL integration coverage for `FullSurfaceCollectionReorder`. Acceptance: integration tests prove matched rows keep the same `CollectionItemId` values while only `Ordinal` changes under a no-profile full-surface reorder. Assertions are database-first and verify both the public result type and the stored relational state.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute full-surface reorder scenarios through the repository and executor and assert directly against `CollectionItemId` reuse, `Ordinal` values, and stored row contents.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Stale Compare Recheck",
+    "description": "Add PostgreSQL integration coverage for stale compare handling. Acceptance: integration tests cover stale compare recheck with a concurrent content-version bump between compare and guarded short-circuit and prove stale no-op does not return success from stale state.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute stale-compare scenarios through the repository and executor and assert directly against final database state and public result mapping.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Multi-Batch Collections",
+    "description": "Add PostgreSQL integration coverage for multi-batch writes. Acceptance: integration tests cover batch-threshold crossing with a collection large enough to require multiple bounded insert batches inside one transaction and prove the full collection persists correctly across batches.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute large-collection scenarios through the repository and executor and assert directly against stored collection rows after multi-batch persistence.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Rollback Safety",
+    "description": "Add PostgreSQL integration coverage for transaction rollback. Acceptance: integration tests verify no partial rows commit when an injected failure occurs after an early write inside the executor transaction. Assertions are database-first and prove failed attempts leave no partial relational state behind.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that execute injected-failure scenarios through the repository and executor and assert directly against final database state after rollback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
     "completed": false
