@@ -13,12 +13,12 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
-public class Given_RelationalWriteTargetLookupResolver
+public class Given_RelationalWrite_Target_Lookup_Surfaces
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
 
     [Test]
-    public async Task It_returns_create_new_for_post_when_request_referential_id_does_not_match_an_existing_document()
+    public async Task It_returns_create_new_for_post_re_evaluation_when_request_referential_id_does_not_match_an_existing_document()
     {
         var referentialId = new ReferentialId(Guid.NewGuid());
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
@@ -46,7 +46,7 @@ public class Given_RelationalWriteTargetLookupResolver
     }
 
     [Test]
-    public async Task It_returns_existing_document_for_post_when_request_referential_id_matches_a_persisted_document()
+    public async Task It_returns_existing_document_for_post_re_evaluation_when_request_referential_id_matches_a_persisted_document()
     {
         var referentialId = new ReferentialId(Guid.NewGuid());
         var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
@@ -79,53 +79,42 @@ public class Given_RelationalWriteTargetLookupResolver
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_returns_not_found_for_put_when_requested_document_uuid_does_not_match_a_persisted_document(
+    public async Task It_returns_not_found_for_repository_put_lookup_when_requested_document_uuid_does_not_match_a_persisted_document(
         SqlDialect dialect,
         string expectedTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var writeSession = CreateWriteSession(CreateLookupReader());
-        var sut = new RelationalWriteTargetLookupResolver();
+        var commandExecutor = new RecordingRelationalCommandExecutor(CreateLookupReader());
+        var sut = new RelationalWriteTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForPutAsync(
-            CreateMappingSet(dialect),
-            _requestResource,
-            documentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
-        );
+        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
 
         result.Should().BeOfType<RelationalWriteTargetLookupResult.NotFound>();
-        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
-        writeSession.Connection.Command.CommandText.Should().Contain(expectedTableFragment);
-        writeSession
-            .Connection.Command.Parameters.Select(parameter => parameter.Value)
+        commandExecutor.ExecuteReaderAsyncCallCount.Should().Be(1);
+        commandExecutor.CapturedCommand.Should().NotBeNull();
+        commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor
+            .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
     }
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
-    public async Task It_returns_existing_document_for_put_when_requested_document_uuid_matches_a_persisted_document(
+    public async Task It_returns_existing_document_for_repository_put_lookup_when_requested_document_uuid_matches_a_persisted_document(
         SqlDialect dialect,
         string expectedTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         const long observedContentVersion = 907L;
-        var writeSession = CreateWriteSession(
+        var commandExecutor = new RecordingRelationalCommandExecutor(
             CreateLookupReader((404L, documentUuid.Value, observedContentVersion))
         );
-        var sut = new RelationalWriteTargetLookupResolver();
+        var sut = new RelationalWriteTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForPutAsync(
-            CreateMappingSet(dialect),
-            _requestResource,
-            documentUuid,
-            writeSession.Connection,
-            writeSession.Transaction
-        );
+        var result = await sut.ResolveForPutAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
 
         result
             .Should()
@@ -136,10 +125,11 @@ public class Given_RelationalWriteTargetLookupResolver
                     observedContentVersion
                 )
             );
-        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
-        writeSession.Connection.Command.CommandText.Should().Contain(expectedTableFragment);
-        writeSession
-            .Connection.Command.Parameters.Select(parameter => parameter.Value)
+        commandExecutor.ExecuteReaderAsyncCallCount.Should().Be(1);
+        commandExecutor.CapturedCommand.Should().NotBeNull();
+        commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor
+            .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
     }
@@ -183,6 +173,30 @@ public class Given_RelationalWriteTargetLookupResolver
         var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
 
         return new TestRelationalWriteSession(connection, transaction);
+    }
+
+    private sealed class RecordingRelationalCommandExecutor(DataTableReader reader)
+        : IRelationalCommandExecutor
+    {
+        private readonly DataTableReader _reader = reader;
+
+        public int ExecuteReaderAsyncCallCount { get; private set; }
+
+        public RelationalCommand? CapturedCommand { get; private set; }
+
+        public async Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CapturedCommand = command;
+            ExecuteReaderAsyncCallCount++;
+
+            await using var relationalReader = new DbRelationalCommandReader(_reader);
+            return await readAsync(relationalReader, cancellationToken);
+        }
     }
 
     private sealed class TestRelationalWriteSession(

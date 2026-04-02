@@ -244,7 +244,6 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
             .BeSameAs(_currentStateLoader.ResultToReturn);
-        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
         _targetLookupResolver.CapturedWriteSession.Should().BeNull();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -413,7 +412,6 @@ public class Given_Default_Relational_Write_Executor
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
-        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -1269,13 +1267,9 @@ public class Given_Default_Relational_Write_Executor
     {
         public int ResolveForPostCallCount { get; private set; }
 
-        public int ResolveForPutCallCount { get; private set; }
-
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
         public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
-
-        public Queue<RelationalWriteTargetLookupResult> PutResults { get; } = [];
 
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
@@ -1295,26 +1289,6 @@ public class Given_Default_Relational_Write_Executor
                 PostResults.Count > 0
                     ? PostResults.Dequeue()
                     : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-            );
-        }
-
-        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-            MappingSet mappingSet,
-            QualifiedResourceName resource,
-            DocumentUuid documentUuid,
-            DbConnection connection,
-            DbTransaction transaction,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ResolveForPutCallCount++;
-            CapturedWriteSession = new CapturedRelationalWriteSession(connection, transaction);
-
-            return Task.FromResult(
-                PutResults.Count > 0
-                    ? PutResults.Dequeue()
-                    : new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
             );
         }
 

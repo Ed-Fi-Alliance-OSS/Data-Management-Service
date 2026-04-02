@@ -38,15 +38,6 @@ public interface IRelationalWriteTargetLookupResolver
         DbTransaction transaction,
         CancellationToken cancellationToken = default
     );
-
-    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default
-    );
 }
 
 internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecutor commandExecutor)
@@ -111,27 +102,6 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
             resource,
             referentialId,
             candidateDocumentUuid,
-            cancellationToken
-        );
-    }
-
-    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        DbConnection connection,
-        DbTransaction transaction,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(connection);
-        ArgumentNullException.ThrowIfNull(transaction);
-
-        return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
-            new SessionRelationalCommandExecutor(connection, transaction),
-            mappingSet,
-            resource,
-            documentUuid,
             cancellationToken
         );
     }

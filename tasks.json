@@ -350,7 +350,7 @@
       "Add or update backend unit tests to prove PUT not-found short-circuiting still occurs at the repository boundary and POST existing-target re-evaluation still works inside the executor session.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Code Review Follow-Up - Deduplicate Session Command Construction",
