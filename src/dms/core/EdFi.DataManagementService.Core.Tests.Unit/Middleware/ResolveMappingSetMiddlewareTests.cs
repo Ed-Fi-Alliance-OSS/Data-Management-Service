@@ -208,9 +208,9 @@ public class ResolveMappingSetMiddlewareTests
         }
 
         [Test]
-        public void It_calls_next()
+        public void It_does_not_call_next()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
         }
 
         [Test]
@@ -223,6 +223,23 @@ public class ResolveMappingSetMiddlewareTests
         public void It_does_not_set_mapping_set_on_request_info()
         {
             _requestInfo.MappingSet.Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_a_mapping_set_unavailable_response()
+        {
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Mapping Set Unavailable");
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Database fingerprint was not resolved before mapping set resolution");
         }
     }
 
@@ -339,6 +356,57 @@ public class ResolveMappingSetMiddlewareTests
                     )
                 )
                 .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Next_Throws_After_Mapping_Set_Resolution : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(CreateTestMappingSet());
+
+            _act = () => middleware.Execute(_requestInfo, () => throw new InvalidOperationException("boom"));
+        }
+
+        [Test]
+        public async Task It_propagates_the_downstream_exception()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+        }
+
+        [Test]
+        public async Task It_still_attaches_the_mapping_set_before_next_runs()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+
+            _requestInfo.MappingSet.Should().NotBeNull();
+        }
+
+        [Test]
+        public async Task It_does_not_translate_the_downstream_exception_into_a_503()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

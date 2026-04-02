@@ -18,7 +18,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Resolves the compiled mapping set for the current request's database instance
 /// and attaches it to RequestInfo. Short-circuits with 503 if the mapping set
-/// cannot be resolved. No-op when UseRelationalBackend is false.
+/// cannot be resolved or if the fingerprint prerequisite is missing. No-op when
+/// UseRelationalBackend is false.
 /// </summary>
 internal class ResolveMappingSetMiddleware(
     IOptions<AppSettings> appSettings,
@@ -47,14 +48,27 @@ internal class ResolveMappingSetMiddleware(
         var fingerprint = requestInfo.DatabaseFingerprint;
         if (fingerprint == null)
         {
-            // Fingerprint validation already short-circuited or is disabled.
-            // MappingSet will not be set — downstream steps must tolerate null.
-            logger.LogWarning(
-                "DatabaseFingerprint is null while UseRelationalBackend is enabled; "
-                    + "skipping mapping set resolution. TraceId: {TraceId}",
+            logger.LogError(
+                "DatabaseFingerprint was not resolved before mapping set resolution while UseRelationalBackend is enabled. "
+                    + "ValidateDatabaseFingerprintMiddleware must run before ResolveMappingSetMiddleware. TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
-            await next();
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForMappingSetUnavailable(
+                    MappingSetUnavailableTitle,
+                    "Database fingerprint was not resolved before mapping set resolution. "
+                        + "Ensure fingerprint validation runs before relational request handling.",
+                    [
+                        "Database fingerprint was not resolved before mapping set resolution. "
+                            + "Ensure ValidateDatabaseFingerprintMiddleware runs before ResolveMappingSetMiddleware.",
+                    ],
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+
             return;
         }
 
@@ -96,7 +110,6 @@ internal class ResolveMappingSetMiddleware(
             // future per-request token could be threaded here to let disconnected clients
             // stop waiting for an in-flight compilation.
             requestInfo.MappingSet = await mappingSetProvider.GetOrCreateAsync(key, CancellationToken.None);
-            await next();
         }
         catch (MappingSetUnavailableException ex)
         {
@@ -121,6 +134,8 @@ internal class ResolveMappingSetMiddleware(
                 ),
                 Headers: []
             );
+
+            return;
         }
         catch (Exception ex)
         {
@@ -146,6 +161,10 @@ internal class ResolveMappingSetMiddleware(
                 ),
                 Headers: []
             );
+
+            return;
         }
+
+        await next();
     }
 }

@@ -278,7 +278,7 @@ public enum DbTableKind
     Root,
 
     /// <summary>
-    /// A persisted collection or separate-table common-type table in the base resource graph.
+    /// A persisted multi-row base-resource table, such as a collection or repeated common-type scope.
     /// </summary>
     Collection,
 

@@ -73,6 +73,12 @@ public record UpdateResult
     public record UpdateFailureNotAuthorized(string[] ErrorMessages) : UpdateResult();
 
     /// <summary>
+    /// A failure because the request body violated a write-path validation guard rail
+    /// </summary>
+    /// <param name="ValidationFailures">Concrete validation failures keyed by JSON path</param>
+    public record UpdateFailureValidation(WriteValidationFailure[] ValidationFailures) : UpdateResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

@@ -57,6 +57,7 @@ internal class UpsertHandler(
                     new UpsertRequest(
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
+                        MappingSet: requestInfo.MappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
@@ -153,6 +154,10 @@ internal class UpsertHandler(
                     hints: failure.Hints
                 ),
                 Headers: []
+            ),
+            UpsertFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
             ),
             UnknownFailure failure => new(
                 StatusCode: 500,

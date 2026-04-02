@@ -15,9 +15,9 @@ Align with:
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - `reference/design/backend-redesign/design-docs/overview.md`
 
-Dependency note: this follow-on exists only if `DMS-983` is re-scoped as the no-profile/backend-mechanics thin slice above. It is hard-blocked on:
+Dependency note: this follow-on exists only if `DMS-983` is re-scoped as the no-profile initial relational write seam above. It is hard-blocked on:
 
-- `DMS-983` (`02-flattening-executor.md`) — provides the reusable backend-local flattener contract and traversal/buffering mechanics, and
+- `DMS-983` (`02-flattening-executor.md`) — provides the reusable backend-local flattener contract, initial relational repository seam, and traversal/buffering mechanics, and
 - `DMS-1106` (`01b-profile-write-context.md`) — supplies `ProfileAppliedWriteRequest` and the profile/runtime hand-off.
 
 This story owns the request-body source selection that was removed from the re-scoped `DMS-983`:
@@ -31,7 +31,7 @@ This story owns the request-body source selection that was removed from the re-s
 
 ## Acceptance Criteria
 
-- When no writable profile applies, the write path invokes the flattener with the normal validated request body and behavior matches the re-scoped `DMS-983` thin slice.
+- When no writable profile applies, the write path invokes the flattener with the normal validated request body and behavior matches the re-scoped `DMS-983` initial relational write seam.
 - When a writable profile applies, the write path invokes the flattener with `ProfileAppliedWriteRequest.WritableRequestBody` exactly as provided by Core.
 - Backend does not re-filter the original request JSON, recover hidden members from the original request, or infer hidden-vs-absent semantics during flattening.
 - Reference binding, nested collection handling, `_ext` handling, request sibling-order capture, and semantic-identity extraction continue to work when the selected input body is `WritableRequestBody`.
