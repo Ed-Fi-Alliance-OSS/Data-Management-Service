@@ -73,5 +73,4 @@ Authorization is out of scope for this story, but the transaction and batching s
 7. Implement bulk insert batching with dialect-specific limits and strategies.
 8. Add integration tests for the shared no-profile runtime baseline above:
    - `NoProfileWriteBehavior`, including one changed resource with nested collections, one omitted non-collection scope case, and one no-profile `_ext` case, and
-   - `NoProfileWriteBehavior`, including one changed resource with nested collections, one omitted non-collection scope case, and one no-profile `_ext` case, and
    - `FullSurfaceCollectionReorder`, proving matched rows keep stable identity while `Ordinal` changes.
