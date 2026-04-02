@@ -107,6 +107,7 @@ public static class StoredSideExistenceLookupBuilder
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -248,6 +249,7 @@ public static class StoredSideExistenceLookupBuilder
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -302,6 +304,7 @@ public static class StoredSideExistenceLookupBuilder
 
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -503,6 +506,7 @@ public static class StoredSideExistenceLookupBuilder
             );
             ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
                 childScope,
+                visibility,
                 classifier,
                 scopesByJsonScope
             );
@@ -559,6 +563,7 @@ public static class StoredSideExistenceLookupBuilder
             ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, []);
             ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
                 jsonScope,
+                visibility,
                 classifier,
                 scopesByJsonScope
             );
@@ -579,6 +584,7 @@ public static class StoredSideExistenceLookupBuilder
     /// </summary>
     private static ImmutableArray<string> DeriveHiddenMemberPaths(
         string jsonScope,
+        ProfileVisibilityKind visibility,
         ProfileVisibilityClassifier classifier,
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope
     )
@@ -589,9 +595,7 @@ public static class StoredSideExistenceLookupBuilder
         }
 
         // Hidden scopes have ALL members hidden — backend preserves the entire scope.
-        // ClassifyScope with null data returns Hidden for hidden scopes, VisibleAbsent
-        // for visible scopes, regardless of actual data presence.
-        if (classifier.ClassifyScope(jsonScope, null) == ProfileVisibilityKind.Hidden)
+        if (visibility == ProfileVisibilityKind.Hidden)
         {
             return [.. descriptor.CanonicalScopeRelativeMemberPaths];
         }

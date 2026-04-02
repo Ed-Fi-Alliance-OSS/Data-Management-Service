@@ -40,7 +40,7 @@ public sealed record VisibleStoredCollectionRow(
 
 /// <summary>
 /// The full context for a profile-constrained write, combining request-side
-/// and stored-side state. Produced by C5 for update/upsert flows.
+/// and stored-side state. Produced by C6 for update/upsert flows.
 /// </summary>
 public sealed record ProfileAppliedWriteContext(
     ProfileAppliedWriteRequest Request,

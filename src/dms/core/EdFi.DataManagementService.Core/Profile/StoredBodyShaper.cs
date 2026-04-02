@@ -39,9 +39,6 @@ internal sealed class StoredBodyShaper(ProfileVisibilityClassifier classifier)
     /// </summary>
     private JsonObject ShapeScope(string jsonScope, JsonObject source)
     {
-        // Classify scope — stored data is trusted, so no state emission needed
-        classifier.ClassifyScope(jsonScope, source);
-
         return ShapeScopeMembers(jsonScope, source);
     }
 
