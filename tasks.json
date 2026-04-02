@@ -210,5 +210,71 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "PostgreSQL Integration - Authoritative Fixture Harness",
+    "description": "Add reusable PostgreSQL integration-test support for authoritative write fixtures so stronger production-shaped tests do not duplicate focused-fixture setup. Acceptance: the PostgreSQL write integration suite can provision authoritative `sample` and `ds-5.2` fixtures through one shared harness that compiles the mapping set, provisions generated DDL, configures `RelationalDocumentStoreRepository`, and exposes database-first helpers for stable document, collection, and `_ext` assertions without reintroducing hand-written table definitions.",
+    "steps-to-verify": [
+      "Refactor or add shared PostgreSQL integration test helpers that can stand up authoritative write-fixture scenarios for both `src/dms/backend/Fixtures/authoritative/sample` and `src/dms/backend/Fixtures/authoritative/ds-5.2`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Authoritative Sample Write Smoke",
+    "description": "Add end-to-end PostgreSQL write coverage against the authoritative sample fixture, not just DDL and compatibility-gate checks. Acceptance: integration tests execute repository and executor create and changed-update flows for at least one collection-bearing resource that uses sample extension tables, and assert database-first on persisted base rows, root `_ext`, collection-aligned `_ext`, extension child collections, stable `CollectionItemId` reuse, and `ContentVersion` changed-vs-unchanged behavior. The test resource should come from `src/dms/backend/Fixtures/authoritative/sample` rather than the focused stable-key fixtures.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that exercise authoritative sample create and PUT or POST-as-update flows through the real relational repository and assert directly against authoritative sample tables after each write.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration - Expanded Authoritative DS 5.2 Writes",
+    "description": "Strengthen the existing authoritative DS 5.2 write smoke beyond the current root-only `SchoolYearType` POST-as-update case. Acceptance: PostgreSQL integration tests cover at least one additional authoritative DS 5.2 resource shape that exercises more of the DMS-984 executor surface, such as nontrivial root updates, collection merge behavior, guarded no-op, or omitted-scope semantics, while continuing to assert database-first on public result type, stored relational rows, `DocumentUuid` preservation, and `dms.Document.ContentVersion` behavior. The new tests should use `src/dms/backend/Fixtures/authoritative/ds-5.2` and avoid falling back to focused toy fixtures for the core write proof.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration tests that expand authoritative DS 5.2 coverage to at least one additional write scenario and one additional resource shape beyond the current `SchoolYearType` post-as-update smoke.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Concurrency - Guarded No-Op Commit Window",
+    "description": "Close the guarded no-op race where a concurrent writer can commit after the executor's freshness recheck but before the no-op transaction commits. Acceptance: unchanged PUT and POST-as-update do not return success from stale state under the shipped runtime isolation level; the compare plus freshness decision is protected either by executor-owned locking or a stronger transaction strategy that actually spans the no-op commit window; stale no-op outcomes still surface to the repository retry path instead of silently succeeding; verification includes a concurrency-focused PostgreSQL integration test that reproduces the pre-fix race and proves the fixed executor returns stale or retries rather than `UpdateSuccess`/`UpsertSuccess` from stale state.",
+    "steps-to-verify": [
+      "Add backend unit tests for the chosen locking or transaction strategy around the guarded no-op path and any changed freshness-check orchestration.",
+      "Add PostgreSQL integration coverage that forces a concurrent write between no-op compare and commit and proves the request does not return success from stale state.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Executor Session Ownership - Existing Target Lookup",
+    "description": "Finish collapsing the DMS-983 seam by moving existing-document target lookup for write attempts under the executor-owned session boundary. Acceptance: existing PUT and POST-as-update attempts resolve the target document, observe `ContentVersion`, and load current state on the same request-scoped connection and transaction rather than doing target lookup in the repository on a separate connection; concurrent delete or disappearance between lookup and hydration no longer leaks as an internal `InvalidOperationException`; missing existing targets map deterministically to the correct public outcomes (`UpdateFailureNotExists` for PUT, create-vs-update re-evaluation or conflict-safe handling for POST as appropriate); repository orchestration remains responsible only for mapping-set and plan guard rails plus one stale no-op retry.",
+    "steps-to-verify": [
+      "Add backend unit tests that prove repository orchestration no longer performs existing-document target lookup on a separate seam for executor-owned existing-document attempts.",
+      "Add backend or integration coverage for concurrent-delete or target-disappeared scenarios so the path returns the intended public outcome instead of a 500-style internal failure.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Executor Cleanup - Remove Dead Persist Fallback",
+    "description": "Remove the dead executor fallback branch left over from the old terminal-stage seam. Acceptance: `IRelationalWriteNonCollectionPersister` no longer returns a boolean that implies persistence may be 'not implemented' after real DML orchestration has started; `DefaultRelationalWriteExecutor` no longer carries an unreachable `UnknownFailure` branch gated on `TryPersistAsync` returning `false`; the persister either succeeds or throws a meaningful exception, and the surrounding contracts, tests, and helper messages are simplified so the write path no longer advertises an impossible partial-implementation outcome.",
+    "steps-to-verify": [
+      "Refactor the persister and executor contracts to eliminate the boolean fallback path and update unit tests to assert the simplified success and failure behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Dependency Docs - E13-S01 Summary Row",
+    "description": "Fix the stale epic-level summary row for `E13-S01` in `reference/design/backend-redesign/epics/DEPENDENCIES.md` so it matches the detailed hard-dependency table. Acceptance: the E13 summary table lists the same hard dependencies already recorded in the detailed table for `E13-S01`, namely `E07-S03`, `E07-S03b`, `E07-S05b`, `E08-S01`, and `E11-S01`, and the dependency document no longer presents conflicting dependency sets for that story.",
+    "steps-to-verify": [
+      "Update the E13 summary row in `reference/design/backend-redesign/epics/DEPENDENCIES.md` and confirm it matches the detailed hard-dependency entries for `E13-S01` later in the same document."
+    ],
+    "completed": false
   }
 ]
