@@ -273,7 +273,145 @@ public class Given_PostgresqlDescriptorWriteHandler
         result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
     }
 
+    [Test]
+    public async Task It_updates_tracking_stamps_when_descriptor_representation_changes()
+    {
+        var handler = ResolveHandler();
+
+        // Create descriptor
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
+
+        // PUT with changed description
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular School",
+                "description": "Updated description"
+            }
+            """
+        );
+        await handler.HandlePutAsync(putRequest);
+
+        var stampsAfterUpdate = await ReadTrackingStampsAsync(documentUuid);
+
+        stampsAfterUpdate.ContentVersion.Should().BeGreaterThan(stampsAfterInsert.ContentVersion);
+        stampsAfterUpdate.ContentLastModifiedAt.Should().BeOnOrAfter(stampsAfterInsert.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_preserves_tracking_stamps_on_no_op_put()
+    {
+        var handler = ResolveHandler();
+
+        // Create descriptor
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
+
+        // PUT with identical values
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        await handler.HandlePutAsync(putRequest);
+
+        var stampsAfterNoOp = await ReadTrackingStampsAsync(documentUuid);
+
+        stampsAfterNoOp.ContentVersion.Should().Be(stampsAfterInsert.ContentVersion);
+        stampsAfterNoOp.ContentLastModifiedAt.Should().Be(stampsAfterInsert.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_rejects_namespace_change_on_put()
+    {
+        var handler = ResolveHandler();
+
+        // Create descriptor
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        // PUT with changed Namespace (identity change)
+        var putRequest = CreatePutRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            """
+            {
+                "namespace": "uri://custom.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var result = await handler.HandlePutAsync(putRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+    }
+
     // ── Helper methods ──────────────────────────────────────────────────
+
+    private async Task<DocumentTrackingStamps> ReadTrackingStampsAsync(DocumentUuid documentUuid)
+    {
+        await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "ContentVersion", "ContentLastModifiedAt"
+            FROM dms."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """;
+        command.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue("document should exist");
+
+        return new DocumentTrackingStamps(reader.GetInt64(0), reader.GetDateTime(1));
+    }
+
+    private sealed record DocumentTrackingStamps(long ContentVersion, DateTime ContentLastModifiedAt);
 
     private IDescriptorWriteHandler ResolveHandler()
     {

@@ -456,6 +456,11 @@ internal sealed class DescriptorWriteHandler(
                 "EffectiveEndDate" = @effectiveEndDate::date,
                 "Uri" = @uri
             WHERE "DocumentId" = @documentId;
+
+            UPDATE dms."Document"
+            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
+                "ContentLastModifiedAt" = now()
+            WHERE "DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -472,6 +477,11 @@ internal sealed class DescriptorWriteHandler(
                 [EffectiveBeginDate] = @effectiveBeginDate,
                 [EffectiveEndDate] = @effectiveEndDate,
                 [Uri] = @uri
+            WHERE [DocumentId] = @documentId;
+
+            UPDATE [dms].[Document]
+            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
+                [ContentLastModifiedAt] = GETUTCDATE()
             WHERE [DocumentId] = @documentId;
             """;
 
@@ -570,7 +580,7 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
-        var parameters = BuildDescriptorFieldParameters(body);
+        var parameters = BuildInsertFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentUuid", documentUuid.Value));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
         parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
@@ -582,12 +592,12 @@ internal sealed class DescriptorWriteHandler(
         long documentId
     )
     {
-        var parameters = BuildDescriptorFieldParameters(body);
+        var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentId", documentId));
         return parameters;
     }
 
-    private static List<RelationalParameter> BuildDescriptorFieldParameters(ExtractedDescriptorBody body)
+    private static List<RelationalParameter> BuildCommonFieldParameters(ExtractedDescriptorBody body)
     {
         return
         [
@@ -603,9 +613,15 @@ internal sealed class DescriptorWriteHandler(
                 "@effectiveEndDate",
                 (object?)body.EffectiveEndDate?.ToString("yyyy-MM-dd")
             ),
-            new RelationalParameter("@discriminator", body.Discriminator),
             new RelationalParameter("@uri", body.Uri),
         ];
+    }
+
+    private static List<RelationalParameter> BuildInsertFieldParameters(ExtractedDescriptorBody body)
+    {
+        var parameters = BuildCommonFieldParameters(body);
+        parameters.Add(new RelationalParameter("@discriminator", body.Discriminator));
+        return parameters;
     }
 
     // ── SQL error classification ────────────────────────────────────────
@@ -618,9 +634,14 @@ internal sealed class DescriptorWriteHandler(
         // Postgres: SqlState "23505" (unique_violation)
         // SQL Server: Number 2627 (unique key) or 2601 (unique index)
         return ex.SqlState == "23505"
-            || (ex is { HResult: var hr } && hr is unchecked((int)0x80131904))
-                && ex.Message.Contains("2627", StringComparison.Ordinal)
-            || ex.Message.Contains("2601", StringComparison.Ordinal);
+            || (
+                ex is { HResult: var hr }
+                && hr is unchecked((int)0x80131904)
+                && (
+                    ex.Message.Contains("2627", StringComparison.Ordinal)
+                    || ex.Message.Contains("2601", StringComparison.Ordinal)
+                )
+            );
     }
 
     /// <summary>
