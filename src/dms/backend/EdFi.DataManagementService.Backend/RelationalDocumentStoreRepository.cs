@@ -249,7 +249,7 @@ public sealed class RelationalDocumentStoreRepository(
             ProfileFailure[] contractFailures = ProfileWriteContractValidator.ValidateRequestContract(
                 backendProfileWriteContext.Request,
                 scopeCatalog,
-                profileName: "unknown",
+                profileName: backendProfileWriteContext.ProfileName,
                 resourceName: resourceInfo.ResourceName.Value,
                 method: operationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT",
                 operation: operationKind == RelationalWriteOperationKind.Post ? "upsert" : "update"

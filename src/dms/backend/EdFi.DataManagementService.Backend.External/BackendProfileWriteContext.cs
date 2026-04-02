@@ -35,12 +35,14 @@ public interface IStoredStateProjectionInvoker
 /// to the repository orchestration layer.
 /// </summary>
 /// <param name="Request">The request-side profile contract from the profile write pipeline.</param>
+/// <param name="ProfileName">The name of the profile governing this write request.</param>
 /// <param name="CompiledScopeCatalog">The compiled scope descriptors for the target resource.</param>
 /// <param name="StoredStateProjectionInvoker">
 /// Callback to invoke C6 stored-state projection when the stored document is available.
 /// </param>
 public sealed record BackendProfileWriteContext(
     ProfileAppliedWriteRequest Request,
+    string ProfileName,
     IReadOnlyList<CompiledScopeDescriptor> CompiledScopeCatalog,
     IStoredStateProjectionInvoker StoredStateProjectionInvoker
 );

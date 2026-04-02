@@ -78,8 +78,8 @@ internal class ProfileWritePipelineMiddleware(
         logger.LogDebug(
             "ProfileWritePipelineMiddleware: Executing profile write pipeline for profile {ProfileName}, "
                 + "resource {ResourceName}, method {Method}. TraceId: {TraceId}",
-            SanitizeForLog(profileName),
-            SanitizeForLog(resourceName),
+            LoggingSanitizer.SanitizeForLogging(profileName),
+            LoggingSanitizer.SanitizeForLogging(resourceName),
             method,
             LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
         );
@@ -101,7 +101,7 @@ internal class ProfileWritePipelineMiddleware(
                 ex,
                 "ProfileWritePipelineMiddleware: Write plan not available for resource {ResourceName}. "
                     + "Skipping profile pipeline. TraceId: {TraceId}",
-                SanitizeForLog(resourceName),
+                LoggingSanitizer.SanitizeForLogging(resourceName),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
             await next();
@@ -141,13 +141,22 @@ internal class ProfileWritePipelineMiddleware(
                 "ProfileWritePipelineMiddleware: Profile pipeline returned {FailureCount} failures "
                     + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
                 result.Failures.Length,
-                SanitizeForLog(profileName),
-                SanitizeForLog(resourceName),
+                LoggingSanitizer.SanitizeForLogging(profileName),
+                LoggingSanitizer.SanitizeForLogging(resourceName),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
+            int statusCode = result.Failures[0].Category switch
+            {
+                ProfileFailureCategory.CreatabilityViolation => 403,
+                ProfileFailureCategory.CoreBackendContractMismatch => 500,
+                ProfileFailureCategory.InvalidProfileDefinition => 500,
+                ProfileFailureCategory.BindingAccountingFailure => 500,
+                _ => 400, // WritableProfileValidationFailure, InvalidProfileUsage
+            };
+
             requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 400,
+                StatusCode: statusCode,
                 Body: FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             );
@@ -172,6 +181,7 @@ internal class ProfileWritePipelineMiddleware(
 
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
             Request: result.Request,
+            ProfileName: profileContext.ProfileName,
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: invoker
         );
@@ -216,34 +226,8 @@ internal class ProfileWritePipelineMiddleware(
             return result.Context
                 ?? throw new InvalidOperationException(
                     $"Profile pipeline did not produce a ProfileAppliedWriteContext for stored-state projection. "
-                        + $"Profile: {SanitizeForLog(profileName)}, Resource: {SanitizeForLog(resourceName)}, Method: {method}."
+                        + $"Profile: {LoggingSanitizer.SanitizeForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeForLogging(resourceName)}, Method: {method}."
                 );
         }
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }

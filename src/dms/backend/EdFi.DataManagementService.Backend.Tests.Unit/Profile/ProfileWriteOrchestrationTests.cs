@@ -280,6 +280,7 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
 
         var backendProfileWriteContext = new BackendProfileWriteContext(
             Request: profileRequest,
+            ProfileName: "test-profile",
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
         );
