@@ -1019,9 +1019,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return;
         }
 
-        values[collectionKeyPreallocationPlan.BindingIndex] = FlattenedWriteValue
-            .UnresolvedCollectionItemId
-            .Instance;
+        values[collectionKeyPreallocationPlan.BindingIndex] =
+            FlattenedWriteValue.UnresolvedCollectionItemId.Create();
         valueAssigned[collectionKeyPreallocationPlan.BindingIndex] = true;
     }
 

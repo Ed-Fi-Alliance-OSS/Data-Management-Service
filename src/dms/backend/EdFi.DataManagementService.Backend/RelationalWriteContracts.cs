@@ -169,11 +169,11 @@ public abstract record FlattenedWriteValue
     /// <summary>
     /// A stable <c>CollectionItemId</c> remains unresolved and will be bound by a later write stage.
     /// </summary>
-    public sealed record UnresolvedCollectionItemId : FlattenedWriteValue
+    public sealed record UnresolvedCollectionItemId(Guid Token) : FlattenedWriteValue
     {
-        private UnresolvedCollectionItemId() { }
+        public static UnresolvedCollectionItemId Instance { get; } = new(Guid.Empty);
 
-        public static UnresolvedCollectionItemId Instance { get; } = new();
+        public static UnresolvedCollectionItemId Create() => new(Guid.NewGuid());
     }
 }
 

@@ -162,7 +162,7 @@ public class Given_Relational_Write_Non_Collection_Persister
     }
 
     [Test]
-    public async Task It_returns_false_without_emitting_dml_when_collection_changes_remain()
+    public async Task It_deletes_updates_and_inserts_base_collection_rows_using_stable_row_identity()
     {
         var rootPlan = CreateRootPlan();
         var collectionPlan = CreateCollectionPlan();
@@ -174,7 +174,119 @@ public class Given_Relational_Write_Non_Collection_Persister
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(collectionPlan, [], [CreateRow(44L, 345L, 0, "Mailing")]),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                [CreateRow(45L, 345L, 0, "Home"), CreateRow(NewCollectionItemId(), 345L, 1, "Physical")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 91L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(4);
+
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(collectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId").Should().Be(44L);
+
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(collectionPlan.CollectionMergePlan!.UpdateByStableRowIdentitySql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
+
+        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[3].CommandText.Should().Be(collectionPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(91L);
+        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(1);
+        GetParameterValue(writeSession.Commands[3], "@AddressType").Should().Be("Physical");
+    }
+
+    [Test]
+    public async Task It_reserves_collection_ids_for_nested_base_collection_inserts()
+    {
+        var rootPlan = CreateRootPlan();
+        var addressPlan = CreateCollectionPlan();
+        var periodPlan = CreatePeriodPlan();
+        var writePlan = CreateWritePlan([rootPlan, addressPlan, periodPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var addressCollectionItemId = NewCollectionItemId();
+        var periodCollectionItemId = NewCollectionItemId();
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                addressPlan,
+                [],
+                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                periodPlan,
+                [],
+                [CreateRow(periodCollectionItemId, 345L, addressCollectionItemId, 0, "2026-09-01")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ScalarResult: 910L),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 911L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(4);
+        writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[1].CommandText.Should().Be(addressPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
+
+        writeSession.Commands[2].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[3].CommandText.Should().Be(periodPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId").Should().Be(911L);
+        GetParameterValue(writeSession.Commands[3], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[3], "@ParentCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[3], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[3], "@BeginDate").Should().Be("2026-09-01");
+    }
+
+    [Test]
+    public async Task It_returns_false_without_emitting_dml_when_extension_collection_changes_remain()
+    {
+        var rootPlan = CreateRootPlan();
+        var extensionCollectionPlan = CreateExtensionCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, extensionCollectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                extensionCollectionPlan,
+                [],
+                [CreateRow(NewCollectionItemId(), 345L, 0, "Tutor")]
+            ),
         ]);
         var writeSession = new RecordingRelationalWriteSession([]);
 
@@ -317,6 +429,8 @@ public class Given_Relational_Write_Non_Collection_Persister
             ),
             "SchoolExtension" => CreateRootExtensionPlan(),
             "SchoolAddress" => CreateCollectionPlan(),
+            "SchoolAddressPeriod" => CreatePeriodPlan(),
+            "SchoolExtensionIntervention" => CreateExtensionCollectionPlan(),
             "SchoolExtensionAddress" => CreateCollectionExtensionScopePlan(),
             _ => throw new InvalidOperationException($"Unsupported table '{tableModel.Table.Name}'."),
         };
@@ -553,6 +667,181 @@ public class Given_Relational_Write_Non_Collection_Persister
         );
     }
 
+    private static TableWritePlan CreatePeriodPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAddressPeriod"),
+            new JsonPathExpression("$.addresses[*].periods[*]", []),
+            new TableKey(
+                "PK_SchoolAddressPeriod",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("School_DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("ParentCollectionItemId", ColumnKind.ParentKeyPart),
+                CreateColumn("Ordinal", ColumnKind.Ordinal),
+                CreateColumn("BeginDate", ColumnKind.Scalar),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("ParentCollectionItemId")],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression("$.beginDate", []),
+                        new DbColumnName("BeginDate")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: """
+            insert into edfi."SchoolAddressPeriod" values (@CollectionItemId, @School_DocumentId, @ParentCollectionItemId, @Ordinal, @BeginDate)
+            """,
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 5, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.ParentKeyPart(1),
+                    "ParentCollectionItemId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[3], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.beginDate", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "BeginDate"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                [new CollectionMergeSemanticIdentityBinding(new JsonPathExpression("$.beginDate", []), 4)],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: """
+                update edfi."SchoolAddressPeriod" set "Ordinal" = @Ordinal, "BeginDate" = @BeginDate where "CollectionItemId" = @CollectionItemId
+                """,
+                DeleteByStableRowIdentitySql: """
+                delete from edfi."SchoolAddressPeriod" where "CollectionItemId" = @CollectionItemId
+                """,
+                OrdinalBindingIndex: 3,
+                CompareBindingIndexesInOrder: [3, 4]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static TableWritePlan CreateExtensionCollectionPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("sample"), "SchoolExtensionIntervention"),
+            new JsonPathExpression("$._ext.sample.interventions[*]", []),
+            new TableKey(
+                "PK_SchoolExtensionIntervention",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                CreateColumn("CollectionItemId", ColumnKind.CollectionKey),
+                CreateColumn("School_DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("Ordinal", ColumnKind.Ordinal),
+                CreateColumn("InterventionCode", ColumnKind.Scalar),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression("$.interventionCode", []),
+                        new DbColumnName("InterventionCode")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: """
+            insert into sample."SchoolExtensionIntervention" values (@CollectionItemId, @School_DocumentId, @Ordinal, @InterventionCode)
+            """,
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 4, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[2], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.interventionCode", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "InterventionCode"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression("$.interventionCode", []),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: """
+                update sample."SchoolExtensionIntervention" set "Ordinal" = @Ordinal, "InterventionCode" = @InterventionCode where "CollectionItemId" = @CollectionItemId
+                """,
+                DeleteByStableRowIdentitySql: """
+                delete from sample."SchoolExtensionIntervention" where "CollectionItemId" = @CollectionItemId
+                """,
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2, 3]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
     private static TableWritePlan CreateCollectionExtensionScopePlan()
     {
         var tableModel = new DbTableModel(
@@ -644,6 +933,9 @@ public class Given_Relational_Write_Non_Collection_Persister
             )
         );
     }
+
+    private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
+        FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
     private sealed record CommandResponse(object? ScalarResult = null, int NonQueryResult = 1);
 
