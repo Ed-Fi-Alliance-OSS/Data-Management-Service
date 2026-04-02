@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -20,6 +21,32 @@ public static class MappingSetWriteLookupExtensions
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
     > ConcreteResourceModelsByResource = new();
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="resource" /> is stored in the shared
+    /// <c>dms.Descriptor</c> table, providing the <paramref name="descriptorResourceModel" />
+    /// with its <see cref="DescriptorMetadata" />.
+    /// </summary>
+    public static bool TryGetDescriptorResourceModel(
+        this MappingSet mappingSet,
+        QualifiedResourceName resource,
+        [NotNullWhen(true)] out ConcreteResourceModel? descriptorResourceModel
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        if (
+            TryGetConcreteResourceModel(mappingSet, resource, out var model)
+            && model.StorageKind == ResourceStorageKind.SharedDescriptorTable
+        )
+        {
+            descriptorResourceModel = model;
+            return true;
+        }
+
+        descriptorResourceModel = null;
+        return false;
+    }
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -65,11 +92,12 @@ public static class MappingSetWriteLookupExtensions
     }
 
     /// <summary>
-    /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
+    /// Attempts to resolve the concrete resource model from the mapping set's canonical resource list.
     /// </summary>
-    private static ConcreteResourceModel GetConcreteResourceModelOrThrow(
+    private static bool TryGetConcreteResourceModel(
         MappingSet mappingSet,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        [NotNullWhen(true)] out ConcreteResourceModel? model
     )
     {
         var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
@@ -95,9 +123,20 @@ public static class MappingSetWriteLookupExtensions
             }
         );
 
-        if (concreteResourcesByResource.TryGetValue(resource, out var concreteResourceModel))
+        return concreteResourcesByResource.TryGetValue(resource, out model);
+    }
+
+    /// <summary>
+    /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
+    /// </summary>
+    private static ConcreteResourceModel GetConcreteResourceModelOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        if (TryGetConcreteResourceModel(mappingSet, resource, out var model))
         {
-            return concreteResourceModel;
+            return model;
         }
 
         throw new KeyNotFoundException(

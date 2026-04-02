@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,8 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecutor
 {
+    public SqlDialect Dialect => SqlDialect.Mssql;
+
     private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
     private readonly ILogger<MssqlRelationalCommandExecutor> _logger;
 

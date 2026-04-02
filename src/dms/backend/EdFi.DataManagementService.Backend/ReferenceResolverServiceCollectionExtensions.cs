@@ -50,6 +50,7 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteTerminalStage, DefaultRelationalWriteTerminalStage>()
         );
+        services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }
