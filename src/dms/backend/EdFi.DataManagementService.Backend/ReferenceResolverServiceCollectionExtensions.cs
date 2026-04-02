@@ -47,9 +47,7 @@ public static class ReferenceResolverServiceCollectionExtensions
                 RelationalWriteTargetContextResolver
             >()
         );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IRelationalWriteTerminalStage, DefaultRelationalWriteTerminalStage>()
-        );
+        services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }

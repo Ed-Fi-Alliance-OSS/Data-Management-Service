@@ -227,7 +227,10 @@ internal sealed record RelationalWriteSeamFixture(
             {
                 [_studentResource] = WritePlan,
             },
-            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [_studentResource] = CreateReadPlan(dialect),
+            },
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
             {
                 [_studentResource] = resourceKey.ResourceKeyId,
@@ -494,6 +497,23 @@ internal sealed record RelationalWriteSeamFixture(
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],
             TriggersInCreateOrder: []
+        );
+    }
+
+    private ResourceReadPlan CreateReadPlan(SqlDialect dialect)
+    {
+        return new ResourceReadPlan(
+            Model: WritePlan.Model,
+            KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
+            TablePlansInDependencyOrder:
+            [
+                new TableReadPlan(
+                    WritePlan.Model.Root,
+                    $"SELECT * FROM {WritePlan.Model.Root.Table.Schema.Value}.\"{WritePlan.Model.Root.Table.Name}\";"
+                ),
+            ],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [],
+            DescriptorProjectionPlansInOrder: []
         );
     }
 

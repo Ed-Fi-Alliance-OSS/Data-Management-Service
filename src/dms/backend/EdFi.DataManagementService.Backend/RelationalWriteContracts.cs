@@ -400,21 +400,14 @@ public sealed record CandidateAttachedAlignedScopeData
 }
 
 /// <summary>
-/// Input contract for the terminal write stage.
+/// Optional write data the repository has already prepared for the executor.
 /// </summary>
-public sealed record RelationalWriteTerminalStageRequest
+public sealed record RelationalWritePreparedData
 {
-    public RelationalWriteTerminalStageRequest(
-        FlatteningInput flatteningInput,
-        FlattenedWriteSet flattenedWriteSet,
-        TraceId traceId,
-        string? diagnosticIdentifier = null
-    )
+    public RelationalWritePreparedData(FlatteningInput flatteningInput, FlattenedWriteSet flattenedWriteSet)
     {
         FlatteningInput = flatteningInput ?? throw new ArgumentNullException(nameof(flatteningInput));
         FlattenedWriteSet = flattenedWriteSet ?? throw new ArgumentNullException(nameof(flattenedWriteSet));
-        TraceId = traceId;
-        DiagnosticIdentifier = diagnosticIdentifier;
     }
 
     /// <summary>
@@ -426,11 +419,75 @@ public sealed record RelationalWriteTerminalStageRequest
     /// The flattened write tree produced from <see cref="FlatteningInput" />.
     /// </summary>
     public FlattenedWriteSet FlattenedWriteSet { get; init; }
+}
+
+/// <summary>
+/// Input contract for executor-owned relational write orchestration.
+/// </summary>
+public sealed record RelationalWriteExecutorRequest
+{
+    public RelationalWriteExecutorRequest(
+        MappingSet mappingSet,
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetContext targetContext,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan? readPlan,
+        JsonNode selectedBody,
+        TraceId traceId,
+        RelationalWritePreparedData? preparedData = null,
+        string? diagnosticIdentifier = null
+    )
+    {
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        OperationKind = operationKind;
+        TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
+        ReadPlan = readPlan;
+        SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
+        TraceId = traceId;
+        PreparedData = preparedData;
+        DiagnosticIdentifier = diagnosticIdentifier;
+    }
+
+    /// <summary>
+    /// The active mapping set selected for the current request.
+    /// </summary>
+    public MappingSet MappingSet { get; init; }
+
+    /// <summary>
+    /// The write entrypoint that initiated executor orchestration.
+    /// </summary>
+    public RelationalWriteOperationKind OperationKind { get; init; }
+
+    /// <summary>
+    /// The resolved target document context for the write.
+    /// </summary>
+    public RelationalWriteTargetContext TargetContext { get; init; }
+
+    /// <summary>
+    /// The compiled write plan selected for the write resource.
+    /// </summary>
+    public ResourceWritePlan WritePlan { get; init; }
+
+    /// <summary>
+    /// The compiled read plan selected for existing-document flows, when required.
+    /// </summary>
+    public ResourceReadPlan? ReadPlan { get; init; }
+
+    /// <summary>
+    /// The caller-selected body the executor will eventually persist.
+    /// </summary>
+    public JsonNode SelectedBody { get; init; }
 
     /// <summary>
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Optional repository-prepared inputs that later executor stages can reuse directly.
+    /// </summary>
+    public RelationalWritePreparedData? PreparedData { get; init; }
 
     /// <summary>
     /// Optional caller-supplied diagnostic identifier for logs or tracing.
@@ -439,31 +496,31 @@ public sealed record RelationalWriteTerminalStageRequest
 }
 
 /// <summary>
-/// Terminal-stage result wrapper that preserves the repository's POST/PUT result split.
+/// Executor result wrapper that preserves the repository's POST/PUT result split.
 /// </summary>
-public abstract record RelationalWriteTerminalStageResult
+public abstract record RelationalWriteExecutorResult
 {
     /// <summary>
-    /// The terminal stage completed a POST write path.
+    /// The executor completed a POST write path.
     /// </summary>
-    public sealed record Upsert(UpsertResult Result) : RelationalWriteTerminalStageResult;
+    public sealed record Upsert(UpsertResult Result) : RelationalWriteExecutorResult;
 
     /// <summary>
-    /// The terminal stage completed a PUT write path.
+    /// The executor completed a PUT write path.
     /// </summary>
-    public sealed record Update(UpdateResult Result) : RelationalWriteTerminalStageResult;
+    public sealed record Update(UpdateResult Result) : RelationalWriteExecutorResult;
 }
 
 /// <summary>
-/// Final write stage invoked after plan selection, reference resolution, and flattening succeed.
+/// Relational write executor invoked after repository guard rails and request shaping succeed.
 /// </summary>
-public interface IRelationalWriteTerminalStage
+public interface IRelationalWriteExecutor
 {
     /// <summary>
-    /// Executes the terminal relational write stage.
+    /// Executes the relational write.
     /// </summary>
-    Task<RelationalWriteTerminalStageResult> ExecuteAsync(
-        RelationalWriteTerminalStageRequest request,
+    Task<RelationalWriteExecutorResult> ExecuteAsync(
+        RelationalWriteExecutorRequest request,
         CancellationToken cancellationToken = default
     );
 }

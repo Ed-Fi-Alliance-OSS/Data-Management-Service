@@ -50,7 +50,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var targetContextResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
-        var terminalStage = scope.ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>();
+        var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -65,7 +65,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
-        terminalStage.Should().BeOfType<DefaultRelationalWriteTerminalStage>();
+        writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }

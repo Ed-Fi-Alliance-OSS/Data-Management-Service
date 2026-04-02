@@ -17,12 +17,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Default_Relational_Write_Terminal_Stage
 {
-    private DefaultRelationalWriteTerminalStage _sut = null!;
+    private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new DefaultRelationalWriteTerminalStage();
+        _sut = new DefaultRelationalWriteExecutor();
     }
 
     [Test]
@@ -35,9 +35,9 @@ public class Given_Default_Relational_Write_Terminal_Stage
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteTerminalStageResult.Upsert(
+                new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UnknownFailure(
-                        "Relational POST terminal write stage is not implemented for resource 'Ed-Fi.School'. "
+                        "Relational POST write executor is not implemented for resource 'Ed-Fi.School'. "
                             + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending."
                     )
                 )
@@ -54,24 +54,23 @@ public class Given_Default_Relational_Write_Terminal_Stage
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalWriteTerminalStageResult.Update(
+                new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UnknownFailure(
-                        "Relational PUT terminal write stage is not implemented for resource 'Ed-Fi.School'. "
+                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
                             + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending."
                     )
                 )
             );
     }
 
-    private static RelationalWriteTerminalStageRequest CreateRequest(
-        RelationalWriteOperationKind operationKind
-    )
+    private static RelationalWriteExecutorRequest CreateRequest(RelationalWriteOperationKind operationKind)
     {
         var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
         var flatteningInput = new FlatteningInput(
             operationKind,
             new RelationalWriteTargetContext.CreateNew(new DocumentUuid(Guid.NewGuid())),
-            new ResourceWritePlan(CreateRelationalResourceModel(writePlan.TableModel), [writePlan]),
+            new ResourceWritePlan(resourceModel, [writePlan]),
             JsonNode.Parse("""{"name":"Lincoln High"}""")!,
             new ResolvedReferenceSet(
                 SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
@@ -84,18 +83,80 @@ public class Given_Default_Relational_Write_Terminal_Stage
             )
         );
 
-        return new RelationalWriteTerminalStageRequest(
-            flatteningInput,
-            new FlattenedWriteSet(
-                new RootWriteRowBuffer(
-                    writePlan,
+        return new RelationalWriteExecutorRequest(
+            new MappingSet(
+                Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+                Model: new DerivedRelationalModelSet(
+                    EffectiveSchema: new EffectiveSchemaInfo(
+                        ApiSchemaFormatVersion: "1.0",
+                        RelationalMappingVersion: "v1",
+                        EffectiveSchemaHash: "schema-hash",
+                        ResourceKeyCount: 1,
+                        ResourceKeySeedHash: [1, 2, 3],
+                        SchemaComponentsInEndpointOrder:
+                        [
+                            new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
+                        ],
+                        ResourceKeysInIdOrder:
+                        [
+                            new ResourceKeyEntry(
+                                1,
+                                new QualifiedResourceName("Ed-Fi", "School"),
+                                "1.0.0",
+                                false
+                            ),
+                        ]
+                    ),
+                    Dialect: SqlDialect.Pgsql,
+                    ProjectSchemasInEndpointOrder:
                     [
-                        FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                        new FlattenedWriteValue.Literal("Lincoln High"),
-                    ]
-                )
+                        new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
+                    ],
+                    ConcreteResourcesInNameOrder:
+                    [
+                        new ConcreteResourceModel(
+                            new ResourceKeyEntry(
+                                1,
+                                new QualifiedResourceName("Ed-Fi", "School"),
+                                "1.0.0",
+                                false
+                            ),
+                            ResourceStorageKind.RelationalTables,
+                            resourceModel
+                        ),
+                    ],
+                    AbstractIdentityTablesInNameOrder: [],
+                    AbstractUnionViewsInNameOrder: [],
+                    IndexesInCreateOrder: [],
+                    TriggersInCreateOrder: []
+                ),
+                WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+                ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+                ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+                SecurableElementColumnPathsByResource: new Dictionary<
+                    QualifiedResourceName,
+                    IReadOnlyList<ResolvedSecurableElementPath>
+                >()
             ),
-            new TraceId("terminal-stage-test")
+            operationKind,
+            flatteningInput.TargetContext,
+            flatteningInput.WritePlan,
+            null,
+            flatteningInput.SelectedBody,
+            new TraceId("terminal-stage-test"),
+            new RelationalWritePreparedData(
+                flatteningInput,
+                new FlattenedWriteSet(
+                    new RootWriteRowBuffer(
+                        writePlan,
+                        [
+                            FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                            new FlattenedWriteValue.Literal("Lincoln High"),
+                        ]
+                    )
+                )
+            )
         );
     }
 

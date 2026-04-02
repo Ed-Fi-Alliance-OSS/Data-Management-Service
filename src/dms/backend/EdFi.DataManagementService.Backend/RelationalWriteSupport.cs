@@ -43,7 +43,7 @@ internal static class RelationalWriteSupport
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
-        return $"Relational {operationLabel} terminal write stage is not implemented for resource '{FormatResource(resource)}'. "
+        return $"Relational {operationLabel} write executor is not implemented for resource '{FormatResource(resource)}'. "
             + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending.";
     }
 

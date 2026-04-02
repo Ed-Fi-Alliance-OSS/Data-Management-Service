@@ -38,9 +38,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalWriteTargetContextResolver _targetContextResolver = null!;
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
-    private IRelationalWriteTerminalStage _terminalStage = null!;
+    private IRelationalWriteExecutor _writeExecutor = null!;
     private FlatteningInput _capturedFlatteningInput = null!;
-    private RelationalWriteTerminalStageRequest _capturedTerminalStageRequest = null!;
+    private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
 
     [SetUp]
     public void Setup()
@@ -48,7 +48,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
-        _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
+        _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         A.CallTo(() =>
                 _targetContextResolver.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -82,15 +82,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
             .ReturnsLazily(call => CreateFlattenedWriteSet(call.GetArgument<FlatteningInput>(0)!.WritePlan));
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call =>
-                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
-            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
             .ReturnsLazily(() =>
-                Task.FromResult<RelationalWriteTerminalStageResult>(
-                    new RelationalWriteTerminalStageResult.Upsert(
-                        new UpsertResult.UnknownFailure("Unexpected terminal-stage test fallback.")
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UnknownFailure("Unexpected write-executor test fallback.")
                     )
                 )
             );
@@ -100,7 +98,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _writeExecutor
         );
     }
 
@@ -154,7 +152,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_routes_post_requests_through_flattening_and_the_terminal_stage()
+    public async Task It_routes_post_requests_through_flattening_and_the_write_executor()
     {
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
@@ -176,22 +174,19 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
             .Returns(flattenedWriteSet);
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call =>
-                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
-            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
             .Returns(
-                Task.FromResult<RelationalWriteTerminalStageResult>(
-                    new RelationalWriteTerminalStageResult.Upsert(
-                        new UpsertResult.InsertSuccess(documentUuid)
-                    )
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
                 )
             );
 
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo)
             .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
@@ -237,14 +232,98 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeOfType<RelationalWriteTargetContext.CreateNew>()
             .Subject;
         createNewTargetContext.DocumentUuid.Should().Be(documentUuid);
-        _capturedTerminalStageRequest.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
-        _capturedTerminalStageRequest.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
-        _capturedTerminalStageRequest.TraceId.Should().Be(traceId);
-        _capturedTerminalStageRequest.DiagnosticIdentifier.Should().BeNull();
+        _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
+        _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
+        _capturedExecutorRequest.TargetContext.Should().BeSameAs(_capturedFlatteningInput.TargetContext);
+        _capturedExecutorRequest.WritePlan.Should().BeSameAs(_capturedFlatteningInput.WritePlan);
+        _capturedExecutorRequest.ReadPlan.Should().BeNull();
+        _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
+        _capturedExecutorRequest.PreparedData.Should().NotBeNull();
+        _capturedExecutorRequest.PreparedData!.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
+        _capturedExecutorRequest.PreparedData.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
+        _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _capturedExecutorRequest.DiagnosticIdentifier.Should().BeNull();
     }
 
     [Test]
-    public async Task It_routes_put_requests_through_flattening_and_the_terminal_stage()
+    public async Task It_routes_post_as_update_requests_through_the_write_executor_with_a_read_plan()
+    {
+        var documentReference = CreateDocumentReference(
+            _localEducationAgencyResourceInfo,
+            "$.localEducationAgencyReference"
+        );
+        var descriptorReference = CreateDescriptorReference(
+            _schoolCategoryDescriptorResourceInfo,
+            "$.schoolCategoryDescriptor"
+        );
+        var resolvedReferences = CreateResolvedReferenceSet();
+        var traceId = new TraceId("post-update-trace");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var existingDocumentId = 456L;
+        var requestBody = CreateRequestBody("Post As Update High");
+        var flattenedWriteSet = CreateFlattenedWriteSet(CreateRootPlan());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+                )
+            );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .Returns(Task.FromResult(resolvedReferences));
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._))
+            .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
+            .Returns(flattenedWriteSet);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpdateSuccess(documentUuid))
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo)
+            .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.TraceId).Returns(traceId);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
+        _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
+        _capturedExecutorRequest
+            .TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(existingDocumentId, documentUuid)
+            );
+        _capturedExecutorRequest.WritePlan.Should().BeSameAs(_capturedFlatteningInput.WritePlan);
+        _capturedExecutorRequest.ReadPlan.Should().BeSameAs(expectedReadPlan);
+        _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
+        _capturedExecutorRequest.PreparedData.Should().NotBeNull();
+        _capturedExecutorRequest.PreparedData!.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
+        _capturedExecutorRequest.PreparedData.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
+        _capturedExecutorRequest.TraceId.Should().Be(traceId);
+    }
+
+    [Test]
+    public async Task It_routes_put_requests_through_flattening_and_the_write_executor()
     {
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
@@ -280,22 +359,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Invokes(call => _capturedFlatteningInput = call.GetArgument<FlatteningInput>(0)!)
             .Returns(flattenedWriteSet);
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call =>
-                _capturedTerminalStageRequest = call.GetArgument<RelationalWriteTerminalStageRequest>(0)!
-            )
+            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
             .Returns(
-                Task.FromResult<RelationalWriteTerminalStageResult>(
-                    new RelationalWriteTerminalStageResult.Update(
-                        new UpdateResult.UpdateSuccess(documentUuid)
-                    )
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateSuccess(documentUuid))
                 )
             );
 
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo)
             .Returns(CreateDocumentInfo([documentReference], [descriptorReference]));
         A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
@@ -338,9 +415,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Subject;
         existingDocumentTargetContext.DocumentId.Should().Be(existingDocumentId);
         existingDocumentTargetContext.DocumentUuid.Should().Be(documentUuid);
-        _capturedTerminalStageRequest.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
-        _capturedTerminalStageRequest.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
-        _capturedTerminalStageRequest.TraceId.Should().Be(traceId);
+        _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
+        _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        _capturedExecutorRequest.TargetContext.Should().BeSameAs(_capturedFlatteningInput.TargetContext);
+        _capturedExecutorRequest.WritePlan.Should().BeSameAs(_capturedFlatteningInput.WritePlan);
+        _capturedExecutorRequest.ReadPlan.Should().BeSameAs(expectedReadPlan);
+        _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
+        _capturedExecutorRequest.PreparedData.Should().NotBeNull();
+        _capturedExecutorRequest.PreparedData!.FlatteningInput.Should().BeSameAs(_capturedFlatteningInput);
+        _capturedExecutorRequest.PreparedData.FlattenedWriteSet.Should().BeSameAs(flattenedWriteSet);
+        _capturedExecutorRequest.TraceId.Should().Be(traceId);
     }
 
     [Test]
@@ -376,7 +460,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeEquivalentTo(new UpsertResult.UpsertFailureReference([invalidDocumentReference], []));
         A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -482,7 +566,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .BeEquivalentTo(new UpdateResult.UpdateFailureReference([], [invalidDescriptorReference]));
         A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -509,7 +593,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.UpsertFailureValidation([validationFailure]));
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -536,7 +620,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateFailureValidation([validationFailure]));
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -635,6 +719,53 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_the_missing_read_plan_guard_rail_for_existing_document_put_requests()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.ExistingDocument(123L, documentUuid)
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new UpdateResult.UnknownFailure(
+                    "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+                        + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
+                        + "but no entry was found. This indicates an internal compilation/selection bug."
+                )
+            );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_does_not_remap_internal_flattener_invalid_operation_failures()
     {
         var internalFailure = new InvalidOperationException(
@@ -655,7 +786,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var thrownException = await act.Should().ThrowAsync<InvalidOperationException>();
         thrownException.Which.Message.Should().Be(internalFailure.Message);
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -692,7 +823,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
         A.CallTo(() => _writeFlattener.Flatten(A<FlatteningInput>._)).MustNotHaveHappened();
         A.CallTo(() =>
-                _terminalStage.ExecuteAsync(A<RelationalWriteTerminalStageRequest>._, A<CancellationToken>._)
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
     }
@@ -800,15 +931,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
             rootPlan.TableModel,
             ResourceStorageKind.RelationalTables
         );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var readPlan = CreateReadPlan(resourceModel, rootPlan.TableModel);
 
         return new MappingSet(
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
             Model: CreateDerivedModelSet(resourceModel, resourceKey),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {
-                [resourceKey.Resource] = new ResourceWritePlan(resourceModel, [rootPlan]),
+                [resourceKey.Resource] = writePlan,
             },
-            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resourceKey.Resource] = readPlan,
+            },
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
             {
                 [resourceKey.Resource] = resourceKey.ResourceKeyId,
@@ -868,6 +1004,39 @@ public class Given_RelationalDocumentStoreRepositoryTests
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
             Model: CreateDerivedModelSet(resourceModel, resourceKey),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private static MappingSet CreateMissingReadPlanMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootPlan.TableModel,
+            ResourceStorageKind.RelationalTables
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [resourceKey.Resource] = new ResourceWritePlan(resourceModel, [rootPlan]),
+            },
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
             {
@@ -945,6 +1114,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
             TablesInDependencyOrder: [rootTable],
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
+        );
+    }
+
+    private static ResourceReadPlan CreateReadPlan(
+        RelationalResourceModel resourceModel,
+        DbTableModel rootTable
+    )
+    {
+        return new ResourceReadPlan(
+            Model: resourceModel,
+            KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            TablePlansInDependencyOrder: [new TableReadPlan(rootTable, "select * from edfi.\"School\";")],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [],
+            DescriptorProjectionPlansInOrder: []
         );
     }
 
