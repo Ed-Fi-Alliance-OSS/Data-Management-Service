@@ -127,7 +127,7 @@
       "Add backend unit tests for batch partitioning decisions, parameter-limit handling, multi-batch collection insert behavior, and update-side batching or command-count behavior that would catch a per-row update fallback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Contract Safety Net",

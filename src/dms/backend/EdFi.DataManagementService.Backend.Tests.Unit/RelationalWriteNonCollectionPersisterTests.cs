@@ -445,6 +445,213 @@ public class Given_Relational_Write_Non_Collection_Persister
         GetParameterValue(writeSession.Commands[3], "@ServiceName").Should().Be("Bus");
     }
 
+    [Test]
+    public async Task It_batches_collection_updates_to_avoid_one_command_per_row()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [
+                    CreateRow(44L, 345L, 0, "Mailing"),
+                    CreateRow(45L, 345L, 1, "Home"),
+                    CreateRow(46L, 345L, 2, "Physical"),
+                    CreateRow(47L, 345L, 3, "Temporary"),
+                    CreateRow(48L, 345L, 4, "Shipping"),
+                ],
+                [
+                    CreateRow(44L, 345L, 0, "Mailing Updated"),
+                    CreateRow(45L, 345L, 1, "Home Updated"),
+                    CreateRow(46L, 345L, 2, "Physical Updated"),
+                    CreateRow(47L, 345L, 3, "Temporary Updated"),
+                    CreateRow(48L, 345L, 4, "Shipping Updated"),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[0].Parameters.Should().HaveCount(8);
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        writeSession
+            .Commands[2]
+            .CommandText.Should()
+            .Be(collectionPlan.CollectionMergePlan!.UpdateByStableRowIdentitySql);
+        writeSession.Commands[2].Parameters.Should().HaveCount(4);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
+        GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+    }
+
+    [Test]
+    public async Task It_batches_collection_id_reservations_and_insert_commands_for_large_collection_inserts()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [],
+                [
+                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                    CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
+                    CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
+                    CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReservationRows:
+                [
+                    new ReservedCollectionItemIdRow(1, 910L),
+                    new ReservedCollectionItemIdRow(2, 911L),
+                ]
+            ),
+            new CommandResponse(),
+            new CommandResponse(
+                ReservationRows:
+                [
+                    new ReservedCollectionItemIdRow(1, 912L),
+                    new ReservedCollectionItemIdRow(2, 913L),
+                ]
+            ),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 914L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(6);
+
+        writeSession.Commands[0].CommandText.Should().Contain("generate_series");
+        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
+
+        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO \"edfi\".\"SchoolAddress\"");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+
+        writeSession.Commands[2].CommandText.Should().Contain("generate_series");
+        GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
+
+        writeSession.Commands[3].CommandText.Should().Contain("INSERT INTO \"edfi\".\"SchoolAddress\"");
+        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[3].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
+
+        writeSession.Commands[4].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
+        GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
+    }
+
+    [Test]
+    public async Task It_uses_sql_server_batch_reservation_and_insert_sql_for_multi_row_collection_inserts()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [],
+                [
+                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReservationRows:
+                [
+                    new ReservedCollectionItemIdRow(1, 910L),
+                    new ReservedCollectionItemIdRow(2, 911L),
+                ]
+            ),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(2);
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
+        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
+        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
+        writeSession.Commands[1].CommandText.Should().Contain("[CollectionItemId]");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+    }
+
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
     {
         return command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
@@ -452,10 +659,11 @@ public class Given_Relational_Write_Non_Collection_Persister
 
     private static RelationalWriteExecutorRequest CreateRequest(
         ResourceWritePlan writePlan,
-        RelationalWriteOperationKind operationKind
+        RelationalWriteOperationKind operationKind,
+        SqlDialect dialect = SqlDialect.Pgsql
     )
     {
-        var mappingSet = CreateMappingSet(writePlan.Model);
+        var mappingSet = CreateMappingSet(writePlan.Model, dialect);
 
         return new RelationalWriteExecutorRequest(
             mappingSet,
@@ -469,7 +677,9 @@ public class Given_Relational_Write_Non_Collection_Persister
                     new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
                 ),
             writePlan,
-            operationKind == RelationalWriteOperationKind.Put ? CreateReadPlan(writePlan.Model) : null,
+            operationKind == RelationalWriteOperationKind.Put
+                ? CreateReadPlan(writePlan.Model, dialect)
+                : null,
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             false,
             new TraceId("non-collection-persister-test"),
@@ -477,13 +687,13 @@ public class Given_Relational_Write_Non_Collection_Persister
         );
     }
 
-    private static MappingSet CreateMappingSet(RelationalResourceModel resourceModel)
+    private static MappingSet CreateMappingSet(RelationalResourceModel resourceModel, SqlDialect dialect)
     {
         var resource = resourceModel.Resource;
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
 
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
             Model: new DerivedRelationalModelSet(
                 EffectiveSchema: new EffectiveSchemaInfo(
                     ApiSchemaFormatVersion: "1.0",
@@ -497,7 +707,7 @@ public class Given_Relational_Write_Non_Collection_Persister
                     ],
                     ResourceKeysInIdOrder: [resourceKey]
                 ),
-                Dialect: SqlDialect.Pgsql,
+                Dialect: dialect,
                 ProjectSchemasInEndpointOrder:
                 [
                     new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
@@ -537,11 +747,11 @@ public class Given_Relational_Write_Non_Collection_Persister
         );
     }
 
-    private static ResourceReadPlan CreateReadPlan(RelationalResourceModel resourceModel)
+    private static ResourceReadPlan CreateReadPlan(RelationalResourceModel resourceModel, SqlDialect dialect)
     {
         return new ResourceReadPlan(
             resourceModel,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            KeysetTableConventions.GetKeysetTableContract(dialect),
             resourceModel
                 .TablesInDependencyOrder.Select(tableModel => new TableReadPlan(
                     tableModel,
@@ -1175,7 +1385,13 @@ public class Given_Relational_Write_Non_Collection_Persister
     private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
         FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
-    private sealed record CommandResponse(object? ScalarResult = null, int NonQueryResult = 1);
+    private sealed record ReservedCollectionItemIdRow(int Ordinal, long CollectionItemId);
+
+    private sealed record CommandResponse(
+        object? ScalarResult = null,
+        int NonQueryResult = 1,
+        IReadOnlyList<ReservedCollectionItemIdRow>? ReservationRows = null
+    );
 
     private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
     {
@@ -1239,9 +1455,16 @@ public class Given_Relational_Write_Non_Collection_Persister
 
         protected override DbParameter CreateDbParameter() => new StubDbParameter();
 
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+            CreateReservationReader(response);
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+            CommandBehavior behavior,
+            CancellationToken cancellationToken
+        )
         {
-            throw new NotSupportedException();
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<DbDataReader>(CreateReservationReader(response));
         }
 
         public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
@@ -1254,6 +1477,20 @@ public class Given_Relational_Write_Non_Collection_Persister
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(response.ScalarResult);
+        }
+
+        private static DbDataReader CreateReservationReader(CommandResponse response)
+        {
+            var table = new DataTable();
+            table.Columns.Add("Ordinal", typeof(int));
+            table.Columns.Add("CollectionItemId", typeof(long));
+
+            foreach (var row in response.ReservationRows ?? [])
+            {
+                table.Rows.Add(row.Ordinal, row.CollectionItemId);
+            }
+
+            return table.CreateDataReader();
         }
     }
 
