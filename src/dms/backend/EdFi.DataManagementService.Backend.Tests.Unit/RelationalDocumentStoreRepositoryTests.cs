@@ -38,12 +38,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private IRelationalWriteExecutor _writeExecutor = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
+    private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
     [SetUp]
     public void Setup()
     {
         _targetLookupResolver = A.Fake<IRelationalWriteTargetLookupResolver>();
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
+        _capturedExecutorRequests = [];
 
         A.CallTo(() =>
                 _targetLookupResolver.ResolveForPostAsync(
@@ -79,7 +81,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
             .ReturnsLazily(() =>
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(
@@ -162,7 +168,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
@@ -244,7 +254,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpdateSuccess(documentUuid))
@@ -314,7 +328,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Invokes(call => _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!)
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateSuccess(documentUuid))
@@ -393,6 +411,266 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_retries_stale_put_guarded_no_op_attempts_once_against_fresh_target_state()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var putLookupCallCount = 0;
+        var executorCallCount = 0;
+
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    putLookupCallCount++ switch
+                    {
+                        0 => new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 41L),
+                        1 => new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 42L),
+                        _ => throw new InvalidOperationException("Unexpected extra PUT target lookup."),
+                    }
+                )
+            );
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateSuccess(documentUuid),
+                            RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Fresh retry"));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests
+            .Select(request => request.ReadPlan)
+            .Should()
+            .OnlyContain(readPlan => ReferenceEquals(readPlan, expectedReadPlan));
+        _capturedExecutorRequests
+            .Select(request =>
+                ((RelationalWriteTargetContext.ExistingDocument)request.TargetContext).ObservedContentVersion
+            )
+            .Should()
+            .Equal(41L, 42L);
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    [Test]
+    public async Task It_retries_stale_post_as_update_guarded_no_op_attempts_once_against_fresh_target_state()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var postLookupCallCount = 0;
+        var executorCallCount = 0;
+
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    postLookupCallCount++ switch
+                    {
+                        0 => new RelationalWriteTargetLookupResult.ExistingDocument(456L, documentUuid, 91L),
+                        1 => new RelationalWriteTargetLookupResult.ExistingDocument(456L, documentUuid, 92L),
+                        _ => throw new InvalidOperationException("Unexpected extra POST target lookup."),
+                    }
+                )
+            );
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpdateSuccess(documentUuid),
+                            RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post retry"));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests
+            .Select(request => request.ReadPlan)
+            .Should()
+            .OnlyContain(readPlan => ReferenceEquals(readPlan, expectedReadPlan));
+        _capturedExecutorRequests
+            .Select(request =>
+                ((RelationalWriteTargetContext.ExistingDocument)request.TargetContext).ObservedContentVersion
+            )
+            .Should()
+            .Equal(91L, 92L);
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    [Test]
+    public async Task It_returns_write_conflict_when_the_single_stale_no_op_retry_is_also_stale()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var putLookupCallCount = 0;
+        var executorCallCount = 0;
+
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteTargetLookupResult>(
+                    putLookupCallCount++ switch
+                    {
+                        0 => new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 51L),
+                        1 => new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 52L),
+                        _ => throw new InvalidOperationException("Unexpected extra PUT target lookup."),
+                    }
+                )
+            );
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .ReturnsLazily(() =>
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    executorCallCount++ switch
+                    {
+                        0 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        1 => new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict(),
+                            RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
+                        ),
+                        _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
+                    }
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Retry conflict"));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        _capturedExecutorRequests.Should().HaveCount(2);
+        _capturedExecutorRequests
+            .Select(request =>
+                ((RelationalWriteTargetContext.ExistingDocument)request.TargetContext).ObservedContentVersion
+            )
+            .Should()
+            .Equal(51L, 52L);
+        A.CallTo(() =>
+                _targetLookupResolver.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedTwiceExactly();
     }
 
     [Test]

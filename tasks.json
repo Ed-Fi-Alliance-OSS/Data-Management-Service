@@ -89,7 +89,7 @@
       "Add backend unit tests for stale-no-op classification, one-time retry behavior, and result mapping back to public repository outcomes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Non-Collection Persistence",
