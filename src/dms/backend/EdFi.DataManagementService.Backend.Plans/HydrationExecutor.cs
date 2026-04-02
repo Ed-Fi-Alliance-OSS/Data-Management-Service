@@ -77,7 +77,7 @@ public static class HydrationExecutor
 
         await using var reader = await command.ExecuteReaderAsync(ct);
 
-        // The batch begins with CREATE TEMP TABLE + INSERT (keyset materialization).
+        // The batch begins with temp-table reset/creation + INSERT (keyset materialization).
         // Both Npgsql and SqlClient skip DDL/DML statements when advancing result sets,
         // so the reader is positioned at the first SELECT result set automatically.
 

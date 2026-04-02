@@ -385,6 +385,77 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_reuses_the_same_write_session_when_post_target_re_evaluation_loads_current_state_again()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        _currentStateLoader.QueuedResults.Enqueue(null);
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.QueuedResults.Enqueue(
+            new RelationalWriteCurrentState(
+                new DocumentMetadataRow(
+                    345L,
+                    existingDocumentUuid.Value,
+                    45L,
+                    45L,
+                    new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                    new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                ),
+                [
+                    new HydratedTableRows(
+                        request.WritePlan.Model.Root,
+                        [
+                            [345L, 255901, "Lincoln High"],
+                        ]
+                    ),
+                ]
+            )
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(2);
+        _currentStateLoader.CapturedRequests.Should().HaveCount(2);
+        _currentStateLoader.CapturedRequests[0].TargetContext.ObservedContentVersion.Should().Be(44L);
+        _currentStateLoader.CapturedRequests[1].TargetContext.ObservedContentVersion.Should().Be(45L);
+        _currentStateLoader.CapturedWriteSessions.Should().HaveCount(2);
+        _currentStateLoader
+            .CapturedWriteSessions.Should()
+            .OnlyContain(writeSession => ReferenceEquals(writeSession, _writeSessionFactory.Session));
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
+        _targetLookupResolver
+            .CapturedWriteSession!.Connection.Should()
+            .BeSameAs(_writeSessionFactory.Session.Connection);
+        _targetLookupResolver
+            .CapturedWriteSession!.Transaction.Should()
+            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_write_conflict_when_post_target_still_cannot_load_after_re_evaluation()
     {
         var request = CreateRequest(
@@ -1091,9 +1162,15 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteCurrentStateLoadRequest? CapturedRequest { get; private set; }
 
+        public List<RelationalWriteCurrentStateLoadRequest> CapturedRequests { get; } = [];
+
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
+        public List<IRelationalWriteSession> CapturedWriteSessions { get; } = [];
+
         public RelationalWriteCurrentState? ResultToReturn { get; set; }
+
+        public Queue<RelationalWriteCurrentState?> QueuedResults { get; } = [];
 
         public bool ReturnMissingTarget { get; set; }
 
@@ -1106,7 +1183,14 @@ public class Given_Default_Relational_Write_Executor
             cancellationToken.ThrowIfCancellationRequested();
             LoadCallCount++;
             CapturedRequest = request;
+            CapturedRequests.Add(request);
             CapturedWriteSession = writeSession;
+            CapturedWriteSessions.Add(writeSession);
+
+            if (QueuedResults.Count > 0)
+            {
+                return Task.FromResult(QueuedResults.Dequeue());
+            }
 
             if (ReturnMissingTarget)
             {

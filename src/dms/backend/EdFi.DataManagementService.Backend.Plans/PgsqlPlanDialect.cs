@@ -41,6 +41,9 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(keyset);
 
         writer
+            .Append("DROP TABLE IF EXISTS ")
+            .AppendRelation(keyset.Table)
+            .AppendLine(";")
             .Append("CREATE TEMP TABLE ")
             .AppendRelation(keyset.Table)
             .Append(" (")
