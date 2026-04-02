@@ -162,6 +162,13 @@ internal class RequestInfo(
     public MappingSet? MappingSet { get; set; }
 
     /// <summary>
+    /// Optional profile write context when a writable profile applies to the current
+    /// write request. Produced by ProfileWritePipelineMiddleware. Null when no writable
+    /// profile applies or the request is not a write operation.
+    /// </summary>
+    public BackendProfileWriteContext? BackendProfileWriteContext { get; set; }
+
+    /// <summary>
     /// The service provider for the current request scope.
     /// Used by middlewares and handlers to resolve scoped services.
     /// </summary>

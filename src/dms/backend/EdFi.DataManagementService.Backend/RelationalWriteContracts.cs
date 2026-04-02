@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -436,6 +437,13 @@ public sealed record RelationalWriteTerminalStageRequest
     /// Optional caller-supplied diagnostic identifier for logs or tracing.
     /// </summary>
     public string? DiagnosticIdentifier { get; init; }
+
+    /// <summary>
+    /// Optional profile write context for profile-constrained writes.
+    /// Present when a writable profile applies and stored-state projection has completed.
+    /// DMS-1124 consumes this for hidden-member preservation during merge execution.
+    /// </summary>
+    public ProfileAppliedWriteContext? ProfileWriteContext { get; init; }
 }
 
 /// <summary>

@@ -61,5 +61,9 @@ internal record UpdateRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
+    /// <summary>
+    /// Optional profile write context when a writable profile applies.
+    /// </summary>
+    BackendProfileWriteContext? BackendProfileWriteContext = null
 ) : IRelationalUpdateRequest;
