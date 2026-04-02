@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -19,19 +21,59 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Default_Relational_Write_Executor
 {
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
+    private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+    private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
     public void Setup()
     {
         _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
-        _sut = new DefaultRelationalWriteExecutor(_writeSessionFactory);
+        _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+        _writeFlattener = new RecordingRelationalWriteFlattener();
+        _sut = new DefaultRelationalWriteExecutor(
+            _writeSessionFactory,
+            _referenceResolverAdapterFactory,
+            _writeFlattener
+        );
     }
 
     [Test]
-    public async Task It_rolls_back_the_attempt_scoped_session_for_post_requests()
+    public async Task It_resolves_references_through_the_attempt_scoped_session_before_flattening_post_requests()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var documentReferentialId = new ReferentialId(Guid.NewGuid());
+        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences:
+            [
+                RelationalAccessTestData.CreateDocumentReference(documentReferentialId, "$.schoolReference"),
+                RelationalAccessTestData.CreateDocumentReference(
+                    documentReferentialId,
+                    "$.educationOrganizationReference"
+                ),
+            ],
+            descriptorReferences:
+            [
+                RelationalAccessTestData.CreateDescriptorReference(
+                    descriptorReferentialId,
+                    "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+                    "$.schoolTypeDescriptor"
+                ),
+            ]
+        );
+        _referenceResolverAdapterFactory.Adapter.LookupResults =
+        [
+            new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+            new ReferenceLookupResult(
+                descriptorReferentialId,
+                202L,
+                13,
+                13,
+                true,
+                "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+            ),
+        ];
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -46,15 +88,64 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolverAdapterFactory
+            .CapturedConnection.Should()
+            .BeSameAs(_writeSessionFactory.Session.Connection);
+        _referenceResolverAdapterFactory
+            .CapturedTransaction.Should()
+            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
+        _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_rolls_back_the_attempt_scoped_session_for_put_requests()
+    public async Task It_short_circuits_reference_failures_before_flattening()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference]
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                documentReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_flattener_validation_failures_for_put_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
+        var validationFailure = new WriteValidationFailure(
+            new JsonPath("$.schoolYear"),
+            "expected scalar kind 'Int32'"
+        );
+        _writeFlattener.ExceptionToThrow = new RelationalWriteRequestValidationException([validationFailure]);
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -62,112 +153,109 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UnknownFailure(
-                        "Relational PUT write executor is not implemented for resource 'Ed-Fi.School'. "
-                            + "Write-plan selection, target-context resolution, reference resolution, and flattening succeeded, but relational command execution is still pending."
-                    )
+                    new UpdateResult.UpdateFailureValidation([validationFailure])
                 )
             );
-        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
-    private static RelationalWriteExecutorRequest CreateRequest(RelationalWriteOperationKind operationKind)
+    private static RelationalWriteExecutorRequest CreateRequest(
+        RelationalWriteOperationKind operationKind,
+        IReadOnlyList<DocumentReference>? documentReferences = null,
+        IReadOnlyList<DescriptorReference>? descriptorReferences = null
+    )
     {
         var writePlan = CreateRootPlan();
         var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
-        var flatteningInput = new FlatteningInput(
-            operationKind,
-            new RelationalWriteTargetContext.CreateNew(new DocumentUuid(Guid.NewGuid())),
-            new ResourceWritePlan(resourceModel, [writePlan]),
-            JsonNode.Parse("""{"name":"Lincoln High"}""")!,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
-            )
-        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [writePlan]);
+        var mappingSet = CreateMappingSet(resourceModel);
 
         return new RelationalWriteExecutorRequest(
-            new MappingSet(
-                Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
-                Model: new DerivedRelationalModelSet(
-                    EffectiveSchema: new EffectiveSchemaInfo(
-                        ApiSchemaFormatVersion: "1.0",
-                        RelationalMappingVersion: "v1",
-                        EffectiveSchemaHash: "schema-hash",
-                        ResourceKeyCount: 1,
-                        ResourceKeySeedHash: [1, 2, 3],
-                        SchemaComponentsInEndpointOrder:
-                        [
-                            new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
-                        ],
-                        ResourceKeysInIdOrder:
-                        [
-                            new ResourceKeyEntry(
-                                1,
-                                new QualifiedResourceName("Ed-Fi", "School"),
-                                "1.0.0",
-                                false
-                            ),
-                        ]
-                    ),
-                    Dialect: SqlDialect.Pgsql,
-                    ProjectSchemasInEndpointOrder:
-                    [
-                        new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
-                    ],
-                    ConcreteResourcesInNameOrder:
-                    [
-                        new ConcreteResourceModel(
-                            new ResourceKeyEntry(
-                                1,
-                                new QualifiedResourceName("Ed-Fi", "School"),
-                                "1.0.0",
-                                false
-                            ),
-                            ResourceStorageKind.RelationalTables,
-                            resourceModel
-                        ),
-                    ],
-                    AbstractIdentityTablesInNameOrder: [],
-                    AbstractUnionViewsInNameOrder: [],
-                    IndexesInCreateOrder: [],
-                    TriggersInCreateOrder: []
-                ),
-                WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-                ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
-                ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
-                SecurableElementColumnPathsByResource: new Dictionary<
-                    QualifiedResourceName,
-                    IReadOnlyList<ResolvedSecurableElementPath>
-                >()
-            ),
+            mappingSet,
             operationKind,
-            flatteningInput.TargetContext,
-            flatteningInput.WritePlan,
-            null,
-            flatteningInput.SelectedBody,
-            new TraceId("write-executor-test"),
-            new RelationalWritePreparedData(
-                flatteningInput,
-                new FlattenedWriteSet(
-                    new RootWriteRowBuffer(
-                        writePlan,
-                        [
-                            FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                            new FlattenedWriteValue.Literal("Lincoln High"),
-                        ]
-                    )
+            operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
                 )
+                : new RelationalWriteTargetContext.CreateNew(
+                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                ),
+            resourceWritePlan,
+            null,
+            JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+            new TraceId("write-executor-test"),
+            new ReferenceResolverRequest(
+                mappingSet,
+                resourceWritePlan.Model.Resource,
+                documentReferences ?? [],
+                descriptorReferences ?? []
             )
+        );
+    }
+
+    private static MappingSet CreateMappingSet(RelationalResourceModel resourceModel)
+    {
+        var resource = resourceModel.Resource;
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var descriptorKey = new ResourceKeyEntry(13, descriptorResource, "1.0.0", true);
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: new DerivedRelationalModelSet(
+                EffectiveSchema: new EffectiveSchemaInfo(
+                    ApiSchemaFormatVersion: "1.0",
+                    RelationalMappingVersion: "v1",
+                    EffectiveSchemaHash: "schema-hash",
+                    ResourceKeyCount: 2,
+                    ResourceKeySeedHash: [1, 2, 3],
+                    SchemaComponentsInEndpointOrder:
+                    [
+                        new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash"),
+                    ],
+                    ResourceKeysInIdOrder: [resourceKey, descriptorKey]
+                ),
+                Dialect: SqlDialect.Pgsql,
+                ProjectSchemasInEndpointOrder:
+                [
+                    new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi")),
+                ],
+                ConcreteResourcesInNameOrder:
+                [
+                    new ConcreteResourceModel(
+                        resourceKey,
+                        ResourceStorageKind.RelationalTables,
+                        resourceModel
+                    ),
+                ],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [resource] = new ResourceWritePlan(resourceModel, [CreateRootPlan()]),
+            },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resource] = resourceKey.ResourceKeyId,
+                [descriptorResource] = descriptorKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+                [descriptorKey.ResourceKeyId] = descriptorKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
         );
     }
 
@@ -253,6 +341,84 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
+    private sealed class RecordingReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
+    {
+        public RecordingReferenceResolverAdapter Adapter { get; } = new();
+
+        public DbConnection? CapturedConnection { get; private set; }
+
+        public DbTransaction? CapturedTransaction { get; private set; }
+
+        public int CreateAdapterCallCount { get; private set; }
+
+        public int CreateSessionAdapterCallCount { get; private set; }
+
+        public IReferenceResolverAdapter CreateAdapter()
+        {
+            CreateAdapterCallCount++;
+            return Adapter;
+        }
+
+        public IReferenceResolverAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        )
+        {
+            CreateSessionAdapterCallCount++;
+            CapturedConnection = connection;
+            CapturedTransaction = transaction;
+            return Adapter;
+        }
+    }
+
+    private sealed class RecordingReferenceResolverAdapter : IReferenceResolverAdapter
+    {
+        public List<ReferenceLookupRequest> Requests { get; } = [];
+
+        public IReadOnlyList<ReferenceLookupResult> LookupResults { get; set; } = [];
+
+        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
+            ReferenceLookupRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Requests.Add(request);
+            return Task.FromResult(LookupResults);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteFlattener : IRelationalWriteFlattener
+    {
+        public int FlattenCallCount { get; private set; }
+
+        public FlatteningInput? CapturedInput { get; private set; }
+
+        public Exception? ExceptionToThrow { get; set; }
+
+        public FlattenedWriteSet Flatten(FlatteningInput flatteningInput)
+        {
+            FlattenCallCount++;
+            CapturedInput = flatteningInput;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return new FlattenedWriteSet(
+                new RootWriteRowBuffer(
+                    flatteningInput.WritePlan.TablePlansInDependencyOrder.Single(),
+                    [
+                        flatteningInput.OperationKind == RelationalWriteOperationKind.Put
+                            ? new FlattenedWriteValue.Literal(345L)
+                            : FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                        new FlattenedWriteValue.Literal("Lincoln High"),
+                    ]
+                )
+            );
+        }
+    }
+
     private sealed class RecordingRelationalWriteSessionFactory : IRelationalWriteSessionFactory
     {
         public RecordingRelationalWriteSession Session { get; } = new();
@@ -269,9 +435,15 @@ public class Given_Default_Relational_Write_Executor
 
     private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
     {
-        public DbConnection Connection => throw new NotSupportedException();
+        public RecordingRelationalWriteSession()
+        {
+            Connection = new StubDbConnection();
+            Transaction = new StubDbTransaction(Connection);
+        }
 
-        public DbTransaction Transaction => throw new NotSupportedException();
+        public DbConnection Connection { get; }
+
+        public DbTransaction Transaction { get; }
 
         public int CommitCallCount { get; private set; }
 
@@ -300,5 +472,41 @@ public class Given_Default_Relational_Write_Executor
             DisposeCallCount++;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class StubDbConnection : DbConnection
+    {
+        [AllowNull]
+        public override string ConnectionString { get; set; } = string.Empty;
+
+        public override string Database => "stub";
+
+        public override string DataSource => "stub";
+
+        public override string ServerVersion => "1.0";
+
+        public override ConnectionState State => ConnectionState.Open;
+
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+
+        public override void Close() { }
+
+        public override void Open() { }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            throw new NotSupportedException();
+
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    private sealed class StubDbTransaction(DbConnection connection) : DbTransaction
+    {
+        public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
+
+        protected override DbConnection DbConnection => connection;
+
+        public override void Commit() => throw new NotSupportedException();
+
+        public override void Rollback() => throw new NotSupportedException();
     }
 }

@@ -16,8 +16,6 @@ namespace EdFi.DataManagementService.Backend;
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteTargetLookupResolver targetLookupResolver,
-    IReferenceResolver referenceResolver,
-    IRelationalWriteFlattener writeFlattener,
     IRelationalWriteExecutor writeExecutor
 ) : IDocumentStoreRepository, IQueryHandler
 {
@@ -25,10 +23,6 @@ public sealed class RelationalDocumentStoreRepository(
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
         targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
-    private readonly IReferenceResolver _referenceResolver =
-        referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
-    private readonly IRelationalWriteFlattener _writeFlattener =
-        writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
     private readonly IRelationalWriteExecutor _writeExecutor =
         writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
 
@@ -57,11 +51,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
-            static (invalidDocumentReferences, invalidDescriptorReferences) =>
-                new UpsertResult.UpsertFailureReference(
-                    invalidDocumentReferences,
-                    invalidDescriptorReferences
-                ),
             notFoundFailureFactory: null,
             async (mappingSet, resource) =>
                 await _targetLookupResolver
@@ -127,11 +116,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
-            static (invalidDocumentReferences, invalidDescriptorReferences) =>
-                new UpdateResult.UpdateFailureReference(
-                    invalidDocumentReferences,
-                    invalidDescriptorReferences
-                ),
             notFoundFailureFactory: static () => new UpdateResult.UpdateFailureNotExists(),
             async (mappingSet, resource) =>
                 await _targetLookupResolver
@@ -193,7 +177,6 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
         Func<WriteValidationFailure[], TResult> validationFailureFactory,
-        Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
         Func<TResult>? notFoundFailureFactory,
         Func<
             MappingSet,
@@ -209,7 +192,6 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(validationFailureFactory);
-        ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetLookupAsync);
         ArgumentNullException.ThrowIfNull(executorResultProjector);
 
@@ -252,33 +234,6 @@ public sealed class RelationalDocumentStoreRepository(
                 return readPlanResult.FailureResult!;
             }
 
-            var resolvedReferences = await _referenceResolver
-                .ResolveAsync(
-                    new ReferenceResolverRequest(
-                        MappingSet: mappingSet,
-                        RequestResource: resource,
-                        DocumentReferences: documentReferences,
-                        DescriptorReferences: descriptorReferences
-                    )
-                )
-                .ConfigureAwait(false);
-
-            if (resolvedReferences.HasFailures)
-            {
-                return referenceFailureFactory(
-                    [.. resolvedReferences.InvalidDocumentReferences],
-                    [.. resolvedReferences.InvalidDescriptorReferences]
-                );
-            }
-
-            var flatteningInput = new FlatteningInput(
-                operationKind,
-                targetContext,
-                writePlan,
-                requestBody,
-                resolvedReferences
-            );
-            var flattenedWriteSet = _writeFlattener.Flatten(flatteningInput);
             var executorResult = await _writeExecutor
                 .ExecuteAsync(
                     new RelationalWriteExecutorRequest(
@@ -289,7 +244,12 @@ public sealed class RelationalDocumentStoreRepository(
                         readPlanResult.ReadPlan,
                         requestBody,
                         traceId,
-                        new RelationalWritePreparedData(flatteningInput, flattenedWriteSet)
+                        new ReferenceResolverRequest(
+                            MappingSet: mappingSet,
+                            RequestResource: resource,
+                            DocumentReferences: documentReferences,
+                            DescriptorReferences: descriptorReferences
+                        )
                     )
                 )
                 .ConfigureAwait(false);

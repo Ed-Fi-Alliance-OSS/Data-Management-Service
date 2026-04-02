@@ -33,7 +33,7 @@
       "Add backend unit tests that prove the executor resolves references through the shared attempt boundary, preserves memoization behavior, and exits before flattening or DML on reference failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Executor-Owned Flattening",

@@ -160,10 +160,12 @@ public class Given_A_Host_Using_The_Relational_Backend
             File.Delete(_startupStatusFilePath);
         }
 
-        _writeExecutor = new CapturingRelationalWriteExecutor();
         _flattener = new CapturingRelationalWriteFlattener();
-        _factory = CreateFactory(
+        _writeExecutor = new CapturingRelationalWriteExecutor(
             _flattener,
+            RelationalWriteSmokeSupport.CreateEmptyResolvedReferences()
+        );
+        _factory = CreateFactory(
             new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetMappingSet),
             _writeExecutor
         );
@@ -242,10 +244,13 @@ public class Given_A_Host_Using_The_Relational_Backend
     [Test]
     public async Task It_returns_bad_request_when_the_real_relational_flattener_rejects_an_invalid_scalar_value()
     {
-        var writeExecutor = new CapturingRelationalWriteExecutor();
+        var resolvedReferences = RelationalWriteSmokeSupport.CreateEmptyResolvedReferences();
+        var writeExecutor = new CapturingRelationalWriteExecutor(
+            new RelationalWriteFlattener(),
+            resolvedReferences
+        );
 
         using var factory = CreateFactory(
-            new RelationalWriteFlattener(),
             new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetCountValidationMappingSet),
             writeExecutor
         );
@@ -272,11 +277,10 @@ public class Given_A_Host_Using_The_Relational_Backend
             .GetValue<string>()
             .Should()
             .Contain("Column 'WidgetCount' on table 'testproject.Widget' expected scalar kind 'Int32'");
-        writeExecutor.Requests.Should().BeEmpty();
+        writeExecutor.Requests.Should().ContainSingle();
     }
 
     private WebApplicationFactory<Program> CreateFactory(
-        IRelationalWriteFlattener flattener,
         IMappingSetProvider mappingSetProvider,
         CapturingRelationalWriteExecutor writeExecutor
     )
@@ -383,12 +387,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                         )
                     );
 
-                var referenceResolver = A.Fake<IReferenceResolver>();
-                A.CallTo(() =>
-                        referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                    )
-                    .Returns(RelationalWriteSmokeSupport.CreateEmptyResolvedReferences());
-
                 services.RemoveAll<IJwtValidationService>();
                 services.RemoveAll<IClaimSetProvider>();
                 services.RemoveAll<IApplicationContextProvider>();
@@ -397,8 +395,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IResourceKeyValidator>();
                 services.RemoveAll<IMappingSetProvider>();
                 services.RemoveAll<IRelationalWriteTargetLookupResolver>();
-                services.RemoveAll<IReferenceResolver>();
-                services.RemoveAll<IRelationalWriteFlattener>();
                 services.RemoveAll<IRelationalWriteExecutor>();
 
                 services.AddSingleton(jwtValidationService);
@@ -409,8 +405,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(resourceKeyValidator);
                 services.AddSingleton(mappingSetProvider);
                 services.AddSingleton(targetLookupResolver);
-                services.AddSingleton(referenceResolver);
-                services.AddSingleton(flattener);
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
             });
         });
@@ -469,8 +463,17 @@ public class Given_A_Host_Using_The_Relational_Backend
         }
     }
 
-    private sealed class CapturingRelationalWriteExecutor : IRelationalWriteExecutor
+    private sealed class CapturingRelationalWriteExecutor(
+        IRelationalWriteFlattener flattener,
+        ResolvedReferenceSet resolvedReferences
+    ) : IRelationalWriteExecutor
     {
+        private readonly IRelationalWriteFlattener _flattener =
+            flattener ?? throw new ArgumentNullException(nameof(flattener));
+
+        private readonly ResolvedReferenceSet _resolvedReferences =
+            resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
+
         public List<RelationalWriteExecutorRequest> Requests { get; } = [];
 
         public Task<RelationalWriteExecutorResult> ExecuteAsync(
@@ -479,6 +482,27 @@ public class Given_A_Host_Using_The_Relational_Backend
         )
         {
             Requests.Add(request);
+
+            try
+            {
+                _ = _flattener.Flatten(
+                    new FlatteningInput(
+                        request.OperationKind,
+                        request.TargetContext,
+                        request.WritePlan,
+                        request.SelectedBody,
+                        _resolvedReferences
+                    )
+                );
+            }
+            catch (RelationalWriteRequestValidationException ex)
+            {
+                return Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureValidation(ex.ValidationFailures)
+                    )
+                );
+            }
 
             return Task.FromResult<RelationalWriteExecutorResult>(
                 new RelationalWriteExecutorResult.Upsert(

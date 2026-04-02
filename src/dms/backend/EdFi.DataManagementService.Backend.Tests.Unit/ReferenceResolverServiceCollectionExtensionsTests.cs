@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -83,6 +84,11 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
     {
         public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
+
+        public IReferenceResolverAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        ) => new TestReferenceResolverAdapter();
     }
 
     private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
@@ -106,6 +112,16 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public IReferenceResolverAdapter CreateAdapter()
         {
             return new ExecutorBackedReferenceResolverAdapter(CommandExecutor);
+        }
+
+        public IReferenceResolverAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        )
+        {
+            return new ExecutorBackedReferenceResolverAdapter(
+                new SessionRelationalCommandExecutor(connection, transaction)
+            );
         }
     }
 

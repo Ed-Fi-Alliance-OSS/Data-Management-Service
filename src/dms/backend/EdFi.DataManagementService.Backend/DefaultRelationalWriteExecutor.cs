@@ -7,11 +7,21 @@ using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal sealed class DefaultRelationalWriteExecutor(IRelationalWriteSessionFactory writeSessionFactory)
-    : IRelationalWriteExecutor
+internal sealed class DefaultRelationalWriteExecutor(
+    IRelationalWriteSessionFactory writeSessionFactory,
+    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    IRelationalWriteFlattener writeFlattener
+) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
         writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
+
+    private readonly IReferenceResolverAdapterFactory _referenceResolverAdapterFactory =
+        referenceResolverAdapterFactory
+        ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory));
+
+    private readonly IRelationalWriteFlattener _writeFlattener =
+        writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -32,6 +42,32 @@ internal sealed class DefaultRelationalWriteExecutor(IRelationalWriteSessionFact
 
         try
         {
+            var referenceResolver = new ReferenceResolver(
+                _referenceResolverAdapterFactory.CreateSessionAdapter(
+                    writeSession.Connection,
+                    writeSession.Transaction
+                )
+            );
+            var resolvedReferences = await referenceResolver
+                .ResolveAsync(request.ReferenceResolutionRequest, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (resolvedReferences.HasFailures)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return BuildReferenceFailureResult(request.OperationKind, resolvedReferences);
+            }
+
+            _ = _writeFlattener.Flatten(
+                new FlatteningInput(
+                    request.OperationKind,
+                    request.TargetContext,
+                    request.WritePlan,
+                    request.SelectedBody,
+                    resolvedReferences
+                )
+            );
+
             var resource = request.WritePlan.Model.Resource;
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,
@@ -52,10 +88,55 @@ internal sealed class DefaultRelationalWriteExecutor(IRelationalWriteSessionFact
 
             return result;
         }
+        catch (RelationalWriteRequestValidationException ex)
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildValidationFailureResult(request.OperationKind, ex.ValidationFailures);
+        }
         catch
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    private static RelationalWriteExecutorResult BuildReferenceFailureResult(
+        RelationalWriteOperationKind operationKind,
+        ResolvedReferenceSet resolvedReferences
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureReference(
+                    [.. resolvedReferences.InvalidDocumentReferences],
+                    [.. resolvedReferences.InvalidDescriptorReferences]
+                )
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureReference(
+                    [.. resolvedReferences.InvalidDocumentReferences],
+                    [.. resolvedReferences.InvalidDescriptorReferences]
+                )
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildValidationFailureResult(
+        RelationalWriteOperationKind operationKind,
+        WriteValidationFailure[] validationFailures
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureValidation(validationFailures)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureValidation(validationFailures)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
     }
 }

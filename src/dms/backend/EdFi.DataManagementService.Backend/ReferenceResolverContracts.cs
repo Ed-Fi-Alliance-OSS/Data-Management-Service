@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -60,6 +61,11 @@ public interface IReferenceResolverAdapterFactory
     /// Creates the adapter for the current request scope.
     /// </summary>
     IReferenceResolverAdapter CreateAdapter();
+
+    /// <summary>
+    /// Creates an adapter bound to an already-open write connection and transaction.
+    /// </summary>
+    IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction);
 }
 
 /// <summary>

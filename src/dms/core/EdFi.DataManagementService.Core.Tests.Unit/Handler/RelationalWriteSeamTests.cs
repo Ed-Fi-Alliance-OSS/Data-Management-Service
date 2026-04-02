@@ -13,13 +13,11 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
-using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -61,10 +59,9 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: request => new RelationalWriteExecutorResult.Upsert(
+            writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
                     ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
                 )
@@ -85,18 +82,12 @@ public class Given_Relational_Write_Seam
         request.SelectedBody.Should().BeSameAs(requestInfo.ParsedBody);
         request.TargetContext.Should().BeOfType<RelationalWriteTargetContext.CreateNew>();
         request.ReadPlan.Should().BeNull();
+        request.PreparedData.Should().BeNull();
         request
-            .PreparedData!.FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
-            );
-        request.PreparedData!.FlattenedWriteSet.RootRow.RootExtensionRows.Should().ContainSingle();
-        request.PreparedData.FlattenedWriteSet.RootRow.CollectionCandidates.Should().ContainSingle();
+            .ReferenceResolutionRequest.RequestResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "Student"));
+        request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
+        request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
 
         var createdDocumentUuid = (
             (RelationalWriteTargetContext.CreateNew)request.TargetContext
@@ -113,10 +104,9 @@ public class Given_Relational_Write_Seam
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
-            putTargetLookupFactory: _ => CreateExistingDocumentLookupResult(345L, existingDocumentUuid),
-            terminalStageResultFactory: request => new RelationalWriteExecutorResult.Update(
+            putTargetLookupFactory: _ => CreateExistingDocumentLookupResult(345L, existingDocumentUuid, 18L),
+            writeResultFactory: request => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateSuccess(
                     ((RelationalWriteTargetContext.ExistingDocument)request.TargetContext).DocumentUuid
                 )
@@ -137,18 +127,13 @@ public class Given_Relational_Write_Seam
         request.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         request
             .TargetContext.Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid));
-        request.ReadPlan.Should().NotBeNull();
-        request
-            .PreparedData!.FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 18L)
             );
+        request.ReadPlan.Should().NotBeNull();
+        request.PreparedData.Should().BeNull();
+        request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
+        request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
         requestInfo
             .FrontendResponse.LocationHeaderPath.Should()
             .Be($"/ed-fi/students/{existingDocumentUuid.Value}");
@@ -161,11 +146,9 @@ public class Given_Relational_Write_Seam
         var requestedDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: _ => new RelationalWriteTargetLookupResult.NotFound(),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called.")
         );
 
         var requestInfo = await harness.ExecuteUpdateAsync(
@@ -184,7 +167,7 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public async Task It_short_circuits_reference_failures_before_terminal_handoff()
+    public async Task It_surfaces_executor_owned_reference_failures_through_the_handler()
     {
         var invalidReference = DocumentReferenceFailure.From(
             _fixture.CreateRootSchoolReference(),
@@ -192,13 +175,11 @@ public class Given_Relational_Write_Seam
         );
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateReferenceFailureSet(
-                invalidDocumentReferences: [invalidReference]
-            ),
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureReference([invalidReference], [])
+            )
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -222,123 +203,21 @@ public class Given_Relational_Write_Seam
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(409);
         requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("$.schoolReference");
-        harness.WriteExecutor.Requests.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_routes_missing_resolved_reference_lookups_to_the_centralized_server_error_response()
+    public async Task It_surfaces_executor_owned_validation_failures_through_the_handler()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertThroughExceptionMiddlewareAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "schoolYear": 2026,
-                  "schoolReference": {
-                    "schoolId": 255901
-                  }
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: true,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureValidation([
+                    new WriteValidationFailure(new JsonPath("$.schoolYear"), "expected scalar kind 'Int32'"),
+                ])
             )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["message"]!
-            .GetValue<string>()
-            .Should()
-            .Be(
-                "The server encountered an unexpected condition that prevented it from fulfilling the request."
-            );
-        requestInfo.FrontendResponse.Body!["traceId"]!
-            .GetValue<string>()
-            .Should()
-            .Be("relational-write-seam");
-        var loggedFailure = harness
-            .ExceptionLogger.Entries.Should()
-            .ContainSingle(entry =>
-                entry.Level == LogLevel.Error
-                && entry.Message.Contains("Unknown Error - relational-write-seam")
-            )
-            .Which;
-        loggedFailure.Exception.Should().BeOfType<InvalidOperationException>();
-        loggedFailure
-            .Exception!.Message.Should()
-            .Contain("resolved lookup set did not contain a matching 'Ed-Fi.School' entry");
-        loggedFailure.Exception.Message.Should().Contain("$.schoolReference");
-        harness.WriteExecutor.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_duplicate_semantic_identity_failures_as_data_validation_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
-            postTargetLookupFactory: CreateCreateNewLookupResult,
-            putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "addresses": [
-                    {
-                      "addressType": "Home"
-                    },
-                    {
-                      "addressType": "Home"
-                    }
-                  ]
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: false,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
-            )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Data validation failed. See 'validationErrors' for details.");
-        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.addresses[1]"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("duplicate semantic identity values ['Home']");
-        harness.WriteExecutor.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_scalar_read_failures_as_data_validation_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetLookupFactory: CreateCreateNewLookupResult,
-            putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -366,48 +245,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Contain("expected scalar kind 'Int32'");
-        harness.WriteExecutor.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_backend_local_strict_datetime_parse_failures_for_an_unnormalized_selected_body_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetLookupFactory: CreateCreateNewLookupResult,
-            putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "schoolYear": 2026,
-                  "lastModified": "2026-08-19 16:30:45"
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: false,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
-            )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Data validation failed. See 'validationErrors' for details.");
-        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.lastModified"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("expected scalar kind 'DateTime'");
-        harness.WriteExecutor.Requests.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [Test]
@@ -415,10 +253,9 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: request => new RelationalWriteExecutorResult.Upsert(
+            writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
                     ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
                 )
@@ -434,20 +271,7 @@ public class Given_Relational_Write_Seam
         );
 
         harness.WriteExecutor.Requests.Should().ContainSingle();
-
-        var request = harness.WriteExecutor.Requests.Single();
-        request.SelectedBody.Should().BeSameAs(selectedBody);
-        request
-            .PreparedData!.FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(2030),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null)
-            );
-        request.PreparedData!.FlattenedWriteSet.RootRow.RootExtensionRows.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Single().SelectedBody.Should().BeSameAs(selectedBody);
     }
 
     [Test]
@@ -455,11 +279,9 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called.")
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -481,11 +303,9 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
             postTargetLookupFactory: CreateCreateNewLookupResult,
             putTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Write executor should not be called.")
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called.")
         );
 
         Func<Task> act = async () =>
@@ -498,109 +318,8 @@ public class Given_Relational_Write_Seam
         act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
     }
 
-    [Test]
-    public async Task It_flattens_complex_nested_collections_and_extensions_before_terminal_handoff()
-    {
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetLookupFactory: documentUuid => CreateExistingDocumentLookupResult(345L, documentUuid),
-            putTargetLookupFactory: _ => CreateExistingDocumentLookupResult(345L, existingDocumentUuid),
-            terminalStageResultFactory: request => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateSuccess(
-                    ((RelationalWriteTargetContext.ExistingDocument)request.TargetContext).DocumentUuid
-                )
-            )
-        );
-
-        await harness.ExecuteUpdateAsync(
-            RelationalWriteSeamFixture.CreateComplexBody(),
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(),
-            existingDocumentUuid
-        );
-
-        harness.WriteExecutor.Requests.Should().ContainSingle();
-
-        var request = harness.WriteExecutor.Requests.Single();
-        var rootRow = request.PreparedData!.FlattenedWriteSet.RootRow;
-        var rootExtensionRow = rootRow.RootExtensionRows.Single();
-        var addressCandidate = rootRow.CollectionCandidates.Single();
-        var alignedScope = addressCandidate.AttachedAlignedScopeData.Single();
-
-        rootRow
-            .Values.Should()
-            .Equal(
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
-            );
-
-        rootExtensionRow
-            .Values.Should()
-            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal("Green"));
-        rootExtensionRow.CollectionCandidates.Should().HaveCount(2);
-        rootExtensionRow
-            .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Attendance")
-            );
-        rootExtensionRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Behavior");
-
-        addressCandidate.OrdinalPath.Should().Equal(0);
-        addressCandidate
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Home"),
-                new FlattenedWriteValue.Literal("1 Main St")
-            );
-        addressCandidate.CollectionCandidates.Should().HaveCount(2);
-        addressCandidate.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
-        addressCandidate
-            .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal(new DateOnly(2026, 8, 20)),
-                new FlattenedWriteValue.Literal(9901L)
-            );
-        addressCandidate
-            .CollectionCandidates[1]
-            .Values[5]
-            .Should()
-            .Be(new FlattenedWriteValue.Literal(9902L));
-
-        alignedScope
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal("Purple")
-            );
-        alignedScope.CollectionCandidates.Should().HaveCount(2);
-        alignedScope.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
-        alignedScope
-            .CollectionCandidates.Select(candidate => candidate.SemanticIdentityValues[0])
-            .Should()
-            .Equal("Bus", "Meal");
-    }
-
     private sealed class RelationalWriteSeamHarness
     {
-        private readonly IPipelineStep _exceptionLoggingMiddleware;
         private readonly IPipelineStep _upsertHandler;
         private readonly IPipelineStep _updateHandler;
         private readonly ResourceInfo _resourceInfo;
@@ -609,15 +328,12 @@ public class Given_Relational_Write_Seam
         private RelationalWriteSeamHarness(
             ResourceInfo resourceInfo,
             IDocumentStoreRepository repository,
-            CapturingWriteExecutor writeExecutor,
-            CapturingLogger exceptionLogger
+            CapturingWriteExecutor writeExecutor
         )
         {
             _resourceInfo = resourceInfo;
             WriteExecutor = writeExecutor;
-            ExceptionLogger = exceptionLogger;
             _serviceProvider = new RepositoryServiceProvider(repository);
-            _exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(exceptionLogger);
             _upsertHandler = new UpsertHandler(
                 NullLogger.Instance,
                 ResiliencePipeline.Empty,
@@ -634,14 +350,11 @@ public class Given_Relational_Write_Seam
 
         public CapturingWriteExecutor WriteExecutor { get; }
 
-        public CapturingLogger ExceptionLogger { get; }
-
         public static RelationalWriteSeamHarness Create(
             ResourceInfo resourceInfo,
-            ResolvedReferenceSet resolvedReferences,
             Func<DocumentUuid, RelationalWriteTargetLookupResult> postTargetLookupFactory,
             Func<DocumentUuid, RelationalWriteTargetLookupResult> putTargetLookupFactory,
-            Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> terminalStageResultFactory
+            Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> writeResultFactory
         )
         {
             var targetLookupResolver = A.Fake<IRelationalWriteTargetLookupResolver>();
@@ -669,23 +382,14 @@ public class Given_Relational_Write_Seam
                     Task.FromResult(putTargetLookupFactory(call.GetArgument<DocumentUuid>(2)))
                 );
 
-            var referenceResolver = A.Fake<IReferenceResolver>();
-            A.CallTo(() =>
-                    referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                )
-                .Returns(Task.FromResult(resolvedReferences));
-
-            var writeExecutor = new CapturingWriteExecutor(terminalStageResultFactory);
+            var writeExecutor = new CapturingWriteExecutor(writeResultFactory);
             var repository = new RelationalDocumentStoreRepository(
                 NullLogger<RelationalDocumentStoreRepository>.Instance,
                 targetLookupResolver,
-                referenceResolver,
-                new RelationalWriteFlattener(),
                 writeExecutor
             );
-            var exceptionLogger = new CapturingLogger();
 
-            return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor, exceptionLogger);
+            return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);
         }
 
         public async Task<RequestInfo> ExecuteUpsertAsync(
@@ -704,28 +408,6 @@ public class Given_Relational_Write_Seam
                 originalBody
             );
             await _upsertHandler.Execute(requestInfo, NullNext);
-            return requestInfo;
-        }
-
-        public async Task<RequestInfo> ExecuteUpsertThroughExceptionMiddlewareAsync(
-            JsonNode parsedBody,
-            MappingSet? mappingSet,
-            DocumentInfo documentInfo,
-            string? originalBody = null
-        )
-        {
-            var requestInfo = CreateRequestInfo(
-                RequestMethod.POST,
-                parsedBody,
-                mappingSet,
-                documentInfo,
-                No.DocumentUuid,
-                originalBody
-            );
-            await _exceptionLoggingMiddleware.Execute(
-                requestInfo,
-                () => _upsertHandler.Execute(requestInfo, NullNext)
-            );
             return requestInfo;
         }
 
@@ -770,7 +452,6 @@ public class Given_Relational_Write_Seam
                 RouteQualifiers: []
             );
 
-            // Seam tests inject ParsedBody directly, so they bypass the normal HTTP parse/coercion middleware.
             return new RequestInfo(frontendRequest, method, _serviceProvider)
             {
                 ResourceInfo = _resourceInfo,
@@ -827,41 +508,5 @@ public class Given_Relational_Write_Seam
         public bool IsSchemaValid => true;
 
         public List<ApiSchemaFailure> ApiSchemaFailures => [];
-    }
-
-    public sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
-
-    public sealed class CapturingLogger : ILogger
-    {
-        public List<LogEntry> Entries { get; } = [];
-
-        public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull
-        {
-            return NullScope.Instance;
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
-        }
-    }
-
-    private sealed class NullScope : IDisposable
-    {
-        public static NullScope Instance { get; } = new();
-
-        public void Dispose() { }
     }
 }

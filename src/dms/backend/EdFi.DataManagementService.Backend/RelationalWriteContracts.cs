@@ -469,6 +469,7 @@ public sealed record RelationalWriteExecutorRequest
         ResourceReadPlan? readPlan,
         JsonNode selectedBody,
         TraceId traceId,
+        ReferenceResolverRequest referenceResolutionRequest,
         RelationalWritePreparedData? preparedData = null,
         string? diagnosticIdentifier = null
     )
@@ -480,8 +481,26 @@ public sealed record RelationalWriteExecutorRequest
         ReadPlan = readPlan;
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         TraceId = traceId;
+        ReferenceResolutionRequest =
+            referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         PreparedData = preparedData;
         DiagnosticIdentifier = diagnosticIdentifier;
+
+        if (!ReferenceEquals(MappingSet, ReferenceResolutionRequest.MappingSet))
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must reference the same mapping set instance supplied to the executor request.",
+                nameof(referenceResolutionRequest)
+            );
+        }
+
+        if (ReferenceResolutionRequest.RequestResource != WritePlan.Model.Resource)
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
+                nameof(referenceResolutionRequest)
+            );
+        }
     }
 
     /// <summary>
@@ -518,6 +537,11 @@ public sealed record RelationalWriteExecutorRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Reference-resolution inputs the executor must resolve inside the shared write session.
+    /// </summary>
+    public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
 
     /// <summary>
     /// Optional repository-prepared inputs that later executor stages can reuse directly.

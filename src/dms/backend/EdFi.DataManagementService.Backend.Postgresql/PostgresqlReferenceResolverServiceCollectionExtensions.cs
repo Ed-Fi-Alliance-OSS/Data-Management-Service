@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,5 +32,12 @@ internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalComma
     public IReferenceResolverAdapter CreateAdapter()
     {
         return new PostgresqlReferenceResolverAdapter(_commandExecutor);
+    }
+
+    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
+    {
+        return new PostgresqlReferenceResolverAdapter(
+            new SessionRelationalCommandExecutor(connection, transaction)
+        );
     }
 }
