@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Profile;
 
@@ -64,32 +63,6 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Extracts top-level property names from identity JSON paths. For nested paths like
-    /// <c>$.courseOfferingReference.localCourseCode</c>, extracts the first segment
-    /// (<c>courseOfferingReference</c>) so the entire reference object is preserved.
-    /// </summary>
-    public static IReadOnlySet<string> ExtractIdentityPropertyNames(IEnumerable<JsonPath> identityJsonPaths)
-    {
-        return identityJsonPaths
-            .Select(path => path.Value)
-            .Select(pathValue =>
-            {
-                if (pathValue.StartsWith("$."))
-                {
-                    pathValue = pathValue[2..];
-                }
-                else if (pathValue.StartsWith('$'))
-                {
-                    pathValue = pathValue[1..];
-                }
-
-                int dotIndex = pathValue.IndexOf('.');
-                return dotIndex > 0 ? pathValue[..dotIndex] : pathValue;
-            })
-            .ToHashSet();
     }
 
     // -----------------------------------------------------------------------
@@ -247,7 +220,10 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
         {
             if (item is not JsonObject itemObject)
             {
-                result.Add(item?.DeepClone());
+                if (item is not null)
+                {
+                    result.Add(item.DeepClone());
+                }
                 continue;
             }
 

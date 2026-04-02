@@ -876,7 +876,7 @@ public class ReadableProfileProjectorTests
                 properties: [new PropertyRule("calendarCode")]
             );
 
-            var identityNames = ReadableProfileProjector.ExtractIdentityPropertyNames([
+            var identityNames = IReadableProfileProjector.ExtractIdentityPropertyNames([
                 new JsonPath("$.calendarCode"),
                 new JsonPath("$.schoolReference.schoolId"),
                 new JsonPath("$.schoolYearTypeReference.schoolYear"),
@@ -1065,7 +1065,7 @@ public class ReadableProfileProjectorTests
                 ]
             );
 
-            var identityNames = ReadableProfileProjector.ExtractIdentityPropertyNames([
+            var identityNames = IReadableProfileProjector.ExtractIdentityPropertyNames([
                 new JsonPath("$.studentUniqueId"),
                 new JsonPath("$.schoolReference.schoolId"),
             ]);
@@ -1380,7 +1380,7 @@ public class ReadableProfileProjectorTests
         [SetUp]
         public void SetUp()
         {
-            _result = ReadableProfileProjector.ExtractIdentityPropertyNames([
+            _result = IReadableProfileProjector.ExtractIdentityPropertyNames([
                 new JsonPath("$.schoolId"),
                 new JsonPath("$.courseOfferingReference.localCourseCode"),
                 new JsonPath("$.sessionReference.sessionName"),
@@ -1660,6 +1660,174 @@ public class ReadableProfileProjectorTests
         public void It_omits_the_extension_when_nested_object_is_empty()
         {
             _result["_ext"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  ExcludeOnly on nested objects
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Nested_Object_With_ExcludeOnly : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["studentUniqueId"] = "STU001",
+                ["birthData"] = new JsonObject
+                {
+                    ["birthCity"] = "New York",
+                    ["birthStateAbbreviation"] = "NY",
+                    ["birthDate"] = "2000-01-01",
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                objects:
+                [
+                    new ObjectRule(
+                        Name: "birthData",
+                        MemberSelection: MemberSelection.ExcludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("birthDate")],
+                        NestedObjects: null,
+                        Collections: null,
+                        Extensions: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("studentUniqueId"));
+        }
+
+        [Test]
+        public void It_preserves_unlisted_nested_properties()
+        {
+            var birthData = _result["birthData"] as JsonObject;
+            birthData!["birthCity"]?.GetValue<string>().Should().Be("New York");
+            birthData["birthStateAbbreviation"]?.GetValue<string>().Should().Be("NY");
+        }
+
+        [Test]
+        public void It_removes_listed_nested_property()
+        {
+            var birthData = _result["birthData"] as JsonObject;
+            birthData!["birthDate"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  ExcludeOnly on collection member selection
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_With_ExcludeOnly_Member_Selection : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["addresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["streetAddress"] = "123 Main St",
+                        ["city"] = "Springfield",
+                        ["postalCode"] = "62701",
+                    },
+                },
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                collections:
+                [
+                    new CollectionRule(
+                        Name: "addresses",
+                        MemberSelection: MemberSelection.ExcludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("postalCode")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_unlisted_collection_item_properties()
+        {
+            var address = (_result["addresses"] as JsonArray)![0] as JsonObject;
+            address!["streetAddress"]?.GetValue<string>().Should().Be("123 Main St");
+            address["city"]?.GetValue<string>().Should().Be("Springfield");
+        }
+
+        [Test]
+        public void It_removes_listed_collection_item_property()
+        {
+            var address = (_result["addresses"] as JsonArray)![0] as JsonObject;
+            address!["postalCode"].Should().BeNull();
+        }
+    }
+
+    // =======================================================================
+    //  Null property values in source documents
+    // =======================================================================
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Null_Property_Values_In_Source : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["schoolId"] = 100,
+                ["nameOfInstitution"] = "Test School",
+                ["webSite"] = null,
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution"), new PropertyRule("webSite")]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_included_null_value()
+        {
+            var resultObj = _result as JsonObject;
+            resultObj!.ContainsKey("webSite").Should().BeTrue();
+            _result["webSite"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_preserves_included_non_null_value()
+        {
+            _result["nameOfInstitution"]?.GetValue<string>().Should().Be("Test School");
         }
     }
 }
