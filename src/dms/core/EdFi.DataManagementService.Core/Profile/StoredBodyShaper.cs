@@ -91,7 +91,7 @@ internal sealed class StoredBodyShaper(ProfileVisibilityClassifier classifier)
             }
 
             // Scalar member: apply member filter
-            if (IsMemberVisible(memberFilter, memberName))
+            if (MemberPathVisibility.IsVisible(memberFilter, memberName))
             {
                 output[memberName] = memberValue?.DeepClone();
             }
@@ -208,7 +208,7 @@ internal sealed class StoredBodyShaper(ProfileVisibilityClassifier classifier)
                 }
 
                 // Scalar: apply member filter
-                if (IsMemberVisible(itemMemberFilter, itemMemberName))
+                if (MemberPathVisibility.IsVisible(itemMemberFilter, itemMemberName))
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
@@ -277,19 +277,5 @@ internal sealed class StoredBodyShaper(ProfileVisibilityClassifier classifier)
 
         scopeKind = classifier.GetScopeKind(jsonScope);
         return true;
-    }
-
-    /// <summary>
-    /// Determines whether a member is visible given the scope's member filter.
-    /// </summary>
-    private static bool IsMemberVisible(ScopeMemberFilter filter, string name)
-    {
-        return filter.Mode switch
-        {
-            MemberSelection.IncludeOnly => filter.ExplicitNames.Contains(name),
-            MemberSelection.ExcludeOnly => !filter.ExplicitNames.Contains(name),
-            MemberSelection.IncludeAll => true,
-            _ => true,
-        };
     }
 }

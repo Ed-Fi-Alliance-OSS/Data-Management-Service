@@ -517,18 +517,6 @@ public abstract class StoredSideExistenceLookupBuilderTests
             );
             calRef.HiddenMemberPaths.Should().BeEmpty();
         }
-
-        [Test]
-        public void It_should_have_hidden_officialAttendancePeriod_for_classPeriods()
-        {
-            // classPeriods IncludeOnly includes classPeriodName but not officialAttendancePeriod.
-            // classPeriods is a collection — check the scope entry emitted by missing scope states.
-            // Actually, classPeriods[*] is Collection kind, not a non-collection scope.
-            // HiddenMemberPaths for collection items are on VisibleStoredCollectionRow.
-            // Since no classPeriods data was in the stored doc, there are no rows.
-            // Let's verify the root scope instead — this test is covered above.
-            _result.ClassifiedStoredScopes.Should().HaveCountGreaterThanOrEqualTo(1);
-        }
     }
 
     // -----------------------------------------------------------------------
