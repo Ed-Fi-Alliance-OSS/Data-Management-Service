@@ -55,7 +55,7 @@ public abstract record RelationalWriteTargetContext
 }
 
 /// <summary>
-/// Executor-facing target selection inputs before lookup occurs inside the write session.
+/// Repository-facing target selection inputs retained alongside the resolved executor target context.
 /// </summary>
 public abstract record RelationalWriteTargetRequest
 {
@@ -471,8 +471,8 @@ public sealed record RelationalWriteExecutorRequest
         bool allowIdentityUpdates,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
+        RelationalWriteTargetContext targetContext,
         string? missingExistingDocumentReadPlanFailureMessage = null,
-        RelationalWriteTargetContext? targetContext = null,
         string? diagnosticIdentifier = null
     )
     {
@@ -487,7 +487,7 @@ public sealed record RelationalWriteExecutorRequest
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         MissingExistingDocumentReadPlanFailureMessage = missingExistingDocumentReadPlanFailureMessage;
-        TargetContext = targetContext;
+        TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
         DiagnosticIdentifier = diagnosticIdentifier;
 
         if (
@@ -562,15 +562,14 @@ public sealed record RelationalWriteExecutorRequest
     public RelationalWriteOperationKind OperationKind { get; init; }
 
     /// <summary>
-    /// The executor-facing target selection input the write session must resolve.
+    /// The original request-side lookup input retained for retry, freshness, and diagnostics.
     /// </summary>
     public RelationalWriteTargetRequest TargetRequest { get; init; }
 
     /// <summary>
-    /// The resolved target document context for the active executor attempt.
-    /// Repository-created requests leave this null; the executor stamps it in after session-bound lookup.
+    /// The repository-resolved target document context for the active executor attempt.
     /// </summary>
-    public RelationalWriteTargetContext? TargetContext { get; init; }
+    public RelationalWriteTargetContext TargetContext { get; init; }
 
     /// <summary>
     /// The compiled write plan selected for the write resource.

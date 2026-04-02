@@ -361,6 +361,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IDatabaseFingerprintReader>();
                 services.RemoveAll<IResourceKeyValidator>();
                 services.RemoveAll<IMappingSetProvider>();
+                services.RemoveAll<IRelationalWriteTargetLookupService>();
                 services.RemoveAll<IRelationalWriteExecutor>();
 
                 services.AddSingleton(jwtValidationService);
@@ -370,6 +371,9 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);
                 services.AddSingleton(mappingSetProvider);
+                services.AddSingleton<IRelationalWriteTargetLookupService>(
+                    new CapturingRelationalWriteTargetLookupService()
+                );
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
             });
         });
@@ -447,16 +451,7 @@ public class Given_A_Host_Using_The_Relational_Backend
         )
         {
             Requests.Add(request);
-            RelationalWriteTargetContext targetContext = request.TargetRequest switch
-            {
-                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid) =>
-                    new RelationalWriteTargetContext.CreateNew(candidateDocumentUuid),
-                RelationalWriteTargetRequest.Put(var documentUuid) =>
-                    new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
-                _ => throw new InvalidOperationException(
-                    $"Unsupported target request type '{request.TargetRequest.GetType().Name}'."
-                ),
-            };
+            var targetContext = request.TargetContext;
 
             try
             {
@@ -480,11 +475,52 @@ public class Given_A_Host_Using_The_Relational_Backend
             }
 
             return Task.FromResult<RelationalWriteExecutorResult>(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(
-                        ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
-                    )
-                )
+                targetContext switch
+                {
+                    RelationalWriteTargetContext.CreateNew(var documentUuid) =>
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.InsertSuccess(documentUuid)
+                        ),
+                    RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpdateSuccess(documentUuid)
+                        ),
+                    _ => throw new InvalidOperationException(
+                        $"Unsupported target context type '{targetContext.GetType().Name}'."
+                    ),
+                }
+            );
+        }
+    }
+
+    private sealed class CapturingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
+    {
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<RelationalWriteTargetLookupResult>(
+                new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<RelationalWriteTargetLookupResult>(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
             );
         }
     }

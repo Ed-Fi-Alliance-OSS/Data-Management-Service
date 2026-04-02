@@ -93,7 +93,12 @@ public class Given_Relational_Write_Freshness_Checker
             JsonNode.Parse("""{"name":"Lincoln High"}""")!,
             false,
             new TraceId("guarded-no-op-freshness-test"),
-            new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
+            new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], []),
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
         );
     }
 

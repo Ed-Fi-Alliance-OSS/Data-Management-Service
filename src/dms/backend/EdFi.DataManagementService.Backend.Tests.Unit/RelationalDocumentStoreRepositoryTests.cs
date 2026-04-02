@@ -36,6 +36,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private RelationalDocumentStoreRepository _sut = null!;
     private IRelationalWriteExecutor _writeExecutor = null!;
+    private RecordingRelationalWriteTargetLookupService _targetLookupService = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
@@ -43,6 +44,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public void Setup()
     {
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
+        _targetLookupService = new RecordingRelationalWriteTargetLookupService();
         _capturedExecutorRequests = [];
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -62,7 +64,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
-            _writeExecutor
+            _writeExecutor,
+            _targetLookupService
         );
     }
 
@@ -162,7 +165,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetRequest.Should()
             .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
-        _capturedExecutorRequest.TargetContext.Should().BeNull();
+        _capturedExecutorRequest
+            .TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
         _capturedExecutorRequest
             .WritePlan.Model.Resource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
@@ -197,6 +202,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var documentInfo = CreateDocumentInfo();
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -227,7 +236,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetRequest.Should()
             .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
-        _capturedExecutorRequest.TargetContext.Should().BeNull();
+        _capturedExecutorRequest
+            .TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
@@ -281,7 +294,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest
             .TargetRequest.Should()
             .BeEquivalentTo(new RelationalWriteTargetRequest.Put(documentUuid));
-        _capturedExecutorRequest.TargetContext.Should().BeNull();
+        _capturedExecutorRequest
+            .TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L));
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest
@@ -298,9 +313,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_surfaces_executor_owned_not_exists_for_put_requests()
+    public async Task It_short_circuits_missing_put_targets_before_executor_entry()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        _targetLookupService.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet).Returns(CreateSupportedMappingSet(_schoolResourceInfo));
@@ -308,30 +324,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
         A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
 
-        A.CallTo(() =>
-                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
-            )
-            .Invokes(call =>
-            {
-                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
-                _capturedExecutorRequests.Add(_capturedExecutorRequest);
-            })
-            .Returns(
-                Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-                )
-            );
-
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
-        _capturedExecutorRequest
-            .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Put(documentUuid));
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .MustHaveHappenedOnceExactly();
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -341,6 +342,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var executorCallCount = 0;
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -388,6 +395,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(new RelationalWriteTargetRequest.Put(documentUuid))
             );
+        _capturedExecutorRequests
+            .Select(request => request.TargetContext)
+            .Should()
+            .BeEquivalentTo([
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
+            ]);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -402,6 +417,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var executorCallCount = 0;
         var documentInfo = CreateDocumentInfo();
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -450,6 +471,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid)
                 )
             );
+        _capturedExecutorRequests
+            .Select(request => request.TargetContext)
+            .Should()
+            .BeEquivalentTo([
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
+                new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
+            ]);
+        _targetLookupService.ResolveForPostCallCount.Should().Be(2);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -461,6 +490,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var executorCallCount = 0;
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+        );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -504,6 +539,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(new RelationalWriteTargetRequest.Put(documentUuid))
             );
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -853,6 +889,52 @@ public class Given_RelationalDocumentStoreRepositoryTests
         Func<Task> act = async () => _ = await _sut.UpsertDocument(upsertRequest);
 
         act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
+    }
+
+    private sealed class RecordingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
+    {
+        public Queue<RelationalWriteTargetLookupResult> PostResults { get; } = [];
+
+        public Queue<RelationalWriteTargetLookupResult> PutResults { get; } = [];
+
+        public int ResolveForPostCallCount { get; private set; }
+
+        public int ResolveForPutCallCount { get; private set; }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveForPostCallCount++;
+
+            return Task.FromResult(
+                PostResults.Count > 0
+                    ? PostResults.Dequeue()
+                    : new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveForPutCallCount++;
+
+            return Task.FromResult(
+                PutResults.Count > 0
+                    ? PutResults.Dequeue()
+                    : new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
+            );
+        }
     }
 
     private static ResourceInfo CreateResourceInfo(string resourceName, bool isDescriptor = false)

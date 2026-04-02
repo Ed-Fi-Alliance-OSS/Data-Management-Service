@@ -63,17 +63,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         try
         {
-            var targetResolution = await ResolveTargetContextAsync(request, writeSession, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (targetResolution.ImmediateResult is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return targetResolution.ImmediateResult;
-            }
-
-            var targetContext = targetResolution.TargetContext!;
-            var executionRequest = request with { TargetContext = targetContext };
+            var targetContext = request.TargetContext;
+            var executionRequest = request;
             var referenceResolver = new ReferenceResolver(
                 _referenceResolverAdapterFactory.CreateSessionAdapter(
                     writeSession.Connection,
@@ -116,7 +107,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             var flattenedWriteSet = _writeFlattener.Flatten(
                 new FlatteningInput(
                     executionRequest.OperationKind,
-                    executionRequest.TargetContext!,
+                    executionRequest.TargetContext,
                     executionRequest.WritePlan,
                     executionRequest.SelectedBody,
                     resolvedReferences
@@ -162,7 +153,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 .ConfigureAwait(false);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext!);
+            return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext);
         }
         catch (RelationalWriteRequestValidationException ex)
         {
@@ -282,85 +273,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                 new UpdateResult.UpdateFailureValidation(validationFailures)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-    }
-
-    private async Task<TargetContextResolution> ResolveTargetContextAsync(
-        RelationalWriteExecutorRequest request,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        var resource = request.WritePlan.Model.Resource;
-
-        var targetLookupResult = request.TargetRequest switch
-        {
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                await _targetLookupResolver
-                    .ResolveForPostAsync(
-                        request.MappingSet,
-                        resource,
-                        referentialId,
-                        candidateDocumentUuid,
-                        writeSession.Connection,
-                        writeSession.Transaction,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-            RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupResolver
-                .ResolveForPutAsync(
-                    request.MappingSet,
-                    resource,
-                    documentUuid,
-                    writeSession.Connection,
-                    writeSession.Transaction,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
-            _ => throw new InvalidOperationException(
-                $"Relational write executor does not support target request type '{request.TargetRequest.GetType().Name}'."
-            ),
-        };
-
-        return (request.OperationKind, targetLookupResult) switch
-        {
-            (
-                RelationalWriteOperationKind.Post,
-                RelationalWriteTargetLookupResult.CreateNew
-                (var documentUuid)
-            ) => new TargetContextResolution(new RelationalWriteTargetContext.CreateNew(documentUuid), null),
-            (
-                RelationalWriteOperationKind.Post,
-                RelationalWriteTargetLookupResult.ExistingDocument
-                (var documentId, var documentUuid, var observedContentVersion)
-            ) => new TargetContextResolution(
-                new RelationalWriteTargetContext.ExistingDocument(
-                    documentId,
-                    documentUuid,
-                    observedContentVersion
-                ),
-                null
-            ),
-            (
-                RelationalWriteOperationKind.Put,
-                RelationalWriteTargetLookupResult.ExistingDocument
-                (var documentId, var documentUuid, var observedContentVersion)
-            ) => new TargetContextResolution(
-                new RelationalWriteTargetContext.ExistingDocument(
-                    documentId,
-                    documentUuid,
-                    observedContentVersion
-                ),
-                null
-            ),
-            (RelationalWriteOperationKind.Put, RelationalWriteTargetLookupResult.NotFound) =>
-                new TargetContextResolution(
-                    null,
-                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-                ),
-            _ => throw new InvalidOperationException(
-                $"Relational {request.OperationKind} target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
-            ),
         };
     }
 
@@ -519,11 +431,6 @@ internal sealed class DefaultRelationalWriteExecutor(
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
         };
     }
-
-    private sealed record TargetContextResolution(
-        RelationalWriteTargetContext? TargetContext,
-        RelationalWriteExecutorResult? ImmediateResult
-    );
 
     private sealed record ExistingTargetCurrentStateResolution(
         RelationalWriteTargetContext? TargetContext,

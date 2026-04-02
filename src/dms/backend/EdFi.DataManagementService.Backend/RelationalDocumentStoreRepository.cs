@@ -15,13 +15,16 @@ namespace EdFi.DataManagementService.Backend;
 
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
-    IRelationalWriteExecutor writeExecutor
+    IRelationalWriteExecutor writeExecutor,
+    IRelationalWriteTargetLookupService targetLookupService
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
         writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
+    private readonly IRelationalWriteTargetLookupService _targetLookupService =
+        targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -198,6 +201,19 @@ public sealed class RelationalDocumentStoreRepository(
         {
             for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
             {
+                var targetResolution = await ResolveTargetContextAsync(
+                        mappingSet,
+                        resource,
+                        operationKind,
+                        targetRequest
+                    )
+                    .ConfigureAwait(false);
+
+                if (targetResolution.ImmediateResult is not null)
+                {
+                    return executorResultProjector(targetResolution.ImmediateResult);
+                }
+
                 var executorResult = await _writeExecutor
                     .ExecuteAsync(
                         new RelationalWriteExecutorRequest(
@@ -215,7 +231,8 @@ public sealed class RelationalDocumentStoreRepository(
                                 DocumentReferences: documentReferences,
                                 DescriptorReferences: descriptorReferences
                             ),
-                            readPlanPreparation.FailureMessage
+                            targetContext: targetResolution.TargetContext!,
+                            missingExistingDocumentReadPlanFailureMessage: readPlanPreparation.FailureMessage
                         )
                     )
                     .ConfigureAwait(false);
@@ -239,6 +256,69 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return validationFailureFactory(ex.ValidationFailures);
         }
+    }
+
+    private async Task<TargetContextResolution> ResolveTargetContextAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest
+    )
+    {
+        var targetLookupResult = targetRequest switch
+        {
+            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
+                await _targetLookupService
+                    .ResolveForPostAsync(mappingSet, resource, referentialId, candidateDocumentUuid)
+                    .ConfigureAwait(false),
+            RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupService
+                .ResolveForPutAsync(mappingSet, resource, documentUuid)
+                .ConfigureAwait(false),
+            _ => throw new InvalidOperationException(
+                $"Relational repository target lookup does not support target request type '{targetRequest.GetType().Name}'."
+            ),
+        };
+
+        return (operationKind, targetLookupResult) switch
+        {
+            (
+                RelationalWriteOperationKind.Post,
+                RelationalWriteTargetLookupResult.CreateNew
+                (var documentUuid)
+            ) => new TargetContextResolution(new RelationalWriteTargetContext.CreateNew(documentUuid), null),
+            (
+                RelationalWriteOperationKind.Post,
+                RelationalWriteTargetLookupResult.ExistingDocument
+                (var documentId, var documentUuid, var observedContentVersion)
+            ) => new TargetContextResolution(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    documentId,
+                    documentUuid,
+                    observedContentVersion
+                ),
+                null
+            ),
+            (
+                RelationalWriteOperationKind.Put,
+                RelationalWriteTargetLookupResult.ExistingDocument
+                (var documentId, var documentUuid, var observedContentVersion)
+            ) => new TargetContextResolution(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    documentId,
+                    documentUuid,
+                    observedContentVersion
+                ),
+                null
+            ),
+            (RelationalWriteOperationKind.Put, RelationalWriteTargetLookupResult.NotFound) =>
+                new TargetContextResolution(
+                    null,
+                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+                ),
+            _ => throw new InvalidOperationException(
+                $"Relational {operationKind} repository target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+            ),
+        };
     }
 
     private static ExistingDocumentReadPlanPreparation PrepareExistingDocumentReadPlan(
@@ -309,6 +389,11 @@ public sealed class RelationalDocumentStoreRepository(
     private sealed record ExistingDocumentReadPlanPreparation(
         ResourceReadPlan? ReadPlan,
         string? FailureMessage
+    );
+
+    private sealed record TargetContextResolution(
+        RelationalWriteTargetContext? TargetContext,
+        RelationalWriteExecutorResult? ImmediateResult
     );
 
     private static string FormatResource(QualifiedResourceName resource) =>

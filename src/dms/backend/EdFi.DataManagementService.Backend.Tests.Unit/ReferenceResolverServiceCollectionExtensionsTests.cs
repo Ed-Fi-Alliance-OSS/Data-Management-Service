@@ -31,6 +31,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
         scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
         factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<TestReferenceResolverAdapter>();
@@ -63,6 +64,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
         var nonCollectionPersister =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNonCollectionPersister>();
+        var targetLookupService =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
         var targetLookupResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
@@ -85,6 +88,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         nonCollectionPersister.Should().BeOfType<RelationalWriteNonCollectionPersister>();
+        targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);

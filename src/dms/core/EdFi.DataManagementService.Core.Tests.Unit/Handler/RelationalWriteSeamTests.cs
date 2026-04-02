@@ -62,9 +62,11 @@ public class Given_Relational_Write_Seam
         harness.WriteExecutor.Requests.Should().ContainSingle();
 
         var request = harness.WriteExecutor.Requests.Single();
+        var createdDocumentUuid = (
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
         request.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         request.SelectedBody.Should().BeSameAs(requestInfo.ParsedBody);
-        request.TargetContext.Should().BeNull();
         request
             .TargetRequest.Should()
             .BeEquivalentTo(
@@ -73,6 +75,9 @@ public class Given_Relational_Write_Seam
                     ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
                 )
             );
+        request
+            .TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(createdDocumentUuid));
         request.ExistingDocumentReadPlan.Should().NotBeNull();
         request
             .ReferenceResolutionRequest.RequestResource.Should()
@@ -80,9 +85,6 @@ public class Given_Relational_Write_Seam
         request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
         request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
 
-        var createdDocumentUuid = (
-            (RelationalWriteTargetRequest.Post)request.TargetRequest
-        ).CandidateDocumentUuid;
         requestInfo
             .FrontendResponse.LocationHeaderPath.Should()
             .Be($"/ed-fi/students/{createdDocumentUuid.Value}");
@@ -117,7 +119,11 @@ public class Given_Relational_Write_Seam
         request
             .TargetRequest.Should()
             .BeEquivalentTo(new RelationalWriteTargetRequest.Put(existingDocumentUuid));
-        request.TargetContext.Should().BeNull();
+        request
+            .TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
         request.ExistingDocumentReadPlan.Should().NotBeNull();
         request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
         request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
@@ -133,6 +139,7 @@ public class Given_Relational_Write_Seam
         var requestedDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
+            targetLookupResultFactory: _ => new RelationalWriteTargetLookupResult.NotFound(),
             writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureNotExists()
             )
@@ -150,7 +157,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Be("Resource to update was not found");
-        harness.WriteExecutor.Requests.Should().ContainSingle();
+        harness.WriteExecutor.Requests.Should().BeEmpty();
     }
 
     [Test]
@@ -329,13 +336,19 @@ public class Given_Relational_Write_Seam
 
         public static RelationalWriteSeamHarness Create(
             ResourceInfo resourceInfo,
-            Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> writeResultFactory
+            Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> writeResultFactory,
+            Func<RelationalWriteTargetRequest, RelationalWriteTargetLookupResult>? targetLookupResultFactory =
+                null
         )
         {
             var writeExecutor = new CapturingWriteExecutor(writeResultFactory);
+            var targetLookupService = new RecordingRelationalWriteTargetLookupService(
+                targetLookupResultFactory
+            );
             var repository = new RelationalDocumentStoreRepository(
                 NullLogger<RelationalDocumentStoreRepository>.Instance,
-                writeExecutor
+                writeExecutor,
+                targetLookupService
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);
@@ -429,6 +442,58 @@ public class Given_Relational_Write_Seam
         {
             Requests.Add(request);
             return Task.FromResult(resultFactory(request));
+        }
+    }
+
+    private sealed class RecordingRelationalWriteTargetLookupService(
+        Func<RelationalWriteTargetRequest, RelationalWriteTargetLookupResult>? resultFactory
+    ) : IRelationalWriteTargetLookupService
+    {
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                (resultFactory ?? DefaultResultFactory)(
+                    new RelationalWriteTargetRequest.Post(referentialId, candidateDocumentUuid)
+                )
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                (resultFactory ?? DefaultResultFactory)(new RelationalWriteTargetRequest.Put(documentUuid))
+            );
+        }
+
+        private static RelationalWriteTargetLookupResult DefaultResultFactory(
+            RelationalWriteTargetRequest request
+        )
+        {
+            return request switch
+            {
+                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid) =>
+                    new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid),
+                RelationalWriteTargetRequest.Put(var documentUuid) =>
+                    new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported target request type '{request.GetType().Name}'."
+                ),
+            };
         }
     }
 

@@ -276,5 +276,47 @@
       "Update the E13 summary row in `reference/design/backend-redesign/epics/DEPENDENCIES.md` and confirm it matches the detailed hard-dependency entries for `E13-S01` later in the same document."
     ],
     "completed": true
+  },
+  {
+    "category": "Code Review Follow-Up - SQL Server Current-State Scalar Normalization",
+    "description": "Fix the SQL Server no-profile compare and merge regression caused by current-state hydration preserving raw ADO values instead of normalizing them into the same storage-space types the write flattener emits. Today `HydrationReader.ReadTableRowsAsync(...)` stores `DbDataReader.GetValue(...)` results verbatim, `RelationalWriteNoProfileMergeSynthesizer.CurrentStateProjection.ProjectCurrentRows(...)` wraps those values directly in `FlattenedWriteValue.Literal`, and the flattener emits normalized `DateOnly` and `TimeOnly` values for `ScalarKind.Date` and `ScalarKind.Time`. On SQL Server, `date` and `time` materialize as `DateTime` and `TimeSpan`, so unchanged rows can compare unequal, guarded no-op can fall through to unnecessary DML, and collection semantic-identity matching can miss unchanged rows and degrade into delete plus insert behavior. Acceptance: current-state projection normalizes hydrated values per compiled scalar type before compare and match logic runs, unchanged SQL Server writes with `date` and `time` values succeed through the guarded no-op path, and collection merge matching uses the same normalized value space on both PostgreSQL and SQL Server.",
+    "steps-to-verify": [
+      "Add backend unit tests that hydrate SQL Server-shaped `date` and `time` values (`DateTime` and `TimeSpan`) and prove `RelationalWriteNoProfileMergeSynthesizer` produces the same comparable and semantic-identity values as the flattener (`DateOnly` and `TimeOnly`).",
+      "Add SQL Server contract tests that prove unchanged existing-document writes with `date` and `time` bindings classify as guarded no-op instead of changed-write.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Code Review Follow-Up - PostgreSQL Re-Evaluation Hydration Temp Table Reuse",
+    "description": "Fix the PostgreSQL executor path where POST existing-target re-evaluation can invoke current-state hydration twice on the same write session and transaction. The executor now owns target lookup and may call `RelationalWriteCurrentStateLoader.LoadAsync(...)`, then on a missing current state re-run POST lookup and hydrate again inside the same session. The hydration batch still unconditionally emits `CREATE TEMP TABLE page ... ON COMMIT DROP`, and the keyset table name is fixed by `KeysetTableConventions`, so the second hydration call on the same PostgreSQL transaction can fail with `relation \"page\" already exists` instead of returning the intended create or write-conflict outcome. Acceptance: repeated current-state hydration within one executor-owned PostgreSQL session is safe, either because the keyset temp table is dropped or truncated between runs or because the hydration batch uses a session-safe temp-table strategy; POST re-evaluation paths no longer fail with temp-table name collisions.",
+    "steps-to-verify": [
+      "Add backend or plans tests that execute two PostgreSQL hydration batches on the same connection and transaction and prove the second batch succeeds.",
+      "Add executor coverage for the POST existing-target-disappeared re-evaluation path using the real PostgreSQL hydration executor or a close contract test so the path returns create or conflict rather than a temp-table collision.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Review Follow-Up - Restore Repository-Orchestrated Target Lookup Boundary",
+    "description": "Restore the story's intended repository-orchestrated target-lookup boundary instead of leaving target lookup inside the executor. The current branch has the repository build a `RelationalWriteTargetRequest` and always invoke the executor, which opens the write session and performs lookup there. That preserves public behavior for now, but it backs away from the agreed DMS-984 seam: repository-facing lookup results should distinguish POST create-vs-existing and PUT not-found before executor entry, and `RelationalWriteTargetContext` should remain executor-facing for real write targets only. Acceptance: `RelationalDocumentStoreRepository` performs repository-facing target lookup, short-circuits missing PUTs before executor/session/reference-resolution work begins, passes the resolved lookup result or executor-facing target context into the executor request, and the executor owns current-state load, compare, merge, and persistence without also owning operation-correct lookup policy.",
+    "steps-to-verify": [
+      "Refactor repository and executor contracts so repository orchestration resolves the target before invoking the executor and only real write targets enter executor persistence flow.",
+      "Add backend unit tests that prove missing PUT targets return `UpdateFailureNotExists` without opening executor-owned write-session work and that POST create-vs-existing lookup still maps correctly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Review Follow-Up - Remove Duplicate Repository Validation Mapping",
+    "description": "Remove the now-dead validation-exception mapping left in `RelationalDocumentStoreRepository.ExecuteWriteGuardRails(...)`. `DefaultRelationalWriteExecutor.ExecuteAsync(...)` already catches `RelationalWriteRequestValidationException` and maps it to the public validation result, so the repository-level catch block is redundant as long as production uses the default executor. Acceptance: validation mapping lives in one place, repository orchestration no longer carries an unreachable duplicate catch path, and related tests are simplified to the chosen single owner of validation-result translation.",
+    "steps-to-verify": [
+      "Delete or consolidate the duplicate validation-exception handling path and update backend unit tests so they assert a single owner for validation-result translation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

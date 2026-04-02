@@ -145,13 +145,8 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
         _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupResolver.CapturedWriteSession.Should().BeNull();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -189,7 +184,7 @@ public class Given_Default_Relational_Write_Executor
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -249,13 +244,8 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
             .BeSameAs(_currentStateLoader.ResultToReturn);
-        _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
-        _targetLookupResolver
-            .CapturedWriteSession!.Connection.Should()
-            .BeSameAs(_writeSessionFactory.Session.Connection);
-        _targetLookupResolver
-            .CapturedWriteSession!.Transaction.Should()
-            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
+        _targetLookupResolver.CapturedWriteSession.Should().BeNull();
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -304,9 +294,9 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_short_circuits_unchanged_post_as_update_requests_as_guarded_no_ops()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Post);
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
                 345L,
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                 44L
@@ -330,17 +320,17 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_returns_not_exists_when_put_target_lookup_misses()
+    public async Task It_returns_not_exists_when_the_existing_put_target_disappears_before_current_state_load()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
-        _targetLookupResolver.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
+        _currentStateLoader.ReturnMissingTarget = true;
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -349,9 +339,10 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
-        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _targetLookupResolver.ResolveForPutCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -359,17 +350,17 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_re_evaluates_post_as_update_as_create_when_the_existing_target_disappears_before_current_state_load()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Post);
-        var candidateDocumentUuid = (
-            (RelationalWriteTargetRequest.Post)request.TargetRequest
-        ).CandidateDocumentUuid;
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
                 345L,
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                 44L
             )
         );
+        var candidateDocumentUuid = (
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
         _targetLookupResolver.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
         );
@@ -384,7 +375,7 @@ public class Given_Default_Relational_Write_Executor
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(2);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _writeFlattener
             .CapturedInput!.TargetContext.Should()
@@ -396,11 +387,15 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_write_conflict_when_post_target_still_cannot_load_after_re_evaluation()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Post);
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
         );
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         _targetLookupResolver.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
         );
@@ -413,7 +408,7 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
             );
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(2);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(2);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -665,7 +660,12 @@ public class Given_Default_Relational_Write_Executor
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
                 false,
                 new TraceId("write-executor-test"),
-                new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], [])
+                new ReferenceResolverRequest(mappingSet, resourceWritePlan.Model.Resource, [], []),
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    44L
+                )
             );
 
         act.Should().Throw<ArgumentException>().WithParameterName("targetRequest");
@@ -675,7 +675,8 @@ public class Given_Default_Relational_Write_Executor
         RelationalWriteOperationKind operationKind,
         bool allowIdentityUpdates = false,
         IReadOnlyList<DocumentReference>? documentReferences = null,
-        IReadOnlyList<DescriptorReference>? descriptorReferences = null
+        IReadOnlyList<DescriptorReference>? descriptorReferences = null,
+        RelationalWriteTargetContext? targetContext = null
     )
     {
         var writePlan = CreateRootPlan();
@@ -684,6 +685,13 @@ public class Given_Default_Relational_Write_Executor
         var mappingSet = CreateMappingSet(resourceModel);
         var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var resolvedTargetContext =
+            targetContext
+            ?? (
+                operationKind == RelationalWriteOperationKind.Put
+                    ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
+                    : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+            );
 
         return new RelationalWriteExecutorRequest(
             mappingSet,
@@ -704,7 +712,8 @@ public class Given_Default_Relational_Write_Executor
                 resourceWritePlan.Model.Resource,
                 documentReferences ?? [],
                 descriptorReferences ?? []
-            )
+            ),
+            targetContext: resolvedTargetContext
         );
     }
 

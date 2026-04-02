@@ -70,6 +70,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<
+                IRelationalWriteTargetLookupService,
+                RelationalWriteTargetLookupService
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
                 IRelationalWriteTargetLookupResolver,
                 RelationalWriteTargetLookupResolver
             >()
