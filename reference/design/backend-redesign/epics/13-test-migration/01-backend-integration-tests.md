@@ -14,13 +14,14 @@ Add runtime integration tests that exercise the relational backend end-to-end:
 - PUT by id
 - DELETE by id
 - GET by query paging
-- profile-constrained write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`, including root creatability, hidden-data preservation, deterministic hidden-gap collection ordering, visible-vs-hidden non-collection behavior, `_ext` preservation, and collection/non-collection merge behavior keyed by compiled semantic identity rather than request ordinal
+- no-profile write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`, and
+- profile-constrained write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`, including root creatability, hidden-data preservation, deterministic hidden-gap collection ordering, visible-vs-hidden non-collection behavior, `_ext` preservation, and collection/non-collection merge behavior keyed by compiled semantic identity rather than request ordinal
 - profile-constrained hidden-member coverage includes key-unified canonical storage, synthetic presence flags, and hidden reference/descriptor bindings on matched profiled rows/scopes
 - profile-constrained creatability coverage includes the three-level parent-create-denied/child-denied chain from the profile design doc
 
 Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Testcontainers).
 
-This story runs the shared profile scenario matrix defined in `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and reuses the scenario definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
+This story runs the shared profile scenario matrix defined in `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and reuses the scenario definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`.
 
 Fixture names and helper APIs in this story should use the shared scenario names from the matrix verbatim.
 
@@ -32,7 +33,7 @@ Fixture names and helper APIs in this story should use the shared scenario names
   - reference validation works (missing refs fail),
   - delete conflicts are reported correctly,
   - the shared profile scenario matrix from `02-parity-and-fixtures.md` runs end-to-end,
-  - `NoProfileWriteBehavior` includes one `FullSurfaceCollectionReorder` case that proves semantic-identity-based row matching rather than request ordinal,
+  - `NoProfileWriteBehavior` includes one omitted non-collection scope case, one no-profile `_ext` case, and one `FullSurfaceCollectionReorder` case that proves semantic-identity-based row matching rather than request ordinal,
   - `ProfileVisibleRowUpdateWithHiddenRowPreservation` covers no-previously-visible, interleaved update-plus-insert, nested collection, and extension child-collection variants under the deterministic hidden-gap ordering rule,
   - `ProfileVisibleRowDeleteWithHiddenRowPreservation` covers the delete-all-visible-while-hidden-rows-remain case,
   - hidden-member preservation assertions cover key-unified canonical storage, synthetic presence flags, and hidden reference/descriptor bindings where those bindings are driven by hidden profiled members,
@@ -49,4 +50,4 @@ Fixture names and helper APIs in this story should use the shared scenario names
    - run DMS with the relational backend,
    - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
-4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes plus key-unified/presence/FK/descriptor bindings, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings including the three-level chain, and unchanged-write guarded no-op behavior.
+4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including no-profile omitted-scope and `_ext` coverage, semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes plus key-unified/presence/FK/descriptor bindings, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings including the three-level chain, and unchanged-write guarded no-op behavior.

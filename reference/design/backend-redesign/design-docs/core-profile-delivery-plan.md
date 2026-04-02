@@ -632,7 +632,7 @@ In parallel from the start:
 - **C7** → Readable projection (no C-story dependencies) — **unblocks DMS-990 as soon as C7 is complete**
 
 After the Core contract stories are in place:
-- **DMS-1104** still waits on C8 plus backend runtime stories (`DMS-1106`, `DMS-984`)
+- **DMS-1104** still waits on C8 plus backend runtime stories (`DMS-1106`, `DMS-1124`)
 
 ### Parallelization Opportunities
 

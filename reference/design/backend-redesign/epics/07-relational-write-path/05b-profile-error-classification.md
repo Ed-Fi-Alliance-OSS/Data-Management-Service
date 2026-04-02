@@ -19,7 +19,7 @@ Dependency note: this story is hard-blocked on Core profile story C8 (`01a-c8-ty
 
 It is distinct from `DMS-986`, which remains limited to database exception classification and mapping.
 
-Failure-oriented coverage in this story reuses the shared scenario names from `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and the runtime definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
+Failure-oriented coverage in this story reuses the shared scenario names from `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md`, the no-profile runtime definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`, and the profiled runtime definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`.
 
 Profile-aware writes must surface deterministic failure shapes for:
 
