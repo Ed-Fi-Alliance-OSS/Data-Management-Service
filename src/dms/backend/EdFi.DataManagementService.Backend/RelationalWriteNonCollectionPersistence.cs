@@ -462,6 +462,8 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             );
         }
 
+        List<RelationalWriteNoProfileTableRow> rowsToDelete = [];
+
         foreach (var currentRow in tableState.CurrentRows)
         {
             var physicalIdentity = ResolvePhysicalRowIdentityKey(tableState.TableWritePlan, currentRow);
@@ -471,19 +473,19 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 continue;
             }
 
-            await ExecuteNonQueryAsync(
-                    writeSession,
-                    BuildRowCommand(
-                        tableState.TableWritePlan,
-                        tableState.TableWritePlan.DeleteByParentSql,
-                        currentRow,
-                        rootDocumentId,
-                        reservedCollectionItemIds
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            rowsToDelete.Add(currentRow);
         }
+
+        await ExecuteParameterizedBatchesAsync(
+                tableState.TableWritePlan,
+                tableState.TableWritePlan.DeleteByParentSql,
+                rowsToDelete,
+                rootDocumentId,
+                reservedCollectionItemIds,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private static async Task UpsertCollectionAlignedScopeRowsAsync(
@@ -500,6 +502,8 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             "current",
             tableState.TableWritePlan
         );
+        List<RelationalWriteNoProfileTableRow> rowsToUpdate = [];
+        List<RelationalWriteNoProfileTableRow> rowsToInsert = [];
 
         foreach (var mergedRow in tableState.MergedRows)
         {
@@ -507,28 +511,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
 
             if (!currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow))
             {
-                await ReserveCollectionItemIdsAsync(
-                        dialect,
-                        GetUnresolvedCollectionItemIds(mergedRow.Values),
-                        reservedCollectionItemIds,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                await ExecuteNonQueryAsync(
-                        writeSession,
-                        BuildRowCommand(
-                            tableState.TableWritePlan,
-                            tableState.TableWritePlan.InsertSql,
-                            mergedRow,
-                            rootDocumentId,
-                            reservedCollectionItemIds
-                        ),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
+                rowsToInsert.Add(mergedRow);
                 continue;
             }
 
@@ -544,15 +527,42 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 );
             }
 
-            await ExecuteNonQueryAsync(
+            rowsToUpdate.Add(mergedRow);
+        }
+
+        await ExecuteParameterizedBatchesAsync(
+                tableState.TableWritePlan,
+                tableState.TableWritePlan.UpdateSql!,
+                rowsToUpdate,
+                rootDocumentId,
+                reservedCollectionItemIds,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        foreach (
+            var insertBatch in rowsToInsert.Chunk(
+                tableState.TableWritePlan.BulkInsertBatching.MaxRowsPerBatch
+            )
+        )
+        {
+            await ReserveCollectionItemIdsAsync(
+                    dialect,
+                    GetUnresolvedCollectionItemIds(insertBatch),
+                    reservedCollectionItemIds,
                     writeSession,
-                    BuildRowCommand(
-                        tableState.TableWritePlan,
-                        tableState.TableWritePlan.UpdateSql,
-                        mergedRow,
-                        rootDocumentId,
-                        reservedCollectionItemIds
-                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            await ExecuteCollectionInsertBatchAsync(
+                    dialect,
+                    tableState.TableWritePlan,
+                    insertBatch,
+                    rootDocumentId,
+                    reservedCollectionItemIds,
+                    writeSession,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -668,7 +678,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
 
         if (rowsToUpdate.Count > 1 && hasOrdinalReorder)
         {
-            await ExecuteCollectionUpdateBatchesAsync(
+            await ExecuteParameterizedBatchesAsync(
                     tableState.TableWritePlan,
                     mergePlan.UpdateByStableRowIdentitySql,
                     CreateTemporaryOrdinalRows(rowsToUpdate, mergePlan.OrdinalBindingIndex),
@@ -680,7 +690,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 .ConfigureAwait(false);
         }
 
-        await ExecuteCollectionUpdateBatchesAsync(
+        await ExecuteParameterizedBatchesAsync(
                 tableState.TableWritePlan,
                 mergePlan.UpdateByStableRowIdentitySql,
                 rowsToUpdate,
@@ -970,9 +980,9 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         await dbCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task ExecuteCollectionUpdateBatchAsync(
+    private static async Task ExecuteParameterizedBatchAsync(
         TableWritePlan tableWritePlan,
-        string updateSql,
+        string sql,
         IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -989,13 +999,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         {
             await ExecuteNonQueryAsync(
                     writeSession,
-                    BuildRowCommand(
-                        tableWritePlan,
-                        updateSql,
-                        rows[0],
-                        rootDocumentId,
-                        reservedCollectionItemIds
-                    ),
+                    BuildRowCommand(tableWritePlan, sql, rows[0], rootDocumentId, reservedCollectionItemIds),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1006,7 +1010,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 writeSession,
                 BuildParameterizedBatchCommand(
                     tableWritePlan,
-                    updateSql,
+                    sql,
                     rows,
                     rootDocumentId,
                     reservedCollectionItemIds
@@ -1016,9 +1020,9 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             .ConfigureAwait(false);
     }
 
-    private static async Task ExecuteCollectionUpdateBatchesAsync(
+    private static async Task ExecuteParameterizedBatchesAsync(
         TableWritePlan tableWritePlan,
-        string updateSql,
+        string sql,
         IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -1028,9 +1032,9 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     {
         foreach (var updateBatch in rows.Chunk(tableWritePlan.BulkInsertBatching.MaxRowsPerBatch))
         {
-            await ExecuteCollectionUpdateBatchAsync(
+            await ExecuteParameterizedBatchAsync(
                     tableWritePlan,
-                    updateSql,
+                    sql,
                     updateBatch,
                     rootDocumentId,
                     reservedCollectionItemIds,
@@ -1398,6 +1402,20 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             {
                 unresolvedCollectionItemIds.Add(unresolvedCollectionItemId);
             }
+        }
+
+        return unresolvedCollectionItemIds;
+    }
+
+    private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
+        IReadOnlyList<RelationalWriteNoProfileTableRow> rows
+    )
+    {
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];
+
+        foreach (var row in rows)
+        {
+            unresolvedCollectionItemIds.AddRange(GetUnresolvedCollectionItemIds(row.Values));
         }
 
         return unresolvedCollectionItemIds;

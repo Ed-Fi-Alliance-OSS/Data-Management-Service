@@ -93,6 +93,12 @@ internal sealed record MultiBatchCollectionPersistedSchoolAddressRow(
     string City
 );
 
+internal sealed record MultiBatchCollectionPersistedSchoolExtensionAddressRow(
+    long BaseCollectionItemId,
+    long SchoolDocumentId,
+    string Zone
+);
+
 internal sealed record MultiBatchCollectionPersistedState(
     MultiBatchCollectionPersistedDocumentRow Document,
     MultiBatchCollectionPersistedSchoolRow School,
@@ -246,6 +252,34 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         };
     }
 
+    public static JsonNode CreateCreateRequestBodyWithCollectionAlignedExtensions(int addressCount)
+    {
+        JsonArray addresses = [];
+        JsonArray extensionAddresses = [];
+
+        for (var index = 0; index < addressCount; index++)
+        {
+            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
+            extensionAddresses.Add(
+                new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject { ["zone"] = CreateZone(index) },
+                    },
+                }
+            );
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH-EXT",
+            ["addresses"] = addresses,
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["addresses"] = extensionAddresses } },
+        };
+    }
+
     public static UpsertRequest CreateCreateRequest(
         MappingSet mappingSet,
         JsonNode edfiDoc,
@@ -288,6 +322,16 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         );
     }
 
+    public static TableWritePlan GetSchoolExtensionAddressTablePlan(MappingSet mappingSet)
+    {
+        var resourceWritePlan = mappingSet.GetWritePlanOrThrow(SchoolResource);
+
+        return resourceWritePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            tablePlan.TableModel.Table
+            == new DbTableName(new DbSchemaName("sample"), "SchoolExtensionAddress")
+        );
+    }
+
     public static async Task<MultiBatchCollectionPersistedState> ReadPersistedStateAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid
@@ -302,6 +346,9 @@ file static class MultiBatchCollectionsIntegrationTestSupport
 
     public static string CreateCity(int index) =>
         $"City-{index.ToString("D5", CultureInfo.InvariantCulture)}";
+
+    public static string CreateZone(int index) =>
+        $"Zone-{index.ToString("D5", CultureInfo.InvariantCulture)}";
 
     private static async Task<MultiBatchCollectionPersistedDocumentRow> ReadDocumentAsync(
         PostgresqlGeneratedDdlTestDatabase database,
@@ -373,6 +420,31 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 GetInt64(row, "School_DocumentId"),
                 GetInt32(row, "Ordinal"),
                 GetString(row, "City")
+            ))
+            .ToArray();
+    }
+
+    public static async Task<
+        IReadOnlyList<MultiBatchCollectionPersistedSchoolExtensionAddressRow>
+    > ReadSchoolExtensionAddressesAsync(PostgresqlGeneratedDdlTestDatabase database, long documentId)
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT extension."BaseCollectionItemId", extension."School_DocumentId", extension."Zone"
+            FROM "sample"."SchoolExtensionAddress" AS extension
+            INNER JOIN "edfi"."SchoolAddress" AS address
+                ON address."CollectionItemId" = extension."BaseCollectionItemId"
+                AND address."School_DocumentId" = extension."School_DocumentId"
+            WHERE extension."School_DocumentId" = @documentId
+            ORDER BY address."Ordinal", extension."BaseCollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new MultiBatchCollectionPersistedSchoolExtensionAddressRow(
+                GetInt64(row, "BaseCollectionItemId"),
+                GetInt64(row, "School_DocumentId"),
+                GetString(row, "Zone")
             ))
             .ToArray();
     }
@@ -590,6 +662,148 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
                 MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequestBody(_requestedAddressCount),
                 SchoolDocumentUuid,
                 "pg-multi-batch-collections"
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_Extension_Create_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("0f0f0f0f-0000-0000-0000-000000000002")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private MultiBatchCommandRecorder _commandRecorder = null!;
+    private UpsertResult _result = null!;
+    private MultiBatchCollectionPersistedState _persistedState = null!;
+    private IReadOnlyList<MultiBatchCollectionPersistedSchoolExtensionAddressRow> _persistedExtensionAddresses =
+        null!;
+    private int _maxRowsPerBatch;
+    private int _parametersPerRow;
+    private int _requestedAddressCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+
+        var schoolExtensionAddressTablePlan =
+            MultiBatchCollectionsIntegrationTestSupport.GetSchoolExtensionAddressTablePlan(_mappingSet);
+
+        _maxRowsPerBatch = schoolExtensionAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
+        _parametersPerRow = schoolExtensionAddressTablePlan.BulkInsertBatching.ParametersPerRow;
+        _requestedAddressCount = _maxRowsPerBatch + 2;
+
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MultiBatchCollectionsIntegrationTestSupport.CreateServiceProvider();
+        _commandRecorder = _serviceProvider.GetRequiredService<MultiBatchCommandRecorder>();
+
+        _result = await ExecuteCreateAsync();
+        _persistedState = await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+        _persistedExtensionAddresses =
+            await MultiBatchCollectionsIntegrationTestSupport.ReadSchoolExtensionAddressesAsync(
+                _database,
+                _persistedState.Document.DocumentId
+            );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_insert_success_and_persists_the_full_large_collection_aligned_extension_scope()
+    {
+        _requestedAddressCount.Should().BeGreaterThan(_maxRowsPerBatch);
+        _result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _result.As<UpsertResult.InsertSuccess>().NewDocumentUuid.Should().Be(SchoolDocumentUuid);
+
+        _persistedState.Addresses.Should().HaveCount(_requestedAddressCount);
+        _persistedExtensionAddresses.Should().HaveCount(_requestedAddressCount);
+
+        _persistedExtensionAddresses
+            .Should()
+            .Equal(
+                _persistedState.Addresses.Select(
+                    (address, index) =>
+                        new MultiBatchCollectionPersistedSchoolExtensionAddressRow(
+                            address.CollectionItemId,
+                            _persistedState.Document.DocumentId,
+                            MultiBatchCollectionsIntegrationTestSupport.CreateZone(index)
+                        )
+                )
+            );
+    }
+
+    [Test]
+    public void It_partitions_collection_aligned_extension_insert_commands_using_the_compiled_batch_limit()
+    {
+        var extensionInsertCommands = _commandRecorder
+            .Commands.Where(command =>
+                command.CommandText.Contains(
+                    "INSERT INTO \"sample\".\"SchoolExtensionAddress\"",
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        extensionInsertCommands.Should().HaveCount(2);
+        extensionInsertCommands
+            .Select(command => command.ParametersByName.Count)
+            .Should()
+            .Equal(_maxRowsPerBatch * _parametersPerRow, 2 * _parametersPerRow);
+    }
+
+    private async Task<UpsertResult> ExecuteCreateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteMultiBatchCollectionAlignedExtensions",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequestBodyWithCollectionAlignedExtensions(
+                    _requestedAddressCount
+                ),
+                SchoolDocumentUuid,
+                "pg-multi-batch-collection-aligned-extensions"
             )
         );
     }
