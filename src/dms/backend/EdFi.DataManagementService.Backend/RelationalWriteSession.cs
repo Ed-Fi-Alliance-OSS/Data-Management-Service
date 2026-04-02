@@ -40,15 +40,7 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
     public DbCommand CreateCommand(RelationalCommand command)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentNullException.ThrowIfNull(command);
-
-        var dbCommand = Connection.CreateCommand();
-        dbCommand.Transaction = Transaction;
-        dbCommand.CommandText = command.CommandText;
-
-        AddParameters(dbCommand, command.Parameters);
-
-        return dbCommand;
+        return SessionRelationalCommandFactory.CreateCommand(Connection, Transaction, command);
     }
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
@@ -102,18 +94,6 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
 
         await Transaction.DisposeAsync().ConfigureAwait(false);
         await Connection.DisposeAsync().ConfigureAwait(false);
-    }
-
-    private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
-    {
-        foreach (var parameter in parameters)
-        {
-            var dbParameter = dbCommand.CreateParameter();
-            dbParameter.ParameterName = parameter.Name;
-            dbParameter.Value = parameter.Value ?? DBNull.Value;
-            parameter.ConfigureParameter?.Invoke(dbParameter);
-            dbCommand.Parameters.Add(dbParameter);
-        }
     }
 
     private enum RelationalWriteSessionState

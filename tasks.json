@@ -360,6 +360,6 @@
       "Add or update backend unit tests that cover command text, transaction assignment, parameter naming, null handling, and parameter configurator behavior through both call sites.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

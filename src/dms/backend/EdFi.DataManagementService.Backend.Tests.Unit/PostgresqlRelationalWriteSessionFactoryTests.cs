@@ -72,4 +72,44 @@ public class Given_PostgresqlRelationalWriteSessionFactory
         connection.LastTransaction!.CommitCallCount.Should().Be(1);
         connection.LastTransaction.RollbackCallCount.Should().Be(0);
     }
+
+    [Test]
+    public async Task It_creates_session_commands_with_configured_parameters()
+    {
+        var connection = new RecordingDbConnection(
+            new RecordingDbCommand(new DataTable().CreateDataReader())
+        );
+        var sut = new PostgresqlRelationalWriteSessionFactory(
+            _ => Task.FromResult<DbConnection>(connection),
+            IsolationLevel.RepeatableRead
+        );
+
+        await using var session = await sut.CreateAsync();
+        await using var command = session.CreateCommand(
+            new RelationalCommand(
+                "select 1 where @nullable is null",
+                [
+                    new RelationalParameter(
+                        "@nullable",
+                        null,
+                        parameter =>
+                        {
+                            parameter.DbType = DbType.String;
+                            parameter.Direction = ParameterDirection.InputOutput;
+                        }
+                    ),
+                ]
+            )
+        );
+        var rowsAffected = await command.ExecuteNonQueryAsync();
+
+        rowsAffected.Should().Be(1);
+        connection.Command.Transaction.Should().BeSameAs(connection.LastTransaction);
+        connection.Command.CommandText.Should().Be("select 1 where @nullable is null");
+        connection.Command.Parameters.Should().ContainSingle();
+        connection.Command.Parameters[0].ParameterName.Should().Be("@nullable");
+        connection.Command.Parameters[0].Value.Should().Be(DBNull.Value);
+        connection.Command.Parameters[0].DbType.Should().Be(DbType.String);
+        connection.Command.Parameters[0].Direction.Should().Be(ParameterDirection.InputOutput);
+    }
 }

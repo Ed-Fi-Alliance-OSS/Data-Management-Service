@@ -25,28 +25,16 @@ internal sealed class SessionRelationalCommandExecutor(DbConnection connection, 
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(readAsync);
 
-        await using var dbCommand = _connection.CreateCommand();
-        dbCommand.Transaction = _transaction;
-        dbCommand.CommandText = command.CommandText;
-
-        AddParameters(dbCommand, command.Parameters);
+        await using var dbCommand = SessionRelationalCommandFactory.CreateCommand(
+            _connection,
+            _transaction,
+            command
+        );
 
         await using var reader = new DbRelationalCommandReader(
             await dbCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)
         );
 
         return await readAsync(reader, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
-    {
-        foreach (var parameter in parameters)
-        {
-            var dbParameter = dbCommand.CreateParameter();
-            dbParameter.ParameterName = parameter.Name;
-            dbParameter.Value = parameter.Value ?? DBNull.Value;
-            parameter.ConfigureParameter?.Invoke(dbParameter);
-            dbCommand.Parameters.Add(dbParameter);
-        }
     }
 }
