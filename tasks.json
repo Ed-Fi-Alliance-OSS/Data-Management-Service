@@ -191,7 +191,7 @@
       "Add PostgreSQL integration tests that execute stale-compare scenarios through the repository and executor and assert directly against final database state and public result mapping.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Integration - Multi-Batch Collections",
