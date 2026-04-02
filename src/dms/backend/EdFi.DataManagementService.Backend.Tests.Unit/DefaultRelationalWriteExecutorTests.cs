@@ -24,6 +24,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
+    private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -33,11 +34,13 @@ public class Given_Default_Relational_Write_Executor
         _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
+        _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
             _writeFlattener,
-            _currentStateLoader
+            _currentStateLoader,
+            _noProfileMergeSynthesizer
         );
     }
 
@@ -121,6 +124,10 @@ public class Given_Default_Relational_Write_Executor
             .CapturedInput.ResolvedReferences.SuccessfulDescriptorReferencesByPath.Keys.Should()
             .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
         _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
+        _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -157,6 +164,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -195,6 +203,11 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.CapturedRequest!.ReadPlan.Should().BeSameAs(request.ReadPlan);
         _currentStateLoader.CapturedRequest!.TargetContext.DocumentId.Should().Be(345L);
         _currentStateLoader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _noProfileMergeSynthesizer
+            .CapturedRequest!.CurrentState.Should()
+            .BeSameAs(_currentStateLoader.ResultToReturn);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -221,6 +234,7 @@ public class Given_Default_Relational_Write_Executor
         _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
@@ -554,6 +568,33 @@ public class Given_Default_Relational_Write_Executor
                         [new HydratedTableRows(request.ReadPlan.Model.Root, [])]
                     )
             );
+        }
+    }
+
+    private sealed class RecordingRelationalWriteNoProfileMergeSynthesizer
+        : IRelationalWriteNoProfileMergeSynthesizer
+    {
+        public int SynthesizeCallCount { get; private set; }
+
+        public RelationalWriteNoProfileMergeRequest? CapturedRequest { get; private set; }
+
+        public RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
+        {
+            SynthesizeCallCount++;
+            CapturedRequest = request;
+
+            return new RelationalWriteNoProfileMergeResult([
+                new RelationalWriteNoProfileTableState(
+                    request.WritePlan.TablePlansInDependencyOrder[0],
+                    [],
+                    [
+                        new RelationalWriteNoProfileTableRow(
+                            request.FlattenedWriteSet.RootRow.Values,
+                            request.FlattenedWriteSet.RootRow.Values
+                        ),
+                    ]
+                ),
+            ]);
         }
     }
 

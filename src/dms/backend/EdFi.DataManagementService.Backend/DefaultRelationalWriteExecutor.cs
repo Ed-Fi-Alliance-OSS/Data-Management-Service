@@ -11,7 +11,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
-    IRelationalWriteCurrentStateLoader currentStateLoader
+    IRelationalWriteCurrentStateLoader currentStateLoader,
+    IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -26,6 +27,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
+
+    private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
+        noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -62,7 +66,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return BuildReferenceFailureResult(request.OperationKind, resolvedReferences);
             }
 
-            _ = _writeFlattener.Flatten(
+            var flattenedWriteSet = _writeFlattener.Flatten(
                 new FlatteningInput(
                     request.OperationKind,
                     request.TargetContext,
@@ -93,6 +97,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                     )
                     .ConfigureAwait(false);
             }
+
+            _ = _noProfileMergeSynthesizer.Synthesize(
+                new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
+            );
 
             var failureMessage = RelationalWriteSupport.BuildWriteExecutionNotImplementedMessage(
                 request.OperationKind,

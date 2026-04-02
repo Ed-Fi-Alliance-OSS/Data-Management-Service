@@ -57,6 +57,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
+        var noProfileMergeSynthesizer =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
         var targetLookupResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
@@ -76,6 +78,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
+        noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
