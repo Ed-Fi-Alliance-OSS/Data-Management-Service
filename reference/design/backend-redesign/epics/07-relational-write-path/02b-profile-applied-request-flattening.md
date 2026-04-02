@@ -27,7 +27,7 @@ This story owns the request-body source selection that was removed from the re-s
 - backend does not re-evaluate profile member filters, collection value predicates, visibility, or creatability while flattening, and
 - profile-specific branching stays at the orchestration boundary instead of inside the flattener hot loop.
 
-`DMS-984` should consume this integration rather than reopening request-body selection inside the persist/no-op executor.
+`DMS-1124` / `03b-profile-aware-persist-executor.md` should consume this integration rather than reopening request-body selection inside the profile-aware persist/no-op executor.
 
 ## Acceptance Criteria
 

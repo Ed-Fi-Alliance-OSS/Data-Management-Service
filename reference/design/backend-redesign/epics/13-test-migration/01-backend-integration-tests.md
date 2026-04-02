@@ -14,13 +14,14 @@ Add runtime integration tests that exercise the relational backend end-to-end:
 - PUT by id
 - DELETE by id
 - GET by query paging
-- profile-constrained write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`, including root creatability, hidden-data preservation, deterministic hidden-gap collection ordering, visible-vs-hidden non-collection behavior, `_ext` preservation, and collection/non-collection merge behavior keyed by compiled semantic identity rather than request ordinal
+- no-profile write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`, and
+- profile-constrained write scenarios from the shared baseline in `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`, including root creatability, hidden-data preservation, deterministic hidden-gap collection ordering, visible-vs-hidden non-collection behavior, `_ext` preservation, and collection/non-collection merge behavior keyed by compiled semantic identity rather than request ordinal
 - profile-constrained hidden-member coverage includes key-unified canonical storage, synthetic presence flags, and hidden reference/descriptor bindings on matched profiled rows/scopes
 - profile-constrained creatability coverage includes the three-level parent-create-denied/child-denied chain from the profile design doc
 
 Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Testcontainers).
 
-This story runs the shared profile scenario matrix defined in `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and reuses the scenario definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
+This story runs the shared profile scenario matrix defined in `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and reuses the scenario definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and `reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor.md`.
 
 Fixture names and helper APIs in this story should use the shared scenario names from the matrix verbatim.
 
