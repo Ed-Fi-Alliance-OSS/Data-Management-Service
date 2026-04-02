@@ -209,6 +209,6 @@
       "Add PostgreSQL integration tests that execute injected-failure scenarios through the repository and executor and assert directly against final database state after rollback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
