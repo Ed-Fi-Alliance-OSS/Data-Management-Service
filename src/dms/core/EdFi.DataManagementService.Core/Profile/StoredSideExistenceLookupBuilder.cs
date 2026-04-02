@@ -55,9 +55,6 @@ public static class StoredSideExistenceLookupBuilder
         List<StoredScopeState> classifiedScopes = [];
         List<VisibleStoredCollectionRow> classifiedRows = [];
         HashSet<ScopeInstanceAddress> visibleScopeAddresses = new(ScopeInstanceAddressComparer.Instance);
-        // NOTE: Tracks walked scopes by JsonScope string, not by addressed instance.
-        // Sufficient for C4 existence lookup, but C6 (DMS-1118) will need per-instance
-        // tracking to emit complete per-item scope classifications.
         HashSet<string> walkedScopes = [];
         HashSet<CollectionRowAddress> visibleRowAddresses = new(CollectionRowAddressComparer.Instance);
 
@@ -110,6 +107,7 @@ public static class StoredSideExistenceLookupBuilder
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -251,6 +249,7 @@ public static class StoredSideExistenceLookupBuilder
         ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, ancestorItems);
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -274,6 +273,20 @@ public static class StoredSideExistenceLookupBuilder
                 visibleScopeAddresses,
                 walkedScopes,
                 visibleRowAddresses
+            );
+        }
+        else
+        {
+            // Scope is hidden or absent — recursively emit states for descendant
+            // non-collection scopes that cannot be encountered during the walk.
+            EmitAbsentChildScopeStates(
+                jsonScope,
+                ancestorItems,
+                classifier,
+                addressEngine,
+                scopesByJsonScope,
+                classifiedScopes,
+                []
             );
         }
     }
@@ -305,6 +318,7 @@ public static class StoredSideExistenceLookupBuilder
 
         ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
             jsonScope,
+            visibility,
             classifier,
             scopesByJsonScope
         );
@@ -331,6 +345,7 @@ public static class StoredSideExistenceLookupBuilder
 
             // Walk child non-collection scopes inside this collection item
             var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
+            HashSet<string> itemHandledChildScopes = [];
 
             foreach (var kvp in item.AsObject())
             {
@@ -351,7 +366,8 @@ public static class StoredSideExistenceLookupBuilder
                         classifiedRows,
                         visibleScopeAddresses,
                         walkedScopes,
-                        visibleRowAddresses
+                        visibleRowAddresses,
+                        itemHandledChildScopes
                     );
                     continue;
                 }
@@ -363,6 +379,7 @@ public static class StoredSideExistenceLookupBuilder
                     && nestedDesc.ScopeKind == ScopeKind.NonCollection
                 )
                 {
+                    itemHandledChildScopes.Add(nestedNonCollScope);
                     WalkNonCollectionChild(
                         nestedNonCollScope,
                         itemMemberValue,
@@ -401,11 +418,24 @@ public static class StoredSideExistenceLookupBuilder
                     );
                 }
             }
+
+            // Emit states for child non-collection scopes absent from this item
+            EmitAbsentChildScopeStates(
+                jsonScope,
+                newAncestors,
+                classifier,
+                addressEngine,
+                scopesByJsonScope,
+                classifiedScopes,
+                itemHandledChildScopes
+            );
         }
     }
 
     /// <summary>
     /// Walks extension scopes under the _ext member of a parent scope.
+    /// When <paramref name="handledChildScopes"/> is provided (collection item context),
+    /// tracks which extension scopes were handled for absent-child emission.
     /// </summary>
     private static void WalkExtensions(
         string parentScope,
@@ -418,7 +448,8 @@ public static class StoredSideExistenceLookupBuilder
         List<VisibleStoredCollectionRow> classifiedRows,
         HashSet<ScopeInstanceAddress> visibleScopeAddresses,
         HashSet<string> walkedScopes,
-        HashSet<CollectionRowAddress> visibleRowAddresses
+        HashSet<CollectionRowAddress> visibleRowAddresses,
+        HashSet<string>? handledChildScopes = null
     )
     {
         if (extNode == null)
@@ -438,6 +469,8 @@ public static class StoredSideExistenceLookupBuilder
                 continue;
             }
 
+            handledChildScopes?.Add(extScope);
+
             WalkNonCollectionChild(
                 extScope,
                 extData,
@@ -455,23 +488,64 @@ public static class StoredSideExistenceLookupBuilder
     }
 
     // -----------------------------------------------------------------------
-    //  Missing scope state emission
+    //  Missing / absent scope state emission
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Emits StoredScopeState for child non-collection scopes of the given
+    /// parent scope that were not encountered during a collection item walk.
+    /// Recurses into each absent child to emit descendant states.
+    /// </summary>
+    private static void EmitAbsentChildScopeStates(
+        string parentScope,
+        IReadOnlyList<AncestorItemContext> ancestorItems,
+        ProfileVisibilityClassifier classifier,
+        AddressDerivationEngine addressEngine,
+        IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope,
+        List<StoredScopeState> classifiedScopes,
+        HashSet<string> handledChildScopes
+    )
+    {
+        foreach (string childScope in classifier.GetChildNonCollectionScopes(parentScope))
+        {
+            if (handledChildScopes.Contains(childScope))
+            {
+                continue;
+            }
+
+            ProfileVisibilityKind visibility = classifier.ClassifyScope(childScope, null);
+            ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(
+                childScope,
+                ancestorItems
+            );
+            ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
+                childScope,
+                visibility,
+                classifier,
+                scopesByJsonScope
+            );
+
+            classifiedScopes.Add(new StoredScopeState(address, visibility, hiddenPaths));
+
+            // Recursively emit for this absent scope's own children
+            EmitAbsentChildScopeStates(
+                childScope,
+                ancestorItems,
+                classifier,
+                addressEngine,
+                scopesByJsonScope,
+                classifiedScopes,
+                []
+            );
+        }
+    }
 
     /// <summary>
     /// Emits StoredScopeState for non-collection scopes not encountered during the
     /// stored document walk. These represent scopes that are absent from the stored
-    /// document. Skips scopes nested inside collections (they require ancestor context).
+    /// document. Skips scopes nested inside collections — those are handled per-item
+    /// by <see cref="EmitAbsentChildScopeStates"/> during the collection walk.
     /// </summary>
-    /// <remarks>
-    /// C6 gap (DMS-1118): This method skips scopes nested inside collections
-    /// because they require per-item ancestor context that is not available during
-    /// the missing-scope pass. Additionally, "walked" tracking uses JsonScope strings
-    /// rather than addressed instances, so per-item absent/hidden descendants under
-    /// collection ancestry are not represented in ClassifiedStoredScopes. When
-    /// DMS-1118 implements C6 stored-state projection, this builder must be enhanced
-    /// to emit per-item scope classifications so C6 can extend rather than reclassify.
-    /// </remarks>
     private static void EmitMissingScopeStates(
         ProfileVisibilityClassifier classifier,
         AddressDerivationEngine addressEngine,
@@ -503,6 +577,7 @@ public static class StoredSideExistenceLookupBuilder
             ScopeInstanceAddress address = addressEngine.DeriveScopeInstanceAddress(jsonScope, []);
             ImmutableArray<string> hiddenPaths = DeriveHiddenMemberPaths(
                 jsonScope,
+                visibility,
                 classifier,
                 scopesByJsonScope
             );
@@ -518,9 +593,12 @@ public static class StoredSideExistenceLookupBuilder
     /// <summary>
     /// Derives the hidden member paths for a scope by checking each canonical
     /// scope-relative member path against the profile's member filter.
+    /// Hidden scopes emit ALL canonical member paths as hidden — the entire
+    /// scope is preserved by backend.
     /// </summary>
     private static ImmutableArray<string> DeriveHiddenMemberPaths(
         string jsonScope,
+        ProfileVisibilityKind visibility,
         ProfileVisibilityClassifier classifier,
         IReadOnlyDictionary<string, CompiledScopeDescriptor> scopesByJsonScope
     )
@@ -530,13 +608,15 @@ public static class StoredSideExistenceLookupBuilder
             return [];
         }
 
+        // Hidden scopes have ALL members hidden — backend preserves the entire scope.
+        if (visibility == ProfileVisibilityKind.Hidden)
+        {
+            return [.. descriptor.CanonicalScopeRelativeMemberPaths];
+        }
+
         ScopeMemberFilter filter = classifier.GetMemberFilter(jsonScope);
 
-        // C6 note (DMS-1118): This returns [] for hidden scopes because
-        // GetMemberFilter normalizes them to IncludeAll. C6 must check the scope's
-        // visibility classification to distinguish "hidden scope" from "visible scope
-        // with all members exposed." See ProfileVisibilityClassifier.GetMemberFilter.
-        // If IncludeAll, nothing is hidden
+        // If IncludeAll and scope is visible, nothing is hidden
         if (filter.Mode == MemberSelection.IncludeAll)
         {
             return [];

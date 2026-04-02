@@ -40,11 +40,22 @@ public sealed record VisibleStoredCollectionRow(
 
 /// <summary>
 /// The full context for a profile-constrained write, combining request-side
-/// and stored-side state. Produced by C5 for update/upsert flows.
+/// and stored-side state. Produced by C6 for update/upsert flows.
 /// </summary>
 public sealed record ProfileAppliedWriteContext(
     ProfileAppliedWriteRequest Request,
     JsonNode VisibleStoredBody,
     ImmutableArray<StoredScopeState> StoredScopeStates,
     ImmutableArray<VisibleStoredCollectionRow> VisibleStoredCollectionRows
+);
+
+/// <summary>
+/// Intermediate result from the stored-side existence lookup step that C6
+/// extends rather than reclassifying from scratch. Contains the classified
+/// scope/item visibility results from walking the stored document.
+/// </summary>
+public sealed record StoredSideExistenceLookupResult(
+    IStoredSideExistenceLookup Lookup,
+    ImmutableArray<StoredScopeState> ClassifiedStoredScopes,
+    ImmutableArray<VisibleStoredCollectionRow> ClassifiedStoredCollectionRows
 );

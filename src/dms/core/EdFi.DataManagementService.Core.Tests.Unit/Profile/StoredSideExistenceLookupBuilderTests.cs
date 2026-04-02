@@ -517,18 +517,6 @@ public abstract class StoredSideExistenceLookupBuilderTests
             );
             calRef.HiddenMemberPaths.Should().BeEmpty();
         }
-
-        [Test]
-        public void It_should_have_hidden_officialAttendancePeriod_for_classPeriods()
-        {
-            // classPeriods IncludeOnly includes classPeriodName but not officialAttendancePeriod.
-            // classPeriods is a collection — check the scope entry emitted by missing scope states.
-            // Actually, classPeriods[*] is Collection kind, not a non-collection scope.
-            // HiddenMemberPaths for collection items are on VisibleStoredCollectionRow.
-            // Since no classPeriods data was in the stored doc, there are no rows.
-            // Let's verify the root scope instead — this test is covered above.
-            _result.ClassifiedStoredScopes.Should().HaveCountGreaterThanOrEqualTo(1);
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -652,6 +640,432 @@ public abstract class StoredSideExistenceLookupBuilderTests
             var row = _result.ClassifiedStoredCollectionRows[0];
             row.HiddenMemberPaths.Should().NotContain("addressTypeDescriptor");
             row.HiddenMemberPaths.Should().NotContain("city");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  8. HiddenMemberPaths for hidden scopes — all members are hidden
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_Scope_Reports_All_Members_As_Hidden : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Use a profile that hides calendarReference entirely
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarTypeDescriptor": "uri://ed-fi.org/CalendarType#IEP"
+                    }
+                }
+                """
+            )!;
+
+            _result = BuildLookup(storedDoc, SharedFixtureScopes, BuildIncludeOnlyWithoutCalendarReference());
+        }
+
+        [Test]
+        public void It_should_classify_calendarReference_as_hidden()
+        {
+            var calRef = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.calendarReference"
+            );
+            calRef.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
+        }
+
+        [Test]
+        public void It_should_include_all_canonical_members_in_hidden_paths()
+        {
+            var calRef = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.calendarReference"
+            );
+            calRef.HiddenMemberPaths.Should().Contain("calendarCode");
+            calRef.HiddenMemberPaths.Should().Contain("calendarTypeDescriptor");
+        }
+
+        [Test]
+        public void It_should_have_exactly_all_canonical_members_as_hidden()
+        {
+            var calRef = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.calendarReference"
+            );
+            calRef.HiddenMemberPaths.Should().HaveCount(2);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  9. HiddenMemberPaths for extension scope under collection item
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Collection_Item_With_Hidden_Extension_Reports_Hidden_Member_Paths
+        : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        /// <summary>
+        /// IncludeOnly profile that includes root extension (sampleField) and
+        /// classPeriods (classPeriodName), but does NOT include the collection-item
+        /// extension — making $.classPeriods[*]._ext.sample hidden.
+        /// </summary>
+        private static ContentTypeDefinition BuildExtensionProfileWithHiddenItemExtension() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("entryDate")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions:
+                [
+                    new ExtensionRule(
+                        Name: "sample",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("sampleField")],
+                        Objects: null,
+                        Collections: null
+                    ),
+                ]
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            // Stored document has a collection item with extension data
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "entryDate": "2024-08-01",
+                    "_ext": {
+                        "sample": {
+                            "sampleField": "rootExtValue"
+                        }
+                    },
+                    "classPeriods": [
+                        {
+                            "classPeriodName": "Period1",
+                            "_ext": {
+                                "sample": {
+                                    "extraField": "itemExtValue"
+                                }
+                            }
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = BuildLookup(
+                storedDoc,
+                ProfileTestFixtures.ExtensionFixtureScopes,
+                BuildExtensionProfileWithHiddenItemExtension()
+            );
+        }
+
+        [Test]
+        public void It_should_classify_collection_item_extension_scope()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.classPeriods[*]._ext.sample")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_collection_item_extension_as_hidden()
+        {
+            var extScope = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+            );
+            extScope.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
+        }
+
+        [Test]
+        public void It_should_include_extension_member_in_hidden_member_paths()
+        {
+            var extScope = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.classPeriods[*]._ext.sample"
+            );
+            extScope.HiddenMemberPaths.Should().Contain("extraField");
+        }
+
+        [Test]
+        public void It_should_classify_root_extension_as_visible()
+        {
+            var rootExt = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$._ext.sample");
+            rootExt.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+        }
+
+        [Test]
+        public void It_should_have_empty_hidden_paths_for_visible_root_extension()
+        {
+            var rootExt = _result.ClassifiedStoredScopes.First(s => s.Address.JsonScope == "$._ext.sample");
+            rootExt.HiddenMemberPaths.Should().BeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  10. Hidden parent emits descendant scope states
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Hidden_NonCollection_Parent_Under_Collection_Emits_Descendant_States
+        : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // DeepNestedNonCollectionInsideCollectionScopes has:
+            //   $                              (Root)
+            //   $.addresses[*]                 (Collection, identity: addressTypeDescriptor)
+            //   $.addresses[*].period          (NonCollection, members: beginDate, endDate)
+            //   $.addresses[*].period.detail   (NonCollection, members: description, category)
+            //
+            // The profile hides "period" entirely — profile does not list it in NestedObjects.
+            // The stored document has period present with data.
+            // Both period AND period.detail should be emitted as stored scope states.
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "addresses": [
+                        {
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                            "city": "Austin",
+                            "period": {
+                                "beginDate": "2024-01-01",
+                                "endDate": "2024-12-31",
+                                "detail": {
+                                    "description": "Primary",
+                                    "category": "A"
+                                }
+                            }
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = BuildLookup(
+                storedDoc,
+                ProfileTestFixtures.DeepNestedNonCollectionInsideCollectionScopes,
+                ProfileTestFixtures.BuildDeepNestedAddressesHiddenPeriodProfile()
+            );
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_hidden_period()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.addresses[*].period")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_period_as_hidden()
+        {
+            var period = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period"
+            );
+            period.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_descendant_detail()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.addresses[*].period.detail")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_derive_correct_ancestor_address_for_detail()
+        {
+            var detail = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period.detail"
+            );
+            detail.Address.AncestorCollectionInstances.Should().HaveCount(1);
+            detail.Address.AncestorCollectionInstances[0].JsonScope.Should().Be("$.addresses[*]");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  11. Absent parent emits descendant scope states
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Absent_NonCollection_Parent_Under_Collection_Emits_Descendant_States
+        : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Same deep-nested scope catalog. The profile includes period (with beginDate),
+            // but the stored document does NOT have period — making it VisibleAbsent.
+            // Both period AND period.detail should be emitted as stored scope states.
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "addresses": [
+                        {
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                            "city": "Austin"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = BuildLookup(
+                storedDoc,
+                ProfileTestFixtures.DeepNestedNonCollectionInsideCollectionScopes,
+                ProfileTestFixtures.BuildDeepNestedAddressesIncludeOnlyProfile()
+            );
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_absent_period()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.addresses[*].period")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_period_as_visible_absent()
+        {
+            var period = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period"
+            );
+            period.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
+        }
+
+        [Test]
+        public void It_should_emit_scope_state_for_descendant_detail()
+        {
+            _result
+                .ClassifiedStoredScopes.Where(s => s.Address.JsonScope == "$.addresses[*].period.detail")
+                .Should()
+                .HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_descendant_detail_as_hidden()
+        {
+            // The profile includes period but does not include detail,
+            // so detail is Hidden (not VisibleAbsent).
+            var detail = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period.detail"
+            );
+            detail.Visibility.Should().Be(ProfileVisibilityKind.Hidden);
+        }
+
+        [Test]
+        public void It_should_derive_correct_ancestor_address_for_detail()
+        {
+            var detail = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period.detail"
+            );
+            detail.Address.AncestorCollectionInstances.Should().HaveCount(1);
+            detail.Address.AncestorCollectionInstances[0].JsonScope.Should().Be("$.addresses[*]");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  12. Per-item absent child scope states under collection ancestry
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Absent_Child_Scope_Under_Collection_Item : StoredSideExistenceLookupBuilderTests
+    {
+        private StoredSideExistenceLookupResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // NestedNonCollectionInsideCollectionScopes has:
+            //   $                      (Root)
+            //   $.addresses[*]         (Collection, identity: addressTypeDescriptor)
+            //   $.addresses[*].period  (NonCollection, members: beginDate, endDate)
+            //
+            // The stored document has an address item WITHOUT the nested "period" scope.
+            JsonNode storedDoc = JsonNode.Parse(
+                """
+                {
+                    "field1": "value1",
+                    "addresses": [
+                        {
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                            "city": "Austin"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = BuildLookup(
+                storedDoc,
+                ProfileTestFixtures.NestedNonCollectionInsideCollectionScopes,
+                ProfileTestFixtures.BuildIncludeAllProfile()
+            );
+        }
+
+        [Test]
+        public void It_should_emit_absent_scope_state_for_missing_period()
+        {
+            var periodScopes = _result.ClassifiedStoredScopes.Where(s =>
+                s.Address.JsonScope == "$.addresses[*].period"
+            );
+            periodScopes.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_classify_absent_period_as_visible_absent()
+        {
+            var period = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period"
+            );
+            period.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
+        }
+
+        [Test]
+        public void It_should_derive_correct_ancestor_address_for_absent_period()
+        {
+            var period = _result.ClassifiedStoredScopes.First(s =>
+                s.Address.JsonScope == "$.addresses[*].period"
+            );
+            // Should have one ancestor collection instance for $.addresses[*]
+            period.Address.AncestorCollectionInstances.Should().HaveCount(1);
+            period.Address.AncestorCollectionInstances[0].JsonScope.Should().Be("$.addresses[*]");
         }
     }
 }

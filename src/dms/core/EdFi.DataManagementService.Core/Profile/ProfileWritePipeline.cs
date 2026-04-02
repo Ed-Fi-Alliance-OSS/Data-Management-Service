@@ -27,7 +27,7 @@ public sealed record ProfileWritePipelineResult
 
     /// <summary>
     /// The full stored-side context for update/upsert flows.
-    /// Null for create flows or when a stored-state projector is not provided.
+    /// Null for create flows or when no stored document is present.
     /// </summary>
     public ProfileAppliedWriteContext? Context { get; init; }
 
@@ -84,8 +84,8 @@ public sealed record ProfileWritePipelineResult
 /// <para>
 /// Pipeline sequence:
 /// <list type="number">
-///   <item>No-profile short-circuit when WriteContentType is null</item>
 ///   <item>Profile-mode validation (must be Write)</item>
+///   <item>No-profile short-circuit when WriteContentType is null</item>
 ///   <item>C2: Semantic identity compatibility validation</item>
 ///   <item>C3: Request-side visibility and writable request shaping</item>
 ///   <item>Build stored-side existence lookup</item>
@@ -96,11 +96,10 @@ public sealed record ProfileWritePipelineResult
 /// </para>
 /// <para>
 /// Integration status: This pipeline is staged infrastructure being built and
-/// proven with unit tests (DMS-1116/DMS-1117). It is not yet wired into the
-/// runtime write path — POST/PUT still flow through the existing
+/// proven with unit tests (DMS-1116/DMS-1117/DMS-1118). It is not yet wired
+/// into the runtime write path — POST/PUT still flow through the existing
 /// ProfileWriteValidationMiddleware. Runtime integration will replace that
-/// middleware with this pipeline once all pipeline steps are complete and the
-/// C6 stored-state projector (DMS-1118) is implemented.
+/// middleware with this pipeline once all pipeline steps are complete.
 /// </para>
 /// </remarks>
 internal static class ProfileWritePipeline
@@ -134,9 +133,6 @@ internal static class ProfileWritePipeline
     /// <param name="effectiveSchemaRequiredMembersByScope">
     /// Schema-required members by scope for creatability analysis.
     /// </param>
-    /// <param name="storedStateProjector">
-    /// Optional C6 stored-state projector for update/upsert flows.
-    /// </param>
     /// <returns>
     /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
     /// optional stored context, or typed failures.
@@ -152,8 +148,7 @@ internal static class ProfileWritePipeline
         string resourceName,
         string method,
         string operation,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
-        IStoredStateProjector? storedStateProjector = null
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
     )
     {
         // ------------------------------------------------------------------
@@ -285,15 +280,10 @@ internal static class ProfileWritePipeline
         // ------------------------------------------------------------------
         ProfileAppliedWriteContext? context = null;
 
-        if (!isCreate && storedDocument != null && storedStateProjector != null)
+        if (!isCreate && storedDocument != null)
         {
-            context = storedStateProjector.ProjectStoredState(
-                storedDocument,
-                scopeCatalog,
-                writeContentType!,
-                request,
-                existenceLookupResult
-            );
+            var projector = new StoredStateProjector(storedDocument, classifier);
+            context = projector.ProjectStoredState(request, existenceLookupResult);
         }
 
         return ProfileWritePipelineResult.Success(request, context);

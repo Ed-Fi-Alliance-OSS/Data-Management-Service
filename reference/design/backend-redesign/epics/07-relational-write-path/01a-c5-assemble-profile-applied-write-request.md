@@ -30,8 +30,8 @@ This story produces the `ProfileAppliedWriteRequest` that backend consumes in `E
 
 The individual C stories (C2, C3, C4, C6) are pure processing steps. C5 is the orchestrator that calls them in order and manages data flow:
 
-1. **No-profile short-circuit:** If no writable profile applies to the request, produce no `ProfileAppliedWriteRequest` and no `ProfileAppliedWriteContext`. Return immediately. Backend uses its non-profiled write path.
-2. **Profile-mode validation:** Validate that the resolved profile is appropriate for the current operation (e.g., a writable profile for POST/PUT, not a readable-only profile). If invalid, fail with a C8 category-2 typed error ("invalid profile usage"). This is the detection point for C8 category 2.
+1. **Profile-mode validation:** Validate that the resolved profile is appropriate for the current operation (e.g., a writable profile for POST/PUT, not a readable-only profile). If invalid, fail with a C8 category-2 typed error ("invalid profile usage"). This is the detection point for C8 category 2. This check runs first so that a readable-only profile with no write content type is rejected as a category-2 error rather than silently passing through as a no-profile short-circuit.
+2. **No-profile short-circuit:** If no writable profile applies to the request, produce no `ProfileAppliedWriteRequest` and no `ProfileAppliedWriteContext`. Return immediately. Backend uses its non-profiled write path.
 3. **C2 — Semantic identity compatibility validation:** Validate the writable profile + adapter. If the profile hides semantic-identity fields for a persisted multi-item collection, fail with a C8 typed error.
 4. **C3 — Request-side visibility + shaping:** Produce `WritableRequestBody`, `RequestScopeStates` (without `Creatable`), and `VisibleRequestCollectionItem` entries (without `Creatable`).
 5. **Build stored-side existence lookup:** For update/upsert-to-existing flows, run C1's address derivation engine against the full stored document and apply C3's shared visibility classification primitive at both levels (see C3 §"Shared Visibility Classification Primitive"): scope-level visibility for non-collection scopes, and item-level value filtering for collection rows. A stored collection row in a visible scope that fails the profile's item value filter is **not visible** for existence purposes and must not suppress create decisions. The result is a lookup (predicate or set keyed by address) answering "does a visible stored scope/item exist at this address?" For a create (POST with no existing document), the lookup reports nothing exists. This lookup is C5's responsibility to construct — it is the "orchestrating caller" referenced by C4. The intermediate classified-scope results from this step must be preserved for C6 to extend rather than reclassify from scratch.
@@ -52,7 +52,7 @@ The individual C stories (C2, C3, C4, C6) are pure processing steps. C5 is the o
 
 ### Orchestration
 
-- C5 owns the call sequence: no-profile check → profile-mode validation → C2 → C3 → existence lookup → C4 → assembly → (C6 for updates).
+- C5 owns the call sequence: profile-mode validation → no-profile check → C2 → C3 → existence lookup → C4 → assembly → (C6 for updates).
 - Profile-mode validation rejects mismatched profile/operation combinations (e.g., readable-only profile on a POST/PUT) with a C8 category-2 "invalid profile usage" error before any processing begins.
 - The stored-side existence lookup is constructed by C5 from C1's address derivation engine + the full stored document + C3's visibility rules. C4 receives this as an input parameter.
 - For update/upsert flows, C5 invokes C6, passing the assembled `ProfileAppliedWriteRequest`. C6 returns the complete `ProfileAppliedWriteContext`.

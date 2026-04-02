@@ -200,13 +200,6 @@ public sealed class ProfileVisibilityClassifier
     {
         CachedScopeEntry entry = _cache[jsonScope];
 
-        // C6 note (DMS-1118): Hidden scopes return IncludeAll because member-level
-        // filtering is meaningless for a scope that is entirely hidden. However, this
-        // means DeriveHiddenMemberPaths returns [] for hidden scopes, which loses the
-        // distinction between "hidden scope (all members implicitly hidden)" and
-        // "visible scope with IncludeAll (no members hidden)." C6 must use the scope's
-        // visibility classification (Hidden vs Visible) from StoredScopeState rather
-        // than relying on HiddenMemberPaths alone.
         if (entry.IsHidden || entry.Node == null)
         {
             return new ScopeMemberFilter(MemberSelection.IncludeAll, new HashSet<string>());
