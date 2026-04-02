@@ -81,3 +81,9 @@ Task complete: Batching And Dialect Limits | Story: reference/design/backend-red
 Decisions: collection updates now batch into bounded multi-statement commands and collection inserts now batch into multi-row VALUES commands using plan BulkInsertBatching metadata; new CollectionItemId rows reserve ids per batch, using generate_series on PostgreSQL and ordered NEXT VALUE FOR on SQL Server so nested parent-token rewrites stay deterministic without assuming contiguous sequence allocation; kept singleton residual batches on the old single-row command path to avoid needless SQL churn while still catching per-row fallback regressions with command-count tests.
 Files: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNonCollectionPersistence.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteNonCollectionPersisterTests.cs, tasks.json
 Notes: next priority is SQL Server Contract Safety Net; batching/dialect seams now exist, so add narrower SQL Server coverage before the PostgreSQL integration matrix.
+
+2026-04-02
+Task complete: SQL Server Contract Safety Net | Story: reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md
+Decisions: kept runtime code unchanged; added narrow plans coverage for compiled Mssql collection sql, compare-binding indexes, and 2100-param batching limits, plus backend runtime coverage for ordered NEXT VALUE FOR multi-batch CollectionItemId reservation + insert partitioning.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerMssqlContractTests.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteNonCollectionPersisterTests.cs, tasks.json
+Notes: next priority is PostgreSQL Integration - Create Baseline; SQL Server stays contract-only for DMS-984 while PostgreSQL remains the runtime integration gate.

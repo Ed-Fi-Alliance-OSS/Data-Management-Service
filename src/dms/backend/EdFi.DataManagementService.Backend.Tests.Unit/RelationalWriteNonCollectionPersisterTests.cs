@@ -599,7 +599,7 @@ public class Given_Relational_Write_Non_Collection_Persister
     public async Task It_uses_sql_server_batch_reservation_and_insert_sql_for_multi_row_collection_inserts()
     {
         var rootPlan = CreateRootPlan();
-        var collectionPlan = CreateCollectionPlan() with
+        var collectionPlan = CreateMssqlCollectionPlan() with
         {
             BulkInsertBatching = new BulkInsertBatchingInfo(
                 MaxRowsPerBatch: 2,
@@ -650,6 +650,99 @@ public class Given_Relational_Write_Non_Collection_Persister
         writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+    }
+
+    [Test]
+    public async Task It_uses_sql_server_multi_batch_collection_id_reservations_when_insert_batches_cross_the_limit()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateMssqlCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [],
+                [
+                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                    CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
+                    CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
+                    CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(
+                ReservationRows:
+                [
+                    new ReservedCollectionItemIdRow(1, 910L),
+                    new ReservedCollectionItemIdRow(2, 911L),
+                ]
+            ),
+            new CommandResponse(),
+            new CommandResponse(
+                ReservationRows:
+                [
+                    new ReservedCollectionItemIdRow(1, 912L),
+                    new ReservedCollectionItemIdRow(2, 913L),
+                ]
+            ),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 914L),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(6);
+
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
+        GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
+
+        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
+
+        writeSession
+            .Commands[2]
+            .CommandText.Should()
+            .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
+        GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
+
+        writeSession.Commands[3].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
+        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[3].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
+        GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
+
+        writeSession
+            .Commands[4]
+            .CommandText.Should()
+            .Contain("SELECT NEXT VALUE FOR [dms].[CollectionItemIdSequence];");
+        writeSession.Commands[5].CommandText.Should().Be(collectionPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[5], "@CollectionItemId").Should().Be(914L);
+        GetParameterValue(writeSession.Commands[5], "@AddressType").Should().Be("Shipping");
     }
 
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
@@ -1025,6 +1118,27 @@ public class Given_Relational_Write_Non_Collection_Persister
                 0
             )
         );
+    }
+
+    private static TableWritePlan CreateMssqlCollectionPlan()
+    {
+        var collectionPlan = CreateCollectionPlan();
+
+        return collectionPlan with
+        {
+            InsertSql = """
+                insert into [edfi].[SchoolAddress] values (@CollectionItemId, @School_DocumentId, @Ordinal, @AddressType)
+                """,
+            CollectionMergePlan = collectionPlan.CollectionMergePlan! with
+            {
+                UpdateByStableRowIdentitySql = """
+                    update [edfi].[SchoolAddress] set [Ordinal] = @Ordinal, [AddressType] = @AddressType where [CollectionItemId] = @CollectionItemId
+                    """,
+                DeleteByStableRowIdentitySql = """
+                    delete from [edfi].[SchoolAddress] where [CollectionItemId] = @CollectionItemId
+                    """,
+            },
+        };
     }
 
     private static TableWritePlan CreatePeriodPlan()
