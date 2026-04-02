@@ -162,6 +162,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<DefaultRelationalWriteExecutor>();
             scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>()
+                .Should()
+                .BeOfType<PostgresqlRelationalWriteSessionFactory>();
+            scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
                 .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
@@ -243,6 +247,12 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
                 .BeOfType<DefaultRelationalWriteExecutor>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>()
+                .Should()
+                .Match<IRelationalWriteSessionFactory>(factory =>
+                    factory.GetType().Name == "MssqlRelationalWriteSessionFactory"
+                );
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()

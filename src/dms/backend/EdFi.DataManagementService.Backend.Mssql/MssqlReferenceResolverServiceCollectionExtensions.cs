@@ -16,7 +16,8 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
-            MssqlRelationalCommandExecutor
+            MssqlRelationalCommandExecutor,
+            MssqlRelationalWriteSessionFactory
         >();
     }
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -15,18 +16,20 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Default_Relational_Write_Terminal_Stage
+public class Given_Default_Relational_Write_Executor
 {
+    private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new DefaultRelationalWriteExecutor();
+        _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
+        _sut = new DefaultRelationalWriteExecutor(_writeSessionFactory);
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_post_requests()
+    public async Task It_rolls_back_the_attempt_scoped_session_for_post_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
 
@@ -42,10 +45,14 @@ public class Given_Default_Relational_Write_Terminal_Stage
                     )
                 )
             );
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_put_requests()
+    public async Task It_rolls_back_the_attempt_scoped_session_for_put_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
 
@@ -61,6 +68,10 @@ public class Given_Default_Relational_Write_Terminal_Stage
                     )
                 )
             );
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(RelationalWriteOperationKind operationKind)
@@ -144,7 +155,7 @@ public class Given_Default_Relational_Write_Terminal_Stage
             flatteningInput.WritePlan,
             null,
             flatteningInput.SelectedBody,
-            new TraceId("terminal-stage-test"),
+            new TraceId("write-executor-test"),
             new RelationalWritePreparedData(
                 flatteningInput,
                 new FlattenedWriteSet(
@@ -240,5 +251,54 @@ public class Given_Default_Relational_Write_Terminal_Stage
             ],
             KeyUnificationPlans: []
         );
+    }
+
+    private sealed class RecordingRelationalWriteSessionFactory : IRelationalWriteSessionFactory
+    {
+        public RecordingRelationalWriteSession Session { get; } = new();
+
+        public int CreateAsyncCallCount { get; private set; }
+
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreateAsyncCallCount++;
+            return Task.FromResult<IRelationalWriteSession>(Session);
+        }
+    }
+
+    private sealed class RecordingRelationalWriteSession : IRelationalWriteSession
+    {
+        public DbConnection Connection => throw new NotSupportedException();
+
+        public DbTransaction Transaction => throw new NotSupportedException();
+
+        public int CommitCallCount { get; private set; }
+
+        public int RollbackCallCount { get; private set; }
+
+        public int DisposeCallCount { get; private set; }
+
+        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CommitCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RollbackCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCallCount++;
+            return ValueTask.CompletedTask;
+        }
     }
 }

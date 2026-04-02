@@ -40,13 +40,15 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
-            TestRelationalCommandExecutor
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory
         >();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var targetLookupResolver =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
@@ -63,6 +65,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
@@ -128,6 +131,14 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
             CancellationToken cancellationToken = default
         )
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class TestRelationalWriteSessionFactory : IRelationalWriteSessionFactory
+    {
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }

@@ -16,7 +16,8 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
 
         return services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
-            PostgresqlRelationalCommandExecutor
+            PostgresqlRelationalCommandExecutor,
+            PostgresqlRelationalWriteSessionFactory
         >();
     }
 }
