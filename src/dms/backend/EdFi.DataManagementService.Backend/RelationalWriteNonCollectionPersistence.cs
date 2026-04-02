@@ -83,6 +83,20 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     {
         foreach (var tableState in mergeResult.TablesInDependencyOrder.Reverse())
         {
+            if (IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
+            {
+                await DeleteOmittedCollectionAlignedScopeRowsAsync(
+                        tableState,
+                        rootDocumentId,
+                        reservedCollectionItemIds,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
             if (tableState.TableWritePlan.CollectionMergePlan is not null)
             {
                 if (
@@ -125,20 +139,63 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         CancellationToken cancellationToken
     )
     {
-        foreach (var tableState in mergeResult.TablesInDependencyOrder)
+        var pendingTableStates = mergeResult.TablesInDependencyOrder.ToArray();
+
+        while (pendingTableStates.Length > 0)
         {
-            if (tableState.TableWritePlan.CollectionMergePlan is not null)
+            List<RelationalWriteNoProfileTableState> deferredTableStates = [];
+            var persistedTableCount = 0;
+
+            foreach (var tableState in pendingTableStates)
             {
-                if (
-                    tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind
-                    is not (DbTableKind.Collection or DbTableKind.ExtensionCollection)
-                )
+                if (HasBlockingUnresolvedCollectionItemIds(tableState, reservedCollectionItemIds))
                 {
+                    deferredTableStates.Add(tableState);
                     continue;
                 }
 
-                await UpsertCollectionRowsAsync(
-                        dialect,
+                if (IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
+                {
+                    await UpsertCollectionAlignedScopeRowsAsync(
+                            dialect,
+                            tableState,
+                            rootDocumentId,
+                            reservedCollectionItemIds,
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    persistedTableCount++;
+                    continue;
+                }
+
+                if (tableState.TableWritePlan.CollectionMergePlan is not null)
+                {
+                    if (
+                        tableState.TableWritePlan.TableModel.IdentityMetadata.TableKind
+                        is not (DbTableKind.Collection or DbTableKind.ExtensionCollection)
+                    )
+                    {
+                        persistedTableCount++;
+                        continue;
+                    }
+
+                    await UpsertCollectionRowsAsync(
+                            dialect,
+                            tableState,
+                            rootDocumentId,
+                            reservedCollectionItemIds,
+                            writeSession,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    persistedTableCount++;
+                    continue;
+                }
+
+                await UpsertNonCollectionRowAsync(
                         tableState,
                         rootDocumentId,
                         reservedCollectionItemIds,
@@ -147,18 +204,60 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                     )
                     .ConfigureAwait(false);
 
-                continue;
+                persistedTableCount++;
             }
 
-            await UpsertNonCollectionRowAsync(
-                    tableState,
-                    rootDocumentId,
-                    reservedCollectionItemIds,
-                    writeSession,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            if (deferredTableStates.Count == 0)
+            {
+                return;
+            }
+
+            if (persistedTableCount == 0)
+            {
+                throw new InvalidOperationException(
+                    "Relational write upserts could not resolve collection-id dependencies for tables: "
+                        + string.Join(
+                            ", ",
+                            deferredTableStates.Select(tableState => FormatTable(tableState.TableWritePlan))
+                        )
+                );
+            }
+
+            pendingTableStates = [.. deferredTableStates];
         }
+    }
+
+    private static bool HasBlockingUnresolvedCollectionItemIds(
+        RelationalWriteNoProfileTableState tableState,
+        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
+    )
+    {
+        var selfReservedBindingIndex = tableState.TableWritePlan.CollectionKeyPreallocationPlan?.BindingIndex;
+
+        foreach (var mergedRow in tableState.MergedRows)
+        {
+            foreach (
+                var (value, bindingIndex) in mergedRow.Values.Select(
+                    static (value, bindingIndex) => (value, bindingIndex)
+                )
+            )
+            {
+                if (bindingIndex == selfReservedBindingIndex)
+                {
+                    continue;
+                }
+
+                if (
+                    value is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId
+                    && !reservedCollectionItemIds.ContainsKey(unresolvedCollectionItemId)
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static async Task<long> ResolveRootDocumentIdAsync(
@@ -337,6 +436,124 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    private static async Task DeleteOmittedCollectionAlignedScopeRowsAsync(
+        RelationalWriteNoProfileTableState tableState,
+        long rootDocumentId,
+        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var mergedRowsByPhysicalIdentity = GetRowsByPhysicalIdentityOrThrow(
+            tableState.MergedRows,
+            "merged",
+            tableState.TableWritePlan
+        );
+
+        if (tableState.TableWritePlan.DeleteByParentSql is null)
+        {
+            throw new InvalidOperationException(
+                $"Table '{FormatTable(tableState.TableWritePlan)}' cannot delete an omitted aligned scope because no DeleteByParentSql was compiled."
+            );
+        }
+
+        foreach (var currentRow in tableState.CurrentRows)
+        {
+            var physicalIdentity = ResolvePhysicalRowIdentityKey(tableState.TableWritePlan, currentRow);
+
+            if (mergedRowsByPhysicalIdentity.ContainsKey(physicalIdentity))
+            {
+                continue;
+            }
+
+            await ExecuteNonQueryAsync(
+                    writeSession,
+                    BuildRowCommand(
+                        tableState.TableWritePlan,
+                        tableState.TableWritePlan.DeleteByParentSql,
+                        currentRow,
+                        rootDocumentId,
+                        reservedCollectionItemIds
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task UpsertCollectionAlignedScopeRowsAsync(
+        SqlDialect dialect,
+        RelationalWriteNoProfileTableState tableState,
+        long rootDocumentId,
+        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var currentRowsByPhysicalIdentity = GetRowsByPhysicalIdentityOrThrow(
+            tableState.CurrentRows,
+            "current",
+            tableState.TableWritePlan
+        );
+
+        foreach (var mergedRow in tableState.MergedRows)
+        {
+            var physicalIdentity = ResolvePhysicalRowIdentityKey(tableState.TableWritePlan, mergedRow);
+
+            if (!currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow))
+            {
+                await ReserveCollectionItemIdsAsync(
+                        dialect,
+                        GetUnresolvedCollectionItemIds(mergedRow.Values),
+                        reservedCollectionItemIds,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                await ExecuteNonQueryAsync(
+                        writeSession,
+                        BuildRowCommand(
+                            tableState.TableWritePlan,
+                            tableState.TableWritePlan.InsertSql,
+                            mergedRow,
+                            rootDocumentId,
+                            reservedCollectionItemIds
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
+            if (currentRow.Values.SequenceEqual(mergedRow.Values))
+            {
+                continue;
+            }
+
+            if (tableState.TableWritePlan.UpdateSql is null)
+            {
+                throw new InvalidOperationException(
+                    $"Table '{FormatTable(tableState.TableWritePlan)}' requires UpdateSql to persist a changed aligned scope row."
+                );
+            }
+
+            await ExecuteNonQueryAsync(
+                    writeSession,
+                    BuildRowCommand(
+                        tableState.TableWritePlan,
+                        tableState.TableWritePlan.UpdateSql,
+                        mergedRow,
+                        rootDocumentId,
+                        reservedCollectionItemIds
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     private static async Task DeleteOmittedCollectionRowsAsync(
@@ -841,6 +1058,79 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         };
     }
 
+    private static IReadOnlyDictionary<
+        string,
+        RelationalWriteNoProfileTableRow
+    > GetRowsByPhysicalIdentityOrThrow(
+        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        string rowKind,
+        TableWritePlan tableWritePlan
+    )
+    {
+        Dictionary<string, RelationalWriteNoProfileTableRow> rowsByPhysicalIdentity = new(
+            StringComparer.Ordinal
+        );
+
+        foreach (var row in rows)
+        {
+            var physicalIdentity = ResolvePhysicalRowIdentityKey(tableWritePlan, row);
+
+            if (!rowsByPhysicalIdentity.TryAdd(physicalIdentity, row))
+            {
+                throw new InvalidOperationException(
+                    $"Table '{FormatTable(tableWritePlan)}' produced duplicate {rowKind} rows for aligned scope physical identity '{physicalIdentity}'."
+                );
+            }
+        }
+
+        return rowsByPhysicalIdentity;
+    }
+
+    private static string ResolvePhysicalRowIdentityKey(
+        TableWritePlan tableWritePlan,
+        RelationalWriteNoProfileTableRow row
+    )
+    {
+        var identityColumns = tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns;
+
+        if (identityColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Table '{FormatTable(tableWritePlan)}' does not define physical row identity metadata."
+            );
+        }
+
+        StringBuilder builder = new();
+
+        for (var index = 0; index < identityColumns.Count; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append('|');
+            }
+
+            var bindingIndex = FindBindingIndex(tableWritePlan, identityColumns[index]);
+            builder.Append(identityColumns[index].Value);
+            builder.Append('=');
+            builder.Append(FormatPhysicalRowIdentityValue(row.Values[bindingIndex]));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FormatPhysicalRowIdentityValue(FlattenedWriteValue value)
+    {
+        return value switch
+        {
+            FlattenedWriteValue.Literal(var literalValue) => literalValue is null
+                ? "literal:<null>"
+                : $"literal:{literalValue.GetType().FullName}:{literalValue}",
+            FlattenedWriteValue.UnresolvedRootDocumentId => "document:<unresolved>",
+            FlattenedWriteValue.UnresolvedCollectionItemId(var token) => $"collection:{token}",
+            _ => throw new ArgumentOutOfRangeException(nameof(value), value, null),
+        };
+    }
+
     private static RelationalCommand BuildRowCommand(
         TableWritePlan tableWritePlan,
         string sql,
@@ -1046,6 +1336,23 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         return unresolvedCollectionItemIds;
     }
 
+    private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
+        IReadOnlyList<FlattenedWriteValue> values
+    )
+    {
+        List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];
+
+        foreach (var value in values)
+        {
+            if (value is FlattenedWriteValue.UnresolvedCollectionItemId unresolvedCollectionItemId)
+            {
+                unresolvedCollectionItemIds.Add(unresolvedCollectionItemId);
+            }
+        }
+
+        return unresolvedCollectionItemIds;
+    }
+
     private static string RenameBatchParameters(string sqlTemplate, int rowIndex)
     {
         var terminatedSqlTemplate = EnsureTrailingSemicolon(sqlTemplate);
@@ -1110,6 +1417,24 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     {
         return parameterName.StartsWith('@') ? parameterName : $"@{parameterName}";
     }
+
+    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
+    {
+        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            if (tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Equals(columnName))
+            {
+                return bindingIndex;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
+        );
+    }
+
+    private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
+        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";

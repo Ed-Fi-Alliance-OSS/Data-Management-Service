@@ -193,7 +193,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 );
             }
 
-            var parentScopeSegments = scopeSegments[..^2];
+            var isMirroredExtensionScope =
+                scopeSegments.Length >= 4
+                && scopeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+                && scopeSegments[1] is JsonPathSegment.Property;
+            var parentScopeSegments = isMirroredExtensionScope ? scopeSegments[2..^2] : scopeSegments[..^2];
             var parentScopeCanonical = RelationalJsonPathSupport.BuildCanonical(parentScopeSegments);
             var relativeScopeSegments = scopeSegments[parentScopeSegments.Length..];
 
@@ -203,7 +207,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 plansByParentScope.Add(parentScopeCanonical, plans);
             }
 
-            plans.Add(new AttachedAlignedScopePlan(tableWritePlan, [.. relativeScopeSegments]));
+            plans.Add(
+                new AttachedAlignedScopePlan(
+                    tableWritePlan,
+                    [.. relativeScopeSegments],
+                    isMirroredExtensionScope
+                )
+            );
         }
 
         return plansByParentScope.ToDictionary(
@@ -407,9 +417,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         foreach (var attachedScopePlan in attachedScopePlans)
         {
             if (
-                !TryNavigateRelativeNode(
+                !TryGetAttachedAlignedScopeNode(
+                    flatteningInput.SelectedBody,
                     parentScopeNode,
-                    attachedScopePlan.RelativeScopeSegments,
+                    parentOrdinalPath,
+                    attachedScopePlan,
                     out var scopeNode
                 ) || scopeNode is null
             )
@@ -1186,6 +1198,107 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return true;
     }
 
+    private static bool TryNavigateConcreteNode(
+        JsonNode scopeNode,
+        IReadOnlyList<JsonPathSegment> segments,
+        ReadOnlySpan<int> ordinalPath,
+        out JsonNode? resolvedNode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(scopeNode);
+        ArgumentNullException.ThrowIfNull(segments);
+
+        JsonNode? currentNode = scopeNode;
+        var ordinalIndex = 0;
+
+        for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
+        {
+            switch (segments[segmentIndex])
+            {
+                case JsonPathSegment.Property property:
+                    if (currentNode is not JsonObject jsonObject)
+                    {
+                        resolvedNode = null;
+                        return false;
+                    }
+
+                    if (!jsonObject.TryGetPropertyValue(property.Name, out var childNode))
+                    {
+                        resolvedNode = null;
+                        return false;
+                    }
+
+                    if (childNode is null)
+                    {
+                        resolvedNode = null;
+                        return segmentIndex == segments.Count - 1;
+                    }
+
+                    currentNode = childNode;
+                    break;
+
+                case JsonPathSegment.AnyArrayElement:
+                    if (
+                        currentNode is not JsonArray jsonArray
+                        || ordinalIndex >= ordinalPath.Length
+                        || ordinalPath[ordinalIndex] < 0
+                        || ordinalPath[ordinalIndex] >= jsonArray.Count
+                    )
+                    {
+                        resolvedNode = null;
+                        return false;
+                    }
+
+                    currentNode = jsonArray[ordinalPath[ordinalIndex]];
+                    ordinalIndex++;
+
+                    if (currentNode is null)
+                    {
+                        resolvedNode = null;
+                        return segmentIndex == segments.Count - 1;
+                    }
+
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Concrete traversal does not support JSONPath segment '{segments[segmentIndex].GetType().Name}'."
+                    );
+            }
+        }
+
+        resolvedNode = currentNode;
+        return true;
+    }
+
+    private static bool TryGetAttachedAlignedScopeNode(
+        JsonNode selectedBody,
+        JsonNode parentScopeNode,
+        ReadOnlySpan<int> parentOrdinalPath,
+        AttachedAlignedScopePlan attachedScopePlan,
+        out JsonNode? scopeNode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(selectedBody);
+        ArgumentNullException.ThrowIfNull(parentScopeNode);
+        ArgumentNullException.ThrowIfNull(attachedScopePlan);
+
+        return attachedScopePlan.NavigateFromRoot
+            ? TryNavigateConcreteNode(
+                selectedBody,
+                RelationalJsonPathSupport.GetRestrictedSegments(
+                    attachedScopePlan.TableWritePlan.TableModel.JsonScope
+                ),
+                parentOrdinalPath,
+                out scopeNode
+            )
+            : TryNavigateRelativeNode(
+                parentScopeNode,
+                attachedScopePlan.RelativeScopeSegments,
+                out scopeNode
+            );
+    }
+
     private static bool TryGetRelativeLeafNode(
         JsonNode scopeNode,
         JsonPathExpression relativePath,
@@ -1783,7 +1896,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private sealed record AttachedAlignedScopePlan(
         TableWritePlan TableWritePlan,
-        ImmutableArray<JsonPathSegment> RelativeScopeSegments
+        ImmutableArray<JsonPathSegment> RelativeScopeSegments,
+        bool NavigateFromRoot
     );
 
     private sealed record TraversalPlans(

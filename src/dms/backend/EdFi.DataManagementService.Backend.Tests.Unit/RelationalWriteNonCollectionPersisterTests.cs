@@ -162,6 +162,154 @@ public class Given_Relational_Write_Non_Collection_Persister
     }
 
     [Test]
+    public async Task It_inserts_multiple_collection_aligned_extension_scope_rows_by_parent_row_identity()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionExtensionScopePlan,
+                [],
+                [CreateRow(44L, "Blue"), CreateRow(45L, "Red")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(2);
+        writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
+        GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@FavoriteColor").Should().Be("Blue");
+
+        writeSession.Commands[1].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
+        GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[1], "@FavoriteColor").Should().Be("Red");
+    }
+
+    [Test]
+    public async Task It_defers_collection_aligned_extension_scope_inserts_until_parent_collection_ids_are_reserved()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionExtensionScopePlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var addressCollectionItemId = NewCollectionItemId();
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionExtensionScopePlan,
+                [],
+                [CreateRow(addressCollectionItemId, "Blue")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [],
+                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ScalarResult: 910L),
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+        writeSession.Commands[1].CommandText.Should().Be(collectionPlan.InsertSql);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[1], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@Ordinal").Should().Be(0);
+        GetParameterValue(writeSession.Commands[1], "@AddressType").Should().Be("Home");
+
+        writeSession.Commands[2].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
+        GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[2], "@FavoriteColor").Should().Be("Blue");
+    }
+
+    [Test]
+    public async Task It_deletes_updates_and_inserts_collection_aligned_extension_scope_rows_by_parent_row_identity()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [
+                    CreateRow(44L, 345L, 0, "Mailing"),
+                    CreateRow(45L, 345L, 1, "Home"),
+                    CreateRow(46L, 345L, 2, "Work"),
+                ],
+                [
+                    CreateRow(44L, 345L, 0, "Mailing"),
+                    CreateRow(45L, 345L, 1, "Home"),
+                    CreateRow(46L, 345L, 2, "Work"),
+                ]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionExtensionScopePlan,
+                [CreateRow(44L, "Blue"), CreateRow(45L, "Green")],
+                [CreateRow(44L, "Purple"), CreateRow(46L, "Orange")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        var persisted = await _sut.TryPersistAsync(request, mergeResult, writeSession);
+
+        persisted.Should().BeTrue();
+        writeSession.Commands.Should().HaveCount(3);
+
+        writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.DeleteByParentSql);
+        GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[0], "@FavoriteColor").Should().Be("Green");
+
+        writeSession.Commands[1].CommandText.Should().Be(collectionExtensionScopePlan.UpdateSql);
+        GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[1], "@FavoriteColor").Should().Be("Purple");
+
+        writeSession.Commands[2].CommandText.Should().Be(collectionExtensionScopePlan.InsertSql);
+        GetParameterValue(writeSession.Commands[2], "@BaseCollectionItemId").Should().Be(46L);
+        GetParameterValue(writeSession.Commands[2], "@FavoriteColor").Should().Be("Orange");
+    }
+
+    [Test]
     public async Task It_deletes_updates_and_inserts_base_collection_rows_using_stable_row_identity()
     {
         var rootPlan = CreateRootPlan();
