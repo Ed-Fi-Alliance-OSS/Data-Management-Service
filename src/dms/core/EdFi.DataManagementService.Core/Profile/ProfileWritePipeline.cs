@@ -27,7 +27,7 @@ public sealed record ProfileWritePipelineResult
 
     /// <summary>
     /// The full stored-side context for update/upsert flows.
-    /// Null for create flows or when a stored-state projector is not provided.
+    /// Null for create flows or when no stored document is present.
     /// </summary>
     public ProfileAppliedWriteContext? Context { get; init; }
 
@@ -84,8 +84,8 @@ public sealed record ProfileWritePipelineResult
 /// <para>
 /// Pipeline sequence:
 /// <list type="number">
-///   <item>No-profile short-circuit when WriteContentType is null</item>
 ///   <item>Profile-mode validation (must be Write)</item>
+///   <item>No-profile short-circuit when WriteContentType is null</item>
 ///   <item>C2: Semantic identity compatibility validation</item>
 ///   <item>C3: Request-side visibility and writable request shaping</item>
 ///   <item>Build stored-side existence lookup</item>
