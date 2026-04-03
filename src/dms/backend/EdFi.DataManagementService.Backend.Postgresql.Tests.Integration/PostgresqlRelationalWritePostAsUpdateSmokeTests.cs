@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -169,6 +170,9 @@ file static class PostAsUpdateIntegrationTestSupport
 
     public static long GetInt64(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt64(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
+
+    public static decimal GetDecimal(IReadOnlyDictionary<string, object?> row, string columnName) =>
+        Convert.ToDecimal(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
 
     public static Guid GetGuid(IReadOnlyDictionary<string, object?> row, string columnName) =>
         GetRequiredValue(row, columnName) is Guid value
@@ -1695,5 +1699,1508 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             : throw new InvalidOperationException(
                 $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
+    }
+}
+
+internal sealed record AuthoritativeStudentAcademicRecordSeedData(
+    long SchoolDocumentId,
+    long SchoolYearTypeDocumentId,
+    long StudentDocumentId,
+    long FallTermDescriptorDocumentId,
+    long HonorRollAcademicHonorCategoryDescriptorDocumentId,
+    long ScholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+    long CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+    long StandardDiplomaTypeDescriptorDocumentId,
+    long CareerDiplomaTypeDescriptorDocumentId,
+    long HonorsDiplomaTypeDescriptorDocumentId,
+    long CumulativeGradePointAverageTypeDescriptorDocumentId,
+    long SessionGradePointAverageTypeDescriptorDocumentId,
+    long WeightedGradePointAverageTypeDescriptorDocumentId,
+    long MeritRecognitionTypeDescriptorDocumentId,
+    long LeadershipRecognitionTypeDescriptorDocumentId,
+    long AttendanceRecognitionTypeDescriptorDocumentId
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordRow(
+    long DocumentId,
+    long EducationOrganizationDocumentId,
+    long EducationOrganizationId,
+    long SchoolYearDocumentId,
+    int SchoolYear,
+    long StudentDocumentId,
+    string StudentUniqueId,
+    long TermDescriptorId,
+    decimal CumulativeEarnedCredits,
+    string ProjectedGraduationDate
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordExtensionRow(long DocumentId, string Notes);
+
+internal sealed record AuthoritativeStudentAcademicRecordAcademicHonorRow(
+    long CollectionItemId,
+    int Ordinal,
+    long StudentAcademicRecordDocumentId,
+    long AcademicHonorCategoryDescriptorId,
+    string HonorDescription,
+    string IssuerName
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordDiplomaRow(
+    long CollectionItemId,
+    int Ordinal,
+    long StudentAcademicRecordDocumentId,
+    long DiplomaTypeDescriptorId,
+    string DiplomaAwardDate,
+    string DiplomaDescription
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordGradePointAverageRow(
+    long CollectionItemId,
+    int Ordinal,
+    long StudentAcademicRecordDocumentId,
+    long GradePointAverageTypeDescriptorId,
+    decimal GradePointAverageValue,
+    bool IsCumulative
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordRecognitionRow(
+    long CollectionItemId,
+    int Ordinal,
+    long StudentAcademicRecordDocumentId,
+    long RecognitionTypeDescriptorId,
+    string RecognitionDescription,
+    string IssuerName
+);
+
+internal sealed record AuthoritativeStudentAcademicRecordPersistedState(
+    AuthoritativePostAsUpdateDocumentRow Document,
+    AuthoritativeStudentAcademicRecordRow AcademicRecord,
+    AuthoritativeStudentAcademicRecordExtensionRow AcademicRecordExtension,
+    IReadOnlyList<AuthoritativeStudentAcademicRecordAcademicHonorRow> AcademicHonors,
+    IReadOnlyList<AuthoritativeStudentAcademicRecordDiplomaRow> Diplomas,
+    IReadOnlyList<AuthoritativeStudentAcademicRecordGradePointAverageRow> GradePointAverages,
+    IReadOnlyList<AuthoritativeStudentAcademicRecordRecognitionRow> Recognitions
+);
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture
+{
+    private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
+
+    private const string CreateRequestBodyJson = """
+        {
+          "educationOrganizationReference": {
+            "educationOrganizationId": 100
+          },
+          "schoolYearTypeReference": {
+            "schoolYear": 2026
+          },
+          "studentReference": {
+            "studentUniqueId": "10001"
+          },
+          "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall",
+          "cumulativeEarnedCredits": 18.500,
+          "projectedGraduationDate": "2028-05-20",
+          "academicHonors": [
+            {
+              "academicHonorCategoryDescriptor": "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
+              "honorDescription": "Honor Roll",
+              "issuerName": "Alpha Academy"
+            },
+            {
+              "academicHonorCategoryDescriptor": "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete",
+              "honorDescription": "Scholar Athlete",
+              "issuerName": "Alpha Academy"
+            }
+          ],
+          "diplomas": [
+            {
+              "diplomaTypeDescriptor": "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
+              "diplomaAwardDate": "2028-05-24",
+              "diplomaDescription": "Standard Path"
+            },
+            {
+              "diplomaTypeDescriptor": "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma",
+              "diplomaAwardDate": "2028-05-25",
+              "diplomaDescription": "Career Path"
+            }
+          ],
+          "gradePointAverages": [
+            {
+              "gradePointAverageTypeDescriptor": "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
+              "gradePointAverageValue": 3.4500,
+              "isCumulative": true,
+              "maxGradePointAverageValue": 4.0000
+            },
+            {
+              "gradePointAverageTypeDescriptor": "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session",
+              "gradePointAverageValue": 3.7000,
+              "isCumulative": false,
+              "maxGradePointAverageValue": 4.0000
+            }
+          ],
+          "recognitions": [
+            {
+              "recognitionTypeDescriptor": "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
+              "recognitionDescription": "Regional Merit",
+              "issuerName": "State Board"
+            },
+            {
+              "recognitionTypeDescriptor": "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership",
+              "recognitionDescription": "Leadership Award",
+              "issuerName": "State Board"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "notes": "Initial transcript note"
+            }
+          }
+        }
+        """;
+
+    private const string PostAsUpdateRequestBodyJson = """
+        {
+          "educationOrganizationReference": {
+            "educationOrganizationId": 100
+          },
+          "schoolYearTypeReference": {
+            "schoolYear": 2026
+          },
+          "studentReference": {
+            "studentUniqueId": "10001"
+          },
+          "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall",
+          "cumulativeEarnedCredits": 19.250,
+          "projectedGraduationDate": "2028-05-22",
+          "academicHonors": [
+            {
+              "academicHonorCategoryDescriptor": "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
+              "honorDescription": "Honor Roll",
+              "issuerName": "District Honors Board"
+            },
+            {
+              "academicHonorCategoryDescriptor": "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService",
+              "honorDescription": "Community Service",
+              "issuerName": "Community Foundation"
+            }
+          ],
+          "diplomas": [
+            {
+              "diplomaTypeDescriptor": "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
+              "diplomaAwardDate": "2028-05-24",
+              "diplomaDescription": "Revised Standard Path"
+            },
+            {
+              "diplomaTypeDescriptor": "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma",
+              "diplomaAwardDate": "2028-05-26",
+              "diplomaDescription": "Honors Path"
+            }
+          ],
+          "gradePointAverages": [
+            {
+              "gradePointAverageTypeDescriptor": "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
+              "gradePointAverageValue": 3.6100,
+              "isCumulative": true,
+              "maxGradePointAverageValue": 4.0000
+            },
+            {
+              "gradePointAverageTypeDescriptor": "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted",
+              "gradePointAverageValue": 4.1200,
+              "isCumulative": false,
+              "maxGradePointAverageValue": 5.0000
+            }
+          ],
+          "recognitions": [
+            {
+              "recognitionTypeDescriptor": "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
+              "recognitionDescription": "State Merit",
+              "issuerName": "State Board"
+            },
+            {
+              "recognitionTypeDescriptor": "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance",
+              "recognitionDescription": "Perfect Attendance",
+              "issuerName": "District Office"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "notes": "Updated transcript note"
+            }
+          }
+        }
+        """;
+
+    private static readonly QualifiedResourceName StudentAcademicRecordResource = new(
+        "Ed-Fi",
+        "StudentAcademicRecord"
+    );
+    private static readonly DocumentUuid ExistingStudentAcademicRecordDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000001")
+    );
+    private static readonly DocumentUuid IncomingStudentAcademicRecordDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000002")
+    );
+    private static readonly DocumentUuid RepeatStudentAcademicRecordDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000003")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ResourceInfo _resourceInfo = null!;
+    private ResourceSchema _baseResourceSchema = null!;
+    private ResourceSchema _extensionResourceSchema = null!;
+    private AuthoritativeStudentAcademicRecordSeedData _seedData = null!;
+    private AuthoritativeStudentAcademicRecordPersistedState _stateAfterCreate = null!;
+    private AuthoritativeStudentAcademicRecordPersistedState _stateAfterPostAsUpdate = null!;
+    private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private UpsertResult _repeatPostAsUpdateResult = null!;
+    private ReferentialId _persistedStudentAcademicRecordReferentialId;
+    private long _resourceDocumentCount;
+    private long _incomingDocumentUuidCount;
+    private long _repeatIncomingDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
+
+        var (baseProjectSchema, baseResourceSchema) = GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "ed-fi",
+            "StudentAcademicRecord"
+        );
+        var (_, extensionResourceSchema) = GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "sample",
+            "StudentAcademicRecord"
+        );
+
+        _resourceInfo = CreateResourceInfo(baseProjectSchema, baseResourceSchema);
+        _baseResourceSchema = baseResourceSchema;
+        _extensionResourceSchema = extensionResourceSchema;
+        _seedData = await SeedReferenceDataAsync();
+
+        var createResult = await ExecuteUpsertAsync(
+            CreateRequestBodyJson,
+            ExistingStudentAcademicRecordDocumentUuid,
+            "pg-authoritative-sample-student-academic-record-create"
+        );
+
+        if (createResult is UpsertResult.UpsertFailureReference createReferenceFailure)
+        {
+            Assert.Fail($"Create reference failure: {FormatReferenceFailure(createReferenceFailure)}");
+        }
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _stateAfterCreate = await ReadPersistedStateAsync(ExistingStudentAcademicRecordDocumentUuid.Value);
+        _persistedStudentAcademicRecordReferentialId = new ReferentialId(
+            (
+                await ReadReferentialIdentityRowAsync(
+                    _stateAfterCreate.Document.DocumentId,
+                    _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
+                )
+            ).ReferentialId
+        );
+
+        _postAsUpdateResult = await ExecuteUpsertAsync(
+            PostAsUpdateRequestBodyJson,
+            IncomingStudentAcademicRecordDocumentUuid,
+            "pg-authoritative-sample-student-academic-record-post-as-update",
+            _persistedStudentAcademicRecordReferentialId
+        );
+
+        if (_postAsUpdateResult is UpsertResult.UpsertFailureReference postAsUpdateReferenceFailure)
+        {
+            Assert.Fail(
+                $"POST-as-update reference failure: {FormatReferenceFailure(postAsUpdateReferenceFailure)}"
+            );
+        }
+
+        _stateAfterPostAsUpdate = await ReadPersistedStateAsync(
+            ExistingStudentAcademicRecordDocumentUuid.Value
+        );
+        _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
+            PostAsUpdateRequestBodyJson,
+            RepeatStudentAcademicRecordDocumentUuid,
+            "pg-authoritative-sample-student-academic-record-repeat-post-as-update",
+            _persistedStudentAcademicRecordReferentialId
+        );
+
+        if (_repeatPostAsUpdateResult is UpsertResult.UpsertFailureReference repeatPostReferenceFailure)
+        {
+            Assert.Fail(
+                $"Repeat POST-as-update reference failure: {FormatReferenceFailure(repeatPostReferenceFailure)}"
+            );
+        }
+
+        _stateAfterRepeatPostAsUpdate = await ReadPersistedStateAsync(
+            ExistingStudentAcademicRecordDocumentUuid.Value
+        );
+        _resourceDocumentCount = await ReadDocumentCountAsync(
+            _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
+        );
+        _incomingDocumentUuidCount = await ReadDocumentCountAsync(
+            IncomingStudentAcademicRecordDocumentUuid.Value
+        );
+        _repeatIncomingDocumentUuidCount = await ReadDocumentCountAsync(
+            RepeatStudentAcademicRecordDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success_for_authoritative_post_as_update_and_preserves_the_existing_document_uuid()
+    {
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingStudentAcademicRecordDocumentUuid);
+        _stateAfterPostAsUpdate
+            .Document.DocumentUuid.Should()
+            .Be(ExistingStudentAcademicRecordDocumentUuid.Value);
+        _stateAfterPostAsUpdate.Document.DocumentId.Should().Be(_stateAfterCreate.Document.DocumentId);
+        _stateAfterPostAsUpdate
+            .Document.ResourceKeyId.Should()
+            .Be(_mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]);
+        _stateAfterPostAsUpdate
+            .Document.ContentVersion.Should()
+            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
+        _resourceDocumentCount.Should().Be(1);
+        _incomingDocumentUuidCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_updates_root_and_extension_rows_in_place_for_authoritative_student_academic_record_post_as_update()
+    {
+        _stateAfterPostAsUpdate
+            .AcademicRecord.Should()
+            .Be(
+                new AuthoritativeStudentAcademicRecordRow(
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.SchoolDocumentId,
+                    100,
+                    _seedData.SchoolYearTypeDocumentId,
+                    2026,
+                    _seedData.StudentDocumentId,
+                    "10001",
+                    _seedData.FallTermDescriptorDocumentId,
+                    19.250m,
+                    "2028-05-22"
+                )
+            );
+        _stateAfterPostAsUpdate
+            .AcademicRecordExtension.Should()
+            .Be(
+                new AuthoritativeStudentAcademicRecordExtensionRow(
+                    _stateAfterCreate.Document.DocumentId,
+                    "Updated transcript note"
+                )
+            );
+    }
+
+    [Test]
+    public void It_reuses_stable_collection_item_ids_for_retained_child_rows_and_replaces_omitted_rows()
+    {
+        _stateAfterPostAsUpdate
+            .AcademicHonors.Should()
+            .Equal(
+                new AuthoritativeStudentAcademicRecordAcademicHonorRow(
+                    _stateAfterCreate.AcademicHonors[0].CollectionItemId,
+                    0,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.HonorRollAcademicHonorCategoryDescriptorDocumentId,
+                    "Honor Roll",
+                    "District Honors Board"
+                ),
+                new AuthoritativeStudentAcademicRecordAcademicHonorRow(
+                    _stateAfterPostAsUpdate.AcademicHonors[1].CollectionItemId,
+                    1,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+                    "Community Service",
+                    "Community Foundation"
+                )
+            );
+        _stateAfterPostAsUpdate
+            .AcademicHonors[1]
+            .CollectionItemId.Should()
+            .NotBe(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
+        _stateAfterPostAsUpdate
+            .AcademicHonors.Select(row => row.CollectionItemId)
+            .Should()
+            .NotContain(_stateAfterCreate.AcademicHonors[1].CollectionItemId);
+
+        _stateAfterPostAsUpdate
+            .Diplomas.Should()
+            .Equal(
+                new AuthoritativeStudentAcademicRecordDiplomaRow(
+                    _stateAfterCreate.Diplomas[0].CollectionItemId,
+                    0,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.StandardDiplomaTypeDescriptorDocumentId,
+                    "2028-05-24",
+                    "Revised Standard Path"
+                ),
+                new AuthoritativeStudentAcademicRecordDiplomaRow(
+                    _stateAfterPostAsUpdate.Diplomas[1].CollectionItemId,
+                    1,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.HonorsDiplomaTypeDescriptorDocumentId,
+                    "2028-05-26",
+                    "Honors Path"
+                )
+            );
+        _stateAfterPostAsUpdate
+            .Diplomas[1]
+            .CollectionItemId.Should()
+            .NotBe(_stateAfterCreate.Diplomas[1].CollectionItemId);
+        _stateAfterPostAsUpdate
+            .Diplomas.Select(row => row.CollectionItemId)
+            .Should()
+            .NotContain(_stateAfterCreate.Diplomas[1].CollectionItemId);
+
+        _stateAfterPostAsUpdate
+            .GradePointAverages.Should()
+            .Equal(
+                new AuthoritativeStudentAcademicRecordGradePointAverageRow(
+                    _stateAfterCreate.GradePointAverages[0].CollectionItemId,
+                    0,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
+                    3.6100m,
+                    true
+                ),
+                new AuthoritativeStudentAcademicRecordGradePointAverageRow(
+                    _stateAfterPostAsUpdate.GradePointAverages[1].CollectionItemId,
+                    1,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
+                    4.1200m,
+                    false
+                )
+            );
+        _stateAfterPostAsUpdate
+            .GradePointAverages[1]
+            .CollectionItemId.Should()
+            .NotBe(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
+        _stateAfterPostAsUpdate
+            .GradePointAverages.Select(row => row.CollectionItemId)
+            .Should()
+            .NotContain(_stateAfterCreate.GradePointAverages[1].CollectionItemId);
+
+        _stateAfterPostAsUpdate
+            .Recognitions.Should()
+            .Equal(
+                new AuthoritativeStudentAcademicRecordRecognitionRow(
+                    _stateAfterCreate.Recognitions[0].CollectionItemId,
+                    0,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.MeritRecognitionTypeDescriptorDocumentId,
+                    "State Merit",
+                    "State Board"
+                ),
+                new AuthoritativeStudentAcademicRecordRecognitionRow(
+                    _stateAfterPostAsUpdate.Recognitions[1].CollectionItemId,
+                    1,
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.AttendanceRecognitionTypeDescriptorDocumentId,
+                    "Perfect Attendance",
+                    "District Office"
+                )
+            );
+        _stateAfterPostAsUpdate
+            .Recognitions[1]
+            .CollectionItemId.Should()
+            .NotBe(_stateAfterCreate.Recognitions[1].CollectionItemId);
+        _stateAfterPostAsUpdate
+            .Recognitions.Select(row => row.CollectionItemId)
+            .Should()
+            .NotContain(_stateAfterCreate.Recognitions[1].CollectionItemId);
+    }
+
+    [Test]
+    public void It_keeps_rowsets_and_content_version_unchanged_for_a_repeat_authoritative_post_as_update()
+    {
+        _repeatPostAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _repeatPostAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingStudentAcademicRecordDocumentUuid);
+        _stateAfterRepeatPostAsUpdate.Should().BeEquivalentTo(_stateAfterPostAsUpdate);
+        _repeatIncomingDocumentUuidCount.Should().Be(0);
+    }
+
+    private async Task<UpsertResult> ExecuteUpsertAsync(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        ReferentialId? referentialId = null
+    )
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWritePostAsUpdateAuthoritativeSampleStudentAcademicRecord",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(
+            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
+        );
+    }
+
+    private UpsertRequest CreateUpsertRequest(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        ReferentialId? referentialId
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+
+        return new(
+            ResourceInfo: _resourceInfo,
+            DocumentInfo: CreateDocumentInfo(requestBody, referentialId),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+    }
+
+    private DocumentInfo CreateDocumentInfo(JsonNode requestBody, ReferentialId? referentialId = null)
+    {
+        var (documentIdentity, superclassIdentity) = _baseResourceSchema.ExtractIdentities(
+            requestBody,
+            NullLogger.Instance
+        );
+
+        var (baseDocumentReferences, baseDocumentReferenceArrays) = _baseResourceSchema.ExtractReferences(
+            requestBody,
+            NullLogger.Instance
+        );
+
+        var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
+            _extensionResourceSchema.ExtractReferences(requestBody, NullLogger.Instance);
+
+        var descriptorReferences = _baseResourceSchema
+            .ExtractDescriptors(requestBody, NullLogger.Instance)
+            .Concat(_extensionResourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance))
+            .ToArray();
+
+        return new(
+            DocumentIdentity: documentIdentity,
+            ReferentialId: referentialId
+                ?? ReferentialIdCalculator.ReferentialIdFrom(_resourceInfo, documentIdentity),
+            DocumentReferences: [.. baseDocumentReferences, .. extensionDocumentReferences],
+            DocumentReferenceArrays: [.. baseDocumentReferenceArrays, .. extensionDocumentReferenceArrays],
+            DescriptorReferences: descriptorReferences,
+            SuperclassIdentity: superclassIdentity
+        );
+    }
+
+    private static (ProjectSchema ProjectSchema, ResourceSchema ResourceSchema) GetResourceSchema(
+        EffectiveSchemaSet effectiveSchemaSet,
+        string projectEndpointName,
+        string resourceName
+    )
+    {
+        var effectiveProjectSchema = effectiveSchemaSet.ProjectsInEndpointOrder.Single(project =>
+            string.Equals(
+                project.ProjectEndpointName,
+                projectEndpointName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+
+        var projectSchema = new ProjectSchema(effectiveProjectSchema.ProjectSchema, NullLogger.Instance);
+        var resourceSchemaNode =
+            projectSchema.FindResourceSchemaNodeByResourceName(new ResourceName(resourceName))
+            ?? projectSchema
+                .GetAllResourceSchemaNodes()
+                .SingleOrDefault(node =>
+                    string.Equals(
+                        node["resourceName"]?.GetValue<string>(),
+                        resourceName,
+                        StringComparison.Ordinal
+                    )
+                )
+            ?? throw new InvalidOperationException(
+                $"Could not find resource '{resourceName}' in project '{projectEndpointName}'."
+            );
+
+        return (projectSchema, new ResourceSchema(resourceSchemaNode));
+    }
+
+    private static ResourceInfo CreateResourceInfo(
+        ProjectSchema projectSchema,
+        ResourceSchema resourceSchema
+    ) =>
+        new(
+            ProjectName: projectSchema.ProjectName,
+            ResourceName: resourceSchema.ResourceName,
+            IsDescriptor: resourceSchema.IsDescriptor,
+            ResourceVersion: projectSchema.ResourceVersion,
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+            AuthorizationSecurableInfo: []
+        );
+
+    private static string FormatReferenceFailure(UpsertResult.UpsertFailureReference failure)
+    {
+        var documentFailures = failure.InvalidDocumentReferences.Select(reference =>
+            $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+        );
+        var descriptorFailures = failure.InvalidDescriptorReferences.Select(reference =>
+            $"{reference.Path.Value} -> {reference.TargetResource.ProjectName.Value}.{reference.TargetResource.ResourceName.Value} ({reference.Reason})"
+        );
+
+        return string.Join(" | ", documentFailures.Concat(descriptorFailures));
+    }
+
+    private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
+    {
+        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "EducationOrganization"
+        );
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+        var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
+        var academicHonorCategoryDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "AcademicHonorCategoryDescriptor"
+        );
+        var diplomaTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "DiplomaTypeDescriptor"
+        );
+        var gradePointAverageTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "GradePointAverageTypeDescriptor"
+        );
+        var recognitionTypeDescriptorResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "RecognitionTypeDescriptor"
+        );
+
+        var schoolDocumentId = await InsertDocumentAsync(
+            Guid.Parse("11111111-0000-0000-0000-000000000001"),
+            schoolResourceKeyId
+        );
+        await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(("Ed-Fi", "School", false), ("$.schoolId", "100")),
+            schoolDocumentId,
+            schoolResourceKeyId
+        );
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(
+                ("Ed-Fi", "EducationOrganization", false),
+                ("$.educationOrganizationId", "100")
+            ),
+            schoolDocumentId,
+            educationOrganizationResourceKeyId
+        );
+
+        var schoolYearTypeDocumentId = await InsertDocumentAsync(
+            Guid.Parse("22222222-0000-0000-0000-000000000002"),
+            schoolYearTypeResourceKeyId
+        );
+        await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(("Ed-Fi", "SchoolYearType", false), ("$.schoolYear", "2026")),
+            schoolYearTypeDocumentId,
+            schoolYearTypeResourceKeyId
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("33333333-0000-0000-0000-000000000003"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", "10001")),
+            studentDocumentId,
+            studentResourceKeyId
+        );
+
+        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("44444444-0000-0000-0000-000000000004"),
+            termDescriptorResourceKeyId,
+            "Ed-Fi:TermDescriptor",
+            "uri://ed-fi.org/TermDescriptor#Fall",
+            "uri://ed-fi.org/TermDescriptor",
+            "Fall",
+            "Fall"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", "uri://ed-fi.org/TermDescriptor#Fall"),
+            fallTermDescriptorDocumentId,
+            termDescriptorResourceKeyId
+        );
+
+        var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("55555555-0000-0000-0000-000000000005"),
+            academicHonorCategoryDescriptorResourceKeyId,
+            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
+            "HonorRoll",
+            "Honor Roll"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "AcademicHonorCategoryDescriptor",
+                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll"
+            ),
+            honorRollAcademicHonorCategoryDescriptorDocumentId,
+            academicHonorCategoryDescriptorResourceKeyId
+        );
+
+        var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("66666666-0000-0000-0000-000000000006"),
+            academicHonorCategoryDescriptorResourceKeyId,
+            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
+            "ScholarAthlete",
+            "Scholar Athlete"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "AcademicHonorCategoryDescriptor",
+                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete"
+            ),
+            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+            academicHonorCategoryDescriptorResourceKeyId
+        );
+
+        var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("77777777-0000-0000-0000-000000000007"),
+            academicHonorCategoryDescriptorResourceKeyId,
+            "Ed-Fi:AcademicHonorCategoryDescriptor",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService",
+            "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
+            "CommunityService",
+            "Community Service"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "AcademicHonorCategoryDescriptor",
+                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService"
+            ),
+            communityServiceAcademicHonorCategoryDescriptorDocumentId,
+            academicHonorCategoryDescriptorResourceKeyId
+        );
+
+        var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("88888888-0000-0000-0000-000000000008"),
+            diplomaTypeDescriptorResourceKeyId,
+            "Ed-Fi:DiplomaTypeDescriptor",
+            "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
+            "uri://ed-fi.org/DiplomaTypeDescriptor",
+            "StandardDiploma",
+            "Standard Diploma"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "DiplomaTypeDescriptor",
+                "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma"
+            ),
+            standardDiplomaTypeDescriptorDocumentId,
+            diplomaTypeDescriptorResourceKeyId
+        );
+
+        var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("99999999-0000-0000-0000-000000000009"),
+            diplomaTypeDescriptorResourceKeyId,
+            "Ed-Fi:DiplomaTypeDescriptor",
+            "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma",
+            "uri://ed-fi.org/DiplomaTypeDescriptor",
+            "CareerDiploma",
+            "Career Diploma"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "DiplomaTypeDescriptor",
+                "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma"
+            ),
+            careerDiplomaTypeDescriptorDocumentId,
+            diplomaTypeDescriptorResourceKeyId
+        );
+
+        var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("aaaaaaaa-0000-0000-0000-00000000000a"),
+            diplomaTypeDescriptorResourceKeyId,
+            "Ed-Fi:DiplomaTypeDescriptor",
+            "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma",
+            "uri://ed-fi.org/DiplomaTypeDescriptor",
+            "HonorsDiploma",
+            "Honors Diploma"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "DiplomaTypeDescriptor",
+                "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma"
+            ),
+            honorsDiplomaTypeDescriptorDocumentId,
+            diplomaTypeDescriptorResourceKeyId
+        );
+
+        var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("bbbbbbbb-0000-0000-0000-00000000000b"),
+            gradePointAverageTypeDescriptorResourceKeyId,
+            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor",
+            "Cumulative",
+            "Cumulative"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "GradePointAverageTypeDescriptor",
+                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative"
+            ),
+            cumulativeGradePointAverageTypeDescriptorDocumentId,
+            gradePointAverageTypeDescriptorResourceKeyId
+        );
+
+        var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("cccccccc-0000-0000-0000-00000000000c"),
+            gradePointAverageTypeDescriptorResourceKeyId,
+            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor",
+            "Session",
+            "Session"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "GradePointAverageTypeDescriptor",
+                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session"
+            ),
+            sessionGradePointAverageTypeDescriptorDocumentId,
+            gradePointAverageTypeDescriptorResourceKeyId
+        );
+
+        var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("dddddddd-0000-0000-0000-00000000000d"),
+            gradePointAverageTypeDescriptorResourceKeyId,
+            "Ed-Fi:GradePointAverageTypeDescriptor",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted",
+            "uri://ed-fi.org/GradePointAverageTypeDescriptor",
+            "Weighted",
+            "Weighted"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "GradePointAverageTypeDescriptor",
+                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted"
+            ),
+            weightedGradePointAverageTypeDescriptorDocumentId,
+            gradePointAverageTypeDescriptorResourceKeyId
+        );
+
+        var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("eeeeeeee-0000-0000-0000-00000000000e"),
+            recognitionTypeDescriptorResourceKeyId,
+            "Ed-Fi:RecognitionTypeDescriptor",
+            "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
+            "uri://ed-fi.org/RecognitionTypeDescriptor",
+            "Merit",
+            "Merit"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "RecognitionTypeDescriptor",
+                "uri://ed-fi.org/RecognitionTypeDescriptor#Merit"
+            ),
+            meritRecognitionTypeDescriptorDocumentId,
+            recognitionTypeDescriptorResourceKeyId
+        );
+
+        var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("ffffffff-0000-0000-0000-00000000000f"),
+            recognitionTypeDescriptorResourceKeyId,
+            "Ed-Fi:RecognitionTypeDescriptor",
+            "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership",
+            "uri://ed-fi.org/RecognitionTypeDescriptor",
+            "Leadership",
+            "Leadership"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "RecognitionTypeDescriptor",
+                "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership"
+            ),
+            leadershipRecognitionTypeDescriptorDocumentId,
+            recognitionTypeDescriptorResourceKeyId
+        );
+
+        var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000010"),
+            recognitionTypeDescriptorResourceKeyId,
+            "Ed-Fi:RecognitionTypeDescriptor",
+            "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance",
+            "uri://ed-fi.org/RecognitionTypeDescriptor",
+            "Attendance",
+            "Attendance"
+        );
+        await InsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId(
+                "Ed-Fi",
+                "RecognitionTypeDescriptor",
+                "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance"
+            ),
+            attendanceRecognitionTypeDescriptorDocumentId,
+            recognitionTypeDescriptorResourceKeyId
+        );
+
+        return new(
+            schoolDocumentId,
+            schoolYearTypeDocumentId,
+            studentDocumentId,
+            fallTermDescriptorDocumentId,
+            honorRollAcademicHonorCategoryDescriptorDocumentId,
+            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+            communityServiceAcademicHonorCategoryDescriptorDocumentId,
+            standardDiplomaTypeDescriptorDocumentId,
+            careerDiplomaTypeDescriptorDocumentId,
+            honorsDiplomaTypeDescriptorDocumentId,
+            cumulativeGradePointAverageTypeDescriptorDocumentId,
+            sessionGradePointAverageTypeDescriptorDocumentId,
+            weightedGradePointAverageTypeDescriptorDocumentId,
+            meritRecognitionTypeDescriptorDocumentId,
+            leadershipRecognitionTypeDescriptorDocumentId,
+            attendanceRecognitionTypeDescriptorDocumentId
+        );
+    }
+
+    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    {
+        return await _database.ExecuteScalarAsync<short>(
+            """
+            SELECT "ResourceKeyId"
+            FROM "dms"."ResourceKey"
+            WHERE "ProjectName" = @projectName
+              AND "ResourceName" = @resourceName;
+            """,
+            new NpgsqlParameter("projectName", projectName),
+            new NpgsqlParameter("resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@documentUuid, @resourceKeyId)
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private async Task<long> InsertDescriptorAsync(
+        Guid documentUuid,
+        short resourceKeyId,
+        string discriminator,
+        string uri,
+        string @namespace,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "Discriminator",
+                "Uri"
+            )
+            VALUES (
+                @documentId,
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                @description,
+                @discriminator,
+                @uri
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("namespace", @namespace),
+            new NpgsqlParameter("codeValue", codeValue),
+            new NpgsqlParameter("shortDescription", shortDescription),
+            new NpgsqlParameter("description", shortDescription),
+            new NpgsqlParameter("discriminator", discriminator),
+            new NpgsqlParameter("uri", uri)
+        );
+
+        return documentId;
+    }
+
+    private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."School" ("DocumentId", "NameOfInstitution", "SchoolId")
+            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
+            new NpgsqlParameter("schoolId", schoolId)
+        );
+    }
+
+    private async Task InsertSchoolYearTypeAsync(
+        long documentId,
+        int schoolYear,
+        bool currentSchoolYear,
+        string schoolYearDescription
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."SchoolYearType" (
+                "DocumentId",
+                "CurrentSchoolYear",
+                "SchoolYear",
+                "SchoolYearDescription"
+            )
+            VALUES (
+                @documentId,
+                @currentSchoolYear,
+                @schoolYear,
+                @schoolYearDescription
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("currentSchoolYear", currentSchoolYear),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("schoolYearDescription", schoolYearDescription)
+        );
+    }
+
+    private async Task InsertStudentAsync(
+        long documentId,
+        string studentUniqueId,
+        string firstName,
+        string lastSurname
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Student" ("DocumentId", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
+            new NpgsqlParameter("firstName", firstName),
+            new NpgsqlParameter("lastSurname", lastSurname),
+            new NpgsqlParameter("studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task InsertReferentialIdentityAsync(
+        ReferentialId referentialId,
+        long documentId,
+        short resourceKeyId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+            VALUES (@referentialId, @documentId, @resourceKeyId)
+            ON CONFLICT ("ReferentialId") DO NOTHING;
+            """,
+            new NpgsqlParameter("referentialId", referentialId.Value),
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private static ReferentialId CreateReferentialId(
+        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
+        params (string IdentityJsonPath, string IdentityValue)[] identityElements
+    )
+    {
+        return ReferentialIdCalculator.ReferentialIdFrom(
+            new BaseResourceInfo(
+                new ProjectName(targetResource.ProjectName),
+                new ResourceName(targetResource.ResourceName),
+                targetResource.IsDescriptor
+            ),
+            new DocumentIdentity([
+                .. identityElements.Select(identityElement => new DocumentIdentityElement(
+                    new JsonPath(identityElement.IdentityJsonPath),
+                    identityElement.IdentityValue
+                )),
+            ])
+        );
+    }
+
+    private static ReferentialId CreateDescriptorReferentialId(
+        string projectName,
+        string resourceName,
+        string descriptorUri
+    )
+    {
+        return CreateReferentialId(
+            (projectName, resourceName, true),
+            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
+        );
+    }
+
+    private async Task<AuthoritativeStudentAcademicRecordPersistedState> ReadPersistedStateAsync(
+        Guid documentUuid
+    )
+    {
+        var document = await ReadDocumentAsync(documentUuid);
+
+        return new(
+            Document: document,
+            AcademicRecord: await ReadStudentAcademicRecordAsync(document.DocumentId),
+            AcademicRecordExtension: await ReadStudentAcademicRecordExtensionAsync(document.DocumentId),
+            AcademicHonors: await ReadAcademicHonorsAsync(document.DocumentId),
+            Diplomas: await ReadDiplomasAsync(document.DocumentId),
+            GradePointAverages: await ReadGradePointAveragesAsync(document.DocumentId),
+            Recognitions: await ReadRecognitionsAsync(document.DocumentId)
+        );
+    }
+
+    private async Task<AuthoritativePostAsUpdateDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? new AuthoritativePostAsUpdateDocumentRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<AuthoritativeStudentAcademicRecordRow> ReadStudentAcademicRecordAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "DocumentId",
+                "EducationOrganization_DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear",
+                "Student_DocumentId",
+                "Student_StudentUniqueId",
+                "TermDescriptor_DescriptorId",
+                "CumulativeEarnedCredits",
+                TO_CHAR("ProjectedGraduationDate", 'YYYY-MM-DD') AS "ProjectedGraduationDate"
+            FROM "edfi"."StudentAcademicRecord"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new AuthoritativeStudentAcademicRecordRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "EducationOrganization_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "EducationOrganization_EducationOrganizationId"
+                ),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolYear_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "SchoolYear_SchoolYear"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "TermDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(rows[0], "CumulativeEarnedCredits"),
+                PostAsUpdateIntegrationTestSupport.GetString(rows[0], "ProjectedGraduationDate")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<AuthoritativeStudentAcademicRecordExtensionRow> ReadStudentAcademicRecordExtensionAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "Notes"
+            FROM "sample"."StudentAcademicRecordExtension"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new AuthoritativeStudentAcademicRecordExtensionRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Notes")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one StudentAcademicRecordExtension row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<
+        IReadOnlyList<AuthoritativeStudentAcademicRecordAcademicHonorRow>
+    > ReadAcademicHonorsAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "CollectionItemId",
+                "Ordinal",
+                "StudentAcademicRecord_DocumentId",
+                "AcademicHonorCategoryDescriptor_DescriptorId",
+                "HonorDescription",
+                "IssuerName"
+            FROM "edfi"."StudentAcademicRecordAcademicHonor"
+            WHERE "StudentAcademicRecord_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new AuthoritativeStudentAcademicRecordAcademicHonorRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(
+                    row,
+                    "AcademicHonorCategoryDescriptor_DescriptorId"
+                ),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "HonorDescription"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
+            ))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<AuthoritativeStudentAcademicRecordDiplomaRow>> ReadDiplomasAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "CollectionItemId",
+                "Ordinal",
+                "StudentAcademicRecord_DocumentId",
+                "DiplomaTypeDescriptor_DescriptorId",
+                TO_CHAR("DiplomaAwardDate", 'YYYY-MM-DD') AS "DiplomaAwardDate",
+                "DiplomaDescription"
+            FROM "edfi"."StudentAcademicRecordDiploma"
+            WHERE "StudentAcademicRecord_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new AuthoritativeStudentAcademicRecordDiplomaRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DiplomaTypeDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaAwardDate"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaDescription")
+            ))
+            .ToArray();
+    }
+
+    private async Task<
+        IReadOnlyList<AuthoritativeStudentAcademicRecordGradePointAverageRow>
+    > ReadGradePointAveragesAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "CollectionItemId",
+                "Ordinal",
+                "StudentAcademicRecord_DocumentId",
+                "GradePointAverageTypeDescriptor_DescriptorId",
+                "GradePointAverageValue",
+                "IsCumulative"
+            FROM "edfi"."StudentAcademicRecordGradePointAverage"
+            WHERE "StudentAcademicRecord_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new AuthoritativeStudentAcademicRecordGradePointAverageRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(
+                    row,
+                    "GradePointAverageTypeDescriptor_DescriptorId"
+                ),
+                PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
+                PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
+            ))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<AuthoritativeStudentAcademicRecordRecognitionRow>> ReadRecognitionsAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "CollectionItemId",
+                "Ordinal",
+                "StudentAcademicRecord_DocumentId",
+                "RecognitionTypeDescriptor_DescriptorId",
+                "RecognitionDescription",
+                "IssuerName"
+            FROM "edfi"."StudentAcademicRecordRecognition"
+            WHERE "StudentAcademicRecord_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new AuthoritativeStudentAcademicRecordRecognitionRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "RecognitionTypeDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "RecognitionDescription"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
+            ))
+            .ToArray();
+    }
+
+    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
+        long documentId,
+        short resourceKeyId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+              AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        return rows.Count == 1
+            ? new ReferentialIdentityRow(
+                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<long> ReadDocumentCountAsync(short resourceKeyId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document"
+            WHERE "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 }

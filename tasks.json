@@ -139,7 +139,7 @@
       "If the second POST body is repeated unchanged, assert the follow-up authoritative POST-as-update behaves as a guarded no-op with unchanged rowsets and unchanged `dms.Document.ContentVersion`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostAsUpdate\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative ds-5.2 Contact Nested Base Collections",
