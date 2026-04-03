@@ -84,6 +84,7 @@ internal sealed class DescriptorWriteHandler(
                             body,
                             documentId,
                             documentUuid,
+                            resourceKeyId,
                             cancellationToken
                         )
                         .ConfigureAwait(false),
@@ -339,6 +340,7 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         long documentId,
         DocumentUuid existingDocumentUuid,
+        short resourceKeyId,
         CancellationToken cancellationToken
     )
     {
@@ -351,8 +353,18 @@ internal sealed class DescriptorWriteHandler(
 
         var command = request.MappingSet.Key.Dialect switch
         {
-            SqlDialect.Pgsql => BuildPostgresqlUpdateCommand(body, documentId),
-            SqlDialect.Mssql => BuildMssqlUpdateCommand(body, documentId),
+            SqlDialect.Pgsql => BuildPostgresqlUpsertUpdateCommand(
+                body,
+                documentId,
+                resourceKeyId,
+                request.ReferentialId!.Value
+            ),
+            SqlDialect.Mssql => BuildMssqlUpsertUpdateCommand(
+                body,
+                documentId,
+                resourceKeyId,
+                request.ReferentialId!.Value
+            ),
             _ => throw new NotSupportedException(
                 $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
             ),
@@ -488,6 +500,85 @@ internal sealed class DescriptorWriteHandler(
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
     }
 
+    // ── Upsert-update SQL builders (POST as upsert — includes ReferentialIdentity) ──
+
+    private static RelationalCommand BuildPostgresqlUpsertUpdateCommand(
+        ExtractedDescriptorBody body,
+        long documentId,
+        short resourceKeyId,
+        ReferentialId referentialId
+    )
+    {
+        const string Sql = """
+            UPDATE dms."Descriptor"
+            SET "Namespace" = @namespace,
+                "CodeValue" = @codeValue,
+                "ShortDescription" = @shortDescription,
+                "Description" = @description,
+                "EffectiveBeginDate" = @effectiveBeginDate::date,
+                "EffectiveEndDate" = @effectiveEndDate::date,
+                "Uri" = @uri
+            WHERE "DocumentId" = @documentId;
+
+            UPDATE dms."Document"
+            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
+                "ContentLastModifiedAt" = now()
+            WHERE "DocumentId" = @documentId;
+
+            INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+            VALUES (@referentialId, @documentId, @resourceKeyId)
+            ON CONFLICT ("ReferentialId") DO UPDATE
+            SET "DocumentId" = EXCLUDED."DocumentId",
+                "ResourceKeyId" = EXCLUDED."ResourceKeyId";
+            """;
+
+        return new RelationalCommand(
+            Sql,
+            BuildUpsertUpdateParameters(body, documentId, resourceKeyId, referentialId)
+        );
+    }
+
+    private static RelationalCommand BuildMssqlUpsertUpdateCommand(
+        ExtractedDescriptorBody body,
+        long documentId,
+        short resourceKeyId,
+        ReferentialId referentialId
+    )
+    {
+        const string Sql = """
+            UPDATE [dms].[Descriptor]
+            SET [Namespace] = @namespace,
+                [CodeValue] = @codeValue,
+                [ShortDescription] = @shortDescription,
+                [Description] = @description,
+                [EffectiveBeginDate] = @effectiveBeginDate,
+                [EffectiveEndDate] = @effectiveEndDate,
+                [Uri] = @uri
+            WHERE [DocumentId] = @documentId;
+
+            UPDATE [dms].[Document]
+            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
+                [ContentLastModifiedAt] = GETUTCDATE()
+            WHERE [DocumentId] = @documentId;
+
+            MERGE [dms].[ReferentialIdentity] AS target
+            USING (VALUES (@referentialId, @documentId, @resourceKeyId))
+                AS source ([ReferentialId], [DocumentId], [ResourceKeyId])
+            ON target.[ReferentialId] = source.[ReferentialId]
+            WHEN MATCHED THEN
+                UPDATE SET [DocumentId] = source.[DocumentId],
+                           [ResourceKeyId] = source.[ResourceKeyId]
+            WHEN NOT MATCHED THEN
+                INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
+                VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
+            """;
+
+        return new RelationalCommand(
+            Sql,
+            BuildUpsertUpdateParameters(body, documentId, resourceKeyId, referentialId)
+        );
+    }
+
     // ── Persisted descriptor read ──────────────────────────────────────────
 
     private async Task<PersistedDescriptorState?> ReadPersistedDescriptorAsync(
@@ -594,6 +685,20 @@ internal sealed class DescriptorWriteHandler(
     {
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentId", documentId));
+        return parameters;
+    }
+
+    private static List<RelationalParameter> BuildUpsertUpdateParameters(
+        ExtractedDescriptorBody body,
+        long documentId,
+        short resourceKeyId,
+        ReferentialId referentialId
+    )
+    {
+        var parameters = BuildCommonFieldParameters(body);
+        parameters.Add(new RelationalParameter("@documentId", documentId));
+        parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
+        parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
         return parameters;
     }
 
