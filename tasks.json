@@ -87,7 +87,7 @@
       "Add a negative authoritative write where the school-identity members disagree; assert the API result is a validation failure for key-unification conflict and all affected tables, including `dms.Document`, remain unchanged after the rejected attempt.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative SurveyQuestion Collection Stability Smoke",

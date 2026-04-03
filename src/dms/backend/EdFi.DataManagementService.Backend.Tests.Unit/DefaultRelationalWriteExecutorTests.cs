@@ -145,8 +145,14 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
         _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
-        _targetLookupResolver.CapturedWriteSession.Should().BeNull();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
+        _targetLookupResolver
+            .CapturedWriteSession!.Connection.Should()
+            .BeSameAs(_writeSessionFactory.Session.Connection);
+        _targetLookupResolver
+            .CapturedWriteSession!.Transaction.Should()
+            .BeSameAs(_writeSessionFactory.Session.Transaction);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -249,6 +255,64 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_revalidates_create_new_post_requests_inside_the_write_session_before_persisting()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var existingTargetContext = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            existingDocumentUuid,
+            45L
+        );
+
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(
+            request with
+            {
+                TargetContext = existingTargetContext,
+            },
+            45L
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
+        _targetLookupResolver
+            .CapturedWriteSession!.Connection.Should()
+            .BeSameAs(_writeSessionFactory.Session.Connection);
+        _targetLookupResolver
+            .CapturedWriteSession!.Transaction.Should()
+            .BeSameAs(_writeSessionFactory.Session.Transaction);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _currentStateLoader.CapturedRequest.Should().NotBeNull();
+        _currentStateLoader.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
+        _nonCollectionPersister.CapturedRequest.Should().NotBeNull();
+        _nonCollectionPersister.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
 
     [Test]

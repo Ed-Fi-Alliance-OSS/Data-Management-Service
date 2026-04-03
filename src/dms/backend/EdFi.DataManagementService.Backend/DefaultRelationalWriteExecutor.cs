@@ -82,26 +82,45 @@ internal sealed class DefaultRelationalWriteExecutor(
             }
 
             RelationalWriteCurrentState? currentState = null;
+            InSessionTargetResolution? inSessionTargetResolution = null;
 
-            if (targetContext is RelationalWriteTargetContext.ExistingDocument existingDocument)
+            if (
+                request.TargetRequest
+                    is RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid)
+                && targetContext is RelationalWriteTargetContext.CreateNew
+            )
             {
-                var currentStateResolution = await LoadCurrentStateForExistingTargetAsync(
+                inSessionTargetResolution = await ResolveCreateVsExistingPostTargetAsync(
+                        request,
+                        referentialId,
+                        candidateDocumentUuid,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else if (targetContext is RelationalWriteTargetContext.ExistingDocument existingDocument)
+            {
+                inSessionTargetResolution = await LoadCurrentStateForExistingTargetAsync(
                         request,
                         existingDocument,
                         writeSession,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+            }
 
-                if (currentStateResolution.ImmediateResult is not null)
+            if (inSessionTargetResolution is not null)
+            {
+                if (inSessionTargetResolution.ImmediateResult is not null)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return currentStateResolution.ImmediateResult;
+                    return inSessionTargetResolution.ImmediateResult;
                 }
 
-                targetContext = currentStateResolution.TargetContext!;
+                targetContext = inSessionTargetResolution.TargetContext!;
                 executionRequest = request with { TargetContext = targetContext };
-                currentState = currentStateResolution.CurrentState;
+                currentState = inSessionTargetResolution.CurrentState;
             }
 
             var flattenedWriteSet = _writeFlattener.Flatten(
@@ -276,70 +295,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private async Task<ExistingTargetCurrentStateResolution> LoadCurrentStateForExistingTargetAsync(
-        RelationalWriteExecutorRequest request,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        var missingReadPlanResult = TryBuildMissingExistingDocumentReadPlanResult(request);
-
-        if (missingReadPlanResult is not null)
-        {
-            return new ExistingTargetCurrentStateResolution(null, null, missingReadPlanResult);
-        }
-
-        var currentState = await _currentStateLoader
-            .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (currentState is not null)
-        {
-            return new ExistingTargetCurrentStateResolution(
-                RefreshTargetContextFromCurrentState(targetContext, currentState),
-                currentState,
-                null
-            );
-        }
-
-        return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<ExistingTargetCurrentStateResolution> HandleMissingExistingTargetAsync(
-        RelationalWriteExecutorRequest request,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        return request.TargetRequest switch
-        {
-            RelationalWriteTargetRequest.Put => new ExistingTargetCurrentStateResolution(
-                null,
-                null,
-                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-            ),
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
-                await ReevaluatePostTargetAsync(
-                        request,
-                        referentialId,
-                        candidateDocumentUuid,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false),
-            _ => throw new InvalidOperationException(
-                $"Relational existing-target recovery does not support target request type '{request.TargetRequest.GetType().Name}'."
-            ),
-        };
-    }
-
-    private async Task<ExistingTargetCurrentStateResolution> ReevaluatePostTargetAsync(
+    private async Task<InSessionTargetResolution> ResolveCreateVsExistingPostTargetAsync(
         RelationalWriteExecutorRequest request,
         ReferentialId referentialId,
         DocumentUuid candidateDocumentUuid,
@@ -363,7 +319,116 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         if (targetContext is RelationalWriteTargetContext.CreateNew createdTargetContext)
         {
-            return new ExistingTargetCurrentStateResolution(createdTargetContext, null, null);
+            return new InSessionTargetResolution(createdTargetContext, null, null);
+        }
+
+        if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
+        {
+            throw new InvalidOperationException(
+                $"Relational POST target re-evaluation returned unsupported result type '{targetLookupResult.GetType().Name}'."
+            );
+        }
+
+        return await LoadCurrentStateForExistingTargetAsync(
+                request with
+                {
+                    TargetContext = existingTargetContext,
+                },
+                existingTargetContext,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<InSessionTargetResolution> LoadCurrentStateForExistingTargetAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var missingReadPlanResult = TryBuildMissingExistingDocumentReadPlanResult(request);
+
+        if (missingReadPlanResult is not null)
+        {
+            return new InSessionTargetResolution(null, null, missingReadPlanResult);
+        }
+
+        var currentState = await _currentStateLoader
+            .LoadAsync(
+                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (currentState is not null)
+        {
+            return new InSessionTargetResolution(
+                RefreshTargetContextFromCurrentState(targetContext, currentState),
+                currentState,
+                null
+            );
+        }
+
+        return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<InSessionTargetResolution> HandleMissingExistingTargetAsync(
+        RelationalWriteExecutorRequest request,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        return request.TargetRequest switch
+        {
+            RelationalWriteTargetRequest.Put => new InSessionTargetResolution(
+                null,
+                null,
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            ),
+            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
+                await ReevaluatePostTargetAsync(
+                        request,
+                        referentialId,
+                        candidateDocumentUuid,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+            _ => throw new InvalidOperationException(
+                $"Relational existing-target recovery does not support target request type '{request.TargetRequest.GetType().Name}'."
+            ),
+        };
+    }
+
+    private async Task<InSessionTargetResolution> ReevaluatePostTargetAsync(
+        RelationalWriteExecutorRequest request,
+        ReferentialId referentialId,
+        DocumentUuid candidateDocumentUuid,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var targetLookupResult = await _targetLookupResolver
+            .ResolveForPostAsync(
+                request.MappingSet,
+                request.WritePlan.Model.Resource,
+                referentialId,
+                candidateDocumentUuid,
+                writeSession.Connection,
+                writeSession.Transaction,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+
+        if (targetContext is RelationalWriteTargetContext.CreateNew createdTargetContext)
+        {
+            return new InSessionTargetResolution(createdTargetContext, null, null);
         }
 
         if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
@@ -377,7 +442,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         if (missingReadPlanResult is not null)
         {
-            return new ExistingTargetCurrentStateResolution(null, null, missingReadPlanResult);
+            return new InSessionTargetResolution(null, null, missingReadPlanResult);
         }
 
         var currentState = await _currentStateLoader
@@ -392,12 +457,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             .ConfigureAwait(false);
 
         return currentState is not null
-            ? new ExistingTargetCurrentStateResolution(
+            ? new InSessionTargetResolution(
                 RefreshTargetContextFromCurrentState(existingTargetContext, currentState),
                 currentState,
                 null
             )
-            : new ExistingTargetCurrentStateResolution(
+            : new InSessionTargetResolution(
                 null,
                 null,
                 new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
@@ -434,7 +499,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteCurrentState currentState
     ) => targetContext with { ObservedContentVersion = currentState.DocumentMetadata.ContentVersion };
 
-    private sealed record ExistingTargetCurrentStateResolution(
+    private sealed record InSessionTargetResolution(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteCurrentState? CurrentState,
         RelationalWriteExecutorResult? ImmediateResult

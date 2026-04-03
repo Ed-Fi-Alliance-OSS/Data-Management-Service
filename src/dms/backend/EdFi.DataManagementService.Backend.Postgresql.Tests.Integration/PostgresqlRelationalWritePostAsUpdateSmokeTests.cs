@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Backend;
@@ -69,9 +71,72 @@ file sealed class PostAsUpdateNoOpUpdateCascadeHandler : IUpdateCascadeHandler
         );
 }
 
+internal sealed class ConcurrentPostCreateRaceCoordinator
+{
+    private readonly TaskCompletionSource _firstResolverCallPending = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    private readonly TaskCompletionSource _allowFirstResolverCall = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
+    private int _resolveForPostCallCount;
+
+    public async Task WaitForFirstResolverCallWindowAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.Increment(ref _resolveForPostCallCount) != 1)
+        {
+            return;
+        }
+
+        _firstResolverCallPending.TrySetResult();
+        await _allowFirstResolverCall.Task.WaitAsync(cancellationToken);
+    }
+
+    public Task WaitUntilFirstResolverCallIsPendingAsync(CancellationToken cancellationToken = default) =>
+        _firstResolverCallPending.Task.WaitAsync(cancellationToken);
+
+    public void ReleaseFirstResolverCall() => _allowFirstResolverCall.TrySetResult();
+}
+
+internal sealed class BlockingPostTargetLookupResolver(ConcurrentPostCreateRaceCoordinator coordinator)
+    : IRelationalWriteTargetLookupResolver
+{
+    private readonly ConcurrentPostCreateRaceCoordinator _coordinator =
+        coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+
+    private readonly RelationalWriteTargetLookupResolver _innerResolver = new();
+
+    public async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ReferentialId referentialId,
+        DocumentUuid candidateDocumentUuid,
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _coordinator.WaitForFirstResolverCallWindowAsync(cancellationToken);
+
+        return await _innerResolver.ResolveForPostAsync(
+            mappingSet,
+            resource,
+            referentialId,
+            candidateDocumentUuid,
+            connection,
+            transaction,
+            cancellationToken
+        );
+    }
+}
+
 file static class PostAsUpdateIntegrationTestSupport
 {
-    public static ServiceProvider CreateServiceProvider()
+    public static ServiceProvider CreateServiceProvider(
+        ConcurrentPostCreateRaceCoordinator? raceCoordinator = null
+    )
     {
         ServiceCollection services = [];
 
@@ -82,6 +147,13 @@ file static class PostAsUpdateIntegrationTestSupport
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddScoped<RelationalDocumentStoreRepository>();
+
+        if (raceCoordinator is not null)
+        {
+            services.AddSingleton(raceCoordinator);
+            services.AddScoped<IRelationalWriteTargetLookupResolver, BlockingPostTargetLookupResolver>();
+        }
+
         services.AddPostgresqlReferenceResolver();
 
         return services.BuildServiceProvider(
@@ -950,6 +1022,351 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "BaseCollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "Zone")
+            ))
+            .ToArray();
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture
+{
+    private const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
+
+    private const string CreateWinnerRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "CREATE-WINNER",
+          "addresses": [
+            {
+              "city": "Austin"
+            }
+          ]
+        }
+        """;
+
+    private const string StaleCreateCandidateRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LAST-WRITER",
+          "addresses": [
+            {
+              "city": "Dallas"
+            }
+          ]
+        }
+        """;
+
+    private static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+        AuthorizationSecurableInfo: []
+    );
+    private static readonly DocumentUuid CreateWinnerDocumentUuid = new(
+        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000101")
+    );
+    private static readonly DocumentUuid StaleCreateCandidateDocumentUuid = new(
+        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000102")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ConcurrentPostCreateRaceCoordinator _raceCoordinator = null!;
+    private UpsertResult _createWinnerResult = null!;
+    private UpsertResult _staleCreateCandidateResult = null!;
+    private ReferentialId _sharedSchoolReferentialId;
+    private FocusedPostAsUpdateDocumentRow _documentAfterRequests = null!;
+    private FocusedPostAsUpdateSchoolRow _schoolAfterRequests = null!;
+    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRequests = null!;
+    private long _documentCount;
+    private long _staleCreateCandidateDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
+        _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
+        _sharedSchoolReferentialId = new ReferentialId(await ComputeSchoolReferentialIdAsync());
+
+        var staleCreateCandidateTask = ExecuteUpsertAsync(
+            StaleCreateCandidateRequestBodyJson,
+            StaleCreateCandidateDocumentUuid,
+            "pg-post-create-race-stale-candidate",
+            _sharedSchoolReferentialId
+        );
+
+        await _raceCoordinator.WaitUntilFirstResolverCallIsPendingAsync();
+
+        _createWinnerResult = await ExecuteUpsertAsync(
+            CreateWinnerRequestBodyJson,
+            CreateWinnerDocumentUuid,
+            "pg-post-create-race-create-winner",
+            _sharedSchoolReferentialId
+        );
+
+        (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
+        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId.Value)).Should().Be(1);
+
+        _raceCoordinator.ReleaseFirstResolverCall();
+
+        _staleCreateCandidateResult = await staleCreateCandidateTask;
+        _documentAfterRequests = await ReadDocumentAsync(CreateWinnerDocumentUuid.Value);
+        _schoolAfterRequests = await ReadSchoolAsync(_documentAfterRequests.DocumentId);
+        _addressesAfterRequests = await ReadSchoolAddressesAsync(_documentAfterRequests.DocumentId);
+        _documentCount = await ReadDocumentCountAsync();
+        _staleCreateCandidateDocumentUuidCount = await ReadDocumentCountAsync(
+            StaleCreateCandidateDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        _raceCoordinator?.ReleaseFirstResolverCall();
+
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits()
+    {
+        _createWinnerResult.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(CreateWinnerDocumentUuid));
+        _staleCreateCandidateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _staleCreateCandidateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(CreateWinnerDocumentUuid);
+        _documentAfterRequests.DocumentUuid.Should().Be(CreateWinnerDocumentUuid.Value);
+        _documentCount.Should().Be(1);
+        _staleCreateCandidateDocumentUuidCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_applies_last_writer_state_to_the_existing_document_instead_of_creating_duplicate_rows()
+    {
+        _schoolAfterRequests
+            .Should()
+            .Be(new FocusedPostAsUpdateSchoolRow(_documentAfterRequests.DocumentId, 255901, "LAST-WRITER"));
+        _addressesAfterRequests.Should().ContainSingle();
+        _addressesAfterRequests[0].SchoolDocumentId.Should().Be(_documentAfterRequests.DocumentId);
+        _addressesAfterRequests[0].Ordinal.Should().Be(0);
+        _addressesAfterRequests[0].City.Should().Be("Dallas");
+    }
+
+    private async Task<UpsertResult> ExecuteUpsertAsync(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        ReferentialId? referentialId = null
+    )
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWritePostCreateRaceFocused",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(
+            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
+        );
+    }
+
+    private UpsertRequest CreateUpsertRequest(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        ReferentialId? referentialId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            MappingSet: _mappingSet,
+            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+
+    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    {
+        var schoolIdentity = CreateSchoolIdentity();
+
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: referentialId
+                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private static DocumentIdentity CreateSchoolIdentity() =>
+        new([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]);
+
+    private async Task<FocusedPostAsUpdateDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? new FocusedPostAsUpdateDocumentRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<long> ReadDocumentCountAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document";
+            """
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<long> ReadReferentialIdentityCountAsync(Guid referentialId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "ReferentialId" = @referentialId;
+            """,
+            new NpgsqlParameter("referentialId", referentialId)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<Guid> ComputeSchoolReferentialIdAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "dms"."uuidv5"(
+                'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
+                'Ed-FiSchool' || '$$.schoolId=' || @schoolId
+            ) AS "ReferentialId";
+            """,
+            new NpgsqlParameter("schoolId", "255901")
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId")
+            : throw new InvalidOperationException(
+                $"Expected exactly one referential-id row, but found {rows.Count}."
+            );
+    }
+
+    private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "SchoolId", "ShortName"
+            FROM "edfi"."School"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new FocusedPostAsUpdateSchoolRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolId"),
+                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow>> ReadSchoolAddressesAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "City"
+            FROM "edfi"."SchoolAddress"
+            WHERE "School_DocumentId" = @documentId
+            ORDER BY "Ordinal", "CollectionItemId";
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Select(row => new FocusedPostAsUpdateSchoolAddressRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
+                PostAsUpdateIntegrationTestSupport.GetString(row, "City")
             ))
             .ToArray();
     }
