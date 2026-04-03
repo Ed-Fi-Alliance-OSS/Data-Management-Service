@@ -6,7 +6,6 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
@@ -25,11 +24,6 @@ internal interface IRelationalWriteNonCollectionPersister
 
 internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNonCollectionPersister
 {
-    private static readonly Regex ParameterPlaceholderRegex = new(
-        "@(?<name>[a-zA-Z_][a-zA-Z0-9_]*)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant
-    );
-
     public async Task PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteNoProfileMergeResult mergeResult,
@@ -58,6 +52,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds = [];
 
         await ExecuteDeletesAsync(
+                request.MappingSet.Key.Dialect,
                 mergeResult,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -77,6 +72,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     }
 
     private static async Task ExecuteDeletesAsync(
+        SqlDialect dialect,
         RelationalWriteNoProfileMergeResult mergeResult,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -89,6 +85,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             if (IsCollectionAlignedExtensionScope(tableState.TableWritePlan))
             {
                 await DeleteOmittedCollectionAlignedScopeRowsAsync(
+                        dialect,
                         tableState,
                         rootDocumentId,
                         reservedCollectionItemIds,
@@ -111,6 +108,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 }
 
                 await DeleteOmittedCollectionRowsAsync(
+                        dialect,
                         tableState,
                         rootDocumentId,
                         reservedCollectionItemIds,
@@ -442,6 +440,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     }
 
     private static async Task DeleteOmittedCollectionAlignedScopeRowsAsync(
+        SqlDialect dialect,
         RelationalWriteNoProfileTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -477,8 +476,11 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         await ExecuteParameterizedBatchesAsync(
+                dialect,
                 tableState.TableWritePlan,
                 tableState.TableWritePlan.DeleteByParentSql,
+                (batchSqlEmitter, rowCount) =>
+                    batchSqlEmitter.EmitDeleteByParentBatch(tableState.TableWritePlan, rowCount),
                 rowsToDelete,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -531,8 +533,11 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         await ExecuteParameterizedBatchesAsync(
+                dialect,
                 tableState.TableWritePlan,
                 tableState.TableWritePlan.UpdateSql!,
+                (batchSqlEmitter, rowCount) =>
+                    batchSqlEmitter.EmitUpdateBatch(tableState.TableWritePlan, rowCount),
                 rowsToUpdate,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -570,6 +575,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     }
 
     private static async Task DeleteOmittedCollectionRowsAsync(
+        SqlDialect dialect,
         RelationalWriteNoProfileTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -601,8 +607,14 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         await ExecuteParameterizedBatchesAsync(
+                dialect,
                 tableState.TableWritePlan,
                 mergePlan.DeleteByStableRowIdentitySql,
+                (batchSqlEmitter, rowCount) =>
+                    batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(
+                        tableState.TableWritePlan,
+                        rowCount
+                    ),
                 rowsToDelete,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -680,8 +692,14 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         if (rowsToUpdate.Count > 1 && hasOrdinalReorder)
         {
             await ExecuteParameterizedBatchesAsync(
+                    dialect,
                     tableState.TableWritePlan,
                     mergePlan.UpdateByStableRowIdentitySql,
+                    (batchSqlEmitter, rowCount) =>
+                        batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(
+                            tableState.TableWritePlan,
+                            rowCount
+                        ),
                     CreateTemporaryOrdinalRows(rowsToUpdate, mergePlan.OrdinalBindingIndex),
                     rootDocumentId,
                     reservedCollectionItemIds,
@@ -692,8 +710,14 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         await ExecuteParameterizedBatchesAsync(
+                dialect,
                 tableState.TableWritePlan,
                 mergePlan.UpdateByStableRowIdentitySql,
+                (batchSqlEmitter, rowCount) =>
+                    batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(
+                        tableState.TableWritePlan,
+                        rowCount
+                    ),
                 rowsToUpdate,
                 rootDocumentId,
                 reservedCollectionItemIds,
@@ -982,8 +1006,10 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     }
 
     private static async Task ExecuteParameterizedBatchAsync(
+        WritePlanBatchSqlEmitter batchSqlEmitter,
         TableWritePlan tableWritePlan,
         string sql,
+        Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
         IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -1009,9 +1035,9 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
 
         await ExecuteNonQueryAsync(
                 writeSession,
-                BuildParameterizedBatchCommand(
+                BuildBatchCommand(
+                    emitBatchSql(batchSqlEmitter, rows.Count),
                     tableWritePlan,
-                    sql,
                     rows,
                     rootDocumentId,
                     reservedCollectionItemIds
@@ -1022,8 +1048,10 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
     }
 
     private static async Task ExecuteParameterizedBatchesAsync(
+        SqlDialect dialect,
         TableWritePlan tableWritePlan,
         string sql,
+        Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
         IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
@@ -1031,11 +1059,15 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         CancellationToken cancellationToken
     )
     {
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(dialect);
+
         foreach (var updateBatch in rows.Chunk(tableWritePlan.BulkInsertBatching.MaxRowsPerBatch))
         {
             await ExecuteParameterizedBatchAsync(
+                    batchSqlEmitter,
                     tableWritePlan,
                     sql,
+                    emitBatchSql,
                     updateBatch,
                     rootDocumentId,
                     reservedCollectionItemIds,
@@ -1080,8 +1112,8 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
 
         await ExecuteNonQueryAsync(
                 writeSession,
-                BuildInsertBatchCommand(
-                    dialect,
+                BuildBatchCommand(
+                    new WritePlanBatchSqlEmitter(dialect).EmitInsertBatch(tableWritePlan, rows.Count),
                     tableWritePlan,
                     rows,
                     rootDocumentId,
@@ -1210,57 +1242,14 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         return new RelationalCommand(sql, parameters);
     }
 
-    private static RelationalCommand BuildParameterizedBatchCommand(
-        TableWritePlan tableWritePlan,
-        string sqlTemplate,
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
-        long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
-    )
-    {
-        StringBuilder sqlBuilder = new();
-        List<RelationalParameter> parameters = [];
-
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-        {
-            if (rowIndex > 0)
-            {
-                sqlBuilder.AppendLine();
-            }
-
-            sqlBuilder.AppendLine(RenameBatchParameters(sqlTemplate, rowIndex));
-
-            for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-            {
-                var parameterName = NormalizeParameterName(
-                    BuildBatchParameterName(
-                        tableWritePlan.ColumnBindings[bindingIndex].ParameterName,
-                        rowIndex
-                    )
-                );
-                var parameterValue = ResolveParameterValue(
-                    tableWritePlan,
-                    rows[rowIndex].Values[bindingIndex],
-                    rootDocumentId,
-                    reservedCollectionItemIds
-                );
-
-                parameters.Add(new RelationalParameter(parameterName, parameterValue));
-            }
-        }
-
-        return new RelationalCommand(sqlBuilder.ToString(), parameters);
-    }
-
-    private static RelationalCommand BuildInsertBatchCommand(
-        SqlDialect dialect,
+    private static RelationalCommand BuildBatchCommand(
+        string sql,
         TableWritePlan tableWritePlan,
         IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
     {
-        var sql = BuildInsertBatchSql(dialect, tableWritePlan, rows.Count);
         List<RelationalParameter> parameters = [];
 
         for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
@@ -1306,85 +1295,6 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         return temporaryRows;
-    }
-
-    private static string BuildInsertBatchSql(SqlDialect dialect, TableWritePlan tableWritePlan, int rowCount)
-    {
-        if (rowCount < 1)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(rowCount),
-                rowCount,
-                "Row count must be at least 1."
-            );
-        }
-
-        var builder = new StringBuilder();
-        var table = tableWritePlan.TableModel.Table;
-
-        builder.Append("INSERT INTO ");
-        builder.Append(QuoteIdentifier(dialect, table.Schema.Value));
-        builder.Append('.');
-        builder.AppendLine(QuoteIdentifier(dialect, table.Name));
-        builder.AppendLine("(");
-
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            builder.Append("    ");
-            builder.Append(
-                QuoteIdentifier(dialect, tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Value)
-            );
-
-            if (bindingIndex + 1 < tableWritePlan.ColumnBindings.Length)
-            {
-                builder.AppendLine(",");
-            }
-            else
-            {
-                builder.AppendLine();
-            }
-        }
-
-        builder.AppendLine(")");
-        builder.AppendLine("VALUES");
-
-        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-        {
-            builder.AppendLine("(");
-
-            for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-            {
-                builder.Append("    @");
-                builder.Append(
-                    BuildBatchParameterName(
-                        tableWritePlan.ColumnBindings[bindingIndex].ParameterName,
-                        rowIndex
-                    )
-                );
-
-                if (bindingIndex + 1 < tableWritePlan.ColumnBindings.Length)
-                {
-                    builder.AppendLine(",");
-                }
-                else
-                {
-                    builder.AppendLine();
-                }
-            }
-
-            builder.Append(')');
-
-            if (rowIndex + 1 < rowCount)
-            {
-                builder.AppendLine(",");
-            }
-            else
-            {
-                builder.AppendLine(";");
-            }
-        }
-
-        return builder.ToString();
     }
 
     private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetStableRowIdentityTokens(
@@ -1439,40 +1349,10 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         return unresolvedCollectionItemIds;
     }
 
-    private static string RenameBatchParameters(string sqlTemplate, int rowIndex)
-    {
-        var terminatedSqlTemplate = EnsureTrailingSemicolon(sqlTemplate);
-
-        return ParameterPlaceholderRegex.Replace(
-            terminatedSqlTemplate,
-            match =>
-            {
-                var parameterName = match.Groups["name"].Value;
-                return $"@{BuildBatchParameterName(parameterName, rowIndex)}";
-            }
-        );
-    }
-
     private static string BuildBatchParameterName(string parameterName, int rowIndex)
     {
         var bareParameterName = parameterName.TrimStart('@');
         return $"{bareParameterName}_{rowIndex}";
-    }
-
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmedSql = sql.TrimEnd();
-        return trimmedSql.EndsWith(';') ? trimmedSql : $"{trimmedSql};";
-    }
-
-    private static string QuoteIdentifier(SqlDialect dialect, string identifier)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"",
-            SqlDialect.Mssql => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]",
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-        };
     }
 
     private static object? ResolveParameterValue(

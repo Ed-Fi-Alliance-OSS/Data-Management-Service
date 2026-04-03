@@ -61,7 +61,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~PostgresqlRelationalCommandExecutorTests|FullyQualifiedName~MssqlRelationalWriteSessionFactoryTests|FullyQualifiedName~PostgresqlRelationalWriteSessionFactoryTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~WritePlanCompilerMssqlContractTests|FullyQualifiedName~Given_WritePlanCompiler_InsertSql|FullyQualifiedName~Given_WritePlanCompiler_CollectionMerge|FullyQualifiedName~PlanWriteBatchingConventionsTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Short-Circuit Missing Existing-Document Read Plans Before Executor Work",

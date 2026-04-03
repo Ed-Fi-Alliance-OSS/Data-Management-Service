@@ -204,15 +204,14 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
         writeSession
             .Commands[0]
             .CommandText.Should()
-            .Contain("INSERT INTO \"sample\".\"SchoolExtensionAddress\"");
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_1");
+            .Be(batchSqlEmitter.EmitInsertBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId_0").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor_0").Should().Be("Blue");
@@ -222,9 +221,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         writeSession
             .Commands[1]
             .CommandText.Should()
-            .Contain("INSERT INTO \"sample\".\"SchoolExtensionAddress\"");
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_1");
+            .Be(batchSqlEmitter.EmitInsertBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange");
@@ -288,19 +285,24 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitUpdateBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId_0").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor_0").Should().Be("Blue-Updated");
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId_1").Should().Be(45L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor_1").Should().Be("Green-Updated");
 
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitUpdateBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange-Updated");
@@ -359,19 +361,24 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@BaseCollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitDeleteByParentBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId_0").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor_0").Should().Be("Blue");
         GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId_1").Should().Be(45L);
         GetParameterValue(writeSession.Commands[0], "@FavoriteColor_1").Should().Be("Green");
 
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@BaseCollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitDeleteByParentBatch(collectionExtensionScopePlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(4);
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange");
@@ -797,14 +804,19 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(8);
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
         writeSession
             .Commands[2]
@@ -855,17 +867,22 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
 
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
@@ -915,17 +932,22 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(3);
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[0].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
 
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
@@ -968,19 +990,24 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
 
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(collectionPlan, 2));
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(45L);
         GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(44L);
         GetParameterValue(writeSession.Commands[0], "@Ordinal_0").Should().Be(-1);
         GetParameterValue(writeSession.Commands[0], "@Ordinal_1").Should().Be(-2);
 
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession
+            .Commands[1]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionUpdateByStableRowIdentityBatch(collectionPlan, 2));
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(45L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(44L);
         GetParameterValue(writeSession.Commands[1], "@Ordinal_0").Should().Be(0);
@@ -1039,6 +1066,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(6);
@@ -1046,9 +1074,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         writeSession.Commands[0].CommandText.Should().Contain("generate_series");
         GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
 
-        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO \"edfi\".\"SchoolAddress\"");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
@@ -1056,9 +1082,7 @@ public class Given_Relational_Write_Non_Collection_Persister
         writeSession.Commands[2].CommandText.Should().Contain("generate_series");
         GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
 
-        writeSession.Commands[3].CommandText.Should().Contain("INSERT INTO \"edfi\".\"SchoolAddress\"");
-        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[3].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
@@ -1108,6 +1132,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             ),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
@@ -1116,10 +1141,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             .CommandText.Should()
             .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
         GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
-        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
-        writeSession.Commands[1].CommandText.Should().Contain("[CollectionItemId]");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
     }
@@ -1176,6 +1198,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             new CommandResponse(ScalarResult: 914L),
             new CommandResponse(),
         ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Mssql);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(6);
@@ -1186,9 +1209,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
         GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
 
-        writeSession.Commands[1].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
@@ -1199,9 +1220,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
         GetParameterValue(writeSession.Commands[2], "@count").Should().Be(2);
 
-        writeSession.Commands[3].CommandText.Should().Contain("INSERT INTO [edfi].[SchoolAddress]");
-        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_0");
-        writeSession.Commands[3].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[3].Parameters.Should().HaveCount(8);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
