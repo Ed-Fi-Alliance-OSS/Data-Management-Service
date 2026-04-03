@@ -51,7 +51,7 @@ public class Given_ValidRequestContract_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -101,7 +101,7 @@ public class Given_UnknownJsonScope_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -187,7 +187,7 @@ public class Given_ValidCollectionItemAddress_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -242,7 +242,7 @@ public class Given_UnknownCollectionJsonScope_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -334,7 +334,7 @@ public class Given_AncestorChainMismatch_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -405,7 +405,7 @@ public class Given_ValidWriteContext_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -464,7 +464,7 @@ public class Given_HiddenMemberPathNotInCatalog_When_ValidatingWriteContext
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -542,7 +542,7 @@ public class Given_CollectionRow_with_unknown_ParentAddress_JsonScope_When_Valid
             profileName: "TestProfile",
             resourceName: "School",
             method: "POST",
-            operation: "Upsert"
+            operation: "upsert"
         );
     }
 
@@ -618,7 +618,7 @@ public class Given_CollectionRow_with_wrong_semantic_identity_part_count_When_Va
             profileName: "TestProfile",
             resourceName: "School",
             method: "POST",
-            operation: "Upsert"
+            operation: "upsert"
         );
     }
 
@@ -690,7 +690,7 @@ public class Given_CollectionRow_with_wrong_semantic_identity_path_When_Validati
             profileName: "TestProfile",
             resourceName: "School",
             method: "POST",
-            operation: "Upsert"
+            operation: "upsert"
         );
     }
 
@@ -761,7 +761,7 @@ public class Given_valid_CollectionRow_with_correct_semantic_identity_When_Valid
             profileName: "TestProfile",
             resourceName: "School",
             method: "POST",
-            operation: "Upsert"
+            operation: "upsert"
         );
     }
 
@@ -848,7 +848,7 @@ public class Given_valid_nested_CollectionRowAddress_When_Validating
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
@@ -929,7 +929,7 @@ public class Given_nested_CollectionRowAddress_with_wrong_ancestor_chain_When_Va
             profileName: "TestProfile",
             resourceName: "School",
             method: "PUT",
-            operation: "Update"
+            operation: "update"
         );
     }
 
