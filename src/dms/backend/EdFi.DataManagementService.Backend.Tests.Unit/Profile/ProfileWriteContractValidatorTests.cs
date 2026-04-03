@@ -771,3 +771,183 @@ public class Given_valid_CollectionRow_with_correct_semantic_identity_When_Valid
         _result.Should().BeEmpty();
     }
 }
+
+[TestFixture]
+public class Given_valid_nested_CollectionRowAddress_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog: root + addresses collection + nested periods collection
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+            new(
+                JsonScope: "$.addresses[*].periods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$.addresses[*]",
+                CollectionAncestorsInOrder: ["$.addresses[*]"],
+                SemanticIdentityRelativePathsInOrder: ["periodType"],
+                CanonicalScopeRelativeMemberPaths: ["periodType"]
+            ),
+        };
+
+        // Parent address for the nested collection row is an addresses[*] instance.
+        // Per the address derivation contract, the parent carries the parent collection
+        // instance itself in AncestorCollectionInstances so the validator can align with
+        // the child scope's CollectionAncestorsInOrder.
+        var addressIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("addressType", JsonValue.Create("Physical")!, true)
+        );
+        var parentAncestorInstance = new AncestorCollectionInstance("$.addresses[*]", addressIdentity);
+        var parentAddress = new ScopeInstanceAddress("$.addresses[*]", [parentAncestorInstance]);
+
+        var periodIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("periodType", JsonValue.Create("Current")!, true)
+        );
+        var nestedCollectionRowAddress = new CollectionRowAddress(
+            "$.addresses[*].periods[*]",
+            parentAddress,
+            periodIdentity
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    nestedCollectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0].periods[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "Update"
+        );
+    }
+
+    [Test]
+    public void It_returns_no_failures()
+    {
+        _result.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_nested_CollectionRowAddress_with_wrong_ancestor_chain_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+            new(
+                JsonScope: "$.addresses[*].periods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$.addresses[*]",
+                CollectionAncestorsInOrder: ["$.addresses[*]"],
+                SemanticIdentityRelativePathsInOrder: ["periodType"],
+                CanonicalScopeRelativeMemberPaths: ["periodType"]
+            ),
+        };
+
+        // Wrong: parent address has empty ancestor chain instead of including the
+        // addresses[*] collection instance, so ancestor chain won't match the compiled
+        // CollectionAncestorsInOrder for periods[*].
+        var parentAddress = new ScopeInstanceAddress("$.addresses[*]", []);
+
+        var periodIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("periodType", JsonValue.Create("Current")!, true)
+        );
+        var nestedCollectionRowAddress = new CollectionRowAddress(
+            "$.addresses[*].periods[*]",
+            parentAddress,
+            periodIdentity
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    nestedCollectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0].periods[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "Update"
+        );
+    }
+
+    [Test]
+    public void It_returns_one_failure()
+    {
+        _result.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_emits_category_CoreBackendContractMismatch()
+    {
+        _result[0].Category.Should().Be(ProfileFailureCategory.CoreBackendContractMismatch);
+    }
+
+    [Test]
+    public void It_emits_an_AncestorChainMismatchCoreBackendContractMismatchFailure()
+    {
+        _result[0].Should().BeOfType<AncestorChainMismatchCoreBackendContractMismatchFailure>();
+    }
+}

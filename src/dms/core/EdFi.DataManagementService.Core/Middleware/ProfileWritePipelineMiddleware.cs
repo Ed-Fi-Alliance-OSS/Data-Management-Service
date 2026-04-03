@@ -29,6 +29,10 @@ internal class ProfileWritePipelineMiddleware(
     ILogger<ProfileWritePipelineMiddleware> logger
 ) : IPipelineStep
 {
+    // Empty schema-required members for now (will be populated in future work)
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptySchemaRequiredMembers =
+        new Dictionary<string, IReadOnlyList<string>>();
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Short-circuit: not relational backend
@@ -116,19 +120,13 @@ internal class ProfileWritePipelineMiddleware(
         var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
 
+        // Execute the profile write pipeline (request-side only, no stored document yet).
         // This middleware only runs for POST/PUT with a writable profile (guarded above),
         // so the resolved content type is always Write.
-        ProfileContentType? resolvedContentType = ProfileContentType.Write;
-
-        // Empty schema-required members for now (will be populated in future work)
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope =
-            new Dictionary<string, IReadOnlyList<string>>();
-
-        // Execute the profile write pipeline (request-side only, no stored document yet)
         ProfileWritePipelineResult result = ProfileWritePipeline.Execute(
             canonicalizedRequestBody: requestInfo.ParsedBody,
             writeContentType: writeContentType,
-            resolvedContentType: resolvedContentType,
+            resolvedContentType: ProfileContentType.Write,
             scopeCatalog: scopeCatalog,
             storedDocument: null,
             isCreate: isCreate,
@@ -136,7 +134,7 @@ internal class ProfileWritePipelineMiddleware(
             resourceName: resourceName,
             method: method,
             operation: operation,
-            effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope
+            effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
         );
 
         // Handle failures
@@ -182,8 +180,7 @@ internal class ProfileWritePipelineMiddleware(
             writeContentType,
             profileName,
             resourceName,
-            method,
-            effectiveSchemaRequiredMembersByScope
+            method
         );
 
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
@@ -204,8 +201,7 @@ internal class ProfileWritePipelineMiddleware(
         ContentTypeDefinition writeContentType,
         string profileName,
         string resourceName,
-        string method,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+        string method
     ) : IStoredStateProjectionInvoker
     {
         public ProfileAppliedWriteContext ProjectStoredState(
@@ -227,7 +223,7 @@ internal class ProfileWritePipelineMiddleware(
                 resourceName: resourceName,
                 method: method,
                 operation: operation,
-                effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope
+                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
             );
 
             if (result.Context is not null)
