@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -28,7 +29,28 @@ internal static class ProfileWriteContractValidator
     {
         var failures = new List<ProfileFailure>();
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
+        ValidateRequestContractCore(
+            request,
+            catalogByJsonScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        return [.. failures];
+    }
 
+    private static void ValidateRequestContractCore(
+        ProfileAppliedWriteRequest request,
+        Dictionary<string, CompiledScopeDescriptor> catalogByJsonScope,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
         foreach (var scopeState in request.RequestScopeStates)
         {
             ValidateScopeInstanceAddress(
@@ -54,8 +76,6 @@ internal static class ProfileWriteContractValidator
                 failures
             );
         }
-
-        return [.. failures];
     }
 
     /// <summary>
@@ -74,16 +94,15 @@ internal static class ProfileWriteContractValidator
         var failures = new List<ProfileFailure>();
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
 
-        // Validate request side
-        failures.AddRange(
-            ValidateRequestContract(
-                context.Request,
-                scopeCatalog,
-                profileName,
-                resourceName,
-                method,
-                operation
-            )
+        // Validate request side (reuse the already-built catalog lookup)
+        ValidateRequestContractCore(
+            context.Request,
+            catalogByJsonScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
         );
 
         // Validate stored scope states
@@ -167,7 +186,7 @@ internal static class ProfileWriteContractValidator
     /// </summary>
     private static List<string>? FindInvalidHiddenMemberPaths(
         string jsonScope,
-        System.Collections.Immutable.ImmutableArray<string> hiddenMemberPaths,
+        ImmutableArray<string> hiddenMemberPaths,
         Dictionary<string, CompiledScopeDescriptor> catalogByJsonScope
     )
     {
@@ -331,7 +350,7 @@ internal static class ProfileWriteContractValidator
     /// expected identity paths in count and path values.
     /// </summary>
     private static void ValidateSemanticIdentity(
-        System.Collections.Immutable.ImmutableArray<SemanticIdentityPart> emittedIdentity,
+        ImmutableArray<SemanticIdentityPart> emittedIdentity,
         CompiledScopeDescriptor compiledScope,
         string profileName,
         string resourceName,
@@ -384,7 +403,7 @@ internal static class ProfileWriteContractValidator
     /// the compiled scope catalog.
     /// </summary>
     private static void ValidateAncestorSemanticIdentity(
-        System.Collections.Immutable.ImmutableArray<AncestorCollectionInstance> ancestors,
+        ImmutableArray<AncestorCollectionInstance> ancestors,
         Dictionary<string, CompiledScopeDescriptor> catalogByJsonScope,
         string profileName,
         string resourceName,
@@ -446,7 +465,7 @@ internal static class ProfileWriteContractValidator
     /// <see cref="CompiledScopeDescriptor.CollectionAncestorsInOrder"/>.
     /// </summary>
     private static bool AncestorChainMatches(
-        System.Collections.Immutable.ImmutableArray<AncestorCollectionInstance> emittedAncestors,
+        ImmutableArray<AncestorCollectionInstance> emittedAncestors,
         CompiledScopeDescriptor compiledScope
     )
     {

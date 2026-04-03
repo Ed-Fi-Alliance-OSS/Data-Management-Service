@@ -148,6 +148,8 @@ public static class CompiledScopeAdapterFactory
     /// <summary>
     /// Derives canonical member paths for an inlined scope by scanning the closest
     /// ancestor table's columns for <c>SourceJsonPath</c> values under this scope.
+    /// Only direct child members are included — deeper nested paths belong to their
+    /// own scope entries and are excluded by the <c>!Contains('.')</c> filter.
     /// </summary>
     private static ImmutableArray<string> BuildInlinedMemberPaths(
         string jsonScope,

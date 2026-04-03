@@ -114,14 +114,11 @@ internal class ProfileWritePipelineMiddleware(
             writePlan.TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
         );
         var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
-            writePlan,
-            inlinedScopes.Count > 0 ? inlinedScopes : null
-        );
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
 
-        // Resolve profile content type for pipeline validation
-        ProfileContentType? resolvedContentType =
-            profileContext.ContentType == ProfileContentType.Write ? ProfileContentType.Write : null;
+        // This middleware only runs for POST/PUT with a writable profile (guarded above),
+        // so the resolved content type is always Write.
+        ProfileContentType? resolvedContentType = ProfileContentType.Write;
 
         // Empty schema-required members for now (will be populated in future work)
         IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope =
@@ -233,11 +230,20 @@ internal class ProfileWritePipelineMiddleware(
                 effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope
             );
 
-            return result.Context
-                ?? throw new InvalidOperationException(
-                    $"Profile pipeline did not produce a ProfileAppliedWriteContext for stored-state projection. "
-                        + $"Profile: {LoggingSanitizer.SanitizeForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeForLogging(resourceName)}, Method: {method}."
-                );
+            if (result.Context is not null)
+            {
+                return result.Context;
+            }
+
+            var failureDetail =
+                result.Failures.Length > 0
+                    ? $" Failures ({result.Failures.Length}): {LoggingSanitizer.SanitizeForLogging(string.Join("; ", result.Failures.Select(f => f.Message)))}"
+                    : string.Empty;
+
+            throw new InvalidOperationException(
+                $"Profile pipeline did not produce a ProfileAppliedWriteContext for stored-state projection. "
+                    + $"Profile: {LoggingSanitizer.SanitizeForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeForLogging(resourceName)}, Method: {method}.{failureDetail}"
+            );
         }
     }
 }
