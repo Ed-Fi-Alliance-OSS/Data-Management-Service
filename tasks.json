@@ -74,6 +74,6 @@
       "Run: `rg --line-number --no-heading \"PrepareExistingDocumentReadPlan|MissingExistingDocumentReadPlanFailureMessage|TryBuildMissingExistingDocumentReadPlanResult|ExecuteAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -811,26 +811,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
             + "but no entry was found. This indicates an internal compilation/selection bug.";
 
-        A.CallTo(() =>
-                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
-            )
-            .Invokes(call =>
-            {
-                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
-                _capturedExecutorRequests.Add(_capturedExecutorRequest);
-            })
-            .ReturnsLazily(call =>
-                Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UnknownFailure(
-                            call.GetArgument<RelationalWriteExecutorRequest>(
-                                0
-                            )!.MissingExistingDocumentReadPlanFailureMessage!
-                        )
-                    )
-                )
-            );
-
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => updateRequest.MappingSet)
@@ -842,14 +822,86 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         result.Should().BeEquivalentTo(new UpdateResult.UnknownFailure(expectedFailureMessage));
-        _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeNull();
-        _capturedExecutorRequest
-            .MissingExistingDocumentReadPlanFailureMessage.Should()
-            .Be(expectedFailureMessage);
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .MustHaveHappenedOnceExactly();
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_read_plan_guard_rail_for_existing_document_post_as_update_requests()
+    {
+        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var documentInfo = CreateDocumentInfo();
+        const string expectedFailureMessage =
+            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
+            + "but no entry was found. This indicates an internal compilation/selection bug.";
+
+        _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(candidateDocumentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.UnknownFailure(expectedFailureMessage));
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_allows_create_new_post_requests_to_bypass_missing_read_plan_guard_rails()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var requestBody = CreateRequestBody("Create without read plan");
+        var documentInfo = CreateDocumentInfo();
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
+        _capturedExecutorRequests.Should().ContainSingle();
+        _capturedExecutorRequest
+            .TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
+        _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeNull();
+        _targetLookupService.ResolveForPostCallCount.Should().Be(1);
     }
 
     [Test]

@@ -413,11 +413,9 @@ internal sealed class DefaultRelationalWriteExecutor(
             return null;
         }
 
-        var failureMessage =
-            request.MissingExistingDocumentReadPlanFailureMessage
-            ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(
-                request.WritePlan.Model.Resource
-            );
+        var failureMessage = RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(
+            request.WritePlan.Model.Resource
+        );
 
         return request.OperationKind switch
         {

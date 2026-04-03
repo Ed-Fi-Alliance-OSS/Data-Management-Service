@@ -469,8 +469,7 @@ public sealed record RelationalWriteExecutorRequest
         bool allowIdentityUpdates,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
-        RelationalWriteTargetContext targetContext,
-        string? missingExistingDocumentReadPlanFailureMessage = null
+        RelationalWriteTargetContext targetContext
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -483,7 +482,6 @@ public sealed record RelationalWriteExecutorRequest
         TraceId = traceId;
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
-        MissingExistingDocumentReadPlanFailureMessage = missingExistingDocumentReadPlanFailureMessage;
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
 
         if (
@@ -519,14 +517,6 @@ public sealed record RelationalWriteExecutorRequest
             throw new ArgumentException(
                 $"{nameof(existingDocumentReadPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
                 nameof(existingDocumentReadPlan)
-            );
-        }
-
-        if (ExistingDocumentReadPlan is not null && missingExistingDocumentReadPlanFailureMessage is not null)
-        {
-            throw new ArgumentException(
-                $"{nameof(missingExistingDocumentReadPlanFailureMessage)} cannot be supplied when {nameof(existingDocumentReadPlan)} is present.",
-                nameof(missingExistingDocumentReadPlanFailureMessage)
             );
         }
 
@@ -576,11 +566,6 @@ public sealed record RelationalWriteExecutorRequest
     /// The compiled read plan selected for existing-document flows, when available.
     /// </summary>
     public ResourceReadPlan? ExistingDocumentReadPlan { get; init; }
-
-    /// <summary>
-    /// A repository-prepared failure message to surface if lookup resolves to an existing document but no read plan is available.
-    /// </summary>
-    public string? MissingExistingDocumentReadPlanFailureMessage { get; init; }
 
     /// <summary>
     /// The caller-selected body the executor will eventually persist.

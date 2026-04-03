@@ -208,6 +208,17 @@ public sealed class RelationalDocumentStoreRepository(
                 return executorResultProjector(targetResolution.ImmediateResult);
             }
 
+            if (
+                targetResolution.TargetContext is RelationalWriteTargetContext.ExistingDocument
+                && readPlanPreparation.ReadPlan is null
+            )
+            {
+                return failureFactory(
+                    readPlanPreparation.FailureMessage
+                        ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
+                );
+            }
+
             var executorResult = await _writeExecutor
                 .ExecuteAsync(
                     new RelationalWriteExecutorRequest(
@@ -225,8 +236,7 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
-                        targetContext: targetResolution.TargetContext!,
-                        missingExistingDocumentReadPlanFailureMessage: readPlanPreparation.FailureMessage
+                        targetContext: targetResolution.TargetContext!
                     )
                 )
                 .ConfigureAwait(false);
