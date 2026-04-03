@@ -222,10 +222,11 @@ Epic: `07-relational-write-path/EPIC.md`
 | E07-S01c | [`01c-current-document-for-profile-projection.md`](07-relational-write-path/01c-current-document-for-profile-projection.md) | E06-S02, E07-S01a-C1, E07-S01a-C6, E07-S01b, E15-S05, E15-S06 | — | Write-side current-document hydration + reconstitution for profile projection |
 | E07-S02 | [`02-flattening-executor.md`](07-relational-write-path/02-flattening-executor.md) | E06-S02, E07-S01 | E01-S05, E01-S03, E01-S11 | JSON→row buffers and logical collection candidates using compiled mapping (backend-local body input seam; no profile hand-off in this slice) |
 | E07-S02b | [`02b-profile-applied-request-flattening.md`](07-relational-write-path/02b-profile-applied-request-flattening.md) | E07-S02, E07-S01b | — | Follow-on flattener integration: adapt `ProfileAppliedWriteRequest.WritableRequestBody` to the flattener without backend-side re-filtering |
-| E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02, E07-S02b, E07-S01b, E07-S01c, E15-S04b | E10-S00 | Transactional persist executor (stable-identity merge semantics, batching, guarded no-op freshness) |
+| E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02, E15-S04b | E10-S00 | Transactional persist executor foundation (no-profile stable-identity merge semantics, batching, guarded no-op freshness) |
+| E07-S03b | [`03b-profile-aware-persist-executor.md`](07-relational-write-path/03b-profile-aware-persist-executor.md) | E07-S03, E07-S02b, E07-S01b, E07-S01c | — | Profile-aware persist executor follow-on (hidden preservation, creatability, profiled guarded no-op) |
 | E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagated reference identity columns for FK cascades |
 | E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
-| E07-S05b | [`05b-profile-error-classification.md`](07-relational-write-path/05b-profile-error-classification.md) | E07-S01a-C8, E07-S01b, E07-S03 | — | Profile contract/runtime error classification + API mapping |
+| E07-S05b | [`05b-profile-error-classification.md`](07-relational-write-path/05b-profile-error-classification.md) | E07-S01a-C8, E07-S01b, E07-S03b | — | Profile contract/runtime error classification + API mapping |
 | E07-S06 | [`06-descriptor-writes.md`](07-relational-write-path/06-descriptor-writes.md) | E06-S02, E02-S05 | E01-S06 | Descriptor POST/PUT writes to `dms.Descriptor` + descriptor referential identities |
 
 ### E08 — Relational Read Path (GET + Query)
@@ -336,7 +337,7 @@ This is the smallest “end-to-end usable” spine that enables: generate DDL �
 4. E03-S00 → E03-S01 → E03-S02
 5. E15-S01 → E15-S02 → E15-S03 → E15-S04 → E15-S04b → E15-S05 → E15-S06
 6. E06-S00 → E06-S01 → E06-S02 → E06-S03 → E06-S04
-7. DMS-983 split: E07-S00 → E07-S01 → E07-S02 for the backend flattener thin slice, while E07-S01a → (E07-S01a-C1 + E07-S01a-C8) → E07-S01a-C3 → E07-S01a-C4 → E07-S01a-C5 → E07-S01a-C6 → E07-S01b → E07-S02b and E07-S01c for profile hand-off/current-state work; E07-S03 then waits on E07-S02, E07-S02b, and E07-S01c before continuing to E07-S04 → E07-S05 → E07-S05b
+7. DMS-983/DMS-984 split: E07-S00 → E07-S01 → E07-S02 for the backend flattener thin slice, then E07-S03 after E07-S02 + E15-S04b for the shared/no-profile persist foundation; in parallel, E07-S01a → (E07-S01a-C1 + E07-S01a-C8) → E07-S01a-C3 → E07-S01a-C4 → E07-S01a-C5 → E07-S01a-C6 → E07-S01b → E07-S02b and E07-S01c for profile hand-off/current-state work; E07-S03b then waits on E07-S03, E07-S02b, and E07-S01c before continuing to E07-S05b and full profile test coverage
    (C2 parallel with C3 after C1+C8; C7 parallel from E07-S01a; E07-S01b also waits on E15-S04b)
 8. E07-S01a-C7 + E08-S00 → E08-S01 → E08-S02 → E08-S03 → E08-S04
 9. E09-S00 → E09-S01 → E09-S02 → E09-S03 → E09-S04
@@ -546,19 +547,20 @@ Recommended Jira link creation:
 | Hard | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` | `E07-S02` | `DMS-983` | `07-relational-write-path/02-flattening-executor.md` |
 | Hard | `E07-S02` | `DMS-983` | `07-relational-write-path/02-flattening-executor.md` | `E07-S02b` | `DMS-1123` | `07-relational-write-path/02b-profile-applied-request-flattening.md` |
 | Hard | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S02b` | `DMS-1123` | `07-relational-write-path/02b-profile-applied-request-flattening.md` |
-| Hard | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
-| Hard | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
 | Hard | `E07-S02` | `DMS-983` | `07-relational-write-path/02-flattening-executor.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
-| Hard | `E07-S02b` | `DMS-1123` | `07-relational-write-path/02b-profile-applied-request-flattening.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
 | Hard | `E15-S04b` | `DMS-1108` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
 | Soft | `E10-S00` | `DMS-1002` | `10-update-tracking-change-queries/00-token-stamping.md` | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` |
+| Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` |
+| Hard | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` |
+| Hard | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` |
+| Hard | `E07-S02b` | `DMS-1123` | `07-relational-write-path/02b-profile-applied-request-flattening.md` | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` |
 | Soft | `E01-S01` | `DMS-930` | `01-relational-model/01-reference-and-constraints.md` | `E07-S04` | `DMS-985` | `07-relational-write-path/04-propagated-reference-identity-columns.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S04` | `DMS-985` | `07-relational-write-path/04-propagated-reference-identity-columns.md` |
 | Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
 | Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Hard | `E07-S01b` | `DMS-1106` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
-| Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
+| Hard | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Soft | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E02-S05` | `DMS-943` | `02-ddl-emission/05-descriptor-ddl.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
@@ -618,6 +620,7 @@ Recommended Jira link creation:
 | Hard | `E03-S01` | `DMS-951` | `03-provisioning-workflow/01-ddl-provision-command.md` | `E13-S00` | `DMS-1021` | `13-test-migration/00-e2e-environment-updates.md` |
 | Hard | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` | `E13-S00` | `DMS-1021` | `13-test-migration/00-e2e-environment-updates.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E13-S01` | `DMS-1022` | `13-test-migration/01-backend-integration-tests.md` |
+| Hard | `E07-S03b` | `DMS-1124` | `07-relational-write-path/03b-profile-aware-persist-executor.md` | `E13-S01` | `DMS-1022` | `13-test-migration/01-backend-integration-tests.md` |
 | Hard | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` | `E13-S01` | `DMS-1022` | `13-test-migration/01-backend-integration-tests.md` |
 | Hard | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` | `E13-S01` | `DMS-1022` | `13-test-migration/01-backend-integration-tests.md` |
 | Hard | `E11-S01` | `DMS-1011` | `11-delete-path/01-conflict-mapping.md` | `E13-S01` | `DMS-1022` | `13-test-migration/01-backend-integration-tests.md` |

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -21,6 +22,11 @@ internal record UpsertRequest(
     /// The DocumentInfo of the document to upsert
     /// </summary>
     DocumentInfo DocumentInfo,
+    /// <summary>
+    /// The resolved runtime mapping set for the active request when relational
+    /// request handling is enabled.
+    /// </summary>
+    MappingSet? MappingSet,
     /// <summary>
     /// The EdfiDoc of the document to upsert, as a JsonNode
     /// </summary>
@@ -56,11 +62,16 @@ internal record UpsertRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
+    /// <summary>
+    /// Optional profile write context when a writable profile applies.
+    /// </summary>
+    BackendProfileWriteContext? BackendProfileWriteContext = null
 )
     : UpdateRequest(
         ResourceInfo,
         DocumentInfo,
+        MappingSet,
         EdfiDoc,
         Headers,
         TraceId,
@@ -68,6 +79,7 @@ internal record UpsertRequest(
         DocumentSecurityElements,
         UpdateCascadeHandler,
         ResourceAuthorizationHandler,
-        ResourceAuthorizationPathways
+        ResourceAuthorizationPathways,
+        BackendProfileWriteContext
     ),
-        IUpsertRequest;
+        IRelationalUpsertRequest;

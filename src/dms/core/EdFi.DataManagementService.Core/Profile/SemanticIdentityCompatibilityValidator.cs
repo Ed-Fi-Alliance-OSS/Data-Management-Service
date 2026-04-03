@@ -127,21 +127,11 @@ internal static class SemanticIdentityCompatibilityValidator
     {
         ImmutableArray<string>.Builder? hidden = null;
 
+        ScopeMemberFilter filter = new(node.MemberSelection, node.ExplicitPropertyNames);
+
         foreach (string path in semanticIdentityPaths)
         {
-            // For reference-backed paths like "schoolReference.schoolId", the
-            // top-level member name ("schoolReference") is what appears in the
-            // collection rule's ExplicitPropertyNames. Including the reference member
-            // includes all its descendant properties.
-            string memberName = ExtractTopLevelMember(path);
-
-            bool isHidden = node.MemberSelection switch
-            {
-                MemberSelection.IncludeOnly => !node.ExplicitPropertyNames.Contains(memberName),
-                MemberSelection.ExcludeOnly => node.ExplicitPropertyNames.Contains(memberName),
-                MemberSelection.IncludeAll => false,
-                _ => false,
-            };
+            bool isHidden = !MemberPathVisibility.IsVisible(filter, path);
 
             if (isHidden)
             {
@@ -151,20 +141,5 @@ internal static class SemanticIdentityCompatibilityValidator
         }
 
         return hidden?.ToImmutable() ?? [];
-    }
-
-    // -----------------------------------------------------------------------
-    //  Helpers
-    // -----------------------------------------------------------------------
-
-    /// <summary>
-    /// Extracts the top-level member name from a scope-relative path.
-    /// For dotted paths like "schoolReference.schoolId", returns "schoolReference".
-    /// For flat paths like "classPeriodName", returns the path unchanged.
-    /// </summary>
-    private static string ExtractTopLevelMember(string path)
-    {
-        int dotIndex = path.IndexOf('.');
-        return dotIndex >= 0 ? path[..dotIndex] : path;
     }
 }

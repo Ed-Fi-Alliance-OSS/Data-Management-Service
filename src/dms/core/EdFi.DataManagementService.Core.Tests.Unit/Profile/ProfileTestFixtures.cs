@@ -157,6 +157,47 @@ internal static class ProfileTestFixtures
             ),
         ];
 
+    /// <summary>
+    /// Scope catalog with a two-level non-collection hierarchy inside a collection.
+    /// Used to test that descendants of hidden/absent non-collection parents are
+    /// emitted by the stored-side walker.
+    /// </summary>
+    public static IReadOnlyList<CompiledScopeDescriptor> DeepNestedNonCollectionInsideCollectionScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["field1"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressTypeDescriptor"],
+                CanonicalScopeRelativeMemberPaths: ["addressTypeDescriptor", "city"]
+            ),
+            new(
+                JsonScope: "$.addresses[*].period",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.addresses[*]",
+                CollectionAncestorsInOrder: ["$.addresses[*]"],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["beginDate", "endDate"]
+            ),
+            new(
+                JsonScope: "$.addresses[*].period.detail",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.addresses[*].period",
+                CollectionAncestorsInOrder: ["$.addresses[*]"],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["description", "category"]
+            ),
+        ];
+
     // -----------------------------------------------------------------------
     //  Profile definitions
     // -----------------------------------------------------------------------
@@ -216,6 +257,70 @@ internal static class ProfileTestFixtures
                     Collections: null
                 ),
             ]
+        );
+
+    /// <summary>
+    /// IncludeOnly profile for deep-nested addresses that includes addresses and
+    /// period (with beginDate) but hides period.detail by omitting it from the
+    /// NestedObjects list. Used to verify descendant emission when a deeper scope
+    /// is hidden.
+    /// </summary>
+    public static ContentTypeDefinition BuildDeepNestedAddressesIncludeOnlyProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [new PropertyRule("field1")],
+            Objects: [],
+            Collections:
+            [
+                new CollectionRule(
+                    Name: "addresses",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("addressTypeDescriptor"), new PropertyRule("city")],
+                    NestedObjects:
+                    [
+                        new ObjectRule(
+                            Name: "period",
+                            MemberSelection: MemberSelection.IncludeOnly,
+                            LogicalSchema: null,
+                            Properties: [new PropertyRule("beginDate")],
+                            NestedObjects: null,
+                            Collections: null,
+                            Extensions: null
+                        ),
+                    ],
+                    NestedCollections: null,
+                    Extensions: null,
+                    ItemFilter: null
+                ),
+            ],
+            Extensions: []
+        );
+
+    /// <summary>
+    /// IncludeOnly profile for deep-nested addresses that includes addresses but
+    /// hides the period scope entirely (not listed in NestedObjects). Used to verify
+    /// that descendants of a hidden non-collection parent are still emitted.
+    /// </summary>
+    public static ContentTypeDefinition BuildDeepNestedAddressesHiddenPeriodProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [new PropertyRule("field1")],
+            Objects: [],
+            Collections:
+            [
+                new CollectionRule(
+                    Name: "addresses",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("addressTypeDescriptor"), new PropertyRule("city")],
+                    NestedObjects: null,
+                    NestedCollections: null,
+                    Extensions: null,
+                    ItemFilter: null
+                ),
+            ],
+            Extensions: []
         );
 
     /// <summary>

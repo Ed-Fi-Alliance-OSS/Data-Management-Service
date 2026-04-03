@@ -47,10 +47,12 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydtest.School (
@@ -308,10 +310,12 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydsingle.School (
@@ -458,10 +462,12 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
             CREATE TABLE dms.Document (
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
                 IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE hydcount.School (
@@ -551,6 +557,221 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
     public void It_returns_only_the_paged_documents()
     {
         _result.DocumentMetadata.Should().HaveCount(2);
+    }
+
+    private static async Task ExecuteSql(SqlConnection connection, string sql)
+    {
+        await using var cmd = new SqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+[TestFixture]
+public class Given_A_Reference_Bearing_Resource_Mssql
+{
+    private string _databaseName = null!;
+    private string _connectionString = null!;
+    private HydratedPage _result = null!;
+    private ResourceReadPlan _plan = null!;
+
+    private const string TestSchema = "hydref";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MSSQL connection string not configured.");
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydref') EXEC('CREATE SCHEMA [hydref]');
+
+            CREATE TABLE dms.Document (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ResourceKeyId smallint NOT NULL DEFAULT 0,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+            );
+
+            CREATE TABLE hydref.StudentSchoolAssociation (
+                DocumentId bigint PRIMARY KEY,
+                School_DocumentId bigint NULL,
+                School_SchoolId bigint NULL,
+                Calendar_DocumentId bigint NULL,
+                Calendar_CalendarCode varchar(60) NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            VALUES
+                (401, 'aaaa0001-0001-0001-0001-aaaa00000001'),
+                (402, 'aaaa0002-0002-0002-0002-aaaa00000002'),
+                (403, 'aaaa0003-0003-0003-0003-aaaa00000003');
+
+            INSERT INTO hydref.StudentSchoolAssociation (DocumentId, School_DocumentId, School_SchoolId, Calendar_DocumentId, Calendar_CalendarCode)
+            VALUES
+                (401, 10, 255901, 50, 'CAL-101'),
+                (402, NULL, NULL, NULL, NULL),
+                (403, 20, 255902, 60, 'CAL-202');
+            """
+        );
+
+        _plan = HydrationTestHelper.BuildStudentSchoolAssociationReadPlan(TestSchema, SqlDialect.Mssql);
+
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT DocumentId FROM hydref.StudentSchoolAssociation
+                ORDER BY DocumentId
+                OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                """,
+                TotalCountSql: null,
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        await using var hydrationConnection = new SqlConnection(_connectionString);
+        await hydrationConnection.OpenAsync();
+
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            _plan,
+            keyset,
+            SqlDialect.Mssql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_returns_all_three_documents()
+    {
+        _result.DocumentMetadata.Should().HaveCount(3);
+    }
+
+    [Test]
+    public void It_returns_root_rows_with_nullable_reference_columns()
+    {
+        var rootRows = _result.TableRowsInDependencyOrder[0];
+        rootRows.Rows.Should().HaveCount(3);
+
+        // Doc 401: School_DocumentId=10, School_SchoolId=255901, Calendar_DocumentId=50, Calendar_CalendarCode='CAL-101'
+        rootRows.Rows[0][1].Should().NotBeNull();
+        ((long)rootRows.Rows[0][1]!).Should().Be(10);
+        ((long)rootRows.Rows[0][2]!).Should().Be(255901);
+        ((long)rootRows.Rows[0][3]!).Should().Be(50);
+        ((string)rootRows.Rows[0][4]!).Should().Be("CAL-101");
+
+        // Doc 402: all reference columns NULL
+        rootRows.Rows[1][1].Should().BeNull();
+        rootRows.Rows[1][2].Should().BeNull();
+        rootRows.Rows[1][3].Should().BeNull();
+        rootRows.Rows[1][4].Should().BeNull();
+
+        // Doc 403: School_DocumentId=20, School_SchoolId=255902, Calendar_DocumentId=60, Calendar_CalendarCode='CAL-202'
+        ((long)rootRows.Rows[2][1]!)
+            .Should()
+            .Be(20);
+        ((long)rootRows.Rows[2][2]!).Should().Be(255902);
+        ((long)rootRows.Rows[2][3]!).Should().Be(60);
+        ((string)rootRows.Rows[2][4]!).Should().Be("CAL-202");
+    }
+
+    [Test]
+    public void It_projects_identity_component_reference_for_populated_documents()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().ContainKey(401L);
+        projections.Should().ContainKey(403L);
+
+        var doc401School = projections[401L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
+        doc401School.IsIdentityComponent.Should().BeTrue();
+        doc401School.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        doc401School
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255901L);
+
+        var doc403School = projections[403L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.schoolReference");
+        doc403School
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.schoolReference.schoolId")
+            .Value.Should()
+            .Be(255902L);
+    }
+
+    [Test]
+    public void It_projects_non_identity_reference_for_populated_documents()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        var doc401Calendar = projections[401L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.calendarReference");
+        doc401Calendar.IsIdentityComponent.Should().BeFalse();
+        doc401Calendar.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "Calendar"));
+        doc401Calendar
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarReference.calendarCode")
+            .Value.Should()
+            .Be("CAL-101");
+
+        var doc403Calendar = projections[403L]
+            .Single(p => p.ReferenceObjectPath.Canonical == "$.calendarReference");
+        doc403Calendar
+            .FieldsInOrder.Single(f => f.ReferenceJsonPath.Canonical == "$.calendarReference.calendarCode")
+            .Value.Should()
+            .Be("CAL-202");
+    }
+
+    [Test]
+    public void It_does_not_project_any_reference_for_null_fk()
+    {
+        var projectionPlan = _plan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var hydratedRows = _result.TableRowsInDependencyOrder[0];
+
+        var projections = ReferenceIdentityProjector.ProjectTable(hydratedRows, projectionPlan);
+
+        projections.Should().NotContainKey(402L);
     }
 
     private static async Task ExecuteSql(SqlConnection connection, string sql)

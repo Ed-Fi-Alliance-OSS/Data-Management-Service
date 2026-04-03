@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -21,6 +22,11 @@ internal record UpdateRequest(
     /// The DocumentInfo of the document to update
     /// </summary>
     DocumentInfo DocumentInfo,
+    /// <summary>
+    /// The resolved runtime mapping set for the active request when relational
+    /// request handling is enabled.
+    /// </summary>
+    MappingSet? MappingSet,
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
     /// </summary>
@@ -55,5 +61,9 @@ internal record UpdateRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
-) : IUpdateRequest;
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
+    /// <summary>
+    /// Optional profile write context when a writable profile applies.
+    /// </summary>
+    BackendProfileWriteContext? BackendProfileWriteContext = null
+) : IRelationalUpdateRequest;

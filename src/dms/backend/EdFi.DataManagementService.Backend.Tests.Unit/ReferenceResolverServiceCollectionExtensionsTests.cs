@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -28,6 +31,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
         factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<TestReferenceResolverAdapter>();
     }
@@ -36,6 +40,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     public void It_registers_the_relational_access_seam_for_dialect_composition()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
@@ -46,6 +52,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
+        var targetContextResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
+        var terminalStage = scope.ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -58,6 +68,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
+        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
+        terminalStage.Should().BeOfType<DefaultRelationalWriteTerminalStage>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }
@@ -115,6 +128,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
     private sealed class TestRelationalCommandExecutor : IRelationalCommandExecutor
     {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
         public Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,
             Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,

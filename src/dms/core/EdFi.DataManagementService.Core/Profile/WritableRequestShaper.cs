@@ -218,6 +218,22 @@ public sealed class WritableRequestShaper(
             {
                 output[memberName] = memberValue?.DeepClone();
             }
+            else
+            {
+                // Client submitted a hidden scalar member — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: classifier.GetScopeKind(jsonScope),
+                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
+                        forbiddenCanonicalMemberPaths: [memberName]
+                    )
+                );
+            }
         }
 
         // Emit states for child non-collection scopes not encountered during the walk
@@ -265,6 +281,22 @@ public sealed class WritableRequestShaper(
         }
         else
         {
+            if (visibility == ProfileVisibilityKind.Hidden)
+            {
+                // Client submitted data for a hidden scope — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: ScopeKind.NonCollection,
+                        requestJsonPaths: [$"{requestJsonPath}"],
+                        forbiddenCanonicalMemberPaths: []
+                    )
+                );
+            }
             // Scope is absent or hidden — recursively emit states for descendant
             // non-collection scopes that cannot be encountered during the walk.
             EmitAbsentChildScopeStates(jsonScope, ancestorItems, scopeStates, emittedScopes, []);
@@ -299,9 +331,25 @@ public sealed class WritableRequestShaper(
 
         if (visibility != ProfileVisibilityKind.VisiblePresent || scopeData == null)
         {
-            // If VisibleAbsent, emit the array key with empty array to match expectations
-            if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            if (visibility == ProfileVisibilityKind.Hidden)
             {
+                // Client submitted data for a hidden collection — emit category-3 failure
+                validationFailures.Add(
+                    ProfileFailures.ForbiddenSubmittedData(
+                        profileName: profileName,
+                        resourceName: resourceName,
+                        method: method,
+                        operation: operation,
+                        jsonScope: jsonScope,
+                        scopeKind: ScopeKind.Collection,
+                        requestJsonPaths: [$"{requestJsonPath}.{memberName}"],
+                        forbiddenCanonicalMemberPaths: []
+                    )
+                );
+            }
+            else if (visibility == ProfileVisibilityKind.VisibleAbsent)
+            {
+                // If VisibleAbsent, emit the array key with empty array to match expectations
                 output[memberName] = new JsonArray();
             }
             return;
@@ -333,13 +381,16 @@ public sealed class WritableRequestShaper(
                 continue;
             }
 
-            // Item passes filter — derive address and emit
+            // Item passes filter — derive address and concrete path, then emit
             CollectionRowAddress rowAddress = addressEngine.DeriveCollectionRowAddress(
                 jsonScope,
                 item,
                 ancestorItems
             );
-            collectionItems.Add(new VisibleRequestCollectionItem(rowAddress, Creatable: false));
+            string itemRequestJsonPath = $"{requestJsonPath}.{memberName}[{i}]";
+            collectionItems.Add(
+                new VisibleRequestCollectionItem(rowAddress, Creatable: false, itemRequestJsonPath)
+            );
 
             // Build filtered item
             var filteredItem = new JsonObject();
@@ -347,9 +398,6 @@ public sealed class WritableRequestShaper(
 
             // Build ancestor context for potential nested scopes
             var newAncestors = new List<AncestorItemContext>(ancestorItems) { new(jsonScope, item) };
-
-            // Concrete document path for this collection item
-            string itemRequestJsonPath = $"{requestJsonPath}.{memberName}[{i}]";
 
             // Track which child non-collection scopes are handled for this item
             HashSet<string> itemHandledChildScopes = [];
@@ -430,6 +478,21 @@ public sealed class WritableRequestShaper(
                 {
                     filteredItem[itemMemberName] = itemMemberValue?.DeepClone();
                 }
+                else
+                {
+                    validationFailures.Add(
+                        ProfileFailures.ForbiddenSubmittedData(
+                            profileName: profileName,
+                            resourceName: resourceName,
+                            method: method,
+                            operation: operation,
+                            jsonScope: jsonScope,
+                            scopeKind: ScopeKind.Collection,
+                            requestJsonPaths: [$"{itemRequestJsonPath}.{itemMemberName}"],
+                            forbiddenCanonicalMemberPaths: [itemMemberName]
+                        )
+                    );
+                }
             }
 
             // Emit states for child non-collection scopes absent from this item
@@ -508,6 +571,21 @@ public sealed class WritableRequestShaper(
             }
             else
             {
+                if (visibility == ProfileVisibilityKind.Hidden)
+                {
+                    validationFailures.Add(
+                        ProfileFailures.ForbiddenSubmittedData(
+                            profileName: profileName,
+                            resourceName: resourceName,
+                            method: method,
+                            operation: operation,
+                            jsonScope: extScope,
+                            scopeKind: ScopeKind.NonCollection,
+                            requestJsonPaths: [$"{requestJsonPath}._ext.{extName}"],
+                            forbiddenCanonicalMemberPaths: []
+                        )
+                    );
+                }
                 // Extension scope is absent or hidden — emit descendant states
                 EmitAbsentChildScopeStates(extScope, ancestorItems, scopeStates, emittedScopes, []);
             }

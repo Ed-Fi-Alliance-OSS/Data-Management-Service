@@ -224,4 +224,139 @@ public static class HydrationTestHelper
 
         return new ReadPlanCompiler(dialect).Compile(model);
     }
+
+    /// <summary>
+    /// Builds a <see cref="ResourceReadPlan"/> for a StudentSchoolAssociation resource with a
+    /// nullable School reference (identity-component, FK + propagated identity column) and a
+    /// nullable Calendar reference (non-identity, FK + propagated identity column) in the given schema.
+    /// </summary>
+    public static ResourceReadPlan BuildStudentSchoolAssociationReadPlan(
+        string schemaName,
+        SqlDialect dialect
+    )
+    {
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+
+        var schoolIdJsonPath = new JsonPathExpression(
+            "$.schoolReference.schoolId",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+
+        var calendarReferencePath = new JsonPathExpression(
+            "$.calendarReference",
+            [new JsonPathSegment.Property("calendarReference")]
+        );
+
+        var calendarCodeJsonPath = new JsonPathExpression(
+            "$.calendarReference.calendarCode",
+            [new JsonPathSegment.Property("calendarReference"), new JsonPathSegment.Property("calendarCode")]
+        );
+
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName(schemaName), "StudentSchoolAssociation"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentSchoolAssociation",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_SchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolIdJsonPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: calendarReferencePath,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_CalendarCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    IsNullable: true,
+                    SourceJsonPath: calendarCodeJsonPath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
+            PhysicalSchema: new DbSchemaName(schemaName),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: schoolIdJsonPath,
+                            Column: new DbColumnName("School_SchoolId")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: calendarReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Calendar_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: calendarCodeJsonPath,
+                            Column: new DbColumnName("Calendar_CalendarCode")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+
+        return new ReadPlanCompiler(dialect).Compile(model);
+    }
 }

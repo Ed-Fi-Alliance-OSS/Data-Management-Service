@@ -13,4 +13,12 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// <param name="Creatable">
 /// Whether a new collection item may be created. Initially false; populated by C4.
 /// </param>
-public sealed record VisibleRequestCollectionItem(CollectionRowAddress Address, bool Creatable);
+/// <param name="RequestJsonPath">
+/// Concrete JSON path of this item in the request document (e.g. <c>$.classPeriods[0]</c>).
+/// Used by C8 duplicate-collision diagnostics to report the actual request locations.
+/// </param>
+public sealed record VisibleRequestCollectionItem(
+    CollectionRowAddress Address,
+    bool Creatable,
+    string RequestJsonPath
+);

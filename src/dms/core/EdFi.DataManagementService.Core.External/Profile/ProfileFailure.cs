@@ -250,14 +250,6 @@ public abstract record ProfileFailureDiagnostic
         : ProfileFailureDiagnostic;
 
     /// <summary>
-    /// Creation-required member paths that remain missing after request
-    /// shaping/system-supplied values are considered.
-    /// Used by creatability violations.
-    /// </summary>
-    public sealed record MissingCreationRequiredMembers(ImmutableArray<string> RelativePaths)
-        : ProfileFailureDiagnostic;
-
-    /// <summary>
     /// Request JSON paths associated with forbidden submitted data.
     /// Used by request-side validation failures.
     /// </summary>
@@ -507,7 +499,6 @@ public sealed record GenericCreatabilityViolationFailure(
 public sealed record RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure(
     ProfileFailureContext Context,
     ImmutableArray<string> HiddenCreationRequiredMemberPaths,
-    ImmutableArray<string> MissingCreationRequiredMemberPaths,
     ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> Dependencies,
     ImmutableArray<ProfileFailureDiagnostic> Diagnostics
 )
@@ -528,7 +519,6 @@ public sealed record VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilit
     ScopeKind AffectedScopeKind,
     ProfileCreatabilityTargetKind TargetKind,
     ImmutableArray<string> HiddenCreationRequiredMemberPaths,
-    ImmutableArray<string> MissingCreationRequiredMemberPaths,
     ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> Dependencies,
     ImmutableArray<ProfileFailureDiagnostic> Diagnostics
 )
@@ -638,6 +628,45 @@ public sealed record UnalignableStoredVisibilityMetadataCoreBackendContractMisma
     : CoreBackendContractMismatchFailure(
         ProfileFailureEmitter.BackendProfileWriteContext,
         "Core emitted stored-side visibility metadata that cannot be aligned to the compiled backend plan shape.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
+/// Category-5 failure for Core-emitted semantic identity that does not align
+/// with the compiled backend scope's semantic identity paths.
+/// </summary>
+public sealed record SemanticIdentityMismatchCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    int EmittedPartCount,
+    int ExpectedPartCount,
+    ImmutableArray<string> EmittedRelativePaths,
+    ImmutableArray<string> ExpectedRelativePaths,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted semantic identity that does not align with the compiled backend scope.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
+/// Category-5 failure for a <see cref="CollectionRowAddress"/> whose
+/// <c>ParentAddress.JsonScope</c> does not match a known compiled scope.
+/// </summary>
+public sealed record ParentScopeMismatchCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    string EmittedParentJsonScope,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted a collection row address whose parent scope is not a known compiled scope.",
         Context,
         Diagnostics
     );
@@ -944,7 +973,6 @@ public static class ProfileFailures
         string method,
         string operation,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -952,33 +980,22 @@ public static class ProfileFailures
         ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
 
         ArgumentNullException.ThrowIfNull(hiddenCreationRequiredMemberPaths);
-        ArgumentNullException.ThrowIfNull(missingCreationRequiredMemberPaths);
 
         ImmutableArray<string> normalizedHiddenCreationRequiredMemberPaths = NormalizeOptionalStrings(
             hiddenCreationRequiredMemberPaths,
             nameof(hiddenCreationRequiredMemberPaths)
         );
 
-        ImmutableArray<string> normalizedMissingCreationRequiredMemberPaths = NormalizeOptionalStrings(
-            missingCreationRequiredMemberPaths,
-            nameof(missingCreationRequiredMemberPaths)
-        );
-
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> normalizedDependencies =
             NormalizeOptionalCreatabilityDependencies(dependencies, nameof(dependencies));
 
-        EnsureCreatabilityBlockingReason(
-            normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
-            normalizedDependencies
-        );
+        EnsureCreatabilityBlockingReason(normalizedHiddenCreationRequiredMemberPaths, normalizedDependencies);
 
         ScopeInstanceAddress rootAddress = new("$", []);
 
         return new(
             context,
             normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
             normalizedDependencies,
             MergeCreatabilityDiagnostics(
                 diagnostics,
@@ -986,7 +1003,6 @@ public static class ProfileFailures
                 ScopeKind.Root,
                 [new ProfileFailureDiagnostic.ScopeAddress(rootAddress)],
                 normalizedHiddenCreationRequiredMemberPaths,
-                normalizedMissingCreationRequiredMemberPaths,
                 normalizedDependencies
             )
         );
@@ -1000,7 +1016,6 @@ public static class ProfileFailures
         ProfileCreatabilityTargetKind targetKind,
         ScopeInstanceAddress affectedAddress,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -1017,7 +1032,6 @@ public static class ProfileFailures
             ScopeKind.NonCollection,
             [new ProfileFailureDiagnostic.ScopeAddress(affectedAddress)],
             hiddenCreationRequiredMemberPaths,
-            missingCreationRequiredMemberPaths,
             dependencies,
             diagnostics
         );
@@ -1031,7 +1045,6 @@ public static class ProfileFailures
         ProfileCreatabilityTargetKind targetKind,
         CollectionRowAddress affectedAddress,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
@@ -1048,7 +1061,6 @@ public static class ProfileFailures
             ScopeKind.Collection,
             BuildCollectionCreatabilityAddressDiagnostics(affectedAddress),
             hiddenCreationRequiredMemberPaths,
-            missingCreationRequiredMemberPaths,
             dependencies,
             diagnostics
         );
@@ -1220,6 +1232,96 @@ public static class ProfileFailures
             metadataKind,
             hiddenCanonicalMemberPaths,
             diagnostics
+        );
+    }
+
+    public static SemanticIdentityMismatchCoreBackendContractMismatchFailure SemanticIdentityMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor compiledScope,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            compiledScope.ScopeKind,
+            emittedAddress.SemanticIdentityInOrder.Length,
+            compiledScope.SemanticIdentityRelativePathsInOrder.Length,
+            [.. emittedAddress.SemanticIdentityInOrder.Select(p => p.RelativePath)],
+            compiledScope.SemanticIdentityRelativePathsInOrder,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
+            )
+        );
+    }
+
+    public static SemanticIdentityMismatchCoreBackendContractMismatchFailure AncestorSemanticIdentityMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor ancestorCompiledScope,
+        AncestorCollectionInstance emittedAncestor,
+        ProfileFailureDiagnostic addressDiagnostic,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAncestor);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        return new(
+            context,
+            emittedAncestor.JsonScope,
+            ancestorCompiledScope.ScopeKind,
+            emittedAncestor.SemanticIdentityInOrder.Length,
+            ancestorCompiledScope.SemanticIdentityRelativePathsInOrder.Length,
+            [.. emittedAncestor.SemanticIdentityInOrder.Select(p => p.RelativePath)],
+            ancestorCompiledScope.SemanticIdentityRelativePathsInOrder,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(ancestorCompiledScope),
+                addressDiagnostic
+            )
+        );
+    }
+
+    public static ParentScopeMismatchCoreBackendContractMismatchFailure ParentScopeMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor compiledScope,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            compiledScope.ScopeKind,
+            emittedAddress.ParentAddress.JsonScope,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
+            )
         );
     }
 
@@ -1414,7 +1516,6 @@ public static class ProfileFailures
         ScopeKind affectedScopeKind,
         IEnumerable<ProfileFailureDiagnostic> addressDiagnostics,
         IEnumerable<string> hiddenCreationRequiredMemberPaths,
-        IEnumerable<string> missingCreationRequiredMemberPaths,
         IEnumerable<ProfileFailureDiagnostic.CreatabilityDependency>? dependencies,
         ProfileFailureDiagnostic[] diagnostics
     )
@@ -1422,26 +1523,16 @@ public static class ProfileFailures
         ArgumentException.ThrowIfNullOrWhiteSpace(jsonScope);
         ArgumentNullException.ThrowIfNull(addressDiagnostics);
         ArgumentNullException.ThrowIfNull(hiddenCreationRequiredMemberPaths);
-        ArgumentNullException.ThrowIfNull(missingCreationRequiredMemberPaths);
 
         ImmutableArray<string> normalizedHiddenCreationRequiredMemberPaths = NormalizeOptionalStrings(
             hiddenCreationRequiredMemberPaths,
             nameof(hiddenCreationRequiredMemberPaths)
         );
 
-        ImmutableArray<string> normalizedMissingCreationRequiredMemberPaths = NormalizeOptionalStrings(
-            missingCreationRequiredMemberPaths,
-            nameof(missingCreationRequiredMemberPaths)
-        );
-
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> normalizedDependencies =
             NormalizeOptionalCreatabilityDependencies(dependencies, nameof(dependencies));
 
-        EnsureCreatabilityBlockingReason(
-            normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
-            normalizedDependencies
-        );
+        EnsureCreatabilityBlockingReason(normalizedHiddenCreationRequiredMemberPaths, normalizedDependencies);
 
         return new(
             context,
@@ -1449,7 +1540,6 @@ public static class ProfileFailures
             affectedScopeKind,
             targetKind,
             normalizedHiddenCreationRequiredMemberPaths,
-            normalizedMissingCreationRequiredMemberPaths,
             normalizedDependencies,
             MergeCreatabilityDiagnostics(
                 diagnostics,
@@ -1457,7 +1547,6 @@ public static class ProfileFailures
                 affectedScopeKind,
                 addressDiagnostics,
                 normalizedHiddenCreationRequiredMemberPaths,
-                normalizedMissingCreationRequiredMemberPaths,
                 normalizedDependencies
             )
         );
@@ -1873,7 +1962,6 @@ public static class ProfileFailures
         ScopeKind scopeKind,
         IEnumerable<ProfileFailureDiagnostic> addressDiagnostics,
         ImmutableArray<string> hiddenCreationRequiredMemberPaths,
-        ImmutableArray<string> missingCreationRequiredMemberPaths,
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> dependencies
     )
     {
@@ -1888,15 +1976,6 @@ public static class ProfileFailures
         {
             additionalDiagnostics.Add(
                 new ProfileFailureDiagnostic.HiddenCreationRequiredMembers(hiddenCreationRequiredMemberPaths)
-            );
-        }
-
-        if (!missingCreationRequiredMemberPaths.IsDefaultOrEmpty)
-        {
-            additionalDiagnostics.Add(
-                new ProfileFailureDiagnostic.MissingCreationRequiredMembers(
-                    missingCreationRequiredMemberPaths
-                )
             );
         }
 
@@ -1916,18 +1995,13 @@ public static class ProfileFailures
 
     private static void EnsureCreatabilityBlockingReason(
         ImmutableArray<string> hiddenCreationRequiredMemberPaths,
-        ImmutableArray<string> missingCreationRequiredMemberPaths,
         ImmutableArray<ProfileFailureDiagnostic.CreatabilityDependency> dependencies
     )
     {
-        if (
-            hiddenCreationRequiredMemberPaths.IsDefaultOrEmpty
-            && missingCreationRequiredMemberPaths.IsDefaultOrEmpty
-            && dependencies.IsDefaultOrEmpty
-        )
+        if (hiddenCreationRequiredMemberPaths.IsDefaultOrEmpty && dependencies.IsDefaultOrEmpty)
         {
             throw new ArgumentException(
-                "At least one hidden member, missing member, or related dependency is required for a creatability violation."
+                "At least one hidden member or related dependency is required for a creatability violation."
             );
         }
     }

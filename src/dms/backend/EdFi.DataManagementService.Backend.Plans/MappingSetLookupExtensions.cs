@@ -12,11 +12,10 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Lookup helpers for resource read/write plans with actionable failure reasons when a plan was intentionally omitted.
+/// Lookup helpers for resource read plans with actionable failure reasons when a plan was intentionally omitted.
 /// </summary>
 public static class MappingSetLookupExtensions
 {
-    private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
@@ -26,49 +25,6 @@ public static class MappingSetLookupExtensions
         MappingSet,
         ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>
     > ValidatedReadPlansByResource = new();
-
-    /// <summary>
-    /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
-    /// </summary>
-    public static ResourceWritePlan GetWritePlanOrThrow(
-        this MappingSet mappingSet,
-        QualifiedResourceName resource
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        if (mappingSet.WritePlansByResource.TryGetValue(resource, out var writePlan))
-        {
-            return writePlan;
-        }
-
-        var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
-        {
-            throw new NotSupportedException(
-                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
-                    + $"Next story: {DescriptorWriteStoryRef}."
-            );
-        }
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
-        {
-            throw new InvalidOperationException(
-                $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
-                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
-                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "
-                    + "was found. This indicates an internal compilation/selection bug."
-            );
-        }
-
-        throw new InvalidOperationException(
-            $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
-                + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
-                + "is not recognized."
-        );
-    }
 
     /// <summary>
     /// Gets the compiled read plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -129,13 +85,13 @@ public static class MappingSetLookupExtensions
 
                 foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
                 {
-                    var resource = concreteResourceModel.RelationalModel.Resource;
+                    var candidateResource = concreteResourceModel.RelationalModel.Resource;
 
-                    if (!resourcesByName.TryAdd(resource, concreteResourceModel))
+                    if (!resourcesByName.TryAdd(candidateResource, concreteResourceModel))
                     {
                         throw new InvalidOperationException(
                             $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
-                                + $"'{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+                                + $"'{FormatResource(candidateResource)}' in ConcreteResourcesInNameOrder."
                         );
                     }
                 }

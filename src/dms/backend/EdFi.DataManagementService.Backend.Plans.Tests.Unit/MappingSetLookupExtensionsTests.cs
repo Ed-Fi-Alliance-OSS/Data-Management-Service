@@ -151,6 +151,18 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_a_catchable_missing_write_plan_guard_rail_exception()
+    {
+        var act = () => _mappingSet.GetWritePlanOrThrow(_nonRootOnlyResource);
+
+        act.Should()
+            .Throw<MissingWritePlanLookupGuardRailException>()
+            .WithMessage(
+                "*Ed-Fi.StudentAddress*mapping set*RelationalTables*internal compilation/selection bug*"
+            );
+    }
+
+    [Test]
     public void It_should_treat_missing_non_root_only_relational_read_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_nonRootOnlyResource);
@@ -342,7 +354,7 @@ public class Given_MappingSetLookupExtensions
             );
             var actualException = CaptureException(() => _mappingSet.GetWritePlanOrThrow(resource));
 
-            actualException.GetType().Should().Be(expectedException.GetType());
+            actualException.Should().BeAssignableTo(expectedException.GetType());
             actualException.Message.Should().Be(expectedException.Message);
         }
     }

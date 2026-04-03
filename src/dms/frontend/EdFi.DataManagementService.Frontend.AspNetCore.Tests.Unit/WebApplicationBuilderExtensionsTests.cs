@@ -4,10 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -71,12 +75,33 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
+        public void It_keeps_only_the_legacy_postgresql_repository_surface_when_relational_backend_is_disabled()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<IDocumentStoreRepository>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<PostgresqlDocumentStoreRepository>();
+            scope
+                .ServiceProvider.GetServices<IQueryHandler>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<PostgresqlDocumentStoreRepository>();
+        }
+
+        [Test]
         public void It_does_not_register_relational_reference_resolution_services_by_default()
         {
             using var serviceProvider = CreateServices("postgresql");
             using var scope = serviceProvider.CreateScope();
 
             scope.ServiceProvider.GetService<IReferenceResolver>().Should().BeNull();
+            scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapterFactory>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapter>().Should().BeNull();
             scope.ServiceProvider.GetService<IRelationalCommandExecutor>().Should().BeNull();
@@ -89,7 +114,30 @@ public class WebApplicationBuilderExtensionsTests
         : WebApplicationBuilderExtensionsTests
     {
         [Test]
-        public void It_registers_the_postgresql_reference_resolution_composition_surface()
+        public void It_replaces_the_legacy_repository_surface_with_the_relational_repository()
+        {
+            using var serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
+            );
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<IDocumentStoreRepository>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalDocumentStoreRepository>();
+            scope
+                .ServiceProvider.GetServices<IQueryHandler>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalDocumentStoreRepository>();
+        }
+
+        [Test]
+        public void It_registers_the_postgresql_relational_runtime_composition_surface()
         {
             using var serviceProvider = CreateServices(
                 "postgresql",
@@ -102,6 +150,18 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<ReferenceResolver>();
             scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
+                .Should()
+                .BeOfType<RelationalWriteFlattener>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .Should()
+                .BeOfType<RelationalWriteTargetContextResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteTerminalStage>();
+            scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
                 .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
@@ -113,6 +173,16 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()
                 .Should()
                 .BeOfType<PostgresqlRelationalCommandExecutor>();
+            scope
+                .ServiceProvider.GetRequiredService<IMappingSetProvider>()
+                .Should()
+                .BeOfType<MappingSetProvider>();
+            scope
+                .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
+                .Should()
+                .ContainSingle()
+                .Which.Dialect.Should()
+                .Be(SqlDialect.Pgsql);
         }
     }
 
@@ -128,6 +198,87 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<MssqlDatabaseFingerprintReader>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Mssql_Datastore_With_Relational_Backend_Enabled
+        : WebApplicationBuilderExtensionsTests
+    {
+        [Test]
+        public void It_registers_the_mssql_relational_runtime_composition_surface()
+        {
+            using var serviceProvider = CreateServices(
+                "mssql",
+                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
+            );
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<IDocumentStoreRepository>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalDocumentStoreRepository>();
+            scope
+                .ServiceProvider.GetServices<IQueryHandler>()
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<RelationalDocumentStoreRepository>();
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolver>()
+                .Should()
+                .BeOfType<ReferenceResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
+                .Should()
+                .BeOfType<RelationalWriteFlattener>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .Should()
+                .BeOfType<RelationalWriteTargetContextResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteTerminalStage>();
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+                .Should()
+                .Match<IReferenceResolverAdapterFactory>(factory =>
+                    factory.GetType().Name == "MssqlReferenceResolverAdapterFactory"
+                );
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+                .Should()
+                .Match<IReferenceResolverAdapter>(adapter =>
+                    adapter.GetType().Name == "MssqlReferenceResolverAdapter"
+                );
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()
+                .Should()
+                .Match<IRelationalCommandExecutor>(executor =>
+                    executor.GetType().Name == "MssqlRelationalCommandExecutor"
+                );
+            scope
+                .ServiceProvider.GetRequiredService<IMappingSetProvider>()
+                .Should()
+                .BeOfType<MappingSetProvider>();
+            scope
+                .ServiceProvider.GetServices<IRuntimeMappingSetCompiler>()
+                .Should()
+                .ContainSingle()
+                .Which.Dialect.Should()
+                .Be(SqlDialect.Mssql);
+            scope
+                .ServiceProvider.GetRequiredService<IDatabaseFingerprintReader>()
+                .Should()
+                .BeOfType<MssqlDatabaseFingerprintReader>();
+            scope
+                .ServiceProvider.GetRequiredService<IResourceKeyRowReader>()
+                .Should()
+                .BeOfType<MssqlResourceKeyRowReader>();
         }
     }
 

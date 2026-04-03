@@ -55,6 +55,7 @@ internal class UpdateByIdHandler(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
                         DocumentInfo: requestInfo.DocumentInfo,
+                        MappingSet: requestInfo.MappingSet,
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         DocumentSecurityElements: requestInfo.DocumentSecurityElements,
@@ -67,7 +68,8 @@ internal class UpdateByIdHandler(
                             requestInfo.ScopedServiceProvider,
                             _logger
                         ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
+                        BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                 ),
             requestInfo
@@ -168,6 +170,10 @@ internal class UpdateByIdHandler(
                     errors: failure.ErrorMessages
                 ),
                 Headers: []
+            ),
+            UpdateFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
             ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
