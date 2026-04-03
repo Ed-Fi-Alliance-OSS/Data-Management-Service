@@ -6,6 +6,7 @@
 using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -18,6 +19,7 @@ using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreApiSchemaModel = EdFi.DataManagementService.Core.ApiSchema.Model;
 
@@ -34,6 +36,7 @@ public class ProfileWriteValidationMiddlewareTests
     )
     {
         return new ProfileWriteValidationMiddleware(
+            Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
             filter ?? new ProfileResponseFilter(),
             creatabilityValidator ?? new ProfileCreatabilityValidator(),
             schemaCache ?? new CompiledSchemaCache(),

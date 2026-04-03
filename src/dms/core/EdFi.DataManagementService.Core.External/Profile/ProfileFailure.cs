@@ -633,6 +633,45 @@ public sealed record UnalignableStoredVisibilityMetadataCoreBackendContractMisma
     );
 
 /// <summary>
+/// Category-5 failure for Core-emitted semantic identity that does not align
+/// with the compiled backend scope's semantic identity paths.
+/// </summary>
+public sealed record SemanticIdentityMismatchCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    int EmittedPartCount,
+    int ExpectedPartCount,
+    ImmutableArray<string> EmittedRelativePaths,
+    ImmutableArray<string> ExpectedRelativePaths,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted semantic identity that does not align with the compiled backend scope.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
+/// Category-5 failure for a <see cref="CollectionRowAddress"/> whose
+/// <c>ParentAddress.JsonScope</c> does not match a known compiled scope.
+/// </summary>
+public sealed record ParentScopeMismatchCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    string EmittedParentJsonScope,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted a collection row address whose parent scope is not a known compiled scope.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
 /// Base category-6 typed failure emitted when backend/API binding accounting
 /// cannot classify a profiled binding into exactly one deterministic outcome.
 /// </summary>
@@ -1193,6 +1232,96 @@ public static class ProfileFailures
             metadataKind,
             hiddenCanonicalMemberPaths,
             diagnostics
+        );
+    }
+
+    public static SemanticIdentityMismatchCoreBackendContractMismatchFailure SemanticIdentityMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor compiledScope,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            compiledScope.ScopeKind,
+            emittedAddress.SemanticIdentityInOrder.Length,
+            compiledScope.SemanticIdentityRelativePathsInOrder.Length,
+            [.. emittedAddress.SemanticIdentityInOrder.Select(p => p.RelativePath)],
+            compiledScope.SemanticIdentityRelativePathsInOrder,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
+            )
+        );
+    }
+
+    public static SemanticIdentityMismatchCoreBackendContractMismatchFailure AncestorSemanticIdentityMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor ancestorCompiledScope,
+        AncestorCollectionInstance emittedAncestor,
+        ProfileFailureDiagnostic addressDiagnostic,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAncestor);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        return new(
+            context,
+            emittedAncestor.JsonScope,
+            ancestorCompiledScope.ScopeKind,
+            emittedAncestor.SemanticIdentityInOrder.Length,
+            ancestorCompiledScope.SemanticIdentityRelativePathsInOrder.Length,
+            [.. emittedAncestor.SemanticIdentityInOrder.Select(p => p.RelativePath)],
+            ancestorCompiledScope.SemanticIdentityRelativePathsInOrder,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(ancestorCompiledScope),
+                addressDiagnostic
+            )
+        );
+    }
+
+    public static ParentScopeMismatchCoreBackendContractMismatchFailure ParentScopeMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CompiledScopeDescriptor compiledScope,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            compiledScope.ScopeKind,
+            emittedAddress.ParentAddress.JsonScope,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
+            )
         );
     }
 

@@ -294,6 +294,14 @@ public sealed class RelationalDocumentStoreRepository(
             // ExistingDocument flows. When available, this is where the repository
             // would call backendProfileWriteContext.StoredStateProjectionInvoker
             // to produce the ProfileAppliedWriteContext for update/upsert-to-existing.
+            //
+            // TODO(DMS-1105): IStoredStateProjectionInvoker.ProjectStoredState currently
+            // returns ProfileAppliedWriteContext directly — typed failures from the second
+            // pipeline run are lost and surface as InvalidOperationException. When this
+            // stub is activated, change the return type to a result type that can convey
+            // ProfileWritePipelineResult failures back to the repository for proper HTTP
+            // status mapping (see CapturedStoredStateProjectionInvoker in
+            // ProfileWritePipelineMiddleware).
             ProfileAppliedWriteContext? profileWriteContext = null;
 
             var flatteningInput = new FlatteningInput(

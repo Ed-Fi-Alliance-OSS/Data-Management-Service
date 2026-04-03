@@ -190,3 +190,95 @@ public class Given_a_root_and_extension_ResourceWritePlan
         _extensionScope.CanonicalScopeRelativeMemberPaths.Should().Equal("favoriteColor");
     }
 }
+
+[TestFixture]
+public class Given_a_root_plan_with_an_inlined_object_scope_via_additionalScopes
+{
+    private CompiledScopeDescriptor[] _result = null!;
+    private CompiledScopeDescriptor _rootScope = null!;
+    private CompiledScopeDescriptor _inlinedScope = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = AdapterFactoryTestFixtures.BuildRootWithInlinedObjectPlan();
+
+        // Simulate discovering the inlined scope from a content type tree
+        var additionalScopes = new List<(string JsonScope, ScopeKind Kind)>
+        {
+            ("$.calendarReference", ScopeKind.NonCollection),
+        };
+
+        _result = CompiledScopeAdapterFactory.BuildFromWritePlan(plan, additionalScopes);
+        _rootScope = _result[0];
+        _inlinedScope = _result[1];
+    }
+
+    [Test]
+    public void It_produces_two_scopes()
+    {
+        _result.Should().HaveCount(2);
+    }
+
+    [Test]
+    public void It_produces_a_root_scope_first()
+    {
+        _rootScope.JsonScope.Should().Be("$");
+        _rootScope.ScopeKind.Should().Be(ScopeKind.Root);
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_JsonScope_correctly()
+    {
+        _inlinedScope.JsonScope.Should().Be("$.calendarReference");
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_ScopeKind_to_NonCollection()
+    {
+        _inlinedScope.ScopeKind.Should().Be(ScopeKind.NonCollection);
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_ImmediateParentJsonScope_to_root()
+    {
+        _inlinedScope.ImmediateParentJsonScope.Should().Be("$");
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_CollectionAncestorsInOrder_to_empty()
+    {
+        _inlinedScope.CollectionAncestorsInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_SemanticIdentityRelativePathsInOrder_to_empty()
+    {
+        _inlinedScope.SemanticIdentityRelativePathsInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_derives_CanonicalScopeRelativeMemberPaths_from_parent_table_columns()
+    {
+        // Root table has columns with SourceJsonPath $.calendarReference.calendarCode
+        // and $.calendarReference.schoolYear — both are direct members of the inlined scope
+        _inlinedScope
+            .CanonicalScopeRelativeMemberPaths.Should()
+            .BeEquivalentTo("calendarCode", "schoolYear");
+    }
+}
+
+[TestFixture]
+public class Given_no_additionalScopes_the_factory_behaves_as_before
+{
+    [Test]
+    public void It_produces_only_table_backed_scopes()
+    {
+        var plan = AdapterFactoryTestFixtures.BuildRootWithInlinedObjectPlan();
+        var result = CompiledScopeAdapterFactory.BuildFromWritePlan(plan);
+
+        // Without additional scopes, only the root table appears
+        result.Should().HaveCount(1);
+        result[0].JsonScope.Should().Be("$");
+    }
+}

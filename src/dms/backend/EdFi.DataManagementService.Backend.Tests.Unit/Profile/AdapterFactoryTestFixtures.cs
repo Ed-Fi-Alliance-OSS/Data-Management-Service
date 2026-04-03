@@ -312,6 +312,127 @@ internal static class AdapterFactoryTestFixtures
             KeyUnificationPlans: []
         );
 
+    /// <summary>
+    /// Builds a ResourceWritePlan with a root table that has inlined columns for a
+    /// non-table-backed child object scope ($.calendarReference).
+    /// The root table contains columns with SourceJsonPath values under that scope.
+    /// </summary>
+    public static ResourceWritePlan BuildRootWithInlinedObjectPlan()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "StudentSchoolAssociation"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                Column(
+                    "EntryDate",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 10),
+                    isNullable: false,
+                    sourceJsonPath: Path("$.entryDate", new JsonPathSegment.Property("entryDate"))
+                ),
+                Column(
+                    "CalendarCode",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.calendarReference.calendarCode",
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    )
+                ),
+                Column(
+                    "SchoolYear",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.calendarReference.schoolYear",
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("schoolYear")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var rootPlan = new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"StudentSchoolAssociation\" VALUES (...)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, rootTableModel.Columns.Count, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    rootTableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        Path("$.entryDate", new JsonPathSegment.Property("entryDate")),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 10)
+                    ),
+                    "EntryDate"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.calendarReference.calendarCode",
+                            new JsonPathSegment.Property("calendarReference"),
+                            new JsonPathSegment.Property("calendarCode")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "CalendarCode"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.calendarReference.schoolYear",
+                            new JsonPathSegment.Property("calendarReference"),
+                            new JsonPathSegment.Property("schoolYear")
+                        ),
+                        new RelationalScalarType(ScalarKind.Int32)
+                    ),
+                    "SchoolYear"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: _schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new ResourceWritePlan(model, [rootPlan]);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static JsonPathExpression Path(string canonical, params JsonPathSegment[] segments) =>

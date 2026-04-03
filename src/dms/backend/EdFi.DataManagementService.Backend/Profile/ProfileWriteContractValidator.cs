@@ -229,7 +229,20 @@ internal static class ProfileWriteContractValidator
                     address
                 )
             );
+            return;
         }
+
+        // Validate semantic identity on each ancestor collection instance
+        ValidateAncestorSemanticIdentity(
+            address.AncestorCollectionInstances,
+            catalogByJsonScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            new ProfileFailureDiagnostic.ScopeAddress(address),
+            failures
+        );
     }
 
     private static void ValidateCollectionRowAddress(
@@ -257,6 +270,22 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
+        // Validate ParentAddress.JsonScope is a known scope
+        if (!catalogByJsonScope.ContainsKey(address.ParentAddress.JsonScope))
+        {
+            failures.Add(
+                ProfileFailures.ParentScopeMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
         if (!AncestorChainMatches(address.ParentAddress.AncestorCollectionInstances, compiledScope))
         {
             failures.Add(
@@ -269,6 +298,146 @@ internal static class ProfileWriteContractValidator
                     address
                 )
             );
+            return;
+        }
+
+        // Validate semantic identity part count and paths for this collection row
+        ValidateSemanticIdentity(
+            address.SemanticIdentityInOrder,
+            compiledScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            address,
+            failures
+        );
+
+        // Validate semantic identity on each ancestor collection instance
+        ValidateAncestorSemanticIdentity(
+            address.ParentAddress.AncestorCollectionInstances,
+            catalogByJsonScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            new ProfileFailureDiagnostic.CollectionRow(address),
+            failures
+        );
+    }
+
+    /// <summary>
+    /// Validates that the emitted semantic identity matches the compiled scope's
+    /// expected identity paths in count and path values.
+    /// </summary>
+    private static void ValidateSemanticIdentity(
+        System.Collections.Immutable.ImmutableArray<SemanticIdentityPart> emittedIdentity,
+        CompiledScopeDescriptor compiledScope,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        CollectionRowAddress address,
+        List<ProfileFailure> failures
+    )
+    {
+        var expectedPaths = compiledScope.SemanticIdentityRelativePathsInOrder;
+
+        // Check part count
+        if (emittedIdentity.Length != expectedPaths.Length)
+        {
+            failures.Add(
+                ProfileFailures.SemanticIdentityMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
+        // Check each path matches in order
+        for (int i = 0; i < expectedPaths.Length; i++)
+        {
+            if (emittedIdentity[i].RelativePath != expectedPaths[i])
+            {
+                failures.Add(
+                    ProfileFailures.SemanticIdentityMismatch(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        compiledScope,
+                        address
+                    )
+                );
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates semantic identity on each ancestor collection instance against
+    /// the compiled scope catalog.
+    /// </summary>
+    private static void ValidateAncestorSemanticIdentity(
+        System.Collections.Immutable.ImmutableArray<AncestorCollectionInstance> ancestors,
+        Dictionary<string, CompiledScopeDescriptor> catalogByJsonScope,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        ProfileFailureDiagnostic addressDiagnostic,
+        List<ProfileFailure> failures
+    )
+    {
+        foreach (var ancestor in ancestors)
+        {
+            if (!catalogByJsonScope.TryGetValue(ancestor.JsonScope, out var ancestorScope))
+            {
+                // Already caught by AncestorChainMatches — skip to avoid double-reporting
+                continue;
+            }
+
+            var expectedPaths = ancestorScope.SemanticIdentityRelativePathsInOrder;
+
+            if (ancestor.SemanticIdentityInOrder.Length != expectedPaths.Length)
+            {
+                failures.Add(
+                    ProfileFailures.AncestorSemanticIdentityMismatch(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        ancestorScope,
+                        ancestor,
+                        addressDiagnostic
+                    )
+                );
+                continue;
+            }
+
+            for (int i = 0; i < expectedPaths.Length; i++)
+            {
+                if (ancestor.SemanticIdentityInOrder[i].RelativePath != expectedPaths[i])
+                {
+                    failures.Add(
+                        ProfileFailures.AncestorSemanticIdentityMismatch(
+                            profileName,
+                            resourceName,
+                            method,
+                            operation,
+                            ancestorScope,
+                            ancestor,
+                            addressDiagnostic
+                        )
+                    );
+                    break;
+                }
+            }
         }
     }
 

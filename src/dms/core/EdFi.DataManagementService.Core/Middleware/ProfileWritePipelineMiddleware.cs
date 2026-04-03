@@ -108,8 +108,16 @@ internal class ProfileWritePipelineMiddleware(
             return;
         }
 
-        // Build scope catalog from the write plan
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        // Build scope catalog from the write plan, augmented with any inlined scopes
+        // discovered from the content type tree that have no backing table
+        var tableScopeSet = new HashSet<string>(
+            writePlan.TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+        );
+        var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            writePlan,
+            inlinedScopes.Count > 0 ? inlinedScopes : null
+        );
 
         // Resolve profile content type for pipeline validation
         ProfileContentType? resolvedContentType =

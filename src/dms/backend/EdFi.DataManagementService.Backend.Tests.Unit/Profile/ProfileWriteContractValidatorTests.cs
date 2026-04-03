@@ -486,3 +486,288 @@ public class Given_HiddenMemberPathNotInCatalog_When_ValidatingWriteContext
         _result[0].Should().BeOfType<CanonicalMemberPathMismatchCoreBackendContractMismatchFailure>();
     }
 }
+
+[TestFixture]
+public class Given_CollectionRow_with_unknown_ParentAddress_JsonScope_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        // ParentAddress references a scope that doesn't exist in the catalog
+        var collectionRowAddress = new CollectionRowAddress(
+            JsonScope: "$.addresses[*]",
+            ParentAddress: new ScopeInstanceAddress("$.unknownScope", []),
+            SemanticIdentityInOrder: [new SemanticIdentityPart("addressType", JsonValue.Create("Home"), true)]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    collectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "POST",
+            operation: "Upsert"
+        );
+    }
+
+    [Test]
+    public void It_returns_one_failure()
+    {
+        _result.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_emits_a_ParentScopeMismatchCoreBackendContractMismatchFailure()
+    {
+        _result[0].Should().BeOfType<ParentScopeMismatchCoreBackendContractMismatchFailure>();
+    }
+}
+
+[TestFixture]
+public class Given_CollectionRow_with_wrong_semantic_identity_part_count_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        // Emitted address has TWO semantic identity parts but the compiled scope expects ONE
+        var collectionRowAddress = new CollectionRowAddress(
+            JsonScope: "$.addresses[*]",
+            ParentAddress: new ScopeInstanceAddress("$", []),
+            SemanticIdentityInOrder:
+            [
+                new SemanticIdentityPart("addressType", JsonValue.Create("Home"), true),
+                new SemanticIdentityPart("extraField", JsonValue.Create("X"), true),
+            ]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    collectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "POST",
+            operation: "Upsert"
+        );
+    }
+
+    [Test]
+    public void It_returns_one_failure()
+    {
+        _result.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_emits_a_SemanticIdentityMismatchCoreBackendContractMismatchFailure()
+    {
+        _result[0].Should().BeOfType<SemanticIdentityMismatchCoreBackendContractMismatchFailure>();
+    }
+}
+
+[TestFixture]
+public class Given_CollectionRow_with_wrong_semantic_identity_path_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        // Emitted address has correct count but wrong path name
+        var collectionRowAddress = new CollectionRowAddress(
+            JsonScope: "$.addresses[*]",
+            ParentAddress: new ScopeInstanceAddress("$", []),
+            SemanticIdentityInOrder: [new SemanticIdentityPart("wrongPath", JsonValue.Create("Home"), true)]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    collectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "POST",
+            operation: "Upsert"
+        );
+    }
+
+    [Test]
+    public void It_returns_one_failure()
+    {
+        _result.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_emits_a_SemanticIdentityMismatchCoreBackendContractMismatchFailure()
+    {
+        _result[0].Should().BeOfType<SemanticIdentityMismatchCoreBackendContractMismatchFailure>();
+    }
+}
+
+[TestFixture]
+public class Given_valid_CollectionRow_with_correct_semantic_identity_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        var collectionRowAddress = new CollectionRowAddress(
+            JsonScope: "$.addresses[*]",
+            ParentAddress: new ScopeInstanceAddress("$", []),
+            SemanticIdentityInOrder: [new SemanticIdentityPart("addressType", JsonValue.Create("Home"), true)]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    collectionRowAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.addresses[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "POST",
+            operation: "Upsert"
+        );
+    }
+
+    [Test]
+    public void It_returns_no_failures()
+    {
+        _result.Should().BeEmpty();
+    }
+}
