@@ -153,5 +153,45 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Contact\"`"
     ],
     "completed": false
+  },
+  {
+    "category": "Move POST Upsert Existence Resolution Into The Write Session",
+    "description": "Close the POST create-vs-create race where repository-owned pre-session target lookup can resolve `CreateNew`, then a concurrent writer can insert the same identity before this attempt persists rows. Acceptance: POST upsert does not rely on a pre-session `CreateNew` decision for correctness; existence resolution for the create-vs-existing branch is performed or revalidated inside the executor-owned connection/transaction before any new `dms.Document` row is inserted; when a concurrent writer creates the target between repository orchestration and persistence, the second request follows the POST-as-update path against the existing document instead of inserting a duplicate document row or surfacing an avoidable write-conflict/identity-conflict outcome; successful concurrent POST-as-update preserves the original persisted `DocumentId` and `DocumentUuid`, and repository-level PUT not-found short-circuit behavior remains unchanged.",
+    "steps-to-verify": [
+      "Refactor POST write orchestration so the create-vs-existing decision that matters for persistence is owned by the executor session rather than by a stale repository lookup result.",
+      "Ensure the executor revalidates POST targets before inserting `dms.Document`, and routes a concurrent create into existing-document current-state load, merge, guarded no-op, or persistence as appropriate.",
+      "Add backend unit coverage for a POST request whose initial lookup would have resolved `CreateNew`, but whose in-session revalidation finds an existing document; assert the path updates the existing target context and does not call the create-new document insert branch.",
+      "Add backend unit or repository seam coverage proving PUT still short-circuits missing targets as `UpdateFailureNotExists` before executor work, and that this refactor does not reintroduce the old PUT-to-create fallback.",
+      "Add PostgreSQL integration coverage for two concurrent POST requests with the same referential identity where one writer wins the create and the other arrives before its own persistence step; assert exactly one `dms.Document` row exists afterward, the losing request resolves as update against the existing document, and the persisted root/child rows match last-writer semantics rather than duplicate-document semantics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalWritePostAsUpdateSmokeTests|FullyQualifiedName~Concurrent|FullyQualifiedName~PostAsUpdate\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Restore SimpleInsertSqlEmitter Contract Stability",
+    "description": "Fix the `SimpleInsertSqlEmitter` single-row argument-validation regression introduced by forwarding `Emit(...)` through `EmitBatch(...)` without preserving the previous exception contract. Acceptance: the plans unit suite passes again; single-row `Emit(...)` either preserves the historical exception message/parameter name for mismatched column and parameter counts or the tests are intentionally updated to the new documented contract with no ambiguity; the public behavior for invalid single-row inputs is deterministic and covered by unit tests; the fix does not regress valid single-row or multi-row SQL emission behavior for PostgreSQL and SQL Server.",
+    "steps-to-verify": [
+      "Decide whether `SimpleInsertSqlEmitter.Emit(...)` should preserve its historical exception contract or whether the branch intentionally changes that contract, then make code and tests agree.",
+      "Add or update unit coverage for invalid single-row calls so the expected `ArgumentException` message and parameter name are explicit and stable.",
+      "Confirm valid single-row `Emit(...)` output still matches the existing canonical SQL snapshots, and that `EmitBatch(...)` still validates multi-row parameter counts correctly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SimpleInsertSqlEmitterTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reduce Duplicate Insert SQL Emitter Logic",
+    "description": "Eliminate or narrow the duplicated insert-SQL generation logic now split between `SimpleInsertSqlEmitter` and `WritePlanBatchSqlEmitter`. Acceptance: there is a single authoritative implementation, or a clearly shared helper, for deterministic multi-row `INSERT` SQL layout, parameter suffixing, identifier quoting, and row-count validation; `WritePlanBatchSqlEmitter` no longer silently drifts from the plans compiler's canonical insert formatting rules; the runtime persister still emits valid PostgreSQL and SQL Server batch SQL; and unit coverage proves insert-batch SQL stays aligned with the plan-compilation emitter surface when either side changes.",
+    "steps-to-verify": [
+      "Refactor shared insert-SQL emission so `SimpleInsertSqlEmitter` and `WritePlanBatchSqlEmitter` do not maintain separate copies of the same formatting and parameter-suffix rules.",
+      "Remove dead or redundant helper code left behind by the refactor, especially duplicate parameter-name suffix builders and duplicate parenthesized insert-value formatting logic.",
+      "Add or update unit coverage comparing batch insert SQL emitted for the same ordered columns and parameter sets through the shared path for both PostgreSQL and SQL Server.",
+      "Add or update persister-focused tests to prove multi-row insert commands still honor `BulkInsertBatching.MaxRowsPerBatch` and preserve parameter-name uniqueness after the refactor.",
+      "Run: `rg --line-number --no-heading \"EmitInsertBatch|EmitBatch\\(|BuildBatchParameterName|AppendParenthesizedValueLines|QuoteIdentifier\" ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SimpleInsertSqlEmitterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`"
+    ],
+    "completed": false
   }
 ]
