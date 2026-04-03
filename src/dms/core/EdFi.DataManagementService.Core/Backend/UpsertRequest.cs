@@ -62,7 +62,11 @@ internal record UpsertRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
+    /// <summary>
+    /// Optional profile write context when a writable profile applies.
+    /// </summary>
+    BackendProfileWriteContext? BackendProfileWriteContext = null
 )
     : UpdateRequest(
         ResourceInfo,
@@ -75,6 +79,7 @@ internal record UpsertRequest(
         DocumentSecurityElements,
         UpdateCascadeHandler,
         ResourceAuthorizationHandler,
-        ResourceAuthorizationPathways
+        ResourceAuthorizationPathways,
+        BackendProfileWriteContext
     ),
         IRelationalUpsertRequest;

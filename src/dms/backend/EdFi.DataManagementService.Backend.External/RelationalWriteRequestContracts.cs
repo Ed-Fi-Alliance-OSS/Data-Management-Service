@@ -19,6 +19,12 @@ public interface IRelationalWriteRequest
     /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
     /// </summary>
     MappingSet? MappingSet { get; }
+
+    /// <summary>
+    /// Optional profile write context when a writable profile applies to the request.
+    /// Null when no profile applies or the request is not a write operation.
+    /// </summary>
+    BackendProfileWriteContext? BackendProfileWriteContext { get; }
 }
 
 /// <summary>

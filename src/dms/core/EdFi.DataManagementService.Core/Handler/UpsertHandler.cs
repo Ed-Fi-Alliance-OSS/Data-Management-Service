@@ -71,7 +71,8 @@ internal class UpsertHandler(
                             requestInfo.ScopedServiceProvider,
                             _logger
                         ),
-                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
+                        BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                 );
             },

@@ -6,9 +6,11 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -55,8 +57,10 @@ public sealed class RelationalDocumentStoreRepository(
             RelationalWriteOperationKind.Post,
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+            relationalUpsertRequest.BackendProfileWriteContext,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
+            static policyMessage => new UpsertResult.UpsertFailureNotAuthorized([policyMessage]),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpsertResult.UpsertFailureReference(
                     invalidDocumentReferences,
@@ -124,8 +128,10 @@ public sealed class RelationalDocumentStoreRepository(
             RelationalWriteOperationKind.Put,
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+            relationalUpdateRequest.BackendProfileWriteContext,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
+            static policyMessage => new UpdateResult.UpdateFailureNotAuthorized([policyMessage]),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpdateResult.UpdateFailureReference(
                     invalidDocumentReferences,
@@ -189,8 +195,10 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteOperationKind operationKind,
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
+        BackendProfileWriteContext? backendProfileWriteContext,
         Func<string, TResult> failureFactory,
         Func<WriteValidationFailure[], TResult> validationFailureFactory,
+        Func<string, TResult> policyFailureFactory,
         Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
         Func<MappingSet, QualifiedResourceName, Task<RelationalWriteTargetContext>> resolveTargetContextAsync,
         Func<RelationalWriteTerminalStageResult, TResult> terminalResultProjector
@@ -202,6 +210,7 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(validationFailureFactory);
+        ArgumentNullException.ThrowIfNull(policyFailureFactory);
         ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
         ArgumentNullException.ThrowIfNull(terminalResultProjector);
@@ -222,9 +231,45 @@ public sealed class RelationalDocumentStoreRepository(
             return failureFactory(ex.Message);
         }
 
+        // ── Profile guard rails (defense-in-depth backup) ────────────────────
+        if (backendProfileWriteContext != null)
+        {
+            // Validate request-side contract against compiled scope catalog
+            var scopeCatalog = backendProfileWriteContext.CompiledScopeCatalog;
+            ProfileFailure[] contractFailures = ProfileWriteContractValidator.ValidateRequestContract(
+                backendProfileWriteContext.Request,
+                scopeCatalog,
+                profileName: backendProfileWriteContext.ProfileName,
+                resourceName: resourceInfo.ResourceName.Value,
+                method: operationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT",
+                operation: operationKind == RelationalWriteOperationKind.Post ? "upsert" : "update"
+            );
+
+            if (contractFailures.Length > 0)
+            {
+                // Category-5 contract mismatches are internal errors (not client validation),
+                // so surface through failureFactory (→ UnknownFailure → HTTP 500).
+                return failureFactory(string.Join("; ", contractFailures.Select(f => f.Message)));
+            }
+        }
+
         try
         {
             var targetContext = await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
+
+            // Root creatability guard: reject only when the POST would create a new document.
+            // RootResourceCreatable applies only to new-document creation, not upsert-to-existing.
+            if (
+                backendProfileWriteContext != null
+                && operationKind == RelationalWriteOperationKind.Post
+                && targetContext is RelationalWriteTargetContext.CreateNew
+                && !backendProfileWriteContext.Request.RootResourceCreatable
+            )
+            {
+                return policyFailureFactory(
+                    "The resource cannot be created because the profile does not allow creation of the root resource."
+                );
+            }
 
             var resolvedReferences = await _referenceResolver
                 .ResolveAsync(
@@ -245,6 +290,21 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
+            // ── Stored-state projection stub ──────────────────────────────────
+            // DMS-1105 will supply the stored document from targetContext for
+            // ExistingDocument flows. When available, this is where the repository
+            // would call backendProfileWriteContext.StoredStateProjectionInvoker
+            // to produce the ProfileAppliedWriteContext for update/upsert-to-existing.
+            //
+            // TODO(DMS-1105): IStoredStateProjectionInvoker.ProjectStoredState currently
+            // returns ProfileAppliedWriteContext directly — typed failures from the second
+            // pipeline run are lost and surface as InvalidOperationException. When this
+            // stub is activated, change the return type to a result type that can convey
+            // ProfileWritePipelineResult failures back to the repository for proper HTTP
+            // status mapping (see CapturedStoredStateProjectionInvoker in
+            // ProfileWritePipelineMiddleware).
+            ProfileAppliedWriteContext? profileWriteContext = null;
+
             var flatteningInput = new FlatteningInput(
                 operationKind,
                 targetContext,
@@ -256,6 +316,9 @@ public sealed class RelationalDocumentStoreRepository(
             var terminalStageResult = await _terminalStage
                 .ExecuteAsync(
                     new RelationalWriteTerminalStageRequest(flatteningInput, flattenedWriteSet, traceId)
+                    {
+                        ProfileWriteContext = profileWriteContext,
+                    }
                 )
                 .ConfigureAwait(false);
 
