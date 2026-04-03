@@ -20,7 +20,7 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
     public string EmitInsertBatch(TableWritePlan tableWritePlan, int rowCount)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ValidateRowCount(rowCount);
+        WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
         var orderedColumns = tableWritePlan
             .ColumnBindings.Select(static binding => binding.Column.ColumnName)
@@ -28,18 +28,20 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         var orderedParameterNames = tableWritePlan
             .ColumnBindings.Select(static binding => binding.ParameterName)
             .ToArray();
-        var orderedParameterNamesByRow = Enumerable
-            .Range(0, rowCount)
-            .Select(rowIndex => SuffixParameterNames(orderedParameterNames, rowIndex))
-            .ToArray();
 
-        return EmitInsertSql(tableWritePlan.TableModel.Table, orderedColumns, orderedParameterNamesByRow);
+        return WriteBatchSqlSupport.EmitSuffixedInsertSql(
+            _dialect,
+            tableWritePlan.TableModel.Table,
+            orderedColumns,
+            orderedParameterNames,
+            rowCount
+        );
     }
 
     public string EmitUpdateBatch(TableWritePlan tableWritePlan, int rowCount)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ValidateRowCount(rowCount);
+        WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
         if (tableWritePlan.UpdateSql is null)
         {
@@ -83,9 +85,9 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
                 EmitUpdateSql(
                     tableWritePlan.TableModel.Table,
                     orderedSetColumns,
-                    SuffixParameterNames(orderedSetParameterNames, rowIndex),
+                    WriteBatchSqlSupport.SuffixParameterNames(orderedSetParameterNames, rowIndex),
                     keyColumnsInKeyOrder,
-                    SuffixParameterNames(orderedKeyParameterNames, rowIndex)
+                    WriteBatchSqlSupport.SuffixParameterNames(orderedKeyParameterNames, rowIndex)
                 )
         );
     }
@@ -93,7 +95,7 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
     public string EmitDeleteByParentBatch(TableWritePlan tableWritePlan, int rowCount)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ValidateRowCount(rowCount);
+        WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
         if (tableWritePlan.DeleteByParentSql is null)
         {
@@ -117,7 +119,7 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
                 EmitDeleteSql(
                     tableWritePlan.TableModel.Table,
                     keyColumnsInOrder,
-                    SuffixParameterNames(orderedKeyParameterNames, rowIndex)
+                    WriteBatchSqlSupport.SuffixParameterNames(orderedKeyParameterNames, rowIndex)
                 )
         );
     }
@@ -125,7 +127,7 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
     public string EmitCollectionUpdateByStableRowIdentityBatch(TableWritePlan tableWritePlan, int rowCount)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ValidateRowCount(rowCount);
+        WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
         var collectionMergePlan =
             tableWritePlan.CollectionMergePlan
@@ -166,9 +168,9 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
                 EmitUpdateSql(
                     tableWritePlan.TableModel.Table,
                     orderedSetColumns,
-                    SuffixParameterNames(orderedSetParameterNames, rowIndex),
+                    WriteBatchSqlSupport.SuffixParameterNames(orderedSetParameterNames, rowIndex),
                     orderedKeyColumns,
-                    SuffixParameterNames(orderedKeyParameterNames, rowIndex)
+                    WriteBatchSqlSupport.SuffixParameterNames(orderedKeyParameterNames, rowIndex)
                 )
         );
     }
@@ -176,7 +178,7 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
     public string EmitCollectionDeleteByStableRowIdentityBatch(TableWritePlan tableWritePlan, int rowCount)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
-        ValidateRowCount(rowCount);
+        WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
         var collectionMergePlan =
             tableWritePlan.CollectionMergePlan
@@ -193,44 +195,12 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
                 EmitDeleteSql(
                     tableWritePlan.TableModel.Table,
                     [stableRowIdentityBinding.Column.ColumnName],
-                    SuffixParameterNames([stableRowIdentityBinding.ParameterName], rowIndex)
+                    WriteBatchSqlSupport.SuffixParameterNames(
+                        [stableRowIdentityBinding.ParameterName],
+                        rowIndex
+                    )
                 )
         );
-    }
-
-    private string EmitInsertSql(
-        DbTableName table,
-        IReadOnlyList<DbColumnName> orderedColumns,
-        IReadOnlyList<IReadOnlyList<string>> orderedParameterNamesByRow
-    )
-    {
-        StringBuilder builder = new();
-
-        builder.Append("INSERT INTO ");
-        AppendQualifiedTable(builder, table);
-        builder.Append('\n');
-        AppendParenthesizedLines(
-            builder,
-            orderedColumns.Count,
-            index => builder.Append(QuoteIdentifier(orderedColumns[index].Value))
-        );
-        builder.Append("VALUES\n");
-
-        for (var rowIndex = 0; rowIndex < orderedParameterNamesByRow.Count; rowIndex++)
-        {
-            var orderedParameterNames = orderedParameterNamesByRow[rowIndex];
-
-            AppendParenthesizedValueLines(
-                builder,
-                orderedParameterNames.Count,
-                index => builder.Append('@').Append(orderedParameterNames[index]),
-                appendTrailingComma: rowIndex + 1 < orderedParameterNamesByRow.Count
-            );
-        }
-
-        builder.Append(";\n");
-
-        return builder.ToString();
     }
 
     private string EmitUpdateSql(
@@ -376,24 +346,6 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         return builder.ToString();
     }
 
-    private static string[] SuffixParameterNames(IReadOnlyList<string> orderedParameterNames, int rowIndex)
-    {
-        var suffixedParameterNames = new string[orderedParameterNames.Count];
-
-        for (var index = 0; index < orderedParameterNames.Count; index++)
-        {
-            suffixedParameterNames[index] = BuildBatchParameterName(orderedParameterNames[index], rowIndex);
-        }
-
-        return suffixedParameterNames;
-    }
-
-    private static string BuildBatchParameterName(string parameterName, int rowIndex)
-    {
-        var bareParameterName = parameterName.TrimStart('@');
-        return $"{bareParameterName}_{rowIndex}";
-    }
-
     private void AppendQualifiedTable(StringBuilder builder, DbTableName table)
     {
         builder.Append(QuoteIdentifier(table.Schema.Value));
@@ -424,40 +376,6 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         }
     }
 
-    private static void AppendParenthesizedLines(StringBuilder builder, int itemCount, Action<int> appendItem)
-    {
-        builder.Append("(\n");
-
-        for (var index = 0; index < itemCount; index++)
-        {
-            builder.Append("    ");
-            appendItem(index);
-            builder.Append(index + 1 < itemCount ? ",\n" : "\n");
-        }
-
-        builder.Append(')');
-        builder.Append('\n');
-    }
-
-    private static void AppendParenthesizedValueLines(
-        StringBuilder builder,
-        int itemCount,
-        Action<int> appendItem,
-        bool appendTrailingComma
-    )
-    {
-        builder.Append("(\n");
-
-        for (var index = 0; index < itemCount; index++)
-        {
-            builder.Append("    ");
-            appendItem(index);
-            builder.Append(index + 1 < itemCount ? ",\n" : "\n");
-        }
-
-        builder.Append(appendTrailingComma ? "),\n" : ")\n");
-    }
-
     private string QuoteIdentifier(string identifier)
     {
         return _dialect switch
@@ -466,15 +384,5 @@ public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
             SqlDialect.Mssql => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]",
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), _dialect, null),
         };
-    }
-
-    private static void ValidateRowCount(int rowCount)
-    {
-        if (rowCount >= 1)
-        {
-            return;
-        }
-
-        throw new ArgumentOutOfRangeException(nameof(rowCount), rowCount, "Row count must be at least 1.");
     }
 }

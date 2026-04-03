@@ -1257,7 +1257,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
             {
                 var parameterName = NormalizeParameterName(
-                    BuildBatchParameterName(
+                    WriteBatchSqlSupport.BuildBatchParameterName(
                         tableWritePlan.ColumnBindings[bindingIndex].ParameterName,
                         rowIndex
                     )
@@ -1347,12 +1347,6 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         }
 
         return unresolvedCollectionItemIds;
-    }
-
-    private static string BuildBatchParameterName(string parameterName, int rowIndex)
-    {
-        var bareParameterName = parameterName.TrimStart('@');
-        return $"{bareParameterName}_{rowIndex}";
     }
 
     private static object? ResolveParameterValue(

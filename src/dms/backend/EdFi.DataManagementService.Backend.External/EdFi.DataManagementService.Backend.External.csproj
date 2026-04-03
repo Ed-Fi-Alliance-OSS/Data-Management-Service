@@ -8,4 +8,8 @@
     <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans" />
+    </ItemGroup>
 </Project>

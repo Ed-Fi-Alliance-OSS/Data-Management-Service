@@ -1076,6 +1076,7 @@ public class Given_Relational_Write_Non_Collection_Persister
 
         writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
 
@@ -1084,6 +1085,7 @@ public class Given_Relational_Write_Non_Collection_Persister
 
         writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[3].Parameters.Should().HaveCount(8);
+        AssertBatchedParameterNames(writeSession.Commands[3], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
 
@@ -1142,6 +1144,7 @@ public class Given_Relational_Write_Non_Collection_Persister
             .Contain("NEXT VALUE FOR [dms].[CollectionItemIdSequence] OVER");
         GetParameterValue(writeSession.Commands[0], "@count").Should().Be(2);
         writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
+        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
     }
@@ -1211,6 +1214,7 @@ public class Given_Relational_Write_Non_Collection_Persister
 
         writeSession.Commands[1].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        AssertBatchedParameterNames(writeSession.Commands[1], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(910L);
         GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(911L);
 
@@ -1222,6 +1226,7 @@ public class Given_Relational_Write_Non_Collection_Persister
 
         writeSession.Commands[3].CommandText.Should().Be(batchSqlEmitter.EmitInsertBatch(collectionPlan, 2));
         writeSession.Commands[3].Parameters.Should().HaveCount(8);
+        AssertBatchedParameterNames(writeSession.Commands[3], collectionPlan, 2);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_0").Should().Be(912L);
         GetParameterValue(writeSession.Commands[3], "@CollectionItemId_1").Should().Be(913L);
 
@@ -1237,6 +1242,25 @@ public class Given_Relational_Write_Non_Collection_Persister
     private static object? GetParameterValue(RelationalCommand command, string parameterName)
     {
         return command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
+    }
+
+    private static void AssertBatchedParameterNames(
+        RelationalCommand command,
+        TableWritePlan tableWritePlan,
+        int rowCount
+    )
+    {
+        var expectedParameterNames = Enumerable
+            .Range(0, rowCount)
+            .SelectMany(rowIndex =>
+                tableWritePlan.ColumnBindings.Select(binding =>
+                    $"@{binding.ParameterName.TrimStart('@')}_{rowIndex}"
+                )
+            )
+            .ToArray();
+
+        command.Parameters.Select(static parameter => parameter.Name).Should().Equal(expectedParameterNames);
+        command.Parameters.Select(static parameter => parameter.Name).Should().OnlyHaveUniqueItems();
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(

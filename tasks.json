@@ -166,7 +166,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalWritePostAsUpdateSmokeTests|FullyQualifiedName~Concurrent|FullyQualifiedName~PostAsUpdate\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Restore SimpleInsertSqlEmitter Contract Stability",
@@ -192,6 +192,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SimpleInsertSqlEmitterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

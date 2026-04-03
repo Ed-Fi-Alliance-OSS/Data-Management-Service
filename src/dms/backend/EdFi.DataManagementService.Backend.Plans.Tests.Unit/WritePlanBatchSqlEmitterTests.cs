@@ -17,63 +17,31 @@ public class Given_WritePlanBatchSqlEmitter : WritePlanCompilerTestBase
 {
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public void It_should_emit_multi_row_insert_sql_from_compiled_insert_metadata(SqlDialect dialect)
+    public void It_should_keep_runtime_insert_batch_sql_aligned_with_the_plan_insert_emitter(
+        SqlDialect dialect
+    )
     {
         var tablePlan = new WritePlanCompiler(dialect)
             .Compile(CreateSupportedRootOnlyModel())
             .TablePlansInDependencyOrder.Single();
+        var orderedColumns = tablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName)
+            .ToArray();
+        var orderedParameterNames = tablePlan
+            .ColumnBindings.Select(static binding => binding.ParameterName)
+            .ToArray();
+        var expectedSql = new SimpleInsertSqlEmitter(dialect).EmitBatch(
+            tablePlan.TableModel.Table,
+            orderedColumns,
+            [
+                orderedParameterNames.Select(static parameterName => $"{parameterName}_0").ToArray(),
+                orderedParameterNames.Select(static parameterName => $"{parameterName}_1").ToArray(),
+            ]
+        );
 
         var sql = new WritePlanBatchSqlEmitter(dialect).EmitInsertBatch(tablePlan, 2);
 
-        sql.Should()
-            .Be(
-                dialect switch
-                {
-                    SqlDialect.Pgsql => """
-                    INSERT INTO "edfi"."Student"
-                    (
-                        "DocumentId",
-                        "SchoolYear",
-                        "LocalEducationAgencyId"
-                    )
-                    VALUES
-                    (
-                        @documentId_0,
-                        @schoolYear_0,
-                        @localEducationAgencyId_0
-                    ),
-                    (
-                        @documentId_1,
-                        @schoolYear_1,
-                        @localEducationAgencyId_1
-                    )
-                    ;
-
-                    """,
-                    SqlDialect.Mssql => """
-                    INSERT INTO [edfi].[Student]
-                    (
-                        [DocumentId],
-                        [SchoolYear],
-                        [LocalEducationAgencyId]
-                    )
-                    VALUES
-                    (
-                        @documentId_0,
-                        @schoolYear_0,
-                        @localEducationAgencyId_0
-                    ),
-                    (
-                        @documentId_1,
-                        @schoolYear_1,
-                        @localEducationAgencyId_1
-                    )
-                    ;
-
-                    """,
-                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-                }
-            );
+        sql.Should().Be(expectedSql);
     }
 
     [TestCase(SqlDialect.Pgsql)]
