@@ -34,6 +34,6 @@
       "Run: `rg --line-number --no-heading \"ResolveTargetContextAsync|ResolveForPostAsync|ResolveForPutAsync|RelationalWriteTargetLookupResult\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

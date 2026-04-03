@@ -359,20 +359,14 @@ internal sealed class DefaultRelationalWriteExecutor(
             )
             .ConfigureAwait(false);
 
-        if (targetLookupResult is RelationalWriteTargetLookupResult.CreateNew(var createdDocumentUuid))
+        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+
+        if (targetContext is RelationalWriteTargetContext.CreateNew createdTargetContext)
         {
-            return new ExistingTargetCurrentStateResolution(
-                new RelationalWriteTargetContext.CreateNew(createdDocumentUuid),
-                null,
-                null
-            );
+            return new ExistingTargetCurrentStateResolution(createdTargetContext, null, null);
         }
 
-        if (
-            targetLookupResult
-            is not RelationalWriteTargetLookupResult.ExistingDocument
-            (var documentId, var documentUuid, var observedContentVersion)
-        )
+        if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
         {
             throw new InvalidOperationException(
                 $"Relational POST target re-evaluation returned unsupported result type '{targetLookupResult.GetType().Name}'."
@@ -386,15 +380,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             return new ExistingTargetCurrentStateResolution(null, null, missingReadPlanResult);
         }
 
-        var targetContext = new RelationalWriteTargetContext.ExistingDocument(
-            documentId,
-            documentUuid,
-            observedContentVersion
-        );
-
         var currentState = await _currentStateLoader
             .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
+                new RelationalWriteCurrentStateLoadRequest(
+                    request.ExistingDocumentReadPlan!,
+                    existingTargetContext
+                ),
                 writeSession,
                 cancellationToken
             )
@@ -402,7 +393,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         return currentState is not null
             ? new ExistingTargetCurrentStateResolution(
-                RefreshTargetContextFromCurrentState(targetContext, currentState),
+                RefreshTargetContextFromCurrentState(existingTargetContext, currentState),
                 currentState,
                 null
             )

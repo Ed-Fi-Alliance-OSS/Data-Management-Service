@@ -623,6 +623,17 @@ public class Given_Default_Relational_Write_Executor
             .OnlyContain(writeSession => ReferenceEquals(writeSession, _writeSessionFactory.Session));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         _targetLookupResolver.CapturedWriteSession.Should().NotBeNull();
+        _currentStateLoader
+            .CapturedRequests[1]
+            .TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 45L)
+            );
+        _writeFlattener
+            .CapturedInput!.TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 45L)
+            );
         _targetLookupResolver
             .CapturedWriteSession!.Connection.Should()
             .BeSameAs(_writeSessionFactory.Session.Connection);

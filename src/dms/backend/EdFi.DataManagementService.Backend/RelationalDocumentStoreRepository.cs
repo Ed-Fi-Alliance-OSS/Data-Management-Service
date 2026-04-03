@@ -268,46 +268,27 @@ public sealed class RelationalDocumentStoreRepository(
             ),
         };
 
-        return (operationKind, targetLookupResult) switch
+        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+
+        if (targetContext is not null)
         {
-            (
-                RelationalWriteOperationKind.Post,
-                RelationalWriteTargetLookupResult.CreateNew
-                (var documentUuid)
-            ) => new TargetContextResolution(new RelationalWriteTargetContext.CreateNew(documentUuid), null),
-            (
-                RelationalWriteOperationKind.Post,
-                RelationalWriteTargetLookupResult.ExistingDocument
-                (var documentId, var documentUuid, var observedContentVersion)
-            ) => new TargetContextResolution(
-                new RelationalWriteTargetContext.ExistingDocument(
-                    documentId,
-                    documentUuid,
-                    observedContentVersion
-                ),
-                null
-            ),
-            (
-                RelationalWriteOperationKind.Put,
-                RelationalWriteTargetLookupResult.ExistingDocument
-                (var documentId, var documentUuid, var observedContentVersion)
-            ) => new TargetContextResolution(
-                new RelationalWriteTargetContext.ExistingDocument(
-                    documentId,
-                    documentUuid,
-                    observedContentVersion
-                ),
-                null
-            ),
-            (RelationalWriteOperationKind.Put, RelationalWriteTargetLookupResult.NotFound) =>
-                new TargetContextResolution(
-                    null,
-                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
-                ),
-            _ => throw new InvalidOperationException(
-                $"Relational {operationKind} repository target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
-            ),
-        };
+            return new TargetContextResolution(targetContext, null);
+        }
+
+        if (
+            operationKind == RelationalWriteOperationKind.Put
+            && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
+        )
+        {
+            return new TargetContextResolution(
+                null,
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Relational {operationKind} repository target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+        );
     }
 
     private static ExistingDocumentReadPlanPreparation PrepareExistingDocumentReadPlan(

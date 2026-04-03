@@ -10,6 +10,32 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteSupport
 {
+    public static RelationalWriteTargetContext? TryTranslateTargetContext(
+        RelationalWriteTargetLookupResult targetLookupResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetLookupResult);
+
+        return targetLookupResult switch
+        {
+            RelationalWriteTargetLookupResult.CreateNew(var documentUuid) =>
+                new RelationalWriteTargetContext.CreateNew(documentUuid),
+            RelationalWriteTargetLookupResult.ExistingDocument(
+                var documentId,
+                var documentUuid,
+                var observedContentVersion
+            ) => new RelationalWriteTargetContext.ExistingDocument(
+                documentId,
+                documentUuid,
+                observedContentVersion
+            ),
+            RelationalWriteTargetLookupResult.NotFound => null,
+            _ => throw new InvalidOperationException(
+                $"Relational target lookup translation does not support result type '{targetLookupResult.GetType().Name}'."
+            ),
+        };
+    }
+
     public static short GetResourceKeyIdOrThrow(MappingSet mappingSet, QualifiedResourceName resource)
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
