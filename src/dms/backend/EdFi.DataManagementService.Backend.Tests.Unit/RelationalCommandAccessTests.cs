@@ -88,7 +88,7 @@ public class Given_RelationalReferenceResolverAdapter
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
                         ("IsDescriptor", false),
-                        ("VerificationIdentityKey", "$$.schoolId=255901")
+                        ("VerificationIdentityKey", "$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
@@ -98,7 +98,7 @@ public class Given_RelationalReferenceResolverAdapter
                         ("IsDescriptor", true),
                         (
                             "VerificationIdentityKey",
-                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                         )
                     )
                 ),

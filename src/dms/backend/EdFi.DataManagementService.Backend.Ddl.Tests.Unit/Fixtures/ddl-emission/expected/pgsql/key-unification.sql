@@ -69,7 +69,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CourseRegistration_ReferentialIdentity" ON "edfi"."CourseRegistration";
 CREATE TRIGGER "TR_CourseRegistration_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CourseRegistration"
+AFTER INSERT OR UPDATE ON "edfi"."CourseRegistration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseRegistration_ReferentialIdentity"();
 
@@ -118,7 +118,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+AFTER INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 

@@ -185,7 +185,7 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
             }
 
             builder.Append("N'");
-            builder.Append(EscapeSqlLiteral($"${identityElement.IdentityJsonPath}="));
+            builder.Append(EscapeSqlLiteral($"{identityElement.IdentityJsonPath}="));
             builder.Append("' + ");
             builder.Append(BuildColumnToTextExpression(sourceAlias, identityElement));
         }

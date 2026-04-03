@@ -49,7 +49,6 @@ internal static class ReferenceLookupVerificationSupport
                 builder.Append('#');
             }
 
-            builder.Append('$');
             builder.Append(identityElement.IdentityJsonPath.Value);
             builder.Append('=');
             builder.Append(

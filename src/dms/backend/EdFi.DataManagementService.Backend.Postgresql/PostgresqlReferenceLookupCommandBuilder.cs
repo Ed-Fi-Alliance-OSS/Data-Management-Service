@@ -146,7 +146,7 @@ internal static class PostgresqlReferenceLookupCommandBuilder
             }
 
             builder.Append('\'');
-            builder.Append(EscapeSqlLiteral($"${identityElement.IdentityJsonPath}="));
+            builder.Append(EscapeSqlLiteral($"{identityElement.IdentityJsonPath}="));
             builder.Append("' || ");
             builder.Append(BuildColumnToTextExpression(sourceAlias, identityElement));
         }

@@ -63799,7 +63799,7 @@
                   "Session_SessionName"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",

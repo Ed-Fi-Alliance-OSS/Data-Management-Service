@@ -86,7 +86,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     11,
                     11,
                     false,
-                    "$$.schoolId=255901"
+                    "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     _fixture.EducationOrganizationAliasReferentialId,
@@ -94,7 +94,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     11,
                     30,
                     false,
-                    "$$.educationOrganizationId=255901"
+                    "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
                     _fixture.LocalEducationAgencyReferentialId,
@@ -102,7 +102,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     12,
                     12,
                     false,
-                    "$$.schoolId=255901"
+                    "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     _fixture.SchoolTypeDescriptorReferentialId,
@@ -110,7 +110,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     13,
                     13,
                     true,
-                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
                 new ReferenceLookupResult(
                     _fixture.AcademicSubjectDescriptorReferentialId,
@@ -118,7 +118,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     14,
                     14,
                     true,
-                    "$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
+                    "$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],
         ]);

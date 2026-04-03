@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -440,6 +440,50 @@ IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'auth')
     EXEC('CREATE SCHEMA [auth]');
 
+IF OBJECT_ID(N'edfi.KeyUnifiedResource', N'U') IS NULL
+CREATE TABLE [edfi].[KeyUnifiedResource]
+(
+    [DocumentId] bigint NOT NULL,
+    [StudentUniqueId_Unified] nvarchar(32) NOT NULL,
+    [ResourceAReference_DocumentId] bigint NOT NULL,
+    [ResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
+    [ResourceAReference_StudentUniqueId] AS (CASE WHEN [ResourceAReference_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
+    [ResourceBReference_DocumentId] bigint NOT NULL,
+    [ResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
+    [ResourceBReference_StudentUniqueId] AS (CASE WHEN [ResourceBReference_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
+    [KeyUnifiedResourceId] nvarchar(64) NOT NULL,
+    CONSTRAINT [PK_KeyUnifiedResource] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_KeyUnifiedResource_NK] UNIQUE ([KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceBReference_DocumentId]),
+    CONSTRAINT [CK_KeyUnifiedResource_ResourceAReference_AllNone] CHECK (([ResourceAReference_DocumentId] IS NULL AND [ResourceAReference_ResourceAId] IS NULL AND [ResourceAReference_StudentUniqueId] IS NULL) OR ([ResourceAReference_DocumentId] IS NOT NULL AND [ResourceAReference_ResourceAId] IS NOT NULL AND [ResourceAReference_StudentUniqueId] IS NOT NULL)),
+    CONSTRAINT [CK_KeyUnifiedResource_ResourceBReference_AllNone] CHECK (([ResourceBReference_DocumentId] IS NULL AND [ResourceBReference_ResourceBId] IS NULL AND [ResourceBReference_StudentUniqueId] IS NULL) OR ([ResourceBReference_DocumentId] IS NOT NULL AND [ResourceBReference_ResourceBId] IS NOT NULL AND [ResourceBReference_StudentUniqueId] IS NOT NULL))
+);
+
+IF OBJECT_ID(N'edfi.ResourceA', N'U') IS NULL
+CREATE TABLE [edfi].[ResourceA]
+(
+    [DocumentId] bigint NOT NULL,
+    [StudentReference_DocumentId] bigint NOT NULL,
+    [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [ResourceAId] nvarchar(64) NOT NULL,
+    CONSTRAINT [PK_ResourceA] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_ResourceA_NK] UNIQUE ([ResourceAId], [StudentReference_DocumentId]),
+    CONSTRAINT [UX_ResourceA_RefKey] UNIQUE ([DocumentId], [ResourceAId], [StudentReference_StudentUniqueId]),
+    CONSTRAINT [CK_ResourceA_StudentReference_AllNone] CHECK (([StudentReference_DocumentId] IS NULL AND [StudentReference_StudentUniqueId] IS NULL) OR ([StudentReference_DocumentId] IS NOT NULL AND [StudentReference_StudentUniqueId] IS NOT NULL))
+);
+
+IF OBJECT_ID(N'edfi.ResourceB', N'U') IS NULL
+CREATE TABLE [edfi].[ResourceB]
+(
+    [DocumentId] bigint NOT NULL,
+    [StudentReference_DocumentId] bigint NOT NULL,
+    [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
+    [ResourceBId] nvarchar(64) NOT NULL,
+    CONSTRAINT [PK_ResourceB] PRIMARY KEY ([DocumentId]),
+    CONSTRAINT [UX_ResourceB_NK] UNIQUE ([ResourceBId], [StudentReference_DocumentId]),
+    CONSTRAINT [UX_ResourceB_RefKey] UNIQUE ([DocumentId], [ResourceBId], [StudentReference_StudentUniqueId]),
+    CONSTRAINT [CK_ResourceB_StudentReference_AllNone] CHECK (([StudentReference_DocumentId] IS NULL AND [StudentReference_StudentUniqueId] IS NULL) OR ([StudentReference_DocumentId] IS NOT NULL AND [StudentReference_StudentUniqueId] IS NOT NULL))
+);
+
 IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
@@ -459,7 +503,8 @@ CREATE TABLE [edfi].[Student]
     [FirstName] nvarchar(75) NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
-    CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId])
+    CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId]),
+    CONSTRAINT [UX_Student_RefKey] UNIQUE ([DocumentId], [StudentUniqueId])
 );
 
 IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
@@ -492,6 +537,83 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_RefKey] UNIQUE ([DocumentId], [EducationOrganizationId])
 );
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_KeyUnifiedResource_Document' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
+)
+ALTER TABLE [edfi].[KeyUnifiedResource]
+ADD CONSTRAINT [FK_KeyUnifiedResource_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_KeyUnifiedResource_ResourceAReference' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
+)
+ALTER TABLE [edfi].[KeyUnifiedResource]
+ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceAReference]
+FOREIGN KEY ([ResourceAReference_DocumentId])
+REFERENCES [edfi].[ResourceA] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_KeyUnifiedResource_ResourceBReference' AND parent_object_id = OBJECT_ID(N'edfi.KeyUnifiedResource')
+)
+ALTER TABLE [edfi].[KeyUnifiedResource]
+ADD CONSTRAINT [FK_KeyUnifiedResource_ResourceBReference]
+FOREIGN KEY ([ResourceBReference_DocumentId])
+REFERENCES [edfi].[ResourceB] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ResourceA_Document' AND parent_object_id = OBJECT_ID(N'edfi.ResourceA')
+)
+ALTER TABLE [edfi].[ResourceA]
+ADD CONSTRAINT [FK_ResourceA_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ResourceA_StudentReference' AND parent_object_id = OBJECT_ID(N'edfi.ResourceA')
+)
+ALTER TABLE [edfi].[ResourceA]
+ADD CONSTRAINT [FK_ResourceA_StudentReference]
+FOREIGN KEY ([StudentReference_DocumentId])
+REFERENCES [edfi].[Student] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ResourceB_Document' AND parent_object_id = OBJECT_ID(N'edfi.ResourceB')
+)
+ALTER TABLE [edfi].[ResourceB]
+ADD CONSTRAINT [FK_ResourceB_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ResourceB_StudentReference' AND parent_object_id = OBJECT_ID(N'edfi.ResourceB')
+)
+ALTER TABLE [edfi].[ResourceB]
+ADD CONSTRAINT [FK_ResourceB_StudentReference]
+FOREIGN KEY ([StudentReference_DocumentId])
+REFERENCES [edfi].[Student] ([DocumentId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -560,6 +682,38 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceAReference_DocumentId'
+)
+CREATE INDEX [IX_KeyUnifiedResource_ResourceAReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceAReference_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'KeyUnifiedResource' AND i.name = N'IX_KeyUnifiedResource_ResourceBReference_DocumentId'
+)
+CREATE INDEX [IX_KeyUnifiedResource_ResourceBReference_DocumentId] ON [edfi].[KeyUnifiedResource] ([ResourceBReference_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ResourceA' AND i.name = N'IX_ResourceA_StudentReference_DocumentId'
+)
+CREATE INDEX [IX_ResourceA_StudentReference_DocumentId] ON [edfi].[ResourceA] ([StudentReference_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'ResourceB' AND i.name = N'IX_ResourceB_StudentReference_DocumentId'
+)
+CREATE INDEX [IX_ResourceB_StudentReference_DocumentId] ON [edfi].[ResourceB] ([StudentReference_DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentSchoolAssociation' AND i.name = N'IX_StudentSchoolAssociation_SchoolReference_DocumentId'
 )
 CREATE INDEX [IX_StudentSchoolAssociation_SchoolReference_DocumentId] ON [edfi].[StudentSchoolAssociation] ([SchoolReference_DocumentId]);
@@ -571,6 +725,245 @@ FROM [edfi].[School]
 ;
 
 GO
+CREATE OR ALTER TRIGGER [edfi].[TR_KeyUnifiedResource_ReferentialIdentity]
+ON [edfi].[KeyUnifiedResource]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted)
+    BEGIN
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiKeyUnifiedResource' AS nvarchar(max)) + N'$.keyUnifiedResourceId=' + i.[KeyUnifiedResourceId] + N'#' + N'$.resourceAReference.resourceAId=' + i.[ResourceAReference_ResourceAId] + N'#' + N'$.resourceAReference.studentUniqueId=' + i.[ResourceAReference_StudentUniqueId] + N'#' + N'$.resourceBReference.resourceBId=' + i.[ResourceBReference_ResourceBId] + N'#' + N'$.resourceBReference.studentUniqueId=' + i.[ResourceBReference_StudentUniqueId]), i.[DocumentId], 2
+        FROM inserted i;
+    END
+    ELSE IF (UPDATE([KeyUnifiedResourceId]) OR UPDATE([ResourceAReference_ResourceAId]) OR UPDATE([StudentUniqueId_Unified]) OR UPDATE([ResourceBReference_ResourceBId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(d.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND d.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND d.[KeyUnifiedResourceId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND d.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND d.[ResourceAReference_ResourceAId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND d.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND d.[StudentUniqueId_Unified] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND d.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND d.[ResourceBReference_ResourceBId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiKeyUnifiedResource' AS nvarchar(max)) + N'$.keyUnifiedResourceId=' + i.[KeyUnifiedResourceId] + N'#' + N'$.resourceAReference.resourceAId=' + i.[ResourceAReference_ResourceAId] + N'#' + N'$.resourceAReference.studentUniqueId=' + i.[ResourceAReference_StudentUniqueId] + N'#' + N'$.resourceBReference.resourceBId=' + i.[ResourceBReference_ResourceBId] + N'#' + N'$.resourceBReference.studentUniqueId=' + i.[ResourceBReference_StudentUniqueId]), i.[DocumentId], 2
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_KeyUnifiedResource_Stamp]
+ON [edfi].[KeyUnifiedResource]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (i.[ResourceAReference_DocumentId] <> del.[ResourceAReference_DocumentId] OR (i.[ResourceAReference_DocumentId] IS NULL AND del.[ResourceAReference_DocumentId] IS NOT NULL) OR (i.[ResourceAReference_DocumentId] IS NOT NULL AND del.[ResourceAReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (i.[ResourceBReference_DocumentId] <> del.[ResourceBReference_DocumentId] OR (i.[ResourceBReference_DocumentId] IS NULL AND del.[ResourceBReference_DocumentId] IS NOT NULL) OR (i.[ResourceBReference_DocumentId] IS NOT NULL AND del.[ResourceBReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL)) OR (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (i.[ResourceAReference_DocumentId] <> del.[ResourceAReference_DocumentId] OR (i.[ResourceAReference_DocumentId] IS NULL AND del.[ResourceAReference_DocumentId] IS NOT NULL) OR (i.[ResourceAReference_DocumentId] IS NOT NULL AND del.[ResourceAReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (i.[ResourceBReference_DocumentId] <> del.[ResourceBReference_DocumentId] OR (i.[ResourceBReference_DocumentId] IS NULL AND del.[ResourceBReference_DocumentId] IS NOT NULL) OR (i.[ResourceBReference_DocumentId] IS NOT NULL AND del.[ResourceBReference_DocumentId] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL)) OR (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL))
+    )
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([KeyUnifiedResourceId]) OR UPDATE([ResourceAReference_ResourceAId]) OR UPDATE([StudentUniqueId_Unified]) OR UPDATE([ResourceBReference_ResourceBId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[KeyUnifiedResourceId] AS varbinary(max)) <> CAST(del.[KeyUnifiedResourceId] AS varbinary(max)) OR (i.[KeyUnifiedResourceId] IS NULL AND del.[KeyUnifiedResourceId] IS NOT NULL) OR (i.[KeyUnifiedResourceId] IS NOT NULL AND del.[KeyUnifiedResourceId] IS NULL)) OR (CAST(i.[ResourceAReference_ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAReference_ResourceAId] AS varbinary(max)) OR (i.[ResourceAReference_ResourceAId] IS NULL AND del.[ResourceAReference_ResourceAId] IS NOT NULL) OR (i.[ResourceAReference_ResourceAId] IS NOT NULL AND del.[ResourceAReference_ResourceAId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL)) OR (CAST(i.[ResourceBReference_ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBReference_ResourceBId] AS varbinary(max)) OR (i.[ResourceBReference_ResourceBId] IS NULL AND del.[ResourceBReference_ResourceBId] IS NOT NULL) OR (i.[ResourceBReference_ResourceBId] IS NOT NULL AND del.[ResourceBReference_ResourceBId] IS NULL));
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_PropagateIdentity]
+ON [edfi].[ResourceA]
+INSTEAD OF UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        UPDATE r
+        SET r.[ResourceAReference_ResourceAId] = i.[ResourceAId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
+        FROM [edfi].[KeyUnifiedResource] r
+        INNER JOIN deleted d ON r.[ResourceAReference_DocumentId] = d.[DocumentId]
+        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
+        WHERE (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND d.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND d.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
+        AND ((r.[ResourceAReference_ResourceAId] = d.[ResourceAId]) OR (r.[ResourceAReference_ResourceAId] IS NULL AND d.[ResourceAId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
+
+    END
+
+    UPDATE t
+    SET t.[StudentReference_DocumentId] = i.[StudentReference_DocumentId], t.[StudentReference_StudentUniqueId] = i.[StudentReference_StudentUniqueId], t.[ResourceAId] = i.[ResourceAId]
+    FROM [edfi].[ResourceA] t
+    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_ReferentialIdentity]
+ON [edfi].[ResourceA]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted)
+    BEGIN
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 3;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiResourceA' AS nvarchar(max)) + N'$.resourceAId=' + i.[ResourceAId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[StudentReference_StudentUniqueId]), i.[DocumentId], 3
+        FROM inserted i;
+    END
+    ELSE IF (UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(d.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND d.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND d.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiResourceA' AS nvarchar(max)) + N'$.resourceAId=' + i.[ResourceAId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[StudentReference_StudentUniqueId]), i.[DocumentId], 3
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceA_Stamp]
+ON [edfi].[ResourceA]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL))
+    )
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceAId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ResourceAId] AS varbinary(max)) <> CAST(del.[ResourceAId] AS varbinary(max)) OR (i.[ResourceAId] IS NULL AND del.[ResourceAId] IS NOT NULL) OR (i.[ResourceAId] IS NOT NULL AND del.[ResourceAId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceB_PropagateIdentity]
+ON [edfi].[ResourceB]
+INSTEAD OF UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF (UPDATE([StudentReference_DocumentId]) OR UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        UPDATE r
+        SET r.[ResourceBReference_ResourceBId] = i.[ResourceBId], r.[StudentUniqueId_Unified] = i.[StudentReference_StudentUniqueId]
+        FROM [edfi].[KeyUnifiedResource] r
+        INNER JOIN deleted d ON r.[ResourceBReference_DocumentId] = d.[DocumentId]
+        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
+        WHERE (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND d.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND d.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL))
+        AND ((r.[ResourceBReference_ResourceBId] = d.[ResourceBId]) OR (r.[ResourceBReference_ResourceBId] IS NULL AND d.[ResourceBId] IS NULL)) AND ((r.[StudentUniqueId_Unified] = d.[StudentReference_StudentUniqueId]) OR (r.[StudentUniqueId_Unified] IS NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
+
+    END
+
+    UPDATE t
+    SET t.[StudentReference_DocumentId] = i.[StudentReference_DocumentId], t.[StudentReference_StudentUniqueId] = i.[StudentReference_StudentUniqueId], t.[ResourceBId] = i.[ResourceBId]
+    FROM [edfi].[ResourceB] t
+    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceB_ReferentialIdentity]
+ON [edfi].[ResourceB]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted)
+    BEGIN
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 4;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiResourceB' AS nvarchar(max)) + N'$.resourceBId=' + i.[ResourceBId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[StudentReference_StudentUniqueId]), i.[DocumentId], 4
+        FROM inserted i;
+    END
+    ELSE IF (UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(d.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND d.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND d.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND d.[StudentReference_StudentUniqueId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 4;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiResourceB' AS nvarchar(max)) + N'$.resourceBId=' + i.[ResourceBId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[StudentReference_StudentUniqueId]), i.[DocumentId], 4
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_ResourceB_Stamp]
+ON [edfi].[ResourceB]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (
+        SELECT i.[DocumentId]
+        FROM inserted i
+        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL))
+        UNION
+        SELECT del.[DocumentId]
+        FROM deleted del
+        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[StudentReference_DocumentId] <> del.[StudentReference_DocumentId] OR (i.[StudentReference_DocumentId] IS NULL AND del.[StudentReference_DocumentId] IS NOT NULL) OR (i.[StudentReference_DocumentId] IS NOT NULL AND del.[StudentReference_DocumentId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL)) OR (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL))
+    )
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([ResourceBId]) OR UPDATE([StudentReference_StudentUniqueId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ResourceBId] AS varbinary(max)) <> CAST(del.[ResourceBId] AS varbinary(max)) OR (i.[ResourceBId] IS NULL AND del.[ResourceBId] IS NOT NULL) OR (i.[ResourceBId] IS NOT NULL AND del.[ResourceBId] IS NULL)) OR (CAST(i.[StudentReference_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentReference_StudentUniqueId] AS varbinary(max)) OR (i.[StudentReference_StudentUniqueId] IS NULL AND del.[StudentReference_StudentUniqueId] IS NOT NULL) OR (i.[StudentReference_StudentUniqueId] IS NOT NULL AND del.[StudentReference_StudentUniqueId] IS NULL));
+    END
+END;
+GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -669,9 +1062,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 5;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 5
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
@@ -687,9 +1080,9 @@ BEGIN
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 5;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 5
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
@@ -710,12 +1103,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (i.[NameOfInstitution] <> del.[NameOfInstitution] OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (i.[NameOfInstitution] <> del.[NameOfInstitution] OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (CAST(i.[NameOfInstitution] AS varbinary(max)) <> CAST(del.[NameOfInstitution] AS varbinary(max)) OR (i.[NameOfInstitution] IS NULL AND del.[NameOfInstitution] IS NOT NULL) OR (i.[NameOfInstitution] IS NOT NULL AND del.[NameOfInstitution] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -733,6 +1126,39 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER TRIGGER [edfi].[TR_Student_PropagateIdentity]
+ON [edfi].[Student]
+INSTEAD OF UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF (UPDATE([FirstName]) OR UPDATE([StudentUniqueId]))
+    BEGIN
+        UPDATE r
+        SET r.[StudentReference_StudentUniqueId] = i.[StudentUniqueId]
+        FROM [edfi].[ResourceA] r
+        INNER JOIN deleted d ON r.[StudentReference_DocumentId] = d.[DocumentId]
+        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL))
+        AND ((r.[StudentReference_StudentUniqueId] = d.[StudentUniqueId]) OR (r.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NULL));
+
+        UPDATE r
+        SET r.[StudentReference_StudentUniqueId] = i.[StudentUniqueId]
+        FROM [edfi].[ResourceB] r
+        INNER JOIN deleted d ON r.[StudentReference_DocumentId] = d.[DocumentId]
+        INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL))
+        AND ((r.[StudentReference_StudentUniqueId] = d.[StudentUniqueId]) OR (r.[StudentReference_StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NULL));
+
+    END
+
+    UPDATE t
+    SET t.[FirstName] = i.[FirstName], t.[StudentUniqueId] = i.[StudentUniqueId]
+    FROM [edfi].[Student] t
+    INNER JOIN inserted i ON t.[DocumentId] = i.[DocumentId];
+END;
+GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_Student_ReferentialIdentity]
 ON [edfi].[Student]
 AFTER INSERT, UPDATE
@@ -742,9 +1168,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 3;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 6;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 6
         FROM inserted i;
     END
     ELSE IF (UPDATE([StudentUniqueId]))
@@ -753,11 +1179,11 @@ BEGIN
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StudentUniqueId] <> d.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 6;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 6
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -773,12 +1199,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[FirstName] <> del.[FirstName] OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[FirstName] <> del.[FirstName] OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[FirstName] AS varbinary(max)) <> CAST(del.[FirstName] AS varbinary(max)) OR (i.[FirstName] IS NULL AND del.[FirstName] IS NOT NULL) OR (i.[FirstName] IS NOT NULL AND del.[FirstName] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -791,7 +1217,7 @@ BEGIN
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -805,9 +1231,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 4;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 7;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 4
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 7
         FROM inserted i;
     END
     ELSE IF (UPDATE([StudentUniqueId]) OR UPDATE([SchoolReference_SchoolId]))
@@ -816,11 +1242,11 @@ BEGIN
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StudentUniqueId] <> d.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> d.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND d.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND d.[SchoolReference_SchoolId] IS NULL));
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> d.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND d.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND d.[SchoolReference_SchoolId] IS NULL));
         DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 4;
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 7;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 4
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[SchoolReference_SchoolId] AS nvarchar(max))), i.[DocumentId], 7
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -836,12 +1262,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolReference_DocumentId] <> del.[SchoolReference_DocumentId] OR (i.[SchoolReference_DocumentId] IS NULL AND del.[SchoolReference_DocumentId] IS NOT NULL) OR (i.[SchoolReference_DocumentId] IS NOT NULL AND del.[SchoolReference_DocumentId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL)) OR (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -854,7 +1280,7 @@ BEGIN
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StudentUniqueId] <> del.[StudentUniqueId] OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL));
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL)) OR (i.[SchoolReference_SchoolId] <> del.[SchoolReference_SchoolId] OR (i.[SchoolReference_SchoolId] IS NULL AND del.[SchoolReference_SchoolId] IS NOT NULL) OR (i.[SchoolReference_SchoolId] IS NOT NULL AND del.[SchoolReference_SchoolId] IS NULL));
     END
 END;
 GO
@@ -869,13 +1295,22 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
     VALUES (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 2)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (2, N'Ed-Fi', N'School', N'5.0.0');
+    VALUES (2, N'Ed-Fi', N'KeyUnifiedResource', N'5.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 3)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (3, N'Ed-Fi', N'Student', N'5.0.0');
+    VALUES (3, N'Ed-Fi', N'ResourceA', N'5.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 4)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0');
+    VALUES (4, N'Ed-Fi', N'ResourceB', N'5.0.0');
+IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 5)
+    INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+    VALUES (5, N'Ed-Fi', N'School', N'5.0.0');
+IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 6)
+    INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+    VALUES (6, N'Ed-Fi', N'Student', N'5.0.0');
+IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 7)
+    INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+    VALUES (7, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0');
 
 -- ResourceKey full-table validation (count + content)
 DECLARE @actual_count integer;
@@ -883,9 +1318,9 @@ DECLARE @mismatched_count integer;
 DECLARE @rk_mismatched_ids nvarchar(max);
 
 SELECT @actual_count = COUNT(*) FROM [dms].[ResourceKey];
-IF @actual_count <> 4
+IF @actual_count <> 7
 BEGIN
-    DECLARE @rk_count_msg nvarchar(200) = CONCAT(N'dms.ResourceKey count mismatch: expected 4, found ', CAST(@actual_count AS nvarchar(10)));
+    DECLARE @rk_count_msg nvarchar(200) = CONCAT(N'dms.ResourceKey count mismatch: expected 7, found ', CAST(@actual_count AS nvarchar(10)));
     THROW 50000, @rk_count_msg, 1;
 END
 
@@ -894,9 +1329,12 @@ FROM [dms].[ResourceKey] rk
 WHERE NOT EXISTS (
     SELECT 1 FROM (VALUES
         (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0'),
-        (2, N'Ed-Fi', N'School', N'5.0.0'),
-        (3, N'Ed-Fi', N'Student', N'5.0.0'),
-        (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
+        (2, N'Ed-Fi', N'KeyUnifiedResource', N'5.0.0'),
+        (3, N'Ed-Fi', N'ResourceA', N'5.0.0'),
+        (4, N'Ed-Fi', N'ResourceB', N'5.0.0'),
+        (5, N'Ed-Fi', N'School', N'5.0.0'),
+        (6, N'Ed-Fi', N'Student', N'5.0.0'),
+        (7, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
     ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
     WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
     AND expected.[ProjectName] = rk.[ProjectName]
@@ -912,9 +1350,12 @@ BEGIN
         WHERE NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (1, N'Ed-Fi', N'EducationOrganization', N'5.0.0'),
-                (2, N'Ed-Fi', N'School', N'5.0.0'),
-                (3, N'Ed-Fi', N'Student', N'5.0.0'),
-                (4, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
+                (2, N'Ed-Fi', N'KeyUnifiedResource', N'5.0.0'),
+                (3, N'Ed-Fi', N'ResourceA', N'5.0.0'),
+                (4, N'Ed-Fi', N'ResourceB', N'5.0.0'),
+                (5, N'Ed-Fi', N'School', N'5.0.0'),
+                (6, N'Ed-Fi', N'Student', N'5.0.0'),
+                (7, N'Ed-Fi', N'StudentSchoolAssociation', N'5.0.0')
             ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
             WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
             AND expected.[ProjectName] = rk.[ProjectName]
@@ -930,7 +1371,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', 4, 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99);
+    VALUES (1, N'1.0.0', N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169', 7, 0x32EF5794D29AE47B77649821D903B3E816550F32464099919350A9C7ADF96920);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -946,29 +1387,29 @@ BEGIN
     BEGIN
         THROW 50000, N'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.', 1;
     END
-    IF @es_stored_count <> 4
+    IF @es_stored_count <> 7
     BEGIN
-        DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 4, found ', CAST(@es_stored_count AS nvarchar(10)));
+        DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 7, found ', CAST(@es_stored_count AS nvarchar(10)));
         THROW 50000, @es_count_msg, 1;
     END
-    IF @es_stored_hash <> 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99
+    IF @es_stored_hash <> 0x32EF5794D29AE47B77649821D903B3E816550F32464099919350A9C7ADF96920
     BEGIN
-        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0x312FB54DF0BEB8F19C81D0F9396791FB5D6CF28B01462E427AF1B13DB4DDBF99, 1));
+        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0x32EF5794D29AE47B77649821D903B3E816550F32464099919350A9C7ADF96920, 1));
         THROW 50000, @es_hash_msg, 1;
     END
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -977,7 +1418,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
+WHERE sc.[EffectiveSchemaHash] = N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -993,7 +1434,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b'
+        WHERE sc.[EffectiveSchemaHash] = N'1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)

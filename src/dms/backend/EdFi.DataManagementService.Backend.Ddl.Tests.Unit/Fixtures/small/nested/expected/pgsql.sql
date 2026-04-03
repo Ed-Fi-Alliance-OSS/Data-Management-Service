@@ -242,7 +242,8 @@ CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
     "ReferentialId" uuid NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
-    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId")
+    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"),
+    CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
 );
 
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
@@ -552,7 +553,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+AFTER INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 

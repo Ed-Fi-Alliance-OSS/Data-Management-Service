@@ -227,7 +227,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             // ON UPDATE NO ACTION when both sides of the composite FK change.
             bool mssqlTriggerHandlesPropagation =
                 context.SetContext.Dialect == SqlDialect.Mssql
-                && (targetInfo.IsAbstract || targetInfo.AllowIdentityUpdates);
+                && (targetInfo.IsAbstract || targetInfo.TransitivelyAllowIdentityUpdates);
 
             var localColumns = new List<DbColumnName>(
                 1 + (mssqlTriggerHandlesPropagation ? 0 : mappedIdentityColumns.LocalColumns.Count)
@@ -254,7 +254,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             var onUpdate =
                 context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction
                 : targetInfo.IsAbstract ? ReferentialAction.Cascade
-                : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
+                : targetInfo.TransitivelyAllowIdentityUpdates ? ReferentialAction.Cascade
                 : ReferentialAction.NoAction;
 
             if (
@@ -751,6 +751,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 identityPaths,
                 columnNames,
                 AllowIdentityUpdates: false,
+                TransitivelyAllowIdentityUpdates: false,
                 IsAbstract: true
             );
 
@@ -787,6 +788,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             builderContext.IdentityJsonPaths,
             identityColumns,
             builderContext.AllowIdentityUpdates,
+            builderContext.TransitivelyAllowIdentityUpdates,
             IsAbstract: false
         );
 
@@ -964,6 +966,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         IReadOnlyList<JsonPathExpression> IdentityJsonPaths,
         IReadOnlyList<DbColumnName> IdentityColumns,
         bool AllowIdentityUpdates,
+        bool TransitivelyAllowIdentityUpdates,
         bool IsAbstract
     );
 

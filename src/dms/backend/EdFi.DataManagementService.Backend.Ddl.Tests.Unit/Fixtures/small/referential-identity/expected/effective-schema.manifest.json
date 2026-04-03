@@ -1,16 +1,16 @@
 {
   "api_schema_format_version": "1.0.0",
   "relational_mapping_version": "v1",
-  "effective_schema_hash": "6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b",
-  "resource_key_count": 4,
-  "resource_key_seed_hash": "312fb54df0beb8f19c81d0f9396791fb5d6cf28b01462e427af1b13db4ddbf99",
+  "effective_schema_hash": "1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169",
+  "resource_key_count": 7,
+  "resource_key_seed_hash": "32ef5794d29ae47b77649821d903b3e816550f32464099919350a9c7adf96920",
   "schema_components": [
     {
       "project_endpoint_name": "ed-fi",
       "project_name": "Ed-Fi",
       "project_version": "5.0.0",
       "is_extension_project": false,
-      "project_hash": "2a04d57acf6b168a64970312b349426c2592d9903d6ccf5018d4d9f8d74c1ae6"
+      "project_hash": "cce349715978806e9ed92864ec327e863414438bc9eec997cc923d09318695cb"
     }
   ],
   "resource_keys": [
@@ -23,17 +23,35 @@
     {
       "resource_key_id": 2,
       "project_name": "Ed-Fi",
-      "resource_name": "School",
+      "resource_name": "KeyUnifiedResource",
       "resource_version": "5.0.0"
     },
     {
       "resource_key_id": 3,
       "project_name": "Ed-Fi",
-      "resource_name": "Student",
+      "resource_name": "ResourceA",
       "resource_version": "5.0.0"
     },
     {
       "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceB",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 5,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 6,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 7,
       "project_name": "Ed-Fi",
       "resource_name": "StudentSchoolAssociation",
       "resource_version": "5.0.0"

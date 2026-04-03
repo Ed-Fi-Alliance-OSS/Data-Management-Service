@@ -49,7 +49,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: descriptorReferentialId,
@@ -57,7 +57,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 13,
                     ReferentialIdentityResourceKeyId: 13,
                     IsDescriptor: true,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ],
         ]);
@@ -100,8 +100,8 @@ public class Given_ReferenceResolver
             )
             .Should()
             .Equal(
-                ("School", "$$.schoolId=255901"),
-                ("SchoolTypeDescriptor", "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative")
+                ("School", "$.schoolId=255901"),
+                ("SchoolTypeDescriptor", "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative")
             );
 
         result
@@ -151,7 +151,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: secondReferentialId,
@@ -159,7 +159,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
             ],
             [
@@ -169,7 +169,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
             ],
         ]);
@@ -238,7 +238,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 15,
                     ReferentialIdentityResourceKeyId: 15,
                     IsDescriptor: false,
-                    VerificationIdentityKey: $"$$.meetingDateTime={MeetingDateTime}"
+                    VerificationIdentityKey: $"$.meetingDateTime={MeetingDateTime}"
                 ),
             ],
         ]);
@@ -262,7 +262,7 @@ public class Given_ReferenceResolver
             .Requests[0]
             .Lookups.Select(static lookup => lookup.ExpectedVerificationIdentityKey)
             .Should()
-            .Equal($"$$.meetingDateTime={MeetingDateTime}");
+            .Equal($"$.meetingDateTime={MeetingDateTime}");
         result.InvalidDocumentReferences.Should().BeEmpty();
         result
             .SuccessfulDocumentReferencesByPath[new JsonPath("$.meetingReference")]
@@ -287,7 +287,7 @@ public class Given_ReferenceResolver
                         ResourceKeyId: 11,
                         ReferentialIdentityResourceKeyId: 11,
                         IsDescriptor: false,
-                        VerificationIdentityKey: "$$.schoolId=255901"
+                        VerificationIdentityKey: "$.schoolId=255901"
                     ),
                 ]),
         ]);
@@ -337,7 +337,7 @@ public class Given_ReferenceResolver
                         ResourceKeyId: 11,
                         ReferentialIdentityResourceKeyId: 11,
                         IsDescriptor: false,
-                        VerificationIdentityKey: "$$.schoolId=255901"
+                        VerificationIdentityKey: "$.schoolId=255901"
                     ),
                 ]),
         ]);
@@ -423,7 +423,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: nonDescriptorReferentialId,
@@ -431,7 +431,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 14,
                     ReferentialIdentityResourceKeyId: 14,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ],
         ]);
@@ -554,7 +554,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 30,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
             ],
         ]);
@@ -595,7 +595,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255902"
+                    VerificationIdentityKey: "$.schoolId=255902"
                 ),
             ],
         ]);
@@ -615,8 +615,8 @@ public class Given_ReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(referentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
-        exception.Which.Message.Should().Contain("$$.schoolId=255902");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255902");
     }
 
     [Test]
@@ -631,7 +631,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 12,
                     ReferentialIdentityResourceKeyId: 12,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.localEducationAgencyId=255901"
+                    VerificationIdentityKey: "$.localEducationAgencyId=255901"
                 ),
             ],
         ]);
@@ -651,8 +651,8 @@ public class Given_ReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(referentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
-        exception.Which.Message.Should().Contain("$$.localEducationAgencyId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.localEducationAgencyId=255901");
     }
 
     [Test]
@@ -667,7 +667,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 13,
                     ReferentialIdentityResourceKeyId: 13,
                     IsDescriptor: true,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong"
                 ),
             ],
         ]);
@@ -696,8 +696,8 @@ public class Given_ReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
-        exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
     }
 
     [Test]
@@ -712,7 +712,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 14,
                     ReferentialIdentityResourceKeyId: 14,
                     IsDescriptor: true,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],
         ]);
@@ -741,10 +741,10 @@ public class Given_ReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english");
+            .Contain("$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english");
     }
 
     [Test]
@@ -764,7 +764,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: incompatibleDocumentReferentialId,
@@ -772,7 +772,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 12,
                     ReferentialIdentityResourceKeyId: 12,
                     IsDescriptor: false,
-                    VerificationIdentityKey: "$$.schoolId=255901"
+                    VerificationIdentityKey: "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: successfulDescriptorReferentialId,
@@ -780,7 +780,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 13,
                     ReferentialIdentityResourceKeyId: 13,
                     IsDescriptor: true,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: wrongDescriptorTypeReferentialId,
@@ -788,7 +788,7 @@ public class Given_ReferenceResolver
                     ResourceKeyId: 14,
                     ReferentialIdentityResourceKeyId: 14,
                     IsDescriptor: true,
-                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
+                    VerificationIdentityKey: "$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],
         ]);

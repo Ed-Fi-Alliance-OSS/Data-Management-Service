@@ -604,12 +604,12 @@ BEGIN
         SELECT i.[School_DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[CollectionItemId] = i.[CollectionItemId]
-        WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+        WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[Street] AS varbinary(max)) <> CAST(del.[Street] AS varbinary(max)) OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
         UNION
         SELECT del.[School_DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[CollectionItemId] = del.[CollectionItemId]
-        WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+        WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[Street] AS varbinary(max)) <> CAST(del.[Street] AS varbinary(max)) OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -628,12 +628,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ExtensionData] <> del.[ExtensionData] OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[ExtensionData] AS varbinary(max)) <> CAST(del.[ExtensionData] AS varbinary(max)) OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[ExtensionData] <> del.[ExtensionData] OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[ExtensionData] AS varbinary(max)) <> CAST(del.[ExtensionData] AS varbinary(max)) OR (i.[ExtensionData] IS NULL AND del.[ExtensionData] IS NOT NULL) OR (i.[ExtensionData] IS NOT NULL AND del.[ExtensionData] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -652,12 +652,12 @@ BEGIN
         SELECT i.[School_DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[BaseCollectionItemId] = i.[BaseCollectionItemId]
-        WHERE del.[BaseCollectionItemId] IS NULL OR (i.[BaseCollectionItemId] <> del.[BaseCollectionItemId] OR (i.[BaseCollectionItemId] IS NULL AND del.[BaseCollectionItemId] IS NOT NULL) OR (i.[BaseCollectionItemId] IS NOT NULL AND del.[BaseCollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[AddressExtData] <> del.[AddressExtData] OR (i.[AddressExtData] IS NULL AND del.[AddressExtData] IS NOT NULL) OR (i.[AddressExtData] IS NOT NULL AND del.[AddressExtData] IS NULL))
+        WHERE del.[BaseCollectionItemId] IS NULL OR (i.[BaseCollectionItemId] <> del.[BaseCollectionItemId] OR (i.[BaseCollectionItemId] IS NULL AND del.[BaseCollectionItemId] IS NOT NULL) OR (i.[BaseCollectionItemId] IS NOT NULL AND del.[BaseCollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[AddressExtData] AS varbinary(max)) <> CAST(del.[AddressExtData] AS varbinary(max)) OR (i.[AddressExtData] IS NULL AND del.[AddressExtData] IS NOT NULL) OR (i.[AddressExtData] IS NOT NULL AND del.[AddressExtData] IS NULL))
         UNION
         SELECT del.[School_DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[BaseCollectionItemId] = del.[BaseCollectionItemId]
-        WHERE i.[BaseCollectionItemId] IS NULL OR (i.[BaseCollectionItemId] <> del.[BaseCollectionItemId] OR (i.[BaseCollectionItemId] IS NULL AND del.[BaseCollectionItemId] IS NOT NULL) OR (i.[BaseCollectionItemId] IS NOT NULL AND del.[BaseCollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[AddressExtData] <> del.[AddressExtData] OR (i.[AddressExtData] IS NULL AND del.[AddressExtData] IS NOT NULL) OR (i.[AddressExtData] IS NOT NULL AND del.[AddressExtData] IS NULL))
+        WHERE i.[BaseCollectionItemId] IS NULL OR (i.[BaseCollectionItemId] <> del.[BaseCollectionItemId] OR (i.[BaseCollectionItemId] IS NULL AND del.[BaseCollectionItemId] IS NOT NULL) OR (i.[BaseCollectionItemId] IS NOT NULL AND del.[BaseCollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[AddressExtData] AS varbinary(max)) <> CAST(del.[AddressExtData] AS varbinary(max)) OR (i.[AddressExtData] IS NULL AND del.[AddressExtData] IS NOT NULL) OR (i.[AddressExtData] IS NOT NULL AND del.[AddressExtData] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()

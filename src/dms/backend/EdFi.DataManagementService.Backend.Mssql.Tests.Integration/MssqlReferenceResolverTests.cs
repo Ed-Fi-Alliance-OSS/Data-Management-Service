@@ -117,7 +117,7 @@ public class Given_MssqlReferenceResolver
             .Which.Message.Should()
             .Contain(_database.Fixture.LocalEducationAgencyReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -155,7 +155,7 @@ public class Given_MssqlReferenceResolver
             .Which.Message.Should()
             .Contain(_database.Fixture.EducationOrganizationAliasReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
-        exception.Which.Message.Should().Contain("$$.localEducationAgencyId=255901");
+        exception.Which.Message.Should().Contain("$.localEducationAgencyId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -179,7 +179,7 @@ public class Given_MssqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -270,8 +270,8 @@ public class Given_MssqlReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
-        exception.Which.Message.Should().Contain("$$.schoolId=255902");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255902");
     }
 
     [Test]
@@ -293,8 +293,8 @@ public class Given_MssqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
-        exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
     }
 
     [Test]
@@ -312,7 +312,7 @@ public class Given_MssqlReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -335,10 +335,10 @@ public class Given_MssqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#mathematics");
+            .Contain("$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#mathematics");
     }
 
     [Test]

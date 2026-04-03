@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 [NonParallelizable]
 public class Given_A_Provisioned_Postgresql_Database_With_Journaling_Trigger
 {

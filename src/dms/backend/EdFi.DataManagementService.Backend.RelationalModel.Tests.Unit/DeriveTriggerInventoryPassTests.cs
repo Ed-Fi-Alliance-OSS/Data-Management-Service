@@ -1084,6 +1084,7 @@ internal static class TriggerInventoryTestSchemaBuilder
             new DescriptorResourceMappingPass(),
             new ExtensionTableDerivationPass(),
             new ReferenceBindingPass(),
+            new TransitiveIdentityMutabilityPass(),
             new AbstractIdentityTableAndUnionViewDerivationPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),

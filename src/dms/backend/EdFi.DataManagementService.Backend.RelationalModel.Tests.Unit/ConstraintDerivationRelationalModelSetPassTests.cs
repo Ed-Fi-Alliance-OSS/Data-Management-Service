@@ -480,6 +480,7 @@ public class Given_Reference_Constraint_Derivation
             {
                 new BaseTraversalAndDescriptorBindingPass(),
                 new ReferenceBindingPass(),
+                new TransitiveIdentityMutabilityPass(),
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),

@@ -410,7 +410,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 // Concrete target must allow identity updates.
                 if (
                     !resourceContextsByResource.TryGetValue(targetResource, out var targetContext)
-                    || !context.GetOrCreateResourceBuilderContext(targetContext).AllowIdentityUpdates
+                    || !context.GetOrCreateResourceBuilderContext(targetContext).TransitivelyAllowIdentityUpdates
                 )
                 {
                     continue;
@@ -587,40 +587,50 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         // For each identity binding, map source identity column to referrer stored column.
         // Direction: SourceColumn = trigger table identity column, TargetColumn = referrer stored column.
-        return binding
-            .IdentityBindings.Select(ib =>
-            {
-                if (
-                    !identityPathByReferencePath.TryGetValue(
-                        ib.ReferenceJsonPath.Canonical,
-                        out var identityPath
-                    )
+        // Deduplicate by TargetColumn: key unification can cause multiple identity bindings
+        // to resolve to the same stored column (e.g., School.SchoolId and Session.SchoolId
+        // both → SchoolId_Unified). Duplicate column mappings would produce invalid SQL
+        // (SQL Server Error 264: duplicate columns in SET clause).
+        HashSet<string> seenTargets = new(StringComparer.Ordinal);
+        List<TriggerColumnMapping> mappings = new(binding.IdentityBindings.Count);
+
+        foreach (var ib in binding.IdentityBindings)
+        {
+            if (
+                !identityPathByReferencePath.TryGetValue(
+                    ib.ReferenceJsonPath.Canonical,
+                    out var identityPath
                 )
-                {
-                    throw new InvalidOperationException(
-                        $"Propagation fallback trigger derivation for referrer '{FormatResource(referrerResource)}': "
-                            + $"reference JSON path '{ib.ReferenceJsonPath.Canonical}' did not map to "
-                            + "a target identity path."
-                    );
-                }
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Propagation fallback trigger derivation for referrer '{FormatResource(referrerResource)}': "
+                        + $"reference JSON path '{ib.ReferenceJsonPath.Canonical}' did not map to "
+                        + "a target identity path."
+                );
+            }
 
-                // Resolve source column from the trigger table model's SourceJsonPath mapping.
-                if (!sourceColumnsByPath.TryGetValue(identityPath, out var sourceColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Propagation fallback trigger derivation for target '{FormatResource(targetResource)}': "
-                            + $"identity path '{identityPath}' did not map to a column on trigger table "
-                            + $"'{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
-                    );
-                }
+            // Resolve source column from the trigger table model's SourceJsonPath mapping.
+            if (!sourceColumnsByPath.TryGetValue(identityPath, out var sourceColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Propagation fallback trigger derivation for target '{FormatResource(targetResource)}': "
+                        + $"identity path '{identityPath}' did not map to a column on trigger table "
+                        + $"'{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
+                );
+            }
 
-                // Resolve through storage: ib.Column may be a unified alias (computed) after
-                // key unification. The propagation UPDATE must target the canonical stored column.
-                var targetColumn = ResolveToStoredColumn(ib.Column, referrerRootTable, referrerResource);
+            // Resolve through storage: ib.Column may be a unified alias (computed) after
+            // key unification. The propagation UPDATE must target the canonical stored column.
+            var targetColumn = ResolveToStoredColumn(ib.Column, referrerRootTable, referrerResource);
 
-                return new TriggerColumnMapping(sourceColumn, targetColumn);
-            })
-            .ToArray();
+            if (seenTargets.Add(targetColumn.Value))
+            {
+                mappings.Add(new TriggerColumnMapping(sourceColumn, targetColumn));
+            }
+        }
+
+        return mappings.ToArray();
     }
 
     /// <summary>

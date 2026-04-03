@@ -244,7 +244,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
@@ -346,7 +346,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_ReferentialIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 

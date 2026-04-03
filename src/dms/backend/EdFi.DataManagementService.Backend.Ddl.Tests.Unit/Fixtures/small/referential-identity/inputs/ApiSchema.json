@@ -16,7 +16,10 @@
     "caseInsensitiveEndpointNameMapping": {
       "students": "students",
       "schools": "schools",
-      "studentschoolassociations": "studentSchoolAssociations"
+      "studentschoolassociations": "studentSchoolAssociations",
+      "resourceas": "resourceAs",
+      "resourcebs": "resourceBs",
+      "keyunifiedresources": "keyUnifiedResources"
     },
     "educationOrganizationHierarchy": {
       "EducationOrganization": {},
@@ -29,7 +32,10 @@
     "resourceNameMapping": {
       "Student": "students",
       "School": "schools",
-      "StudentSchoolAssociation": "studentSchoolAssociations"
+      "StudentSchoolAssociation": "studentSchoolAssociations",
+      "ResourceA": "resourceAs",
+      "ResourceB": "resourceBs",
+      "KeyUnifiedResource": "keyUnifiedResources"
     },
     "resourceSchemas": {
       "students": {
@@ -184,6 +190,222 @@
             "studentUniqueId",
             "schoolReference"
           ]
+        }
+      },
+      "resourceAs": {
+        "resourceName": "ResourceA",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.resourceAId",
+          "$.studentReference.studentUniqueId"
+        ],
+        "documentPathsMapping": {
+          "ResourceAId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.resourceAId"
+          },
+          "StudentReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "Student",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.studentUniqueId",
+                "referenceJsonPath": "$.studentReference.studentUniqueId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "resourceAId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "studentReference": {
+              "type": "object",
+              "properties": {
+                "studentUniqueId": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": ["studentUniqueId"]
+            }
+          },
+          "required": ["resourceAId", "studentReference"]
+        }
+      },
+      "resourceBs": {
+        "resourceName": "ResourceB",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.resourceBId",
+          "$.studentReference.studentUniqueId"
+        ],
+        "documentPathsMapping": {
+          "ResourceBId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.resourceBId"
+          },
+          "StudentReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "Student",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.studentUniqueId",
+                "referenceJsonPath": "$.studentReference.studentUniqueId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "resourceBId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "studentReference": {
+              "type": "object",
+              "properties": {
+                "studentUniqueId": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": ["studentUniqueId"]
+            }
+          },
+          "required": ["resourceBId", "studentReference"]
+        }
+      },
+      "keyUnifiedResources": {
+        "resourceName": "KeyUnifiedResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [
+          {
+            "sourceJsonPath": "$.resourceAReference.studentUniqueId",
+            "targetJsonPath": "$.resourceBReference.studentUniqueId"
+          }
+        ],
+        "identityJsonPaths": [
+          "$.keyUnifiedResourceId",
+          "$.resourceAReference.resourceAId",
+          "$.resourceAReference.studentUniqueId",
+          "$.resourceBReference.resourceBId",
+          "$.resourceBReference.studentUniqueId"
+        ],
+        "documentPathsMapping": {
+          "KeyUnifiedResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.keyUnifiedResourceId"
+          },
+          "ResourceAReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "ResourceA",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.resourceAId",
+                "referenceJsonPath": "$.resourceAReference.resourceAId"
+              },
+              {
+                "identityJsonPath": "$.studentReference.studentUniqueId",
+                "referenceJsonPath": "$.resourceAReference.studentUniqueId"
+              }
+            ]
+          },
+          "ResourceBReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "ResourceB",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.resourceBId",
+                "referenceJsonPath": "$.resourceBReference.resourceBId"
+              },
+              {
+                "identityJsonPath": "$.studentReference.studentUniqueId",
+                "referenceJsonPath": "$.resourceBReference.studentUniqueId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "keyUnifiedResourceId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "resourceAReference": {
+              "type": "object",
+              "properties": {
+                "resourceAId": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "studentUniqueId": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": ["resourceAId", "studentUniqueId"]
+            },
+            "resourceBReference": {
+              "type": "object",
+              "properties": {
+                "resourceBId": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "studentUniqueId": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": ["resourceBId", "studentUniqueId"]
+            }
+          },
+          "required": ["keyUnifiedResourceId", "resourceAReference", "resourceBReference"]
         }
       }
     }

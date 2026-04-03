@@ -98,7 +98,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("IsDescriptor", true),
                         (
                             "VerificationIdentityKey",
-                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                         )
                     ),
                     RelationalAccessTestData.CreateRow(
@@ -107,7 +107,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
                         ("IsDescriptor", false),
-                        ("VerificationIdentityKey", "$$.educationOrganizationId=255901")
+                        ("VerificationIdentityKey", "$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", firstFoundReferentialId.Value),
@@ -115,7 +115,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
                         ("IsDescriptor", false),
-                        ("VerificationIdentityKey", "$$.schoolId=255901")
+                        ("VerificationIdentityKey", "$.schoolId=255901")
                     )
                 ),
             ]),
@@ -146,14 +146,14 @@ public class Given_MssqlReferenceLookupBulkStrategy
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     aliasReferentialId,
                     202L,
                     21,
                     30,
                     false,
-                    "$$.educationOrganizationId=255901"
+                    "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
                     descriptorReferentialId,
@@ -161,7 +161,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                     40,
                     40,
                     true,
-                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );
     }

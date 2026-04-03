@@ -33,7 +33,7 @@ public class Given_PostgresqlRelationalCommandExecutor
                             (short)11,
                             (short)11,
                             false,
-                            "$$.schoolId=255901"
+                            "$.schoolId=255901"
                         ),
                         (
                             descriptorReferentialId.Value,
@@ -41,7 +41,7 @@ public class Given_PostgresqlRelationalCommandExecutor
                             (short)12,
                             (short)12,
                             true,
-                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                         )
                     )
                 )
@@ -85,14 +85,14 @@ public class Given_PostgresqlRelationalCommandExecutor
         result
             .Should()
             .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     descriptorReferentialId,
                     202L,
                     12,
                     12,
                     true,
-                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ]);
     }

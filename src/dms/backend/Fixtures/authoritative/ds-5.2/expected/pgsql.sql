@@ -242,7 +242,8 @@ CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
     "ReferentialId" uuid NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
-    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId")
+    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"),
+    CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
 );
 
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
@@ -20195,7 +20196,7 @@ BEGIN
         FOREIGN KEY ("CourseOffering_DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName")
         REFERENCES "edfi"."CourseOffering" ("DocumentId", "LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33355,7 +33356,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AcademicWeek_ReferentialIdentity" ON "edfi"."AcademicWeek";
 CREATE TRIGGER "TR_AcademicWeek_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AcademicWeek"
+AFTER INSERT OR UPDATE ON "edfi"."AcademicWeek"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"();
 
@@ -33406,7 +33407,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AccountabilityRating_ReferentialIdentity" ON "edfi"."AccountabilityRating";
 CREATE TRIGGER "TR_AccountabilityRating_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AccountabilityRating"
+AFTER INSERT OR UPDATE ON "edfi"."AccountabilityRating"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AccountabilityRating_ReferentialIdentity"();
 
@@ -33457,7 +33458,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Assessment_ReferentialIdentity" ON "edfi"."Assessment";
 CREATE TRIGGER "TR_Assessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Assessment"
+AFTER INSERT OR UPDATE ON "edfi"."Assessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Assessment_ReferentialIdentity"();
 
@@ -33533,7 +33534,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentAdministration_ReferentialIdentity" ON "edfi"."AssessmentAdministration";
 CREATE TRIGGER "TR_AssessmentAdministration_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentAdministration"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministration_ReferentialIdentity"();
 
@@ -33609,7 +33610,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentAdministrationParticipation_ReferentialIdentity" ON "edfi"."AssessmentAdministrationParticipation";
 CREATE TRIGGER "TR_AssessmentAdministrationParticipation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentAdministrationParticipation"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministrationParticipation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_ReferentialIdentity"();
 
@@ -33760,7 +33761,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentBatteryPart_ReferentialIdentity" ON "edfi"."AssessmentBatteryPart";
 CREATE TRIGGER "TR_AssessmentBatteryPart_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentBatteryPart"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentBatteryPart"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_ReferentialIdentity"();
 
@@ -33861,7 +33862,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentItem_ReferentialIdentity" ON "edfi"."AssessmentItem";
 CREATE TRIGGER "TR_AssessmentItem_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentItem"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentItem"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItem_ReferentialIdentity"();
 
@@ -34112,7 +34113,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity" ON "edfi"."AssessmentScoreRangeLearningStandard";
 CREATE TRIGGER "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentScoreRangeLearningStandard"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentScoreRangeLearningStandard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"();
 
@@ -34213,7 +34214,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_BalanceSheetDimension_ReferentialIdentity" ON "edfi"."BalanceSheetDimension";
 CREATE TRIGGER "TR_BalanceSheetDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."BalanceSheetDimension"
+AFTER INSERT OR UPDATE ON "edfi"."BalanceSheetDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_ReferentialIdentity"();
 
@@ -34289,7 +34290,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_BellSchedule_ReferentialIdentity" ON "edfi"."BellSchedule";
 CREATE TRIGGER "TR_BellSchedule_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."BellSchedule"
+AFTER INSERT OR UPDATE ON "edfi"."BellSchedule"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BellSchedule_ReferentialIdentity"();
 
@@ -34415,7 +34416,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Calendar_ReferentialIdentity" ON "edfi"."Calendar";
 CREATE TRIGGER "TR_Calendar_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Calendar"
+AFTER INSERT OR UPDATE ON "edfi"."Calendar"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Calendar_ReferentialIdentity"();
 
@@ -34466,7 +34467,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CalendarDate_ReferentialIdentity" ON "edfi"."CalendarDate";
 CREATE TRIGGER "TR_CalendarDate_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CalendarDate"
+AFTER INSERT OR UPDATE ON "edfi"."CalendarDate"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CalendarDate_ReferentialIdentity"();
 
@@ -34567,7 +34568,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ChartOfAccount_ReferentialIdentity" ON "edfi"."ChartOfAccount";
 CREATE TRIGGER "TR_ChartOfAccount_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ChartOfAccount"
+AFTER INSERT OR UPDATE ON "edfi"."ChartOfAccount"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccount_ReferentialIdentity"();
 
@@ -34643,7 +34644,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ClassPeriod_ReferentialIdentity" ON "edfi"."ClassPeriod";
 CREATE TRIGGER "TR_ClassPeriod_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ClassPeriod"
+AFTER INSERT OR UPDATE ON "edfi"."ClassPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriod_ReferentialIdentity"();
 
@@ -34719,7 +34720,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Cohort_ReferentialIdentity" ON "edfi"."Cohort";
 CREATE TRIGGER "TR_Cohort_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Cohort"
+AFTER INSERT OR UPDATE ON "edfi"."Cohort"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Cohort_ReferentialIdentity"();
 
@@ -34848,7 +34849,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityOrganization_ReferentialIdentity" ON "edfi"."CommunityOrganization";
 CREATE TRIGGER "TR_CommunityOrganization_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityOrganization"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityOrganization"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"();
 
@@ -35236,7 +35237,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityProvider_ReferentialIdentity" ON "edfi"."CommunityProvider";
 CREATE TRIGGER "TR_CommunityProvider_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityProvider"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityProvider"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"();
 
@@ -35487,7 +35488,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityProviderLicense_ReferentialIdentity" ON "edfi"."CommunityProviderLicense";
 CREATE TRIGGER "TR_CommunityProviderLicense_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityProviderLicense"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityProviderLicense"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_ReferentialIdentity"();
 
@@ -35538,7 +35539,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CompetencyObjective_ReferentialIdentity" ON "edfi"."CompetencyObjective";
 CREATE TRIGGER "TR_CompetencyObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CompetencyObjective"
+AFTER INSERT OR UPDATE ON "edfi"."CompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CompetencyObjective_ReferentialIdentity"();
 
@@ -35589,7 +35590,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Contact_ReferentialIdentity" ON "edfi"."Contact";
 CREATE TRIGGER "TR_Contact_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Contact"
+AFTER INSERT OR UPDATE ON "edfi"."Contact"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Contact_ReferentialIdentity"();
 
@@ -35865,7 +35866,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Course_ReferentialIdentity" ON "edfi"."Course";
 CREATE TRIGGER "TR_Course_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Course"
+AFTER INSERT OR UPDATE ON "edfi"."Course"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Course_ReferentialIdentity"();
 
@@ -36066,7 +36067,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CourseOffering_ReferentialIdentity" ON "edfi"."CourseOffering";
 CREATE TRIGGER "TR_CourseOffering_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CourseOffering"
+AFTER INSERT OR UPDATE ON "edfi"."CourseOffering"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseOffering_ReferentialIdentity"();
 
@@ -36192,7 +36193,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CourseTranscript_ReferentialIdentity" ON "edfi"."CourseTranscript";
 CREATE TRIGGER "TR_CourseTranscript_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CourseTranscript"
+AFTER INSERT OR UPDATE ON "edfi"."CourseTranscript"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscript_ReferentialIdentity"();
 
@@ -36418,7 +36419,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Credential_ReferentialIdentity" ON "edfi"."Credential";
 CREATE TRIGGER "TR_Credential_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Credential"
+AFTER INSERT OR UPDATE ON "edfi"."Credential"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Credential_ReferentialIdentity"();
 
@@ -36544,7 +36545,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CrisisEvent_ReferentialIdentity" ON "edfi"."CrisisEvent";
 CREATE TRIGGER "TR_CrisisEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CrisisEvent"
+AFTER INSERT OR UPDATE ON "edfi"."CrisisEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CrisisEvent_ReferentialIdentity"();
 
@@ -36595,7 +36596,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DescriptorMapping_ReferentialIdentity" ON "edfi"."DescriptorMapping";
 CREATE TRIGGER "TR_DescriptorMapping_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DescriptorMapping"
+AFTER INSERT OR UPDATE ON "edfi"."DescriptorMapping"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMapping_ReferentialIdentity"();
 
@@ -36671,7 +36672,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DisciplineAction_ReferentialIdentity" ON "edfi"."DisciplineAction";
 CREATE TRIGGER "TR_DisciplineAction_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DisciplineAction"
+AFTER INSERT OR UPDATE ON "edfi"."DisciplineAction"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineAction_ReferentialIdentity"();
 
@@ -36797,7 +36798,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DisciplineIncident_ReferentialIdentity" ON "edfi"."DisciplineIncident";
 CREATE TRIGGER "TR_DisciplineIncident_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DisciplineIncident"
+AFTER INSERT OR UPDATE ON "edfi"."DisciplineIncident"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncident_ReferentialIdentity"();
 
@@ -36923,7 +36924,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationContent_ReferentialIdentity" ON "edfi"."EducationContent";
 CREATE TRIGGER "TR_EducationContent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationContent"
+AFTER INSERT OR UPDATE ON "edfi"."EducationContent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationContent_ReferentialIdentity"();
 
@@ -37181,7 +37182,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation";
 CREATE TRIGGER "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_8c531548a2"();
 
@@ -37253,7 +37254,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_ReferentialIdentity" ON "edfi"."EducationOrganizationNetwork";
 CREATE TRIGGER "TR_EducationOrganizationNetwork_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"();
 
@@ -37354,7 +37355,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationNetworkAssociation";
 CREATE TRIGGER "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetworkAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetworkAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Refere_7f5a8e95ea"();
 
@@ -37555,7 +37556,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationPeerAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationPeerAssociation";
 CREATE TRIGGER "TR_EducationOrganizationPeerAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationPeerAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationPeerAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_ReferentialIdentity"();
 
@@ -37743,7 +37744,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_ReferentialIdentity" ON "edfi"."EducationServiceCenter";
 CREATE TRIGGER "TR_EducationServiceCenter_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
+AFTER INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"();
 
@@ -37994,7 +37995,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EvaluationRubricDimension_ReferentialIdentity" ON "edfi"."EvaluationRubricDimension";
 CREATE TRIGGER "TR_EvaluationRubricDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EvaluationRubricDimension"
+AFTER INSERT OR UPDATE ON "edfi"."EvaluationRubricDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_ReferentialIdentity"();
 
@@ -38045,7 +38046,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FeederSchoolAssociation_ReferentialIdentity" ON "edfi"."FeederSchoolAssociation";
 CREATE TRIGGER "TR_FeederSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FeederSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."FeederSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_ReferentialIdentity"();
 
@@ -38096,7 +38097,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FunctionDimension_ReferentialIdentity" ON "edfi"."FunctionDimension";
 CREATE TRIGGER "TR_FunctionDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FunctionDimension"
+AFTER INSERT OR UPDATE ON "edfi"."FunctionDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimension_ReferentialIdentity"();
 
@@ -38172,7 +38173,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FundDimension_ReferentialIdentity" ON "edfi"."FundDimension";
 CREATE TRIGGER "TR_FundDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FundDimension"
+AFTER INSERT OR UPDATE ON "edfi"."FundDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FundDimension_ReferentialIdentity"();
 
@@ -38248,7 +38249,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Grade_ReferentialIdentity" ON "edfi"."Grade";
 CREATE TRIGGER "TR_Grade_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Grade"
+AFTER INSERT OR UPDATE ON "edfi"."Grade"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Grade_ReferentialIdentity"();
 
@@ -38324,7 +38325,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GradebookEntry_ReferentialIdentity" ON "edfi"."GradebookEntry";
 CREATE TRIGGER "TR_GradebookEntry_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GradebookEntry"
+AFTER INSERT OR UPDATE ON "edfi"."GradebookEntry"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntry_ReferentialIdentity"();
 
@@ -38400,7 +38401,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GradingPeriod_ReferentialIdentity" ON "edfi"."GradingPeriod";
 CREATE TRIGGER "TR_GradingPeriod_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GradingPeriod"
+AFTER INSERT OR UPDATE ON "edfi"."GradingPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradingPeriod_ReferentialIdentity"();
 
@@ -38451,7 +38452,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GraduationPlan_ReferentialIdentity" ON "edfi"."GraduationPlan";
 CREATE TRIGGER "TR_GraduationPlan_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GraduationPlan"
+AFTER INSERT OR UPDATE ON "edfi"."GraduationPlan"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlan_ReferentialIdentity"();
 
@@ -38652,7 +38653,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Intervention_ReferentialIdentity" ON "edfi"."Intervention";
 CREATE TRIGGER "TR_Intervention_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Intervention"
+AFTER INSERT OR UPDATE ON "edfi"."Intervention"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Intervention_ReferentialIdentity"();
 
@@ -38903,7 +38904,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_InterventionPrescription_ReferentialIdentity" ON "edfi"."InterventionPrescription";
 CREATE TRIGGER "TR_InterventionPrescription_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."InterventionPrescription"
+AFTER INSERT OR UPDATE ON "edfi"."InterventionPrescription"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescription_ReferentialIdentity"();
 
@@ -39154,7 +39155,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_InterventionStudy_ReferentialIdentity" ON "edfi"."InterventionStudy";
 CREATE TRIGGER "TR_InterventionStudy_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."InterventionStudy"
+AFTER INSERT OR UPDATE ON "edfi"."InterventionStudy"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudy_ReferentialIdentity"();
 
@@ -39430,7 +39431,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LearningStandard_ReferentialIdentity" ON "edfi"."LearningStandard";
 CREATE TRIGGER "TR_LearningStandard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LearningStandard"
+AFTER INSERT OR UPDATE ON "edfi"."LearningStandard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandard_ReferentialIdentity"();
 
@@ -39531,7 +39532,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity" ON "edfi"."LearningStandardEquivalenceAssociation";
 CREATE TRIGGER "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LearningStandardEquivalenceAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."LearningStandardEquivalenceAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Referen_56e0b938ed"();
 
@@ -39632,7 +39633,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalAccount_ReferentialIdentity" ON "edfi"."LocalAccount";
 CREATE TRIGGER "TR_LocalAccount_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalAccount"
+AFTER INSERT OR UPDATE ON "edfi"."LocalAccount"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalAccount_ReferentialIdentity"();
 
@@ -39708,7 +39709,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalActual_ReferentialIdentity" ON "edfi"."LocalActual";
 CREATE TRIGGER "TR_LocalActual_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalActual"
+AFTER INSERT OR UPDATE ON "edfi"."LocalActual"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalActual_ReferentialIdentity"();
 
@@ -39759,7 +39760,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalBudget_ReferentialIdentity" ON "edfi"."LocalBudget";
 CREATE TRIGGER "TR_LocalBudget_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalBudget"
+AFTER INSERT OR UPDATE ON "edfi"."LocalBudget"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalBudget_ReferentialIdentity"();
 
@@ -39810,7 +39811,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalContractedStaff_ReferentialIdentity" ON "edfi"."LocalContractedStaff";
 CREATE TRIGGER "TR_LocalContractedStaff_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalContractedStaff"
+AFTER INSERT OR UPDATE ON "edfi"."LocalContractedStaff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalContractedStaff_ReferentialIdentity"();
 
@@ -40068,7 +40069,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
@@ -40369,7 +40370,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEncumbrance_ReferentialIdentity" ON "edfi"."LocalEncumbrance";
 CREATE TRIGGER "TR_LocalEncumbrance_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEncumbrance"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEncumbrance"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEncumbrance_ReferentialIdentity"();
 
@@ -40420,7 +40421,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalPayroll_ReferentialIdentity" ON "edfi"."LocalPayroll";
 CREATE TRIGGER "TR_LocalPayroll_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalPayroll"
+AFTER INSERT OR UPDATE ON "edfi"."LocalPayroll"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalPayroll_ReferentialIdentity"();
 
@@ -40471,7 +40472,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Location_ReferentialIdentity" ON "edfi"."Location";
 CREATE TRIGGER "TR_Location_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Location"
+AFTER INSERT OR UPDATE ON "edfi"."Location"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Location_ReferentialIdentity"();
 
@@ -40522,7 +40523,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ObjectDimension_ReferentialIdentity" ON "edfi"."ObjectDimension";
 CREATE TRIGGER "TR_ObjectDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ObjectDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ObjectDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimension_ReferentialIdentity"();
 
@@ -40598,7 +40599,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ObjectiveAssessment_ReferentialIdentity" ON "edfi"."ObjectiveAssessment";
 CREATE TRIGGER "TR_ObjectiveAssessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ObjectiveAssessment"
+AFTER INSERT OR UPDATE ON "edfi"."ObjectiveAssessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_ReferentialIdentity"();
 
@@ -40749,7 +40750,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OpenStaffPosition_ReferentialIdentity" ON "edfi"."OpenStaffPosition";
 CREATE TRIGGER "TR_OpenStaffPosition_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OpenStaffPosition"
+AFTER INSERT OR UPDATE ON "edfi"."OpenStaffPosition"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPosition_ReferentialIdentity"();
 
@@ -40850,7 +40851,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OperationalUnitDimension_ReferentialIdentity" ON "edfi"."OperationalUnitDimension";
 CREATE TRIGGER "TR_OperationalUnitDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OperationalUnitDimension"
+AFTER INSERT OR UPDATE ON "edfi"."OperationalUnitDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_ReferentialIdentity"();
 
@@ -41063,7 +41064,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_ReferentialIdentity" ON "edfi"."OrganizationDepartment";
 CREATE TRIGGER "TR_OrganizationDepartment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
+AFTER INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"();
 
@@ -41314,7 +41315,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Person_ReferentialIdentity" ON "edfi"."Person";
 CREATE TRIGGER "TR_Person_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Person"
+AFTER INSERT OR UPDATE ON "edfi"."Person"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
 
@@ -41365,7 +41366,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_PostSecondaryEvent_ReferentialIdentity" ON "edfi"."PostSecondaryEvent";
 CREATE TRIGGER "TR_PostSecondaryEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryEvent"
+AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_ReferentialIdentity"();
 
@@ -41469,7 +41470,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_ReferentialIdentity" ON "edfi"."PostSecondaryInstitution";
 CREATE TRIGGER "TR_PostSecondaryInstitution_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
+AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"();
 
@@ -41745,7 +41746,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Program_ReferentialIdentity" ON "edfi"."Program";
 CREATE TRIGGER "TR_Program_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Program"
+AFTER INSERT OR UPDATE ON "edfi"."Program"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"();
 
@@ -41821,7 +41822,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramDimension_ReferentialIdentity" ON "edfi"."ProgramDimension";
 CREATE TRIGGER "TR_ProgramDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimension_ReferentialIdentity"();
 
@@ -41897,7 +41898,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluation_ReferentialIdentity" ON "edfi"."ProgramEvaluation";
 CREATE TRIGGER "TR_ProgramEvaluation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluation"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluation_ReferentialIdentity"();
 
@@ -41948,7 +41949,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluationElement_ReferentialIdentity" ON "edfi"."ProgramEvaluationElement";
 CREATE TRIGGER "TR_ProgramEvaluationElement_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluationElement"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationElement"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_ReferentialIdentity"();
 
@@ -42049,7 +42050,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluationObjective_ReferentialIdentity" ON "edfi"."ProgramEvaluationObjective";
 CREATE TRIGGER "TR_ProgramEvaluationObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluationObjective"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_ReferentialIdentity"();
 
@@ -42175,7 +42176,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProjectDimension_ReferentialIdentity" ON "edfi"."ProjectDimension";
 CREATE TRIGGER "TR_ProjectDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProjectDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ProjectDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimension_ReferentialIdentity"();
 
@@ -42251,7 +42252,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ReportCard_ReferentialIdentity" ON "edfi"."ReportCard";
 CREATE TRIGGER "TR_ReportCard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ReportCard"
+AFTER INSERT OR UPDATE ON "edfi"."ReportCard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ReportCard_ReferentialIdentity"();
 
@@ -42377,7 +42378,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_RestraintEvent_ReferentialIdentity" ON "edfi"."RestraintEvent";
 CREATE TRIGGER "TR_RestraintEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."RestraintEvent"
+AFTER INSERT OR UPDATE ON "edfi"."RestraintEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_RestraintEvent_ReferentialIdentity"();
 
@@ -42615,7 +42616,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+AFTER INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 
@@ -42916,7 +42917,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolYearType_ReferentialIdentity" ON "edfi"."SchoolYearType";
 CREATE TRIGGER "TR_SchoolYearType_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SchoolYearType"
+AFTER INSERT OR UPDATE ON "edfi"."SchoolYearType"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolYearType_ReferentialIdentity"();
 
@@ -42967,7 +42968,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Section_ReferentialIdentity" ON "edfi"."Section";
 CREATE TRIGGER "TR_Section_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Section"
+AFTER INSERT OR UPDATE ON "edfi"."Section"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Section_ReferentialIdentity"();
 
@@ -43018,7 +43019,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SectionAttendanceTakenEvent_ReferentialIdentity" ON "edfi"."SectionAttendanceTakenEvent";
 CREATE TRIGGER "TR_SectionAttendanceTakenEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SectionAttendanceTakenEvent"
+AFTER INSERT OR UPDATE ON "edfi"."SectionAttendanceTakenEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_ReferentialIdentity"();
 
@@ -43194,7 +43195,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Session_ReferentialIdentity" ON "edfi"."Session";
 CREATE TRIGGER "TR_Session_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Session"
+AFTER INSERT OR UPDATE ON "edfi"."Session"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Session_ReferentialIdentity"();
 
@@ -43295,7 +43296,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SourceDimension_ReferentialIdentity" ON "edfi"."SourceDimension";
 CREATE TRIGGER "TR_SourceDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SourceDimension"
+AFTER INSERT OR UPDATE ON "edfi"."SourceDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SourceDimension_ReferentialIdentity"();
 
@@ -43371,7 +43372,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Staff_ReferentialIdentity" ON "edfi"."Staff";
 CREATE TRIGGER "TR_Staff_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Staff"
+AFTER INSERT OR UPDATE ON "edfi"."Staff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Staff_ReferentialIdentity"();
 
@@ -43422,7 +43423,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffAbsenceEvent_ReferentialIdentity" ON "edfi"."StaffAbsenceEvent";
 CREATE TRIGGER "TR_StaffAbsenceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffAbsenceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StaffAbsenceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_ReferentialIdentity"();
 
@@ -43548,7 +43549,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffCohortAssociation_ReferentialIdentity" ON "edfi"."StaffCohortAssociation";
 CREATE TRIGGER "TR_StaffCohortAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffCohortAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffCohortAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_ReferentialIdentity"();
 
@@ -43624,7 +43625,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity" ON "edfi"."StaffDisciplineIncidentAssociation";
 CREATE TRIGGER "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffDisciplineIncidentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffDisciplineIncidentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"();
 
@@ -43700,7 +43701,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8" ON "edfi"."StaffEducationOrganizationAssignmentAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociatio_81498b323e"();
 
@@ -43751,7 +43752,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433" ON "edfi"."StaffEducationOrganizationContactAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationContactAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationContactAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_R_9d575d4552"();
 
@@ -43852,7 +43853,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc" ON "edfi"."StaffEducationOrganizationEmploymentAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationEmploymentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationEmploymentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociatio_051c566a5d"();
 
@@ -44053,7 +44054,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffLeave_ReferentialIdentity" ON "edfi"."StaffLeave";
 CREATE TRIGGER "TR_StaffLeave_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffLeave"
+AFTER INSERT OR UPDATE ON "edfi"."StaffLeave"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffLeave_ReferentialIdentity"();
 
@@ -44154,7 +44155,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffProgramAssociation_ReferentialIdentity" ON "edfi"."StaffProgramAssociation";
 CREATE TRIGGER "TR_StaffProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_ReferentialIdentity"();
 
@@ -44255,7 +44256,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffSchoolAssociation_ReferentialIdentity" ON "edfi"."StaffSchoolAssociation";
 CREATE TRIGGER "TR_StaffSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_ReferentialIdentity"();
 
@@ -44356,7 +44357,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffSectionAssociation_ReferentialIdentity" ON "edfi"."StaffSectionAssociation";
 CREATE TRIGGER "TR_StaffSectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffSectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffSectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_ReferentialIdentity"();
 
@@ -44535,7 +44536,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_ReferentialIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 
@@ -44836,7 +44837,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Student_ReferentialIdentity" ON "edfi"."Student";
 CREATE TRIGGER "TR_Student_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Student"
+AFTER INSERT OR UPDATE ON "edfi"."Student"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
 
@@ -44887,7 +44888,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAcademicRecord_ReferentialIdentity" ON "edfi"."StudentAcademicRecord";
 CREATE TRIGGER "TR_StudentAcademicRecord_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAcademicRecord"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAcademicRecord"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_ReferentialIdentity"();
 
@@ -45063,7 +45064,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessment_ReferentialIdentity" ON "edfi"."StudentAssessment";
 CREATE TRIGGER "TR_StudentAssessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessment"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessment_ReferentialIdentity"();
 
@@ -45139,7 +45140,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08" ON "edfi"."StudentAssessmentEducationOrganizationAssociation";
 CREATE TRIGGER "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentEducationOrganizationAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentEducationOrganizationAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociat_01d00e85ae"();
 
@@ -45240,7 +45241,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistration_ReferentialIdentity" ON "edfi"."StudentAssessmentRegistration";
 CREATE TRIGGER "TR_StudentAssessmentRegistration_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistration"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_ReferentialIdentity"();
 
@@ -45341,7 +45342,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation";
 CREATE TRIGGER "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_e43562976f"();
 
@@ -45540,7 +45541,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCTEProgramAssociation_ReferentialIdentity" ON "edfi"."StudentCTEProgramAssociation";
 CREATE TRIGGER "TR_StudentCTEProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_ReferentialIdentity"();
 
@@ -45641,7 +45642,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCohortAssociation_ReferentialIdentity" ON "edfi"."StudentCohortAssociation";
 CREATE TRIGGER "TR_StudentCohortAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCohortAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCohortAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_ReferentialIdentity"();
 
@@ -45717,7 +45718,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCompetencyObjective_ReferentialIdentity" ON "edfi"."StudentCompetencyObjective";
 CREATE TRIGGER "TR_StudentCompetencyObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCompetencyObjective"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_ReferentialIdentity"();
 
@@ -45818,7 +45819,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentContactAssociation_ReferentialIdentity" ON "edfi"."StudentContactAssociation";
 CREATE TRIGGER "TR_StudentContactAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentContactAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentContactAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentContactAssociation_ReferentialIdentity"();
 
@@ -45869,7 +45870,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation";
 CREATE TRIGGER "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentBehaviorAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_R_062e47dda0"();
 
@@ -45970,7 +45971,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation";
 CREATE TRIGGER "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_6adebbb91b"();
 
@@ -46046,7 +46047,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation";
 CREATE TRIGGER "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssessmentAccommodation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssessmentAccommodation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_de70fa5c7a"();
 
@@ -46122,7 +46123,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssociation_ReferentialIdentity" ON "edfi"."StudentEducationOrganizationAssociation";
 CREATE TRIGGER "TR_StudentEducationOrganizationAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Refere_354f494b67"();
 
@@ -46648,7 +46649,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation";
 CREATE TRIGGER "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationResponsibilityAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationResponsibilityAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_0181c8be0e"();
 
@@ -46699,7 +46700,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentGradebookEntry_ReferentialIdentity" ON "edfi"."StudentGradebookEntry";
 CREATE TRIGGER "TR_StudentGradebookEntry_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentGradebookEntry"
+AFTER INSERT OR UPDATE ON "edfi"."StudentGradebookEntry"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_ReferentialIdentity"();
 
@@ -46750,7 +46751,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentHealth_ReferentialIdentity" ON "edfi"."StudentHealth";
 CREATE TRIGGER "TR_StudentHealth_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentHealth"
+AFTER INSERT OR UPDATE ON "edfi"."StudentHealth"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHealth_ReferentialIdentity"();
 
@@ -46924,7 +46925,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentHomelessProgramAssociation_ReferentialIdentity" ON "edfi"."StudentHomelessProgramAssociation";
 CREATE TRIGGER "TR_StudentHomelessProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_ReferentialIdentity"();
 
@@ -47050,7 +47051,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentInterventionAssociation_ReferentialIdentity" ON "edfi"."StudentInterventionAssociation";
 CREATE TRIGGER "TR_StudentInterventionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentInterventionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_ReferentialIdentity"();
 
@@ -47126,7 +47127,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentInterventionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentInterventionAttendanceEvent";
 CREATE TRIGGER "TR_StudentInterventionAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentInterventionAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_ReferentialIdentity"();
 
@@ -47200,7 +47201,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3" ON "edfi"."StudentLanguageInstructionProgramAssociation";
 CREATE TRIGGER "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_R_df835db007"();
 
@@ -47349,7 +47350,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb" ON "edfi"."StudentMigrantEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Refe_6d2fba1afc"();
 
@@ -47473,7 +47474,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation";
 CREATE TRIGGER "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d45f1f5f4d"();
 
@@ -47647,7 +47648,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramAssociation_ReferentialIdentity" ON "edfi"."StudentProgramAssociation";
 CREATE TRIGGER "TR_StudentProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_ReferentialIdentity"();
 
@@ -47748,7 +47749,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentProgramAttendanceEvent";
 CREATE TRIGGER "TR_StudentProgramAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_ReferentialIdentity"();
 
@@ -47799,7 +47800,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramEvaluation_ReferentialIdentity" ON "edfi"."StudentProgramEvaluation";
 CREATE TRIGGER "TR_StudentProgramEvaluation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramEvaluation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramEvaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_ReferentialIdentity"();
 
@@ -47925,7 +47926,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_ReferentialIdentity" ON "edfi"."StudentSchoolAssociation";
 CREATE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();
 
@@ -48026,7 +48027,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSchoolAttendanceEvent";
 CREATE TRIGGER "TR_StudentSchoolAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_ReferentialIdentity"();
 
@@ -48100,7 +48101,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b" ON "edfi"."StudentSchoolFoodServiceProgramAssociation";
 CREATE TRIGGER "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Ref_6bb8851122"();
 
@@ -48224,7 +48225,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSection504ProgramAssociation_ReferentialIdentity" ON "edfi"."StudentSection504ProgramAssociation";
 CREATE TRIGGER "TR_StudentSection504ProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_ReferentialIdentity"();
 
@@ -48300,7 +48301,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSectionAssociation_ReferentialIdentity" ON "edfi"."StudentSectionAssociation";
 CREATE TRIGGER "TR_StudentSectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_ReferentialIdentity"();
 
@@ -48376,7 +48377,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSectionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSectionAttendanceEvent";
 CREATE TRIGGER "TR_StudentSectionAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSectionAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_ReferentialIdentity"();
 
@@ -48475,7 +48476,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9" ON "edfi"."StudentSpecialEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Refe_db329b6f45"();
 
@@ -48676,7 +48677,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation";
 CREATE TRIGGER "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_89bc083174"();
 
@@ -48750,7 +48751,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity" ON "edfi"."StudentTitleIPartAProgramAssociation";
 CREATE TRIGGER "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"();
 
@@ -48851,7 +48852,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentTransportation_ReferentialIdentity" ON "edfi"."StudentTransportation";
 CREATE TRIGGER "TR_StudentTransportation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentTransportation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentTransportation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportation_ReferentialIdentity"();
 
@@ -48977,7 +48978,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Survey_ReferentialIdentity" ON "edfi"."Survey";
 CREATE TRIGGER "TR_Survey_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Survey"
+AFTER INSERT OR UPDATE ON "edfi"."Survey"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Survey_ReferentialIdentity"();
 
@@ -49028,7 +49029,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyCourseAssociation_ReferentialIdentity" ON "edfi"."SurveyCourseAssociation";
 CREATE TRIGGER "TR_SurveyCourseAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyCourseAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyCourseAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_ReferentialIdentity"();
 
@@ -49079,7 +49080,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyProgramAssociation_ReferentialIdentity" ON "edfi"."SurveyProgramAssociation";
 CREATE TRIGGER "TR_SurveyProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_ReferentialIdentity"();
 
@@ -49130,7 +49131,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyQuestion_ReferentialIdentity" ON "edfi"."SurveyQuestion";
 CREATE TRIGGER "TR_SurveyQuestion_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyQuestion"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestion"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestion_ReferentialIdentity"();
 
@@ -49206,7 +49207,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyQuestionResponse_ReferentialIdentity" ON "edfi"."SurveyQuestionResponse";
 CREATE TRIGGER "TR_SurveyQuestionResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyQuestionResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestionResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_ReferentialIdentity"();
 
@@ -49332,7 +49333,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponse_ReferentialIdentity" ON "edfi"."SurveyResponse";
 CREATE TRIGGER "TR_SurveyResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponse_ReferentialIdentity"();
 
@@ -49383,7 +49384,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation";
 CREATE TRIGGER "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_c261f075c0"();
 
@@ -49434,7 +49435,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity" ON "edfi"."SurveyResponseStaffTargetAssociation";
 CREATE TRIGGER "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponseStaffTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseStaffTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"();
 
@@ -49510,7 +49511,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySection_ReferentialIdentity" ON "edfi"."SurveySection";
 CREATE TRIGGER "TR_SurveySection_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySection"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySection_ReferentialIdentity"();
 
@@ -49561,7 +49562,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionAssociation_ReferentialIdentity" ON "edfi"."SurveySectionAssociation";
 CREATE TRIGGER "TR_SurveySectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_ReferentialIdentity"();
 
@@ -49612,7 +49613,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponse_ReferentialIdentity" ON "edfi"."SurveySectionResponse";
 CREATE TRIGGER "TR_SurveySectionResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponse_ReferentialIdentity"();
 
@@ -49695,7 +49696,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation";
 CREATE TRIGGER "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_7609793e43"();
 
@@ -49714,7 +49715,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69" ON "edfi"."SurveySectionResponseStaffTargetAssociation";
 CREATE TRIGGER "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Re_a36b366b65"();
 

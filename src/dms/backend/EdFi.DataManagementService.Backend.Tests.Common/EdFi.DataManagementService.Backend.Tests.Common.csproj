@@ -10,7 +10,6 @@
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
         <PackageReference Include="NUnit" />
-        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />

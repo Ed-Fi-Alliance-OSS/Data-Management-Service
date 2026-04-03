@@ -1,6 +1,6 @@
 {
   "dialect": "mssql",
-  "effective_schema_hash": "6f3429c66f610a32a38eb294b7ce390ef46578a2f4c6908fc76a5029c205189b",
+  "effective_schema_hash": "1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169",
   "relational_mapping_version": "v1",
   "projects": [
     {
@@ -12,6 +12,24 @@
     }
   ],
   "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "KeyUnifiedResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceA",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceB",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
     {
       "project_name": "Ed-Fi",
       "resource_name": "School",
@@ -249,6 +267,158 @@
       ]
     },
     {
+      "name": "IX_KeyUnifiedResource_ResourceAReference_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ResourceAReference_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_KeyUnifiedResource_ResourceBReference_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ResourceBReference_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_KeyUnifiedResource",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_KeyUnifiedResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "KeyUnifiedResourceId",
+        "ResourceAReference_DocumentId",
+        "ResourceBReference_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_ResourceA_StudentReference_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentReference_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_ResourceA",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceA_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ResourceAId",
+        "StudentReference_DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceA_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "ResourceAId",
+        "StudentReference_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "IX_ResourceB_StudentReference_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentReference_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_ResourceB",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceB_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ResourceBId",
+        "StudentReference_DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ResourceB_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "ResourceBId",
+        "StudentReference_StudentUniqueId"
+      ]
+    },
+    {
       "name": "PK_School",
       "table": {
         "schema": "edfi",
@@ -310,6 +480,19 @@
       ]
     },
     {
+      "name": "UX_Student_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "StudentUniqueId"
+      ]
+    },
+    {
       "name": "IX_StudentSchoolAssociation_SchoolReference_DocumentId",
       "table": {
         "schema": "edfi",
@@ -348,6 +531,221 @@
     }
   ],
   "triggers": [
+    {
+      "name": "TR_KeyUnifiedResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "KeyUnifiedResourceId",
+        "ResourceAReference_ResourceAId",
+        "StudentUniqueId_Unified",
+        "ResourceBReference_ResourceBId"
+      ],
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "KeyUnifiedResource",
+      "identity_elements": [
+        {
+          "column": "KeyUnifiedResourceId",
+          "identity_json_path": "$.keyUnifiedResourceId"
+        },
+        {
+          "column": "ResourceAReference_ResourceAId",
+          "identity_json_path": "$.resourceAReference.resourceAId"
+        },
+        {
+          "column": "ResourceAReference_StudentUniqueId",
+          "identity_json_path": "$.resourceAReference.studentUniqueId"
+        },
+        {
+          "column": "ResourceBReference_ResourceBId",
+          "identity_json_path": "$.resourceBReference.resourceBId"
+        },
+        {
+          "column": "ResourceBReference_StudentUniqueId",
+          "identity_json_path": "$.resourceBReference.studentUniqueId"
+        }
+      ]
+    },
+    {
+      "name": "TR_KeyUnifiedResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "KeyUnifiedResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "KeyUnifiedResourceId",
+        "ResourceAReference_ResourceAId",
+        "StudentUniqueId_Unified",
+        "ResourceBReference_ResourceBId"
+      ]
+    },
+    {
+      "name": "TR_ResourceA_PropagateIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "IdentityPropagationFallback",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "StudentReference_DocumentId",
+        "ResourceAId",
+        "StudentReference_StudentUniqueId"
+      ],
+      "referrer_updates": [
+        {
+          "referrer_table": {
+            "schema": "edfi",
+            "name": "KeyUnifiedResource"
+          },
+          "referrer_fk_column": "ResourceAReference_DocumentId",
+          "target_column_mappings": [
+            {
+              "source_column": "ResourceAId",
+              "target_column": "ResourceAReference_ResourceAId"
+            },
+            {
+              "source_column": "StudentReference_StudentUniqueId",
+              "target_column": "StudentUniqueId_Unified"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TR_ResourceA_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ResourceAId",
+        "StudentReference_StudentUniqueId"
+      ],
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceA",
+      "identity_elements": [
+        {
+          "column": "ResourceAId",
+          "identity_json_path": "$.resourceAId"
+        },
+        {
+          "column": "StudentReference_StudentUniqueId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ]
+    },
+    {
+      "name": "TR_ResourceA_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceA"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ResourceAId",
+        "StudentReference_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "TR_ResourceB_PropagateIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "IdentityPropagationFallback",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "StudentReference_DocumentId",
+        "ResourceBId",
+        "StudentReference_StudentUniqueId"
+      ],
+      "referrer_updates": [
+        {
+          "referrer_table": {
+            "schema": "edfi",
+            "name": "KeyUnifiedResource"
+          },
+          "referrer_fk_column": "ResourceBReference_DocumentId",
+          "target_column_mappings": [
+            {
+              "source_column": "ResourceBId",
+              "target_column": "ResourceBReference_ResourceBId"
+            },
+            {
+              "source_column": "StudentReference_StudentUniqueId",
+              "target_column": "StudentUniqueId_Unified"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TR_ResourceB_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ResourceBId",
+        "StudentReference_StudentUniqueId"
+      ],
+      "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceB",
+      "identity_elements": [
+        {
+          "column": "ResourceBId",
+          "identity_json_path": "$.resourceBId"
+        },
+        {
+          "column": "StudentReference_StudentUniqueId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ]
+    },
+    {
+      "name": "TR_ResourceB_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "ResourceB"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ResourceBId",
+        "StudentReference_StudentUniqueId"
+      ]
+    },
     {
       "name": "TR_School_AbstractIdentity",
       "table": {
@@ -445,7 +843,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "resource_key_id": 2,
+      "resource_key_id": 5,
       "project_name": "Ed-Fi",
       "resource_name": "School",
       "identity_elements": [
@@ -481,6 +879,49 @@
       ]
     },
     {
+      "name": "TR_Student_PropagateIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "IdentityPropagationFallback",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "FirstName",
+        "StudentUniqueId"
+      ],
+      "referrer_updates": [
+        {
+          "referrer_table": {
+            "schema": "edfi",
+            "name": "ResourceA"
+          },
+          "referrer_fk_column": "StudentReference_DocumentId",
+          "target_column_mappings": [
+            {
+              "source_column": "StudentUniqueId",
+              "target_column": "StudentReference_StudentUniqueId"
+            }
+          ]
+        },
+        {
+          "referrer_table": {
+            "schema": "edfi",
+            "name": "ResourceB"
+          },
+          "referrer_fk_column": "StudentReference_DocumentId",
+          "target_column_mappings": [
+            {
+              "source_column": "StudentUniqueId",
+              "target_column": "StudentReference_StudentUniqueId"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "TR_Student_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -493,7 +934,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "resource_key_id": 3,
+      "resource_key_id": 6,
       "project_name": "Ed-Fi",
       "resource_name": "Student",
       "identity_elements": [
@@ -531,7 +972,7 @@
         "StudentUniqueId",
         "SchoolReference_SchoolId"
       ],
-      "resource_key_id": 4,
+      "resource_key_id": 7,
       "project_name": "Ed-Fi",
       "resource_name": "StudentSchoolAssociation",
       "identity_elements": [
@@ -562,6 +1003,664 @@
     }
   ],
   "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "KeyUnifiedResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "KeyUnifiedResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentUniqueId_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceAReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceAReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceAReference_ResourceAId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceAReference.resourceAId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceAReference_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceAReference.studentUniqueId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "StudentUniqueId_Unified",
+                "presence_column": "ResourceAReference_DocumentId"
+              }
+            },
+            {
+              "name": "ResourceBReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceBReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceBReference_ResourceBId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceBReference.resourceBId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceBReference_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceBReference.studentUniqueId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "StudentUniqueId_Unified",
+                "presence_column": "ResourceBReference_DocumentId"
+              }
+            },
+            {
+              "name": "KeyUnifiedResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.keyUnifiedResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [
+            {
+              "canonical_column": "StudentUniqueId_Unified",
+              "member_path_columns": [
+                "ResourceAReference_StudentUniqueId",
+                "ResourceBReference_StudentUniqueId"
+              ]
+            }
+          ],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_KeyUnifiedResource_NK",
+              "columns": [
+                "KeyUnifiedResourceId",
+                "ResourceAReference_DocumentId",
+                "ResourceBReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_KeyUnifiedResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_KeyUnifiedResource_ResourceAReference",
+              "columns": [
+                "ResourceAReference_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ResourceA"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_KeyUnifiedResource_ResourceBReference",
+              "columns": [
+                "ResourceBReference_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ResourceB"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_KeyUnifiedResource_ResourceAReference_AllNone",
+              "fk_column": "ResourceAReference_DocumentId",
+              "dependent_columns": [
+                "ResourceAReference_ResourceAId",
+                "ResourceAReference_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_KeyUnifiedResource_ResourceBReference_AllNone",
+              "fk_column": "ResourceBReference_DocumentId",
+              "dependent_columns": [
+                "ResourceBReference_ResourceBId",
+                "ResourceBReference_StudentUniqueId"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [
+          {
+            "endpoint_a_path": "$.resourceAReference.studentUniqueId",
+            "endpoint_b_path": "$.resourceBReference.studentUniqueId",
+            "table": {
+              "schema": "edfi",
+              "name": "KeyUnifiedResource"
+            },
+            "endpoint_a_column": "ResourceAReference_StudentUniqueId",
+            "endpoint_b_column": "ResourceBReference_StudentUniqueId",
+            "canonical_column": "StudentUniqueId_Unified"
+          }
+        ],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.resourceAReference",
+          "table": {
+            "schema": "edfi",
+            "name": "KeyUnifiedResource"
+          },
+          "fk_column": "ResourceAReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ResourceA"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.resourceAReference.resourceAId",
+              "column": "ResourceAReference_ResourceAId"
+            },
+            {
+              "reference_json_path": "$.resourceAReference.studentUniqueId",
+              "column": "ResourceAReference_StudentUniqueId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.resourceBReference",
+          "table": {
+            "schema": "edfi",
+            "name": "KeyUnifiedResource"
+          },
+          "fk_column": "ResourceBReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ResourceB"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.resourceBReference.resourceBId",
+              "column": "ResourceBReference_ResourceBId"
+            },
+            {
+              "reference_json_path": "$.resourceBReference.studentUniqueId",
+              "column": "ResourceBReference_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "ResourceA"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "ResourceA",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceAId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceAId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceA_NK",
+              "columns": [
+                "ResourceAId",
+                "StudentReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceA_RefKey",
+              "columns": [
+                "DocumentId",
+                "ResourceAId",
+                "StudentReference_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ResourceA_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ResourceA_StudentReference",
+              "columns": [
+                "StudentReference_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Student"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_ResourceA_StudentReference_AllNone",
+              "fk_column": "StudentReference_DocumentId",
+              "dependent_columns": [
+                "StudentReference_StudentUniqueId"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.studentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "ResourceA"
+          },
+          "fk_column": "StudentReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentReference.studentUniqueId",
+              "column": "StudentReference_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "ResourceB"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "ResourceB",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ResourceBId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.resourceBId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceB_NK",
+              "columns": [
+                "ResourceBId",
+                "StudentReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_ResourceB_RefKey",
+              "columns": [
+                "DocumentId",
+                "ResourceBId",
+                "StudentReference_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ResourceB_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ResourceB_StudentReference",
+              "columns": [
+                "StudentReference_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Student"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_ResourceB_StudentReference_AllNone",
+              "fk_column": "StudentReference_DocumentId",
+              "dependent_columns": [
+                "StudentReference_StudentUniqueId"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.studentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "ResourceB"
+          },
+          "fk_column": "StudentReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentReference.studentUniqueId",
+              "column": "StudentReference_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
     {
       "resource": {
         "project_name": "Ed-Fi",
@@ -766,6 +1865,14 @@
               "kind": "Unique",
               "name": "UX_Student_NK",
               "columns": [
+                "StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_Student_RefKey",
+              "columns": [
+                "DocumentId",
                 "StudentUniqueId"
               ]
             },
