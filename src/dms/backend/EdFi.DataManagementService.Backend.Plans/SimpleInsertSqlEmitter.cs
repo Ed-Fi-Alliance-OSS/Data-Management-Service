@@ -28,6 +28,22 @@ public sealed class SimpleInsertSqlEmitter(SqlDialect dialect)
         IReadOnlyList<string> orderedParameterNames
     )
     {
+        ArgumentNullException.ThrowIfNull(orderedColumns);
+        ArgumentNullException.ThrowIfNull(orderedParameterNames);
+
+        if (orderedColumns.Count == 0)
+        {
+            throw new ArgumentException("At least one column must be supplied.", nameof(orderedColumns));
+        }
+
+        if (orderedColumns.Count != orderedParameterNames.Count)
+        {
+            throw new ArgumentException(
+                $"Column and parameter counts must match. Column count: {orderedColumns.Count}. Parameter count: {orderedParameterNames.Count}.",
+                nameof(orderedParameterNames)
+            );
+        }
+
         return EmitBatch(table, orderedColumns, [orderedParameterNames]);
     }
 

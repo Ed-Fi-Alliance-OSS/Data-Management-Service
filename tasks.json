@@ -175,10 +175,10 @@
       "Decide whether `SimpleInsertSqlEmitter.Emit(...)` should preserve its historical exception contract or whether the branch intentionally changes that contract, then make code and tests agree.",
       "Add or update unit coverage for invalid single-row calls so the expected `ArgumentException` message and parameter name are explicit and stable.",
       "Confirm valid single-row `Emit(...)` output still matches the existing canonical SQL snapshots, and that `EmitBatch(...)` still validates multi-row parameter counts correctly.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SimpleInsertSqlEmitterTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_SimpleInsertSqlEmitter\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reduce Duplicate Insert SQL Emitter Logic",
