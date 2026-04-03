@@ -35,5 +35,45 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Eliminate Shared Collection Item Placeholder Tokens",
+    "description": "Remove or internalize the reusable `FlattenedWriteValue.UnresolvedCollectionItemId.Instance` sentinel so runtime write paths cannot accidentally reuse one placeholder token across multiple inserted rows. Acceptance: production flattening and any other runtime row-buffer creation paths always allocate a unique unresolved collection token per new stable-row-identity reservation site; no public or production-facing API encourages reuse of a singleton placeholder for collection inserts; persistence continues to reserve exactly one `CollectionItemId` per distinct unresolved token and never collapses separate inserted rows onto the same reserved id because they shared a sentinel value; tests that still need a fixed placeholder for isolated contract assertions use an explicit test-local token or another non-production helper instead of the production singleton.",
+    "steps-to-verify": [
+      "Remove, internalize, or otherwise block production use of `FlattenedWriteValue.UnresolvedCollectionItemId.Instance` so the runtime path cannot emit a shared unresolved token for multiple inserted rows.",
+      "Audit relational write production code for unresolved collection token creation and ensure every new collection row reservation site uses a fresh token value rather than a singleton placeholder.",
+      "Add or update backend unit coverage proving that two new collection rows emitted in one write request carry distinct unresolved tokens and therefore reserve distinct `CollectionItemId` values during persistence.",
+      "Add or update backend unit coverage proving aligned scope rows that are supposed to share a base collection identity still share the owning row's token intentionally, while sibling inserted rows do not.",
+      "Run: `rg --line-number --no-heading \"UnresolvedCollectionItemId\\.Instance|UnresolvedCollectionItemId\\.Create\\(\" ./src/dms`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattenerTests|FullyQualifiedName~RelationalWriteNoProfileMergeSynthesizerTests|FullyQualifiedName~RelationalWriteExtensionCollectionMergeSynthesizerTests|FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~RelationalWriteContractsTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unify Batched DML SQL Generation With Plan Compilation",
+    "description": "Reduce SQL drift risk by moving batched insert and multi-row update/delete command generation onto the same authoritative compilation/emitter path as single-row write SQL instead of maintaining a second runtime-only SQL-construction path. Acceptance: batched relational write SQL for inserts and repeated update/delete statements is generated from shared compiler/emitter logic or plan-carried templates rather than ad hoc regex-based parameter rewriting in the persister; batching continues to respect dialect-specific identifier quoting and parameter-limit partitioning for PostgreSQL and SQL Server; the runtime persister is simplified so it orchestrates batches without reimplementing SQL-shape knowledge already owned by the plan compiler; tests cover both dialects so batch SQL remains behaviorally aligned with compiled single-row statements when plan emission changes.",
+    "steps-to-verify": [
+      "Refactor batched DML generation so the persister no longer hand-builds a separate SQL dialect surface for batch commands when equivalent compiler or emitter logic can be reused.",
+      "Remove or reduce runtime-only SQL text rewriting helpers that are only compensating for duplicated SQL generation, especially regex-based parameter renaming and local identifier quoting logic, unless they remain thin wrappers over shared emitted templates.",
+      "Add or update unit coverage proving PostgreSQL and SQL Server batch command generation stays aligned with the same table-plan metadata used for single-row `InsertSql`, `UpdateSql`, `DeleteByParentSql`, and collection-merge statements.",
+      "Add or update unit coverage for parameter-limit chunking to show batch partitioning still honors `BulkInsertBatching.MaxRowsPerBatch` and does not regress multi-batch execution behavior.",
+      "Run: `rg --line-number --no-heading \"BuildParameterizedBatchCommand|BuildInsertBatchCommand|RenameBatchParameters|QuoteIdentifier|BuildInsertBatchSql\" ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~PostgresqlRelationalCommandExecutorTests|FullyQualifiedName~MssqlRelationalWriteSessionFactoryTests|FullyQualifiedName~PostgresqlRelationalWriteSessionFactoryTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~WritePlanCompilerMssqlContractTests|FullyQualifiedName~Given_WritePlanCompiler_InsertSql|FullyQualifiedName~Given_WritePlanCompiler_CollectionMerge|FullyQualifiedName~PlanWriteBatchingConventionsTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Short-Circuit Missing Existing-Document Read Plans Before Executor Work",
+    "description": "Fail existing-document relational writes earlier when target lookup resolves an existing document but no compiled relational read plan is available, instead of opening an executor session and resolving references before returning the deterministic guard-rail failure. Acceptance: once repository target lookup determines the request will execute against an existing document, the repository returns the prepared missing-read-plan failure immediately if `ExistingDocumentReadPlan` is unavailable; the executor is not invoked for this scenario; no write transaction is opened and no in-session reference resolution or hydration work is performed for a known guard-rail failure; PUT not-found handling remains unchanged and continues to short-circuit before executor execution; POST create flows without a read-plan dependency still proceed normally.",
+    "steps-to-verify": [
+      "Refactor repository orchestration so existing-document requests without a compiled read plan fail before `IRelationalWriteExecutor.ExecuteAsync(...)` is called.",
+      "Add or update repository unit tests for PUT-existing and POST-as-update-existing cases with a missing read plan to assert the repository returns the deterministic unknown failure immediately and does not call the executor.",
+      "Add or update executor or repository seam tests to assert reference resolution is not attempted for the missing-read-plan existing-document guard-rail path.",
+      "Confirm PUT not-found still short-circuits as `UpdateFailureNotExists` before executor work, and POST create-new still bypasses the existing-document read-plan guard rail.",
+      "Run: `rg --line-number --no-heading \"PrepareExistingDocumentReadPlan|MissingExistingDocumentReadPlanFailureMessage|TryBuildMissingExistingDocumentReadPlanResult|ExecuteAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`"
+    ],
+    "completed": false
   }
 ]
