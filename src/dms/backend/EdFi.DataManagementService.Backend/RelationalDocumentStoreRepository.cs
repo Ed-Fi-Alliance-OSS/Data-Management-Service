@@ -230,20 +230,6 @@ public sealed class RelationalDocumentStoreRepository(
         // ── Profile guard rails (defense-in-depth backup) ────────────────────
         if (backendProfileWriteContext != null)
         {
-            // Root creatability guard (POST only): reject if root is not creatable
-            if (
-                operationKind == RelationalWriteOperationKind.Post
-                && !backendProfileWriteContext.Request.RootResourceCreatable
-            )
-            {
-                return validationFailureFactory([
-                    new WriteValidationFailure(
-                        new JsonPath("$"),
-                        "The resource cannot be created because the profile does not allow creation of the root resource."
-                    ),
-                ]);
-            }
-
             // Validate request-side contract against compiled scope catalog
             var scopeCatalog = backendProfileWriteContext.CompiledScopeCatalog;
             ProfileFailure[] contractFailures = ProfileWriteContractValidator.ValidateRequestContract(
@@ -266,6 +252,23 @@ public sealed class RelationalDocumentStoreRepository(
         try
         {
             var targetContext = await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
+
+            // Root creatability guard: reject only when the POST would create a new document.
+            // RootResourceCreatable applies only to new-document creation, not upsert-to-existing.
+            if (
+                backendProfileWriteContext != null
+                && operationKind == RelationalWriteOperationKind.Post
+                && targetContext is RelationalWriteTargetContext.CreateNew
+                && !backendProfileWriteContext.Request.RootResourceCreatable
+            )
+            {
+                return validationFailureFactory([
+                    new WriteValidationFailure(
+                        new JsonPath("$"),
+                        "The resource cannot be created because the profile does not allow creation of the root resource."
+                    ),
+                ]);
+            }
 
             var resolvedReferences = await _referenceResolver
                 .ResolveAsync(

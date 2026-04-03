@@ -194,6 +194,22 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
             StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
         );
 
+        // Target context resolves to CreateNew so the root creatability guard fires
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<RelationalWriteTargetContext>(
+                    new RelationalWriteTargetContext.CreateNew(documentUuid)
+                )
+            );
+
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _targetContextResolver,
@@ -227,6 +243,21 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
         validationResult
             .ValidationFailures.Should()
             .ContainSingle(f => f.Message.Contains("root resource", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Test]
+    public void It_called_the_target_context_resolver()
+    {
+        A.CallTo(() =>
+                _targetContextResolver.ResolveForPostAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<ReferentialId>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]

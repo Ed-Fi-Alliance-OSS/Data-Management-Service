@@ -99,32 +99,26 @@ internal static class ProfileWriteContractValidator
                 failures
             );
 
-            // Validate hidden member paths when scope is known
             if (
-                storedScopeState.HiddenMemberPaths.Length > 0
-                && catalogByJsonScope.TryGetValue(storedScopeState.Address.JsonScope, out var compiledScope)
+                FindInvalidHiddenMemberPaths(
+                    storedScopeState.Address.JsonScope,
+                    storedScopeState.HiddenMemberPaths,
+                    catalogByJsonScope
+                ) is
+                { } invalidScopePaths
             )
             {
-                var invalidPaths = storedScopeState
-                    .HiddenMemberPaths.Where(p =>
-                        !compiledScope.CanonicalScopeRelativeMemberPaths.Contains(p)
+                failures.Add(
+                    ProfileFailures.CanonicalMemberPathMismatch(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        catalogByJsonScope[storedScopeState.Address.JsonScope],
+                        storedScopeState.Address,
+                        invalidScopePaths
                     )
-                    .ToList();
-
-                if (invalidPaths.Count > 0)
-                {
-                    failures.Add(
-                        ProfileFailures.CanonicalMemberPathMismatch(
-                            profileName,
-                            resourceName,
-                            method,
-                            operation,
-                            compiledScope,
-                            storedScopeState.Address,
-                            invalidPaths
-                        )
-                    );
-                }
+                );
             }
         }
 
@@ -141,36 +135,57 @@ internal static class ProfileWriteContractValidator
                 failures
             );
 
-            // Validate hidden member paths when scope is known
             if (
-                collectionRow.HiddenMemberPaths.Length > 0
-                && catalogByJsonScope.TryGetValue(collectionRow.Address.JsonScope, out var compiledScope)
+                FindInvalidHiddenMemberPaths(
+                    collectionRow.Address.JsonScope,
+                    collectionRow.HiddenMemberPaths,
+                    catalogByJsonScope
+                ) is
+                { } invalidRowPaths
             )
             {
-                var invalidPaths = collectionRow
-                    .HiddenMemberPaths.Where(p =>
-                        !compiledScope.CanonicalScopeRelativeMemberPaths.Contains(p)
+                failures.Add(
+                    ProfileFailures.CanonicalMemberPathMismatch(
+                        profileName,
+                        resourceName,
+                        method,
+                        operation,
+                        catalogByJsonScope[collectionRow.Address.JsonScope],
+                        collectionRow.Address,
+                        invalidRowPaths
                     )
-                    .ToList();
-
-                if (invalidPaths.Count > 0)
-                {
-                    failures.Add(
-                        ProfileFailures.CanonicalMemberPathMismatch(
-                            profileName,
-                            resourceName,
-                            method,
-                            operation,
-                            compiledScope,
-                            collectionRow.Address,
-                            invalidPaths
-                        )
-                    );
-                }
+                );
             }
         }
 
         return [.. failures];
+    }
+
+    /// <summary>
+    /// Returns the list of hidden member paths that are not in the compiled scope's canonical
+    /// member paths, or null when all paths are valid or the scope is not in the catalog.
+    /// </summary>
+    private static List<string>? FindInvalidHiddenMemberPaths(
+        string jsonScope,
+        System.Collections.Immutable.ImmutableArray<string> hiddenMemberPaths,
+        Dictionary<string, CompiledScopeDescriptor> catalogByJsonScope
+    )
+    {
+        if (hiddenMemberPaths.Length == 0)
+        {
+            return null;
+        }
+
+        if (!catalogByJsonScope.TryGetValue(jsonScope, out var compiledScope))
+        {
+            return null;
+        }
+
+        var invalidPaths = hiddenMemberPaths
+            .Where(p => !compiledScope.CanonicalScopeRelativeMemberPaths.Contains(p))
+            .ToList();
+
+        return invalidPaths.Count > 0 ? invalidPaths : null;
     }
 
     private static Dictionary<string, CompiledScopeDescriptor> BuildCatalogLookup(
