@@ -114,7 +114,9 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return new UpsertResult.UnknownFailure(ex.Message);
+            return new UpsertResult.UnknownFailure(
+                "An unexpected error occurred while processing the descriptor request."
+            );
         }
     }
 
@@ -215,7 +217,9 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return new UpdateResult.UnknownFailure(ex.Message);
+            return new UpdateResult.UnknownFailure(
+                "An unexpected error occurred while processing the descriptor request."
+            );
         }
     }
 
@@ -290,7 +294,9 @@ internal sealed class DescriptorWriteHandler(
                 traceId.Value
             );
 
-            return new DeleteResult.UnknownFailure(ex.Message);
+            return new DeleteResult.UnknownFailure(
+                "An unexpected error occurred while processing the descriptor request."
+            );
         }
     }
 
