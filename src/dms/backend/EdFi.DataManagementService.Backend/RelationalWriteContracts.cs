@@ -472,8 +472,7 @@ public sealed record RelationalWriteExecutorRequest
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
         RelationalWriteTargetContext targetContext,
-        string? missingExistingDocumentReadPlanFailureMessage = null,
-        string? diagnosticIdentifier = null
+        string? missingExistingDocumentReadPlanFailureMessage = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -488,7 +487,6 @@ public sealed record RelationalWriteExecutorRequest
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         MissingExistingDocumentReadPlanFailureMessage = missingExistingDocumentReadPlanFailureMessage;
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
-        DiagnosticIdentifier = diagnosticIdentifier;
 
         if (
             (OperationKind, TargetRequest)
@@ -605,11 +603,6 @@ public sealed record RelationalWriteExecutorRequest
     /// Reference-resolution inputs the executor must resolve inside the shared write session.
     /// </summary>
     public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
-
-    /// <summary>
-    /// Optional caller-supplied diagnostic identifier for logs or tracing.
-    /// </summary>
-    public string? DiagnosticIdentifier { get; init; }
 }
 
 /// <summary>

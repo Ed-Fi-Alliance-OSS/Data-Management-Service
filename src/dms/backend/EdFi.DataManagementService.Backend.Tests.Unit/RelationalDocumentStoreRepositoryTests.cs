@@ -190,7 +190,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
-        _capturedExecutorRequest.DiagnosticIdentifier.Should().BeNull();
     }
 
     [Test]
