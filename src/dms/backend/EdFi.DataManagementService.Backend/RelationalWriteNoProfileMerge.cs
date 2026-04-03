@@ -404,11 +404,32 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
         public RelationalWriteNoProfileTableState Build()
         {
-            var mergedRows = tableWritePlan.CollectionMergePlan is null
-                ? _mergedRows
-                : OrderCollectionRowsIfFullyBound(tableWritePlan, _mergedRows);
+            var currentRowsForComparison = IsCollectionAlignedExtensionScope(tableWritePlan)
+                ? OrderCollectionAlignedExtensionScopeRowsIfFullyBound(tableWritePlan, currentRows)
+                : currentRows;
+            IReadOnlyList<RelationalWriteNoProfileTableRow> mergedRows;
 
-            return new RelationalWriteNoProfileTableState(tableWritePlan, currentRows, mergedRows);
+            if (tableWritePlan.CollectionMergePlan is not null)
+            {
+                mergedRows = OrderCollectionRowsIfFullyBound(tableWritePlan, _mergedRows);
+            }
+            else if (IsCollectionAlignedExtensionScope(tableWritePlan))
+            {
+                mergedRows = OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
+                    tableWritePlan,
+                    _mergedRows
+                );
+            }
+            else
+            {
+                mergedRows = _mergedRows;
+            }
+
+            return new RelationalWriteNoProfileTableState(
+                tableWritePlan,
+                currentRowsForComparison,
+                mergedRows
+            );
         }
 
         private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderCollectionRowsIfFullyBound(
@@ -426,29 +447,49 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
                     FindBindingIndex(tableWritePlan, columnName)
                 )
+                .Append(mergePlan.OrdinalBindingIndex)
                 .ToArray();
 
-            if (
-                rows.Any(row =>
-                    !CanProjectLiteralValues(row.Values, parentBindingIndexes)
-                    || row.Values[mergePlan.OrdinalBindingIndex] is not FlattenedWriteValue.Literal
+            return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
+        }
+
+        private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
+            TableWritePlan tableWritePlan,
+            IReadOnlyList<RelationalWriteNoProfileTableRow> rows
+        )
+        {
+            var parentBindingIndexes = tableWritePlan
+                .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
+                    FindBindingIndex(tableWritePlan, columnName)
                 )
+                .ToArray();
+
+            return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
+        }
+
+        private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderRowsByBindingIndexesIfFullyBound(
+            IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+            IReadOnlyList<int> bindingIndexes
+        )
+        {
+            if (
+                bindingIndexes.Count == 0
+                || rows.Any(row => !CanProjectLiteralValues(row.Values, bindingIndexes))
             )
             {
                 return rows;
             }
 
-            return rows.OrderBy(
-                    static row => row,
-                    new CollectionRowComparer(parentBindingIndexes, mergePlan.OrdinalBindingIndex)
-                )
-                .ToArray();
+            return rows.OrderBy(static row => row, new BoundRowComparer(bindingIndexes)).ToArray();
         }
 
         private static bool CanProjectLiteralValues(
             IReadOnlyList<FlattenedWriteValue> values,
             IReadOnlyList<int> bindingIndexes
         ) => bindingIndexes.All(bindingIndex => values[bindingIndex] is FlattenedWriteValue.Literal);
+
+        private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
+            tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
     }
 
     private sealed class CurrentStateProjection
@@ -775,10 +816,8 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 );
     }
 
-    private sealed class CollectionRowComparer(
-        IReadOnlyList<int> parentBindingIndexes,
-        int ordinalBindingIndex
-    ) : IComparer<RelationalWriteNoProfileTableRow>
+    private sealed class BoundRowComparer(IReadOnlyList<int> bindingIndexes)
+        : IComparer<RelationalWriteNoProfileTableRow>
     {
         public int Compare(RelationalWriteNoProfileTableRow? left, RelationalWriteNoProfileTableRow? right)
         {
@@ -797,7 +836,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 return 1;
             }
 
-            foreach (var bindingIndex in parentBindingIndexes)
+            foreach (var bindingIndex in bindingIndexes)
             {
                 var leftValue = ((FlattenedWriteValue.Literal)left.Values[bindingIndex]).Value;
                 var rightValue = ((FlattenedWriteValue.Literal)right.Values[bindingIndex]).Value;
@@ -809,10 +848,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 }
             }
 
-            var leftOrdinal = ((FlattenedWriteValue.Literal)left.Values[ordinalBindingIndex]).Value;
-            var rightOrdinal = ((FlattenedWriteValue.Literal)right.Values[ordinalBindingIndex]).Value;
-
-            return CompareLiteralValues(leftOrdinal, rightOrdinal);
+            return 0;
         }
 
         private static int CompareLiteralValues(object? left, object? right)

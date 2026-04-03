@@ -358,6 +358,41 @@ file static class GuardedNoOpIntegrationTestSupport
         }
         """;
 
+    public const string ReorderedRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Dallas"
+            },
+            {
+              "city": "Austin"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
     public static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     public static readonly ResourceInfo SchoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
@@ -411,12 +446,19 @@ file static class GuardedNoOpIntegrationTestSupport
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId
+    ) => CreateCreateRequest(mappingSet, documentUuid, traceId, RequestBodyJson);
+
+    public static UpsertRequest CreateCreateRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        string traceId,
+        string requestBodyJson
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
@@ -430,12 +472,19 @@ file static class GuardedNoOpIntegrationTestSupport
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId
+    ) => CreateUpdateRequest(mappingSet, documentUuid, traceId, RequestBodyJson);
+
+    public static UpdateRequest CreateUpdateRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        string traceId,
+        string requestBodyJson
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
@@ -450,12 +499,20 @@ file static class GuardedNoOpIntegrationTestSupport
         DocumentUuid documentUuid,
         string traceId,
         ReferentialId referentialId
+    ) => CreatePostAsUpdateRequest(mappingSet, documentUuid, traceId, referentialId, RequestBodyJson);
+
+    public static UpsertRequest CreatePostAsUpdateRequest(
+        MappingSet mappingSet,
+        DocumentUuid documentUuid,
+        string traceId,
+        ReferentialId referentialId,
+        string requestBodyJson
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(referentialId),
             MappingSet: mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid,
@@ -964,6 +1021,347 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_F
                 IncomingSchoolDocumentUuid,
                 "pg-guarded-no-op-post-as-update",
                 referentialId
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000007")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpPersistedState _stateBeforeNoOpUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterNoOpUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        await ExecuteCreateAsync();
+        await ExecuteReorderUpdateAsync();
+        _stateBeforeNoOpUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+
+        _updateResult = await ExecuteNoOpUpdateAsync();
+        _stateAfterNoOpUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success_for_an_unchanged_put_after_reorder()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_put_after_reorder()
+    {
+        _stateBeforeNoOpUpdate.Addresses.Select(address => address.City).Should().Equal("Dallas", "Austin");
+        _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateBeforeNoOpUpdate);
+        _stateAfterNoOpUpdate
+            .Document.ResourceKeyId.Should()
+            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-guarded-no-op-put-after-reorder-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task ExecuteReorderUpdateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var reorderResult = await repository.UpdateDocumentById(
+            GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-guarded-no-op-put-after-reorder-initial-update",
+                GuardedNoOpIntegrationTestSupport.ReorderedRequestBodyJson
+            )
+        );
+
+        reorderResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteNoOpUpdateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPutAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-guarded-no-op-put-after-reorder-no-op-update",
+                GuardedNoOpIntegrationTestSupport.ReorderedRequestBodyJson
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000008")
+    );
+    private static readonly DocumentUuid IncomingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000009")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private long _incomingDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        await ExecuteCreateAsync();
+        await ExecuteReorderUpdateAsync();
+        _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+
+        var persistedReferentialIdentity =
+            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
+                _database,
+                _stateBeforePostAsUpdate.Document.DocumentId,
+                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
+            );
+
+        _postAsUpdateResult = await ExecutePostAsUpdateAsync(
+            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+        );
+
+        _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+        _incomingDocumentUuidCount = await GuardedNoOpIntegrationTestSupport.ReadDocumentCountAsync(
+            _database,
+            IncomingSchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success_and_preserves_the_existing_document_for_an_unchanged_post_as_update_after_reorder()
+    {
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingSchoolDocumentUuid);
+        _incomingDocumentUuidCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_rowsets_and_content_version_unchanged_for_a_guarded_no_op_post_as_update_after_reorder()
+    {
+        _stateBeforePostAsUpdate.Addresses.Select(address => address.City).Should().Equal("Dallas", "Austin");
+        _stateAfterPostAsUpdate.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
+        _stateAfterPostAsUpdate
+            .Document.ResourceKeyId.Should()
+            .Be(_mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                ExistingSchoolDocumentUuid,
+                "pg-guarded-no-op-post-as-update-after-reorder-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task ExecuteReorderUpdateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var reorderResult = await repository.UpdateDocumentById(
+            GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                ExistingSchoolDocumentUuid,
+                "pg-guarded-no-op-post-as-update-after-reorder-initial-update",
+                GuardedNoOpIntegrationTestSupport.ReorderedRequestBodyJson
+            )
+        );
+
+        reorderResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    }
+
+    private async Task<UpsertResult> ExecutePostAsUpdateAsync(ReferentialId referentialId)
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteGuardedNoOpPostAsUpdateAfterFullSurfaceCollectionReorder",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreatePostAsUpdateRequest(
+                _mappingSet,
+                IncomingSchoolDocumentUuid,
+                "pg-guarded-no-op-post-as-update-after-reorder-no-op-update",
+                referentialId,
+                GuardedNoOpIntegrationTestSupport.ReorderedRequestBodyJson
             )
         );
     }

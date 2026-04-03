@@ -177,6 +177,90 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
         childState.MergedRows[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Bus");
     }
 
+    [Test]
+    public void It_normalizes_collection_aligned_extension_scope_rows_for_guarded_no_op_compare_after_reorder()
+    {
+        var fixture = CreateFixture();
+        var mailingCollectionItemId = FlattenedWriteValue.UnresolvedCollectionItemId.Instance;
+        var homeCollectionItemId = FlattenedWriteValue.UnresolvedCollectionItemId.Instance;
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    CreateAddressCandidate(
+                        fixture,
+                        requestOrder: 0,
+                        collectionItemId: mailingCollectionItemId,
+                        addressType: "Mailing",
+                        attachedAlignedScopeData:
+                        [
+                            CreateAlignedExtensionScope(fixture, mailingCollectionItemId, "Gold"),
+                        ]
+                    ),
+                    CreateAddressCandidate(
+                        fixture,
+                        requestOrder: 1,
+                        collectionItemId: homeCollectionItemId,
+                        addressType: "Home",
+                        attachedAlignedScopeData:
+                        [
+                            CreateAlignedExtensionScope(fixture, homeCollectionItemId, "Purple"),
+                        ]
+                    ),
+                ]
+            )
+        );
+        var currentState = CreateCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                [45L, 345L, 0, "Mailing"],
+                [44L, 345L, 1, "Home"],
+            ],
+            collectionExtensionRows:
+            [
+                [44L, "Purple"],
+                [45L, "Gold"],
+            ]
+        );
+
+        var result = _sut.Synthesize(
+            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        );
+
+        var collectionExtensionState = RequireState(result, fixture.CollectionExtensionPlan);
+
+        collectionExtensionState.CurrentRows.Should().HaveCount(2);
+        collectionExtensionState.MergedRows.Should().HaveCount(2);
+        collectionExtensionState
+            .CurrentRows[0]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(44L, "Purple");
+        collectionExtensionState
+            .CurrentRows[1]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(45L, "Gold");
+        collectionExtensionState
+            .MergedRows[0]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(44L, "Purple");
+        collectionExtensionState
+            .MergedRows[1]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(45L, "Gold");
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(result).Should().BeTrue();
+    }
+
     private static RelationalWriteNoProfileTableState RequireState(
         RelationalWriteNoProfileMergeResult result,
         TableWritePlan tableWritePlan
