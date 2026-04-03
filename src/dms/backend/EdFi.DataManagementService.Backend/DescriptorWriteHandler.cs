@@ -756,6 +756,11 @@ internal sealed class DescriptorWriteHandler(
     {
         // Postgres: SqlState "23503" (foreign_key_violation)
         // SQL Server: Number 547 (FK constraint)
-        return ex.SqlState == "23503" || ex.Message.Contains("547", StringComparison.Ordinal);
+        return ex.SqlState == "23503"
+            || (
+                ex is { HResult: var hr }
+                && hr is unchecked((int)0x80131904)
+                && ex.Message.Contains("547", StringComparison.Ordinal)
+            );
     }
 }

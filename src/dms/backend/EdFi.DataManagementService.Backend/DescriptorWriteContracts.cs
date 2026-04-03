@@ -18,8 +18,6 @@ public sealed record DescriptorWriteRequest
     public DescriptorWriteRequest(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ConcreteResourceModel resourceModel,
-        RelationalWriteOperationKind operationKind,
         JsonNode requestBody,
         DocumentUuid documentUuid,
         ReferentialId? referentialId,
@@ -28,8 +26,6 @@ public sealed record DescriptorWriteRequest
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         Resource = resource;
-        ResourceModel = resourceModel ?? throw new ArgumentNullException(nameof(resourceModel));
-        OperationKind = operationKind;
         RequestBody = requestBody ?? throw new ArgumentNullException(nameof(requestBody));
         DocumentUuid = documentUuid;
         ReferentialId = referentialId;
@@ -45,16 +41,6 @@ public sealed record DescriptorWriteRequest
     /// The qualified resource name of the descriptor being written.
     /// </summary>
     public QualifiedResourceName Resource { get; init; }
-
-    /// <summary>
-    /// The concrete resource model with descriptor metadata.
-    /// </summary>
-    public ConcreteResourceModel ResourceModel { get; init; }
-
-    /// <summary>
-    /// The write entrypoint (Post or Put).
-    /// </summary>
-    public RelationalWriteOperationKind OperationKind { get; init; }
 
     /// <summary>
     /// The request body containing descriptor fields.

@@ -442,13 +442,10 @@ public class Given_PostgresqlDescriptorWriteHandler
         );
         var identity = descriptorDoc.ToDocumentIdentity();
         var referentialId = Core.Extraction.ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
-        var descriptorResourceModel = GetDescriptorResourceModel(resource);
 
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
-            descriptorResourceModel,
-            RelationalWriteOperationKind.Post,
             body,
             new DocumentUuid(Guid.NewGuid()),
             referentialId,
@@ -462,24 +459,13 @@ public class Given_PostgresqlDescriptorWriteHandler
         string bodyJson
     )
     {
-        var descriptorResourceModel = GetDescriptorResourceModel(resource);
-
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
-            descriptorResourceModel,
-            RelationalWriteOperationKind.Put,
             JsonNode.Parse(bodyJson)!,
             documentUuid,
             referentialId: null,
             new TraceId("test-trace")
-        );
-    }
-
-    private ConcreteResourceModel GetDescriptorResourceModel(QualifiedResourceName resource)
-    {
-        return _database.MappingSet.Model.ConcreteResourcesInNameOrder.First(crm =>
-            crm.RelationalModel.Resource == resource
         );
     }
 

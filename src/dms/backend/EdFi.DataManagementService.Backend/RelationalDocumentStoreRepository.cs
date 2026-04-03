@@ -54,14 +54,12 @@ public sealed class RelationalDocumentStoreRepository(
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
 
-        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return _descriptorWriteHandler.HandlePostAsync(
                 new DescriptorWriteRequest(
                     mappingSet,
                     resource,
-                    descriptorResourceModel,
-                    RelationalWriteOperationKind.Post,
                     relationalUpsertRequest.EdfiDoc,
                     relationalUpsertRequest.DocumentUuid,
                     relationalUpsertRequest.DocumentInfo.ReferentialId,
@@ -143,14 +141,12 @@ public sealed class RelationalDocumentStoreRepository(
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
 
-        if (mappingSet.TryGetDescriptorResourceModel(resource, out var descriptorResourceModel))
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
             return _descriptorWriteHandler.HandlePutAsync(
                 new DescriptorWriteRequest(
                     mappingSet,
                     resource,
-                    descriptorResourceModel,
-                    RelationalWriteOperationKind.Put,
                     relationalUpdateRequest.EdfiDoc,
                     relationalUpdateRequest.DocumentUuid,
                     referentialId: null,
