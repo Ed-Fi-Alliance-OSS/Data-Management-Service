@@ -60,6 +60,7 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.BackendProfileWriteContext,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
+            static policyMessage => new UpsertResult.UpsertFailureNotAuthorized([policyMessage]),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpsertResult.UpsertFailureReference(
                     invalidDocumentReferences,
@@ -130,6 +131,7 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.BackendProfileWriteContext,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
+            static policyMessage => new UpdateResult.UpdateFailureNotAuthorized([policyMessage]),
             static (invalidDocumentReferences, invalidDescriptorReferences) =>
                 new UpdateResult.UpdateFailureReference(
                     invalidDocumentReferences,
@@ -196,6 +198,7 @@ public sealed class RelationalDocumentStoreRepository(
         BackendProfileWriteContext? backendProfileWriteContext,
         Func<string, TResult> failureFactory,
         Func<WriteValidationFailure[], TResult> validationFailureFactory,
+        Func<string, TResult> policyFailureFactory,
         Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
         Func<MappingSet, QualifiedResourceName, Task<RelationalWriteTargetContext>> resolveTargetContextAsync,
         Func<RelationalWriteTerminalStageResult, TResult> terminalResultProjector
@@ -207,6 +210,7 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(validationFailureFactory);
+        ArgumentNullException.ThrowIfNull(policyFailureFactory);
         ArgumentNullException.ThrowIfNull(referenceFailureFactory);
         ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
         ArgumentNullException.ThrowIfNull(terminalResultProjector);
@@ -262,12 +266,9 @@ public sealed class RelationalDocumentStoreRepository(
                 && !backendProfileWriteContext.Request.RootResourceCreatable
             )
             {
-                return validationFailureFactory([
-                    new WriteValidationFailure(
-                        new JsonPath("$"),
-                        "The resource cannot be created because the profile does not allow creation of the root resource."
-                    ),
-                ]);
+                return policyFailureFactory(
+                    "The resource cannot be created because the profile does not allow creation of the root resource."
+                );
             }
 
             var resolvedReferences = await _referenceResolver

@@ -231,18 +231,18 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
     }
 
     [Test]
-    public void It_returns_validation_failure()
+    public void It_returns_not_authorized_failure()
     {
-        _result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
+        _result.Should().BeOfType<UpsertResult.UpsertFailureNotAuthorized>();
     }
 
     [Test]
     public void It_mentions_root_resource_creation_in_the_failure_message()
     {
-        var validationResult = (UpsertResult.UpsertFailureValidation)_result;
-        validationResult
-            .ValidationFailures.Should()
-            .ContainSingle(f => f.Message.Contains("root resource", StringComparison.OrdinalIgnoreCase));
+        var notAuthorizedResult = (UpsertResult.UpsertFailureNotAuthorized)_result;
+        notAuthorizedResult
+            .ErrorMessages.Should()
+            .ContainSingle(m => m.Contains("root resource", StringComparison.OrdinalIgnoreCase));
     }
 
     [Test]
