@@ -106,7 +106,7 @@
       "Prefer one changed PUT that exercises both collection reorder and replacement in the same scenario so `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice` are each proven to preserve retained ids while removing omitted rows and inserting replacements.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SurveyQuestion\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative StudentSectionAssociation Extension Child Collections",
