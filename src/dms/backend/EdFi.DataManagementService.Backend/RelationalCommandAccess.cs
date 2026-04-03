@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -12,6 +13,8 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 internal interface IRelationalCommandExecutor
 {
+    SqlDialect Dialect { get; }
+
     Task<TResult> ExecuteReaderAsync<TResult>(
         RelationalCommand command,
         Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
@@ -82,5 +85,36 @@ internal static class RelationalCommandReaderExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
 
         return reader.GetFieldValue<T>(reader.GetOrdinal(columnName));
+    }
+
+    public static T? GetNullableFieldValue<T>(this IRelationalCommandReader reader, string columnName)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
+
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<T>(ordinal);
+    }
+
+    public static DateOnly? GetNullableDateFieldValue(this IRelationalCommandReader reader, string columnName)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
+
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        // Npgsql returns DateOnly for date columns; SqlClient returns DateTime.
+        var value = reader.GetFieldValue<object>(ordinal);
+        return value switch
+        {
+            DateOnly d => d,
+            DateTime dt => DateOnly.FromDateTime(dt),
+            _ => DateOnly.Parse(value.ToString()!, System.Globalization.CultureInfo.InvariantCulture),
+        };
     }
 }

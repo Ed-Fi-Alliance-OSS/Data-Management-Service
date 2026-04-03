@@ -165,6 +165,8 @@ internal sealed class InMemoryRelationalCommandExecutor(
     IReadOnlyList<InMemoryRelationalCommandExecution> executions
 ) : IRelationalCommandExecutor
 {
+    public SqlDialect Dialect => SqlDialect.Pgsql;
+
     private readonly Queue<InMemoryRelationalCommandExecution> _executions = new(executions);
 
     public List<RelationalCommand> Commands { get; } = [];

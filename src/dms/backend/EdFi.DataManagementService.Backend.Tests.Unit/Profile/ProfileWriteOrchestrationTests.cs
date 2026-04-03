@@ -25,6 +25,7 @@ public class Given_NoProfileWriteBehavior
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
     private IRelationalWriteTerminalStage _terminalStage = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpsertResult _result = null!;
 
     [SetUp]
@@ -34,6 +35,7 @@ public class Given_NoProfileWriteBehavior
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
         _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -78,7 +80,8 @@ public class Given_NoProfileWriteBehavior
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _terminalStage,
+            _descriptorWriteHandler
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -123,6 +126,7 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
     private IRelationalWriteTerminalStage _terminalStage = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpsertResult _result = null!;
 
     [SetUp]
@@ -132,6 +136,7 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
         _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -185,7 +190,8 @@ public class Given_ProfileRootCreateRejectedWhenNonCreatable
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _terminalStage,
+            _descriptorWriteHandler
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -254,6 +260,7 @@ public class Given_ProfileWriteContextOnPutPath_When_ContractValid
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
     private IRelationalWriteTerminalStage _terminalStage = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpdateResult _result = null!;
 
     [SetUp]
@@ -263,6 +270,7 @@ public class Given_ProfileWriteContextOnPutPath_When_ContractValid
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
         _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -329,7 +337,8 @@ public class Given_ProfileWriteContextOnPutPath_When_ContractValid
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _terminalStage,
+            _descriptorWriteHandler
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -388,6 +397,7 @@ public class Given_ProfileContractMismatchOnUpsert
     private IReferenceResolver _referenceResolver = null!;
     private IRelationalWriteFlattener _writeFlattener = null!;
     private IRelationalWriteTerminalStage _terminalStage = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpsertResult _result = null!;
 
     [SetUp]
@@ -397,6 +407,7 @@ public class Given_ProfileContractMismatchOnUpsert
         _referenceResolver = A.Fake<IReferenceResolver>();
         _writeFlattener = A.Fake<IRelationalWriteFlattener>();
         _terminalStage = A.Fake<IRelationalWriteTerminalStage>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
@@ -443,7 +454,8 @@ public class Given_ProfileContractMismatchOnUpsert
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _terminalStage,
+            _descriptorWriteHandler
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();

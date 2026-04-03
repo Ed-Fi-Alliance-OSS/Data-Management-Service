@@ -414,6 +414,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(referenceResolver);
                 services.AddSingleton(flattener);
                 services.AddSingleton<IRelationalWriteTerminalStage>(terminalStage);
+                services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });
     }

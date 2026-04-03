@@ -100,7 +100,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _targetContextResolver,
             _referenceResolver,
             _writeFlattener,
-            _terminalStage
+            _terminalStage,
+            new DefaultDescriptorWriteHandler()
         );
     }
 
@@ -542,7 +543,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_the_descriptor_write_path_guard_rail_for_post_requests()
+    public async Task It_routes_descriptor_post_requests_to_the_descriptor_write_handler()
     {
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
@@ -557,15 +558,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .BeEquivalentTo(
                 new UpsertResult.UnknownFailure(
-                    "Write plan for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
-                        + "storage kind 'SharedDescriptorTable' uses the descriptor write path instead of compiled relational-table write plans. "
-                        + "Next story: E07-S06 (06-descriptor-writes.md)."
+                    "Descriptor POST write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
     }
 
     [Test]
-    public async Task It_returns_the_descriptor_write_path_guard_rail_for_put_requests()
+    public async Task It_routes_descriptor_put_requests_to_the_descriptor_write_handler()
     {
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
@@ -580,11 +579,24 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .BeEquivalentTo(
                 new UpdateResult.UnknownFailure(
-                    "Write plan for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally omitted: "
-                        + "storage kind 'SharedDescriptorTable' uses the descriptor write path instead of compiled relational-table write plans. "
-                        + "Next story: E07-S06 (06-descriptor-writes.md)."
+                    "Descriptor PUT write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
+    }
+
+    [Test]
+    public async Task It_routes_descriptor_delete_requests_to_the_descriptor_write_handler()
+    {
+        var deleteRequest = A.Fake<IDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("test-trace"));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented."));
     }
 
     [Test]

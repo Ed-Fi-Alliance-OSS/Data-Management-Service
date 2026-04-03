@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Old.Postgresql;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 internal sealed class PostgresqlRelationalCommandExecutor : IRelationalCommandExecutor
 {
+    public SqlDialect Dialect => SqlDialect.Pgsql;
+
     private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
     private readonly ILogger<PostgresqlRelationalCommandExecutor> _logger;
 

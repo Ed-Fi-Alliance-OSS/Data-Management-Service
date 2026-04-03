@@ -20,7 +20,8 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteTargetContextResolver targetContextResolver,
     IReferenceResolver referenceResolver,
     IRelationalWriteFlattener writeFlattener,
-    IRelationalWriteTerminalStage terminalStage
+    IRelationalWriteTerminalStage terminalStage,
+    IDescriptorWriteHandler descriptorWriteHandler
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -33,6 +34,8 @@ public sealed class RelationalDocumentStoreRepository(
         writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
     private readonly IRelationalWriteTerminalStage _terminalStage =
         terminalStage ?? throw new ArgumentNullException(nameof(terminalStage));
+    private readonly IDescriptorWriteHandler _descriptorWriteHandler =
+        descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -48,6 +51,22 @@ public sealed class RelationalDocumentStoreRepository(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",
             relationalUpsertRequest.TraceId.Value
         );
+
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
+
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            return _descriptorWriteHandler.HandlePostAsync(
+                new DescriptorWriteRequest(
+                    mappingSet,
+                    resource,
+                    relationalUpsertRequest.EdfiDoc,
+                    relationalUpsertRequest.DocumentUuid,
+                    relationalUpsertRequest.DocumentInfo.ReferentialId,
+                    relationalUpsertRequest.TraceId
+                )
+            );
+        }
 
         return ExecuteWriteGuardRails<UpsertResult>(
             requestBody: relationalUpsertRequest.EdfiDoc,
@@ -120,6 +139,22 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.TraceId.Value
         );
 
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
+
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            return _descriptorWriteHandler.HandlePutAsync(
+                new DescriptorWriteRequest(
+                    mappingSet,
+                    resource,
+                    relationalUpdateRequest.EdfiDoc,
+                    relationalUpdateRequest.DocumentUuid,
+                    referentialId: null,
+                    relationalUpdateRequest.TraceId
+                )
+            );
+        }
+
         return ExecuteWriteGuardRails<UpdateResult>(
             requestBody: relationalUpdateRequest.EdfiDoc,
             traceId: relationalUpdateRequest.TraceId,
@@ -163,6 +198,14 @@ public sealed class RelationalDocumentStoreRepository(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
             deleteRequest.TraceId.Value
         );
+
+        if (deleteRequest.ResourceInfo.IsDescriptor)
+        {
+            return _descriptorWriteHandler.HandleDeleteAsync(
+                deleteRequest.DocumentUuid,
+                deleteRequest.TraceId
+            );
+        }
 
         return Task.FromResult<DeleteResult>(
             new DeleteResult.UnknownFailure(

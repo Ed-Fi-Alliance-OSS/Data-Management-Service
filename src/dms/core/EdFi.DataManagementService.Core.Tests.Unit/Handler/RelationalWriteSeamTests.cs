@@ -756,7 +756,8 @@ public class Given_Relational_Write_Seam
                 targetContextResolver,
                 referenceResolver,
                 new RelationalWriteFlattener(),
-                terminalStage
+                terminalStage,
+                new DefaultDescriptorWriteHandler()
             );
             var exceptionLogger = new CapturingLogger();
 
