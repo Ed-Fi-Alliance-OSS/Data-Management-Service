@@ -326,6 +326,115 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_uses_the_session_loaded_content_version_when_guarding_unchanged_put_requests()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 45L);
+        _writeFreshnessChecker.IsCurrentEvaluator = static targetContext =>
+            targetContext.ObservedContentVersion == 45L;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                )
+            );
+        _writeFlattener
+            .CapturedInput!.TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeFreshnessChecker
+            .CapturedRequest!.TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeFreshnessChecker
+            .CapturedTargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_uses_the_session_loaded_content_version_when_guarding_unchanged_post_as_update_requests()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 45L);
+        _writeFreshnessChecker.IsCurrentEvaluator = static targetContext =>
+            targetContext.ObservedContentVersion == 45L;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
+                )
+            );
+        _writeFlattener
+            .CapturedInput!.TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeFreshnessChecker
+            .CapturedRequest!.TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeFreshnessChecker
+            .CapturedTargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                    45L
+                )
+            );
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_returns_a_guarded_no_op_for_unchanged_sql_server_date_and_time_writes()
     {
         var request = CreateRequest(
@@ -1194,6 +1303,8 @@ public class Given_Default_Relational_Write_Executor
 
         public bool IsCurrentResult { get; set; } = true;
 
+        public Func<RelationalWriteTargetContext.ExistingDocument, bool>? IsCurrentEvaluator { get; set; }
+
         public Task<bool> IsCurrentAsync(
             RelationalWriteExecutorRequest request,
             RelationalWriteTargetContext.ExistingDocument targetContext,
@@ -1207,7 +1318,7 @@ public class Given_Default_Relational_Write_Executor
             CapturedTargetContext = targetContext;
             CapturedWriteSession = writeSession;
 
-            return Task.FromResult(IsCurrentResult);
+            return Task.FromResult(IsCurrentEvaluator?.Invoke(targetContext) ?? IsCurrentResult);
         }
     }
 
@@ -1462,6 +1573,36 @@ public class Given_Default_Relational_Write_Executor
                 [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
             ),
         ]);
+
+    private static RelationalWriteCurrentState CreateCurrentState(
+        RelationalWriteExecutorRequest request,
+        long contentVersion,
+        string schoolName = "Lincoln High"
+    )
+    {
+        var targetContext =
+            request.TargetContext as RelationalWriteTargetContext.ExistingDocument
+            ?? throw new InvalidOperationException("Expected an existing-document target context.");
+
+        return new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                targetContext.DocumentId,
+                targetContext.DocumentUuid.Value,
+                contentVersion,
+                contentVersion,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    request.WritePlan.Model.Root,
+                    [
+                        [targetContext.DocumentId, 255901, schoolName],
+                    ]
+                ),
+            ]
+        );
+    }
 
     private static RelationalWriteNoProfileTableRow CreateRootTableRow(
         long documentId,

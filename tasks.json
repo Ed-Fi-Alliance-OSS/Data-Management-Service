@@ -1,35 +1,39 @@
 [
   {
-    "category": "Guarded No-Op Ordering For Collection-Aligned Extension Scopes",
-    "description": "Fix the no-profile guarded no-op path so unchanged writes with collection-aligned extension-scope rows short-circuit correctly after a prior collection reorder. Acceptance: `RelationalWriteNoProfileMergeSynthesizer` normalizes merged and current row ordering for `DbTableKind.CollectionExtensionScope` into the same deterministic stored/writable comparison order used by guarded no-op, instead of leaving merged aligned-scope rows in request traversal order while hydrated current rows remain in storage order; unchanged PUT and POST-as-update requests that touch a reordered base collection with aligned `_ext` rows return success as guarded no-ops and do not issue DML or bump `dms.Document.ContentVersion`; tests cover the case where base collection rows are reordered but aligned extension rows remain semantically unchanged.",
+    "category": "Guarded No-Op Freshness Uses Session-Loaded ContentVersion",
+    "description": "Fix the guarded no-op path so freshness is validated against the ContentVersion observed by the executor's session-owned current-state load, not only the earlier repository target lookup. Acceptance: when an existing-document write loads current state and the hydrated `DocumentMetadata.ContentVersion` is newer than the repository lookup stamp, the executor updates the active existing-target context before guarded no-op freshness revalidation; unchanged PUT and POST-as-update requests do not return `StaleNoOpCompare` or `WriteConflict` solely because the document changed before the current-state load but remained unchanged afterward; the current-state loader's `DocumentMetadata` is no longer dead data for freshness decisions; repository stale retry still occurs only when freshness is actually lost after compare, and not because of a stale pre-session lookup value.",
     "steps-to-verify": [
-      "Add backend unit tests proving collection-aligned extension-scope `CurrentRows` and `MergedRows` compare equal for guarded no-op after a full-surface reorder when the aligned `_ext` data is unchanged.",
-      "Add PostgreSQL integration coverage for both an unchanged PUT and an unchanged POST-as-update against a previously reordered collection with aligned `_ext` rows, asserting unchanged table rows and unchanged `dms.Document.ContentVersion`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+      "Add backend unit coverage for an existing-document guarded no-op where repository lookup observes one `ContentVersion`, current-state load observes a newer `ContentVersion`, and the freshness check sees that newer value still current; assert the executor returns `GuardedNoOp` instead of `StaleNoOpCompare`.",
+      "Add or update backend unit coverage showing the executor rewrites the active `RelationalWriteTargetContext.ExistingDocument.ObservedContentVersion` from the session-loaded `DocumentMetadata.ContentVersion` before calling `IRelationalWriteFreshnessChecker`.",
+      "Add or update repository unit coverage proving the single stale-no-op retry still happens only when freshness is truly lost after compare, and does not trigger solely because the pre-session lookup stamp was older than the session-loaded current-state stamp.",
+      "Add PostgreSQL integration coverage for an unchanged PUT or POST-as-update where the target changes before the write attempt begins but remains stable after current-state load; assert success, no resource-table DML, and unchanged `dms.Document.ContentVersion` during the no-op attempt.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalWriteGuardedNoOpTests|FullyQualifiedName~RelationalWriteCurrentStateLoaderTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalWriteGuardedNoOpTests\"`"
     ],
     "completed": true
   },
   {
-    "category": "Batch Omitted Collection Deletes",
-    "description": "Remove one-command-per-row delete behavior from stable-identity collection persistence. Acceptance: omitted collection/common-type/extension-collection rows are deleted through bounded parameterized batches or an equivalent chunked path that respects compiled batch limits on PostgreSQL and SQL Server; `RelationalWriteNonCollectionPersister` no longer loops over omitted collection rows and executes `DeleteByStableRowIdentitySql` once per row; delete-heavy updates continue to run inside the same transaction and preserve existing matched-row update, insert, and rollback behavior.",
+    "category": "POST-As-Update Immutable Identity Failure Classification",
+    "description": "Correct the client-visible error classification for immutable-identity failures on POST-as-update. Acceptance: when a POST resolves to an existing document and the merged identity projection changes for a resource with `allowIdentityUpdates=false`, the relational backend no longer returns `UpsertResult.UnknownFailure`; the request fails through an explicit immutable-identity result contract rather than a generic system-error path, a new `UpsertResult.UpsertFailureImmutableIdentity` with the same client-visible response behavior in core as UpdateResult.UpdateFailureImmutableIdentity on the PUT path; `UpsertFailureIdentityConflict` is not reused for this update-time immutable-identity case; the core upsert handler no longer maps this case to HTTP 500; no relational DML is committed for the rejected request.",
     "steps-to-verify": [
-      "Add backend unit tests that prove omitted stable-identity collection deletes are grouped into batched commands instead of one command per row on both PostgreSQL and SQL Server, including cases large enough to require multiple batches.",
-      "Add or update PostgreSQL integration coverage for a delete-heavy collection update and assert the final relational state remains correct after batched deletes.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+      "Update backend unit tests for `RelationalWriteIdentityStability` or `DefaultRelationalWriteExecutor` to assert POST-as-update immutable-identity failures do not return `UnknownFailure` and instead use the chosen explicit immutable-identity result contract.",
+      "Add or update core handler tests for the upsert path to assert the frontend response for this case is not HTTP 500, uses the chosen immutable-identity mapping, and carries the expected immutable-identity detail.",
+      "Add an integration test for relational POST-as-update with an identity-changing request against an existing document with `allowIdentityUpdates=false`; assert failure classification, no committed row changes, and no misleading system-error response.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandlerTests\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Remove Dead Executor Diagnostic Surface",
-    "description": "Remove or wire up the unused executor diagnostic surface introduced during the DMS-984 refactor. Acceptance: `RelationalWriteExecutorRequest.DiagnosticIdentifier` is either deleted from the production contract and its redundant tests, or a concrete production consumer is added that justifies keeping it; no unused executor-facing request fields remain that are only asserted as null in tests; repository, executor, and seam tests are updated so the request contract reflects only inputs used by the current runtime path.",
+    "category": "Reduce Existing-Target Lookup Translation Drift",
+    "description": "Narrow the duplicated existing-target lookup orchestration so repository-owned initial lookup and executor-owned POST re-evaluation cannot drift on `DocumentId`, `DocumentUuid`, or observed `ContentVersion`. Acceptance: shared translation logic or a thin shared helper is used where practical for POST and PUT lookup-result-to-target-context conversion; duplicated branching that can diverge on freshness-stamp handling is removed or reduced to minimal wrappers; this task remains scoped to drift prevention and cleanup around target lookup translation, not a broader redesign of repository versus executor ownership.",
     "steps-to-verify": [
-      "Search the backend and tests for `DiagnosticIdentifier` and update or delete all affected references so the contract matches actual runtime usage.",
-      "Run: `rg --line-number --no-heading \"DiagnosticIdentifier\" src/dms`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+      "Refactor the repository and executor lookup code so the result-to-target-context translation logic is shared or centralized enough to prevent divergence in `DocumentId`, `DocumentUuid`, and observed `ContentVersion` handling.",
+      "Add backend unit tests covering initial lookup and POST re-evaluation with matching assertions for `DocumentId`, `DocumentUuid`, and observed `ContentVersion`, including not-found and existing-document cases.",
+      "Search the backend for leftover duplicate target-lookup branching and remove dead wrappers or helper code that no longer serves the runtime path.",
+      "Run: `rg --line-number --no-heading \"ResolveTargetContextAsync|ResolveForPostAsync|ResolveForPutAsync|RelationalWriteTargetLookupResult\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`"
     ],
-    "completed": true
+    "completed": false
   }
 ]

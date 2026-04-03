@@ -300,7 +300,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         if (currentState is not null)
         {
-            return new ExistingTargetCurrentStateResolution(targetContext, currentState, null);
+            return new ExistingTargetCurrentStateResolution(
+                RefreshTargetContextFromCurrentState(targetContext, currentState),
+                currentState,
+                null
+            );
         }
 
         return await HandleMissingExistingTargetAsync(request, writeSession, cancellationToken)
@@ -397,7 +401,11 @@ internal sealed class DefaultRelationalWriteExecutor(
             .ConfigureAwait(false);
 
         return currentState is not null
-            ? new ExistingTargetCurrentStateResolution(targetContext, currentState, null)
+            ? new ExistingTargetCurrentStateResolution(
+                RefreshTargetContextFromCurrentState(targetContext, currentState),
+                currentState,
+                null
+            )
             : new ExistingTargetCurrentStateResolution(
                 null,
                 null,
@@ -431,6 +439,11 @@ internal sealed class DefaultRelationalWriteExecutor(
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
         };
     }
+
+    private static RelationalWriteTargetContext.ExistingDocument RefreshTargetContextFromCurrentState(
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        RelationalWriteCurrentState currentState
+    ) => targetContext with { ObservedContentVersion = currentState.DocumentMetadata.ContentVersion };
 
     private sealed record ExistingTargetCurrentStateResolution(
         RelationalWriteTargetContext? TargetContext,
