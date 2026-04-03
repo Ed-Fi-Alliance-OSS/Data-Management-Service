@@ -26,6 +26,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
     public void It_preserves_stable_identity_for_root_extension_child_collections()
     {
         var fixture = CreateFixture();
+        var mentorCollectionItemId = NewCollectionItemId();
+        var coachCollectionItemId = NewCollectionItemId();
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -40,13 +42,13 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                             CreateRootExtensionChildCandidate(
                                 fixture,
                                 requestOrder: 0,
-                                collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                                collectionItemId: mentorCollectionItemId,
                                 interventionCode: "Mentor"
                             ),
                             CreateRootExtensionChildCandidate(
                                 fixture,
                                 requestOrder: 1,
-                                collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                                collectionItemId: coachCollectionItemId,
                                 interventionCode: "Coach"
                             ),
                         ]
@@ -85,11 +87,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
         LiteralValue(state.MergedRows[0].Values[3]).Should().Be("Mentor");
         state.MergedRows[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Mentor");
 
-        state
-            .MergedRows[1]
-            .Values[0]
-            .Should()
-            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        state.MergedRows[1].Values[0].Should().BeSameAs(coachCollectionItemId);
         LiteralValue(state.MergedRows[1].Values[1]).Should().Be(345L);
         LiteralValue(state.MergedRows[1].Values[2]).Should().Be(1);
         LiteralValue(state.MergedRows[1].Values[3]).Should().Be("Coach");
@@ -100,7 +98,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
     public void It_matches_collection_aligned_extension_child_collections_using_the_owning_base_row_identity()
     {
         var fixture = CreateFixture();
-        var addressCollectionItemId = FlattenedWriteValue.UnresolvedCollectionItemId.Instance;
+        var addressCollectionItemId = NewCollectionItemId();
+        var childCollectionItemId = NewCollectionItemId();
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -122,9 +121,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                                     CreateCollectionAlignedExtensionChildCandidate(
                                         fixture,
                                         requestOrder: 0,
-                                        collectionItemId: FlattenedWriteValue
-                                            .UnresolvedCollectionItemId
-                                            .Instance,
+                                        collectionItemId: childCollectionItemId,
                                         baseCollectionItemId: addressCollectionItemId,
                                         serviceName: "Bus"
                                     ),
@@ -181,8 +178,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
     public void It_normalizes_collection_aligned_extension_scope_rows_for_guarded_no_op_compare_after_reorder()
     {
         var fixture = CreateFixture();
-        var mailingCollectionItemId = FlattenedWriteValue.UnresolvedCollectionItemId.Instance;
-        var homeCollectionItemId = FlattenedWriteValue.UnresolvedCollectionItemId.Instance;
+        var mailingCollectionItemId = NewCollectionItemId();
+        var homeCollectionItemId = NewCollectionItemId();
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -357,6 +354,9 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
             ]
         );
     }
+
+    private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
+        FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
     private static CollectionWriteCandidate CreateRootExtensionChildCandidate(
         ExtensionCollectionFixture fixture,

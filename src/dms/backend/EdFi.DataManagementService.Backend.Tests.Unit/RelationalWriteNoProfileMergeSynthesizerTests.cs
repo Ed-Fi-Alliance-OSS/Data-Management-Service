@@ -91,6 +91,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
     public void It_merges_collection_candidates_using_compare_order_and_request_order()
     {
         var fixture = CreateFixture();
+        var homeCollectionItemId = NewCollectionItemId();
+        var physicalCollectionItemId = NewCollectionItemId();
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -100,14 +102,14 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                     CreateAddressCandidate(
                         fixture,
                         requestOrder: 0,
-                        collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                        collectionItemId: homeCollectionItemId,
                         addressType: "Home",
                         city: "Oak Updated"
                     ),
                     CreateAddressCandidate(
                         fixture,
                         requestOrder: 1,
-                        collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                        collectionItemId: physicalCollectionItemId,
                         addressType: "Physical",
                         city: "New"
                     ),
@@ -147,11 +149,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
         LiteralValue(addressState.MergedRows[0].Values[2]).Should().Be(0);
         LiteralValue(addressState.MergedRows[0].Values[3]).Should().Be("Home");
         LiteralValue(addressState.MergedRows[0].Values[4]).Should().Be("Oak Updated");
-        addressState
-            .MergedRows[1]
-            .Values[0]
-            .Should()
-            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        addressState.MergedRows[1].Values[0].Should().BeSameAs(physicalCollectionItemId);
         LiteralValue(addressState.MergedRows[1].Values[2]).Should().Be(1);
         LiteralValue(addressState.MergedRows[1].Values[3]).Should().Be("Physical");
         LiteralValue(addressState.MergedRows[1].Values[4]).Should().Be("New");
@@ -161,11 +159,13 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
     public void It_rewrites_nested_parent_scope_keys_from_matched_collection_rows()
     {
         var fixture = CreateFixture();
+        var addressCollectionItemId = NewCollectionItemId();
+        var periodCollectionItemId = NewCollectionItemId();
         var nestedPeriodCandidate = CreatePeriodCandidate(
             fixture,
             requestOrder: 0,
-            collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-            parentCollectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+            collectionItemId: periodCollectionItemId,
+            parentCollectionItemId: addressCollectionItemId,
             beginDate: "2026-09-01",
             room: "Updated Room"
         );
@@ -178,7 +178,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                     CreateAddressCandidate(
                         fixture,
                         requestOrder: 0,
-                        collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                        collectionItemId: addressCollectionItemId,
                         addressType: "Home",
                         city: "Oak Updated",
                         periods: [nestedPeriodCandidate]
@@ -267,6 +267,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
     public void It_uses_normalized_sql_server_date_and_time_values_for_collection_semantic_identity_matching()
     {
         var fixture = CreateDateAndTimeFixture();
+        var scheduleCollectionItemId = NewCollectionItemId();
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -276,7 +277,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                     CreateScheduleCandidate(
                         fixture,
                         requestOrder: 0,
-                        collectionItemId: FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                        collectionItemId: scheduleCollectionItemId,
                         sessionDate: new DateOnly(2026, 9, 1),
                         startTime: new TimeOnly(8, 15),
                         room: "Updated Room"
@@ -423,6 +424,9 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
             ]
         );
     }
+
+    private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
+        FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
     private static CollectionWriteCandidate CreateAddressCandidate(
         WritePlanFixture fixture,

@@ -193,8 +193,6 @@ public abstract record FlattenedWriteValue
     /// </summary>
     public sealed record UnresolvedCollectionItemId(Guid Token) : FlattenedWriteValue
     {
-        public static UnresolvedCollectionItemId Instance { get; } = new(Guid.Empty);
-
         public static UnresolvedCollectionItemId Create() => new(Guid.NewGuid());
     }
 }

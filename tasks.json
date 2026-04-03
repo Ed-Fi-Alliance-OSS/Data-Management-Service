@@ -47,7 +47,7 @@
       "Run: `rg --line-number --no-heading \"UnresolvedCollectionItemId\\.Instance|UnresolvedCollectionItemId\\.Create\\(\" ./src/dms`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattenerTests|FullyQualifiedName~RelationalWriteNoProfileMergeSynthesizerTests|FullyQualifiedName~RelationalWriteExtensionCollectionMergeSynthesizerTests|FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~RelationalWriteContractsTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Unify Batched DML SQL Generation With Plan Compilation",
