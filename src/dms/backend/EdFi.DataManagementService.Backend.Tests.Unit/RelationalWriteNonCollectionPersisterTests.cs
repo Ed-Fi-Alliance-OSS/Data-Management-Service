@@ -819,6 +819,126 @@ public class Given_Relational_Write_Non_Collection_Persister
     }
 
     [Test]
+    public async Task It_batches_collection_deletes_to_avoid_one_command_per_row()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [
+                    CreateRow(44L, 345L, 0, "Mailing"),
+                    CreateRow(45L, 345L, 1, "Home"),
+                    CreateRow(46L, 345L, 2, "Physical"),
+                    CreateRow(47L, 345L, 3, "Temporary"),
+                    CreateRow(48L, 345L, 4, "Shipping"),
+                ],
+                []
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[0].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
+
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
+
+        writeSession
+            .Commands[2]
+            .CommandText.Should()
+            .Be(collectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
+        writeSession.Commands[2].Parameters.Should().HaveCount(4);
+        GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+    }
+
+    [Test]
+    public async Task It_uses_sql_server_multi_batch_collection_delete_commands_when_omitted_rows_cross_the_limit()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateMssqlCollectionPlan() with
+        {
+            BulkInsertBatching = new BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 2,
+                ParametersPerRow: 4,
+                MaxParametersPerCommand: 8
+            ),
+        };
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
+        var mergeResult = new RelationalWriteNoProfileMergeResult([
+            new RelationalWriteNoProfileTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            new RelationalWriteNoProfileTableState(
+                collectionPlan,
+                [
+                    CreateRow(44L, 345L, 0, "Mailing"),
+                    CreateRow(45L, 345L, 1, "Home"),
+                    CreateRow(46L, 345L, 2, "Physical"),
+                    CreateRow(47L, 345L, 3, "Temporary"),
+                    CreateRow(48L, 345L, 4, "Shipping"),
+                ],
+                []
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().HaveCount(3);
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[0].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[0].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
+
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_0");
+        writeSession.Commands[1].CommandText.Should().Contain("@CollectionItemId_1");
+        writeSession.Commands[1].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_0").Should().Be(46L);
+        GetParameterValue(writeSession.Commands[1], "@CollectionItemId_1").Should().Be(47L);
+
+        writeSession
+            .Commands[2]
+            .CommandText.Should()
+            .Be(collectionPlan.CollectionMergePlan!.DeleteByStableRowIdentitySql);
+        writeSession.Commands[2].Parameters.Should().HaveCount(4);
+        GetParameterValue(writeSession.Commands[2], "@CollectionItemId").Should().Be(48L);
+    }
+
+    [Test]
     public async Task It_uses_temporary_negative_ordinals_before_final_batch_updates_for_collection_reorders()
     {
         var rootPlan = CreateRootPlan();

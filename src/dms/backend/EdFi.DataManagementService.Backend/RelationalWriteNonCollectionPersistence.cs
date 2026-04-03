@@ -583,6 +583,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 $"Collection table '{FormatTable(tableState.TableWritePlan)}' does not have a compiled collection merge plan."
             );
         var retainedStableRowIdentities = GetRetainedStableRowIdentities(tableState);
+        List<RelationalWriteNoProfileTableRow> rowsToDelete = [];
 
         foreach (var currentRow in tableState.CurrentRows)
         {
@@ -596,19 +597,19 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
                 continue;
             }
 
-            await ExecuteNonQueryAsync(
-                    writeSession,
-                    BuildRowCommand(
-                        tableState.TableWritePlan,
-                        mergePlan.DeleteByStableRowIdentitySql,
-                        currentRow,
-                        rootDocumentId,
-                        reservedCollectionItemIds
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            rowsToDelete.Add(currentRow);
         }
+
+        await ExecuteParameterizedBatchesAsync(
+                tableState.TableWritePlan,
+                mergePlan.DeleteByStableRowIdentitySql,
+                rowsToDelete,
+                rootDocumentId,
+                reservedCollectionItemIds,
+                writeSession,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private static async Task UpsertCollectionRowsAsync(

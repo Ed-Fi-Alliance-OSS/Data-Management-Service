@@ -116,6 +116,8 @@ internal sealed class MultiBatchCommandRecorder
 
     public IReadOnlyList<RecordedRelationalCommand> Commands => _commands;
 
+    public void Reset() => _commands.Clear();
+
     public void Record(RelationalCommand command)
     {
         Dictionary<string, object?> parametersByName = new(StringComparer.Ordinal);
@@ -252,6 +254,23 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         };
     }
 
+    public static JsonNode CreateUpdateRequestBody(int retainedAddressCount)
+    {
+        JsonArray addresses = [];
+
+        for (var index = 0; index < retainedAddressCount; index++)
+        {
+            addresses.Add(new JsonObject { ["city"] = CreateCity(index) });
+        }
+
+        return new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["shortName"] = "BATCH",
+            ["addresses"] = addresses,
+        };
+    }
+
     public static JsonNode CreateCreateRequestBodyWithCollectionAlignedExtensions(int addressCount)
     {
         JsonArray addresses = [];
@@ -292,6 +311,39 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         ]);
 
         return new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: new DocumentInfo(
+                DocumentIdentity: schoolIdentity,
+                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+                DocumentReferences: [],
+                DocumentReferenceArrays: [],
+                DescriptorReferences: [],
+                SuperclassIdentity: null
+            ),
+            MappingSet: mappingSet,
+            EdfiDoc: edfiDoc,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new MultiBatchCollectionsNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MultiBatchCollectionsAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+    }
+
+    public static UpdateRequest CreateUpdateRequest(
+        MappingSet mappingSet,
+        JsonNode edfiDoc,
+        DocumentUuid documentUuid,
+        string traceId
+    )
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+        ]);
+
+        return new UpdateRequest(
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
@@ -662,6 +714,178 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
                 MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequestBody(_requestedAddressCount),
                 SchoolDocumentUuid,
                 "pg-multi-batch-collections"
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("0f0f0f0f-0000-0000-0000-000000000003")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private MultiBatchCommandRecorder _commandRecorder = null!;
+    private UpdateResult _result = null!;
+    private MultiBatchCollectionPersistedState _persistedStateBeforeUpdate = null!;
+    private MultiBatchCollectionPersistedState _persistedStateAfterUpdate = null!;
+    private int _maxRowsPerBatch;
+    private int _parametersPerRow;
+    private int _createdAddressCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+
+        var schoolAddressTablePlan = MultiBatchCollectionsIntegrationTestSupport.GetSchoolAddressTablePlan(
+            _mappingSet
+        );
+
+        _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
+        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
+        _createdAddressCount = _maxRowsPerBatch + 2;
+
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MultiBatchCollectionsIntegrationTestSupport.CreateServiceProvider();
+        _commandRecorder = _serviceProvider.GetRequiredService<MultiBatchCommandRecorder>();
+
+        await ExecuteCreateAsync();
+
+        _persistedStateBeforeUpdate =
+            await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
+                _database,
+                SchoolDocumentUuid.Value
+            );
+
+        _commandRecorder.Reset();
+
+        _result = await ExecuteUpdateAsync();
+        _persistedStateAfterUpdate =
+            await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
+                _database,
+                SchoolDocumentUuid.Value
+            );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success_and_persists_only_the_retained_rows_after_delete_batches()
+    {
+        _createdAddressCount.Should().BeGreaterThan(_maxRowsPerBatch);
+        _result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _result.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+
+        _persistedStateBeforeUpdate.Addresses.Should().HaveCount(_createdAddressCount);
+        _persistedStateAfterUpdate.Addresses.Should().ContainSingle();
+        _persistedStateAfterUpdate
+            .Addresses[0]
+            .Should()
+            .Be(
+                new MultiBatchCollectionPersistedSchoolAddressRow(
+                    _persistedStateBeforeUpdate.Addresses[0].CollectionItemId,
+                    _persistedStateAfterUpdate.Document.DocumentId,
+                    0,
+                    MultiBatchCollectionsIntegrationTestSupport.CreateCity(0)
+                )
+            );
+    }
+
+    [Test]
+    public void It_partitions_collection_delete_commands_using_the_compiled_batch_limit()
+    {
+        var deleteCommands = _commandRecorder
+            .Commands.Where(command =>
+                command.CommandText.Contains("delete from", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("SchoolAddress", StringComparison.Ordinal)
+            )
+            .ToArray();
+
+        deleteCommands.Should().HaveCount(2);
+        deleteCommands
+            .Select(command => command.ParametersByName.Count)
+            .Should()
+            .Equal(_maxRowsPerBatch * _parametersPerRow, _parametersPerRow);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteMultiBatchCollectionDeletes",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        var createResult = await repository.UpsertDocument(
+            MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                MultiBatchCollectionsIntegrationTestSupport.CreateCreateRequestBody(_createdAddressCount),
+                SchoolDocumentUuid,
+                "pg-multi-batch-collection-delete-create"
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteUpdateAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteMultiBatchCollectionDeletes",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            MultiBatchCollectionsIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                MultiBatchCollectionsIntegrationTestSupport.CreateUpdateRequestBody(1),
+                SchoolDocumentUuid,
+                "pg-multi-batch-collection-delete-update"
             )
         );
     }
