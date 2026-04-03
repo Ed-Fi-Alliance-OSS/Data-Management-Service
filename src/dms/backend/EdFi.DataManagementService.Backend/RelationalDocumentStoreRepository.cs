@@ -257,11 +257,9 @@ public sealed class RelationalDocumentStoreRepository(
 
             if (contractFailures.Length > 0)
             {
-                return validationFailureFactory(
-                    contractFailures
-                        .Select(f => new WriteValidationFailure(new JsonPath("$"), f.Message))
-                        .ToArray()
-                );
+                // Category-5 contract mismatches are internal errors (not client validation),
+                // so surface through failureFactory (→ UnknownFailure → HTTP 500).
+                return failureFactory(string.Join("; ", contractFailures.Select(f => f.Message)));
             }
         }
 

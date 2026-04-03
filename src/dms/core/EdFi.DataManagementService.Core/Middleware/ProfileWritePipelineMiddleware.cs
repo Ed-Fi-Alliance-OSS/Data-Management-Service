@@ -157,7 +157,9 @@ internal class ProfileWritePipelineMiddleware(
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: statusCode,
-                Body: FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
+                Body: statusCode >= 500
+                    ? FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId)
+                    : FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             );
             return;
