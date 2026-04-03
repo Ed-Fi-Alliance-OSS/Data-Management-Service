@@ -32,6 +32,7 @@ public class Given_PostgresqlDescriptorWriteHandler
     public async Task Setup()
     {
         _database = await PostgresqlReferenceResolverTestDatabase.CreateProvisionedAsync();
+        await _database.SeedAsync();
         _serviceProvider = CreateServiceProvider();
     }
 
