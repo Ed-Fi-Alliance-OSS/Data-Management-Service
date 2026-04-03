@@ -126,7 +126,7 @@
       "Verify the chosen payload is large enough to prove the write path can persist a multi-table authoritative document without SQL parameter-limit or batching regressions in PostgreSQL.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentAcademicRecord\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative Multi-Table POST-As-Update Smoke",
