@@ -75,5 +75,83 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Authoritative StudentSchoolAssociation Key-Unification Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentSchoolAssociation` fixture. Acceptance: the smoke proves coherent key unification for `SchoolId_Unified` and `SchoolYear_Unified`, persists the root extension row, preserves authoritative replace semantics across root and child tables, updates changed state on PUT, and leaves rowsets and `dms.Document.ContentVersion` unchanged for a repeat PUT. Include a negative variant where the unified members disagree across references and assert a validation failure with no committed document, root, extension, or child-table writes.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `StudentSchoolAssociation` in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/` using the sample authoritative generated DDL and seed all required referenced documents and descriptors.",
+      "Assert the create path persists exactly one `edfi.StudentSchoolAssociation` row with unified `SchoolId_Unified` and `SchoolYear_Unified` values matching the coherent request references, plus exactly one `sample.StudentSchoolAssociationExtension` row and the expected authoritative child rows.",
+      "Assert a changed PUT updates root and extension data, reuses stable `CollectionItemId` values for retained child collection rows, removes omitted child rows, inserts replacement rows, and applies any ordinal changes without creating a second document.",
+      "Assert a repeat PUT leaves table rowsets byte-for-byte equivalent at the logical row level and does not increment `dms.Document.ContentVersion`.",
+      "Add a negative authoritative write where the school-identity members disagree; assert the API result is a validation failure for key-unification conflict and all affected tables, including `dms.Document`, remain unchanged after the rejected attempt.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative SurveyQuestion Collection Stability Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `SurveyQuestion` fixture with `SurveyQuestionMatrice` children. Acceptance: the smoke proves `Namespace_Unified` and `SurveyIdentifier_Unified` are derived consistently from sibling references, create persists the root and both child collections, changed PUT reuses stable collection ids for retained matrix and response-choice rows, reorder and replacement semantics work predictably, and a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `SurveyQuestion` that seeds the referenced `Survey`, `SurveySection`, and required descriptors, then exercises matrices and response choices in the request body.",
+      "Assert the create path persists one `edfi.SurveyQuestion` row with unified namespace and survey identifier values populated from coherent references, plus the expected `edfi.SurveyQuestionMatrice` and `edfi.SurveyQuestionResponseChoice` rows.",
+      "Assert a changed PUT retains `CollectionItemId` values for logical child rows that remain present, updates ordinals when request order changes, deletes omitted rows, and inserts new rows for replacements rather than duplicating retained rows.",
+      "Assert a repeat PUT produces authoritative no-op behavior: no logical rowset drift across root or child tables and no `dms.Document.ContentVersion` change.",
+      "Confirm the persisted readback order and stable ids make reorder assertions deterministic for both `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SurveyQuestion\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative StudentSectionAssociation Extension Child Collections",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentSectionAssociation` fixture with root-extension child collections. Acceptance: the smoke proves authoritative persistence of the root extension row and its extension child collection, changed PUT retains stable collection ids for retained extension items, reorder and removal semantics work under authoritative replace rules, and a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `StudentSectionAssociation` that seeds referenced `Section`, `Student`, descriptors, and any related program documents needed by the extension child collection.",
+      "Assert the create path persists one `edfi.StudentSectionAssociation` row, one `sample.StudentSectionAssociationExtension` row, and the expected `sample.StudentSectionAssociationExtensionRelatedGeneralStud_00521721f5` rows linked to the owning document.",
+      "Assert a changed PUT retains stable `CollectionItemId` values for extension child rows whose semantic identity is unchanged, reorders ordinals where request order changes, deletes omitted extension child rows, and inserts replacements without disturbing unrelated retained rows.",
+      "Assert a repeat PUT produces no logical rowset changes and does not increment `dms.Document.ContentVersion`.",
+      "Verify the extension child collection assertions are scoped to authoritative merge semantics, not additive merge behavior, by proving omitted rows are removed from persistence.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSectionAssociation\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative StudentAcademicRecord Large-Document Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentAcademicRecord` fixture as a large multi-table document. Acceptance: the smoke creates and updates a realistic full-surface document that spans the base root row, root extension row, and multiple collection tables; changed PUT updates root and extension values, reuses stable collection ids for retained child rows across several tables, removes omitted rows, inserts replacements, and a repeat PUT leaves all rowsets and `dms.Document.ContentVersion` unchanged. The scenario should be large enough to exercise real parameter pressure without failing batching or compiled SQL limits.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `StudentAcademicRecord` that seeds required referenced documents and descriptors and populates several child collections such as academic honors, diplomas, grade point averages, recognitions, or report cards in one request.",
+      "Assert the create path persists exactly one `edfi.StudentAcademicRecord` row, one `sample.StudentAcademicRecordExtension` row, and the expected child rows across multiple collection tables.",
+      "Assert a changed PUT updates root and extension fields, preserves stable `CollectionItemId` values for retained child rows in each populated collection table, deletes omitted rows, inserts replacements, and correctly handles reorder semantics where applicable.",
+      "Assert a repeat PUT leaves persisted rowsets unchanged across all touched tables and does not increment `dms.Document.ContentVersion`.",
+      "Verify the chosen payload is large enough to prove the write path can persist a multi-table authoritative document without SQL parameter-limit or batching regressions in PostgreSQL.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentAcademicRecord\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative Multi-Table POST-As-Update Smoke",
+    "description": "Add authoritative PostgreSQL POST-as-update coverage for a multi-table relational resource, preferably `StudentAcademicRecord` or `StudentSchoolAssociation`. Acceptance: an initial POST creates the document, a second POST with the same referential identity and a different candidate document uuid resolves to the existing document, preserves the original `DocumentId` and `DocumentUuid`, updates root, extension, and child-table state in place, reuses stable collection ids for retained rows, removes omitted rows, inserts replacements, and does not create a second `dms.Document` row for the incoming candidate uuid.",
+    "steps-to-verify": [
+      "Choose a multi-table authoritative resource with a compiled read plan and root plus child-table coverage, then add a new integration fixture in `PostgresqlRelationalWritePostAsUpdateSmokeTests.cs` or a companion file.",
+      "Assert the first POST returns insert success and persists the initial root, extension, and child-table state for the chosen authoritative resource.",
+      "Assert the second POST, using the persisted referential id and a different candidate document uuid, returns update success, preserves the original `DocumentId` and `DocumentUuid`, and updates the existing rowset in place across root, extension, and child tables.",
+      "Assert retained child rows keep their stable collection ids, omitted rows are deleted, replacement rows are inserted, and no duplicate `dms.Document` row exists for the incoming candidate document uuid after the update.",
+      "If the second POST body is repeated unchanged, assert the follow-up authoritative POST-as-update behaves as a guarded no-op with unchanged rowsets and unchanged `dms.Document.ContentVersion`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostAsUpdate\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative ds-5.2 Contact Nested Base Collections",
+    "description": "Add authoritative PostgreSQL integration coverage for the ds-5.2 `Contact` fixture with nested base collections, focusing on `ContactAddress` and nested `ContactAddressPeriod`. Acceptance: the smoke proves authoritative create persists the root row, base address collection rows, and nested address-period rows; changed PUT retains stable collection ids for retained addresses and retained nested periods, removes omitted addresses or periods, inserts replacements, and preserves parent-child linkage by `ParentCollectionItemId`; a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Add a new authoritative ds-5.2 integration fixture for `Contact` that seeds required descriptors and populates at least two addresses with nested `periods` so nested authoritative replace semantics are observable.",
+      "Assert the create path persists one `edfi.Contact` row, the expected `edfi.ContactAddress` rows, and the expected `edfi.ContactAddressPeriod` rows linked through the owning address `CollectionItemId` values.",
+      "Assert a changed PUT preserves stable address `CollectionItemId` values for retained addresses, preserves nested `ContactAddressPeriod` ids for retained period rows under the same owning address, deletes omitted nested rows, inserts replacements, and keeps `ParentCollectionItemId` values aligned to the correct parent address after reorder or replacement.",
+      "Assert a repeat PUT produces authoritative no-op behavior with unchanged logical rowsets across `Contact`, `ContactAddress`, and `ContactAddressPeriod`, plus unchanged `dms.Document.ContentVersion`.",
+      "Verify the scenario covers nested-scope authoritative replace semantics that the current ds-5.2 school smoke does not exercise.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Contact\"`"
+    ],
+    "completed": false
   }
 ]
