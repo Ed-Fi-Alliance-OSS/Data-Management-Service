@@ -85,7 +85,7 @@ internal static class RelationalWriteIdentityStability
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(failureMessage)
+                new UpsertResult.UpsertFailureImmutableIdentity(failureMessage)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureImmutableIdentity(failureMessage)

@@ -450,6 +450,44 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Immutable_Identity : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureImmutableIdentity(
+                        "Identifying values for the resource cannot be changed. Delete and recreate the resource item instead."
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Key Change Not Supported");
+            requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Identifying values for the resource cannot be changed.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

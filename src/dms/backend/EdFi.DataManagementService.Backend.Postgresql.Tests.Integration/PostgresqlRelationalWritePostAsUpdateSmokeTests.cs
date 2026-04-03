@@ -160,6 +160,368 @@ internal sealed record FocusedPostAsUpdateSchoolExtensionAddressRow(
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
 [NonParallelizable]
+public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture
+{
+    private const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
+
+    private const string CreateRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
+    private const string ImmutableIdentityPostAsUpdateRequestBodyJson = """
+        {
+          "schoolId": 255902,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ],
+          "_ext": {
+            "sample": {
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-1"
+                    }
+                  }
+                },
+                {
+                  "_ext": {
+                    "sample": {
+                      "zone": "Zone-2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """;
+
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+        AuthorizationSecurableInfo: []
+    );
+    private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
+        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000005")
+    );
+    private static readonly DocumentUuid RejectedPostAsUpdateDocumentUuid = new(
+        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000006")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private FocusedPostAsUpdateDocumentRow _documentBeforeRejectedPostAsUpdate = null!;
+    private FocusedPostAsUpdateDocumentRow _documentAfterRejectedPostAsUpdate = null!;
+    private FocusedPostAsUpdateSchoolRow _schoolBeforeRejectedPostAsUpdate = null!;
+    private FocusedPostAsUpdateSchoolRow _schoolAfterRejectedPostAsUpdate = null!;
+    private UpsertResult _rejectedPostAsUpdateResult = null!;
+    private ReferentialId _persistedSchoolReferentialId;
+    private long _documentCount;
+    private long _incomingDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
+
+        var createResult = await ExecuteUpsertAsync(
+            CreateRequestBodyJson,
+            ExistingSchoolDocumentUuid,
+            "pg-post-as-update-immutable-identity-create"
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        _documentBeforeRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
+        _schoolBeforeRejectedPostAsUpdate = await ReadSchoolAsync(
+            _documentBeforeRejectedPostAsUpdate.DocumentId
+        );
+        _persistedSchoolReferentialId = new ReferentialId(
+            (
+                await ReadReferentialIdentityRowAsync(
+                    _documentBeforeRejectedPostAsUpdate.DocumentId,
+                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
+                )
+            ).ReferentialId
+        );
+
+        _rejectedPostAsUpdateResult = await ExecuteUpsertAsync(
+            ImmutableIdentityPostAsUpdateRequestBodyJson,
+            RejectedPostAsUpdateDocumentUuid,
+            "pg-post-as-update-immutable-identity-reject",
+            schoolId: 255902,
+            referentialId: _persistedSchoolReferentialId
+        );
+
+        _documentAfterRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
+        _schoolAfterRejectedPostAsUpdate = await ReadSchoolAsync(
+            _documentAfterRejectedPostAsUpdate.DocumentId
+        );
+        _documentCount = await ReadDocumentCountAsync();
+        _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_explicit_immutable_identity_failure_for_post_as_update()
+    {
+        _rejectedPostAsUpdateResult.Should().BeOfType<UpsertResult.UpsertFailureImmutableIdentity>();
+        _rejectedPostAsUpdateResult.Should().NotBeOfType<UpsertResult.UnknownFailure>();
+        _rejectedPostAsUpdateResult
+            .As<UpsertResult.UpsertFailureImmutableIdentity>()
+            .FailureMessage.Should()
+            .Be(
+                "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+            );
+    }
+
+    [Test]
+    public void It_does_not_commit_row_changes_for_rejected_post_as_update()
+    {
+        _documentAfterRejectedPostAsUpdate.Should().Be(_documentBeforeRejectedPostAsUpdate);
+        _schoolAfterRejectedPostAsUpdate.Should().Be(_schoolBeforeRejectedPostAsUpdate);
+        _documentCount.Should().Be(1);
+        _incomingDocumentUuidCount.Should().Be(0);
+    }
+
+    private async Task<UpsertResult> ExecuteUpsertAsync(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        long schoolId = 255901,
+        ReferentialId? referentialId = null
+    )
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWritePostAsUpdateImmutableIdentity",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(
+            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, schoolId, referentialId)
+        );
+    }
+
+    private UpsertRequest CreateUpsertRequest(
+        string requestBodyJson,
+        DocumentUuid documentUuid,
+        string traceId,
+        long schoolId,
+        ReferentialId? referentialId
+    ) =>
+        new(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(schoolId, referentialId),
+            MappingSet: _mappingSet,
+            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
+            Headers: [],
+            TraceId: new TraceId(traceId),
+            DocumentUuid: documentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new PostAsUpdateNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new PostAsUpdateAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+
+    private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(
+                new JsonPath("$.schoolId"),
+                schoolId.ToString(CultureInfo.InvariantCulture)
+            ),
+        ]);
+
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: referentialId
+                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private async Task<FocusedPostAsUpdateDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? new FocusedPostAsUpdateDocumentRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "SchoolId", "ShortName"
+            FROM "edfi"."School"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new FocusedPostAsUpdateSchoolRow(
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolId"),
+                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
+        long documentId,
+        short resourceKeyId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            WHERE "DocumentId" = @documentId
+                AND "ResourceKeyId" = @resourceKeyId;
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        return rows.Count == 1
+            ? new ReferentialIdentityRow(
+                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<long> ReadDocumentCountAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document";
+            """
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =

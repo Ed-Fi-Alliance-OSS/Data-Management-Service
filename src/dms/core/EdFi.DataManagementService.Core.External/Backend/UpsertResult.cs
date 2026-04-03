@@ -70,6 +70,12 @@ public record UpsertResult
     public record UpsertFailureValidation(WriteValidationFailure[] ValidationFailures) : UpsertResult();
 
     /// <summary>
+    /// A failure because the request attempted to change immutable identifying values
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public record UpsertFailureImmutableIdentity(string FailureMessage) : UpsertResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

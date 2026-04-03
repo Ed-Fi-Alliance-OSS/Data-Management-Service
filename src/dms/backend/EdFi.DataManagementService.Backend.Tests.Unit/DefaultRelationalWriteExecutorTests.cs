@@ -834,6 +834,60 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_returns_immutable_identity_failure_for_post_as_update_when_existing_document_identity_changes_and_updates_are_disallowed()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                44L
+            )
+        );
+        _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    request.WritePlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High"],
+                    ]
+                ),
+            ]
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureImmutableIdentity(
+                        "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
+                    )
+                )
+            );
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_not_yet_supported_failure_when_existing_document_identity_changes_and_updates_are_allowed()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put, allowIdentityUpdates: true);
