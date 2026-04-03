@@ -100,7 +100,7 @@
       "Confirm the persisted readback order and stable ids make reorder assertions deterministic for both `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SurveyQuestion\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative StudentSectionAssociation Extension Child Collections",
@@ -152,7 +152,7 @@
       "Verify the scenario covers nested-scope authoritative replace semantics that the current ds-5.2 school smoke does not exercise.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Contact\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Move POST Upsert Existence Resolution Into The Write Session",
