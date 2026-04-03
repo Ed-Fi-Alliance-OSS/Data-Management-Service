@@ -47,7 +47,10 @@ public static class CompiledScopeAdapterFactory
             scopeKindByCanonical
         );
 
-        var semanticIdentityPaths = BuildSemanticIdentityPaths(tablePlan.CollectionMergePlan);
+        var semanticIdentityPaths = BuildSemanticIdentityPaths(
+            tablePlan.CollectionMergePlan,
+            jsonScopeCanonical
+        );
 
         var canonicalMemberPaths = BuildCanonicalMemberPaths(tableModel);
 
@@ -143,14 +146,22 @@ public static class CompiledScopeAdapterFactory
     /// Extracts semantic identity relative paths from the collection merge plan.
     /// Returns empty for non-collection scopes.
     /// </summary>
-    private static ImmutableArray<string> BuildSemanticIdentityPaths(CollectionMergePlan? collectionMergePlan)
+    private static ImmutableArray<string> BuildSemanticIdentityPaths(
+        CollectionMergePlan? collectionMergePlan,
+        string scopeCanonical
+    )
     {
         if (collectionMergePlan is null || collectionMergePlan.SemanticIdentityBindings.Length == 0)
         {
             return [];
         }
 
-        return [.. collectionMergePlan.SemanticIdentityBindings.Select(b => b.RelativePath.Canonical)];
+        return
+        [
+            .. collectionMergePlan.SemanticIdentityBindings.Select(b =>
+                ToScopeRelativePath(b.RelativePath.Canonical, scopeCanonical)
+            ),
+        ];
     }
 
     /// <summary>
@@ -159,11 +170,29 @@ public static class CompiledScopeAdapterFactory
     /// </summary>
     private static ImmutableArray<string> BuildCanonicalMemberPaths(DbTableModel tableModel)
     {
+        var scopeCanonical = tableModel.JsonScope.Canonical;
         return
         [
             .. tableModel
                 .Columns.Where(c => c.SourceJsonPath.HasValue)
-                .Select(c => c.SourceJsonPath!.Value.Canonical),
+                .Select(c => ToScopeRelativePath(c.SourceJsonPath!.Value.Canonical, scopeCanonical)),
         ];
+    }
+
+    /// <summary>
+    /// Converts a <see cref="JsonPathExpression"/> canonical string to a scope-relative
+    /// member path by stripping the JSON scope prefix. Core consumers expect bare member
+    /// names (e.g., "addressType") rather than JSONPath-prefixed strings ("$.addressType").
+    /// </summary>
+    private static string ToScopeRelativePath(string canonicalPath, string scopeCanonical)
+    {
+        string scopePrefix = scopeCanonical + ".";
+        if (canonicalPath.StartsWith(scopePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[scopePrefix.Length..];
+        }
+
+        // Collection columns: SourceJsonPath is already scope-relative with $ root marker
+        return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
 }

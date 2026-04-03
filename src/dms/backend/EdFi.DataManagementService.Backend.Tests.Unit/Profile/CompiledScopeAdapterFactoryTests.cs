@@ -62,7 +62,7 @@ public class Given_a_root_only_ResourceWritePlan
     public void It_sets_CanonicalScopeRelativeMemberPaths_from_columns_with_SourceJsonPath()
     {
         // Root table has: DocumentId (no SourceJsonPath) and SchoolId (SourceJsonPath = "$.schoolId")
-        _result[0].CanonicalScopeRelativeMemberPaths.Should().Equal("$.schoolId");
+        _result[0].CanonicalScopeRelativeMemberPaths.Should().Equal("schoolId");
     }
 }
 
@@ -122,7 +122,7 @@ public class Given_a_root_and_collection_ResourceWritePlan
     [Test]
     public void It_sets_collection_SemanticIdentityRelativePathsInOrder_from_CollectionMergePlan()
     {
-        _collectionScope.SemanticIdentityRelativePathsInOrder.Should().Equal("$.addressType");
+        _collectionScope.SemanticIdentityRelativePathsInOrder.Should().Equal("addressType");
     }
 
     [Test]
@@ -130,7 +130,7 @@ public class Given_a_root_and_collection_ResourceWritePlan
     {
         // Collection table has: CollectionItemId (no source), School_DocumentId (no source),
         // Ordinal (no source), AddressType (sourceJsonPath = "$.addressType")
-        _collectionScope.CanonicalScopeRelativeMemberPaths.Should().Equal("$.addressType");
+        _collectionScope.CanonicalScopeRelativeMemberPaths.Should().Equal("addressType");
     }
 }
 
@@ -187,6 +187,6 @@ public class Given_a_root_and_extension_ResourceWritePlan
     [Test]
     public void It_sets_extension_CanonicalScopeRelativeMemberPaths_from_columns_with_SourceJsonPath()
     {
-        _extensionScope.CanonicalScopeRelativeMemberPaths.Should().Equal("$._ext.sample.favoriteColor");
+        _extensionScope.CanonicalScopeRelativeMemberPaths.Should().Equal("favoriteColor");
     }
 }

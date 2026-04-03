@@ -29,7 +29,7 @@ public class Given_ValidRequestContract_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
         };
 
@@ -79,7 +79,7 @@ public class Given_UnknownJsonScope_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
         };
 
@@ -148,22 +148,22 @@ public class Given_ValidCollectionItemAddress_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
             new(
                 JsonScope: "$.addresses[*]",
                 ScopeKind: ScopeKind.Collection,
                 ImmediateParentJsonScope: "$",
                 CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["$.addressType"],
-                CanonicalScopeRelativeMemberPaths: ["$.addressType"]
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
             ),
         };
 
         // Valid collection row address — parent has no ancestor collection instances (matches empty CollectionAncestorsInOrder)
         var parentAddress = new ScopeInstanceAddress("$", []);
         var identityParts = ImmutableArray.Create(
-            new SemanticIdentityPart("$.addressType", JsonValue.Create("Physical")!, true)
+            new SemanticIdentityPart("addressType", JsonValue.Create("Physical")!, true)
         );
         var collectionRowAddress = new CollectionRowAddress("$.addresses[*]", parentAddress, identityParts);
 
@@ -214,7 +214,7 @@ public class Given_UnknownCollectionJsonScope_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
         };
 
@@ -282,23 +282,23 @@ public class Given_AncestorChainMismatch_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
             new(
                 JsonScope: "$.addresses[*]",
                 ScopeKind: ScopeKind.Collection,
                 ImmediateParentJsonScope: "$",
                 CollectionAncestorsInOrder: [],
-                SemanticIdentityRelativePathsInOrder: ["$.addressType"],
-                CanonicalScopeRelativeMemberPaths: ["$.addressType"]
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
             ),
             new(
                 JsonScope: "$.addresses[*].periods[*]",
                 ScopeKind: ScopeKind.Collection,
                 ImmediateParentJsonScope: "$.addresses[*]",
                 CollectionAncestorsInOrder: ["$.addresses[*]"],
-                SemanticIdentityRelativePathsInOrder: ["$.periodType"],
-                CanonicalScopeRelativeMemberPaths: ["$.periodType"]
+                SemanticIdentityRelativePathsInOrder: ["periodType"],
+                CanonicalScopeRelativeMemberPaths: ["periodType"]
             ),
         };
 
@@ -373,7 +373,7 @@ public class Given_ValidWriteContext_When_Validating
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId", "$.nameOfInstitution"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId", "nameOfInstitution"]
             ),
         };
 
@@ -394,7 +394,7 @@ public class Given_ValidWriteContext_When_Validating
             StoredScopeStates:
             [
                 // Hidden member path is in the catalog
-                new StoredScopeState(rootAddress, ProfileVisibilityKind.Hidden, ["$.nameOfInstitution"]),
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.Hidden, ["nameOfInstitution"]),
             ],
             VisibleStoredCollectionRows: []
         );
@@ -432,7 +432,7 @@ public class Given_HiddenMemberPathNotInCatalog_When_ValidatingWriteContext
                 ImmediateParentJsonScope: null,
                 CollectionAncestorsInOrder: [],
                 SemanticIdentityRelativePathsInOrder: [],
-                CanonicalScopeRelativeMemberPaths: ["$.schoolId"]
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
             ),
         };
 
@@ -453,7 +453,7 @@ public class Given_HiddenMemberPathNotInCatalog_When_ValidatingWriteContext
             StoredScopeStates:
             [
                 // Hidden member path is NOT in the catalog
-                new StoredScopeState(rootAddress, ProfileVisibilityKind.Hidden, ["$.unknownMemberPath"]),
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.Hidden, ["unknownMemberPath"]),
             ],
             VisibleStoredCollectionRows: []
         );
