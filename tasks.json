@@ -80,11 +80,14 @@
     "category": "Authoritative StudentSchoolAssociation Key-Unification Smoke",
     "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentSchoolAssociation` fixture. Acceptance: the smoke proves coherent key unification for `SchoolId_Unified` and `SchoolYear_Unified`, persists the root extension row, preserves authoritative replace semantics across root and child tables, updates changed state on PUT, and leaves rowsets and `dms.Document.ContentVersion` unchanged for a repeat PUT. Include a negative variant where the unified members disagree across references and assert a validation failure with no committed document, root, extension, or child-table writes.",
     "steps-to-verify": [
+      "Current branch audit (2026-04-03): `rg` found no PostgreSQL integration fixture or filterable integration test for `StudentSchoolAssociation` under `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/`.",
+      "Recommended fixture filename: `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs`.",
       "Add a new authoritative sample integration fixture for `StudentSchoolAssociation` in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/` using the sample authoritative generated DDL and seed all required referenced documents and descriptors.",
       "Assert the create path persists exactly one `edfi.StudentSchoolAssociation` row with unified `SchoolId_Unified` and `SchoolYear_Unified` values matching the coherent request references, plus exactly one `sample.StudentSchoolAssociationExtension` row and the expected authoritative child rows.",
       "Assert a changed PUT updates root and extension data, reuses stable `CollectionItemId` values for retained child collection rows, removes omitted child rows, inserts replacement rows, and applies any ordinal changes without creating a second document.",
       "Assert a repeat PUT leaves table rowsets byte-for-byte equivalent at the logical row level and does not increment `dms.Document.ContentVersion`.",
       "Add a negative authoritative write where the school-identity members disagree; assert the API result is a validation failure for key-unification conflict and all affected tables, including `dms.Document`, remain unchanged after the rejected attempt.",
+      "For the negative variant, assert unchanged counts and unchanged logical rowsets for `dms.Document`, `edfi.StudentSchoolAssociation`, `sample.StudentSchoolAssociationExtension`, and the authoritative child tables touched by the fixture, not only the top-level result contract.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
     "completed": true
@@ -93,14 +96,17 @@
     "category": "Authoritative SurveyQuestion Collection Stability Smoke",
     "description": "Add authoritative PostgreSQL integration coverage for the sample `SurveyQuestion` fixture with `SurveyQuestionMatrice` children. Acceptance: the smoke proves `Namespace_Unified` and `SurveyIdentifier_Unified` are derived consistently from sibling references, create persists the root and both child collections, changed PUT reuses stable collection ids for retained matrix and response-choice rows, reorder and replacement semantics work predictably, and a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
     "steps-to-verify": [
+      "Current branch audit (2026-04-03): `rg` found no PostgreSQL integration fixture or filterable integration test for `SurveyQuestion` under `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/`.",
+      "Recommended fixture filename: `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs`.",
       "Add a new authoritative sample integration fixture for `SurveyQuestion` that seeds the referenced `Survey`, `SurveySection`, and required descriptors, then exercises matrices and response choices in the request body.",
       "Assert the create path persists one `edfi.SurveyQuestion` row with unified namespace and survey identifier values populated from coherent references, plus the expected `edfi.SurveyQuestionMatrice` and `edfi.SurveyQuestionResponseChoice` rows.",
       "Assert a changed PUT retains `CollectionItemId` values for logical child rows that remain present, updates ordinals when request order changes, deletes omitted rows, and inserts new rows for replacements rather than duplicating retained rows.",
       "Assert a repeat PUT produces authoritative no-op behavior: no logical rowset drift across root or child tables and no `dms.Document.ContentVersion` change.",
       "Confirm the persisted readback order and stable ids make reorder assertions deterministic for both `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice`.",
+      "Prefer one changed PUT that exercises both collection reorder and replacement in the same scenario so `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice` are each proven to preserve retained ids while removing omitted rows and inserting replacements.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SurveyQuestion\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Authoritative StudentSectionAssociation Extension Child Collections",
