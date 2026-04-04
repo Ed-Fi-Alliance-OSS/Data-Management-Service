@@ -5,8 +5,8 @@
 
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -699,7 +699,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                             + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
                     );
                 }
-                EmitReferentialIdentityBody(writer, trigger, BuildScalarKindLookup(refIdTableModel), refId);
+                EmitReferentialIdentityBody(writer, trigger, refIdTableModel, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var abstractIdTableModel))
@@ -709,12 +709,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                             + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
                     );
                 }
-                EmitAbstractIdentityBody(
-                    writer,
-                    trigger,
-                    BuildScalarKindLookup(abstractIdTableModel),
-                    abstractId
-                );
+                EmitAbstractIdentityBody(writer, trigger, abstractIdTableModel, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var propagationTableModel))
@@ -886,7 +881,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var quotedKeyColumn = Quote(keyColumn);
         var quotedProbeKeyColumn = Quote(tableKeyColumns[0]);
-        var scalarKindByColumn = BuildScalarKindLookup(tableModel);
 
         // ContentVersion stamp - compute the set of affected documents from inserted/deleted
         // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
@@ -902,7 +896,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("WHERE del.");
             writer.Append(quotedProbeKeyColumn);
             writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns, scalarKindByColumn);
+            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             writer.AppendLine();
             writer.AppendLine("UNION");
             writer.Append("SELECT del.");
@@ -914,7 +908,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("WHERE i.");
             writer.Append(quotedProbeKeyColumn);
             writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns, scalarKindByColumn);
+            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             writer.AppendLine();
         }
         writer.AppendLine(")");
@@ -976,10 +970,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     {
                         writer.Append(" OR ");
                     }
-                    var colName = trigger.IdentityProjectionColumns[i];
-                    var col = Quote(colName);
-                    scalarKindByColumn.TryGetValue(colName, out var kind);
-                    EmitMssqlNullSafeNotEqual(writer, "i", col, "del", col, kind);
+                    EmitMssqlColumnValueDiffPredicate(
+                        writer,
+                        tableModel,
+                        "i",
+                        "del",
+                        trigger.IdentityProjectionColumns[i]
+                    );
                 }
                 writer.AppendLine(";");
             }
@@ -995,7 +992,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitReferentialIdentityBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn,
+        DbTableModel tableModel,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
@@ -1014,12 +1011,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         else
         {
-            EmitMssqlReferentialIdentityBody(
-                writer,
-                trigger.IdentityProjectionColumns,
-                scalarKindByColumn,
-                refId
-            );
+            EmitMssqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, tableModel, refId);
         }
     }
 
@@ -1182,7 +1174,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitMssqlReferentialIdentityBody(
         SqlWriter writer,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn,
+        DbTableModel tableModel,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
@@ -1191,7 +1183,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitMssqlInsertUpdateDispatch(
             writer,
             identityProjectionColumns,
-            scalarKindByColumn,
+            tableModel,
             isInsert => EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, isInsert)
         );
     }
@@ -1392,7 +1384,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitAbstractIdentityBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn,
+        DbTableModel tableModel,
         TriggerKindParameters.AbstractIdentityMaintenance abstractId
     )
     {
@@ -1410,8 +1402,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             EmitMssqlAbstractIdentityBody(
                 writer,
+                tableModel,
                 trigger.IdentityProjectionColumns,
-                scalarKindByColumn,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
                 abstractId.DiscriminatorValue
@@ -1484,8 +1476,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitMssqlAbstractIdentityBody(
         SqlWriter writer,
+        DbTableModel tableModel,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue
@@ -1494,7 +1486,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitMssqlInsertUpdateDispatch(
             writer,
             identityProjectionColumns,
-            scalarKindByColumn,
+            tableModel,
             isInsert =>
                 EmitMssqlAbstractIdentityUpsert(
                     writer,
@@ -1513,7 +1505,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitMssqlInsertUpdateDispatch(
         SqlWriter writer,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn,
+        DbTableModel tableModel,
         Action<bool> emitBlock
     )
     {
@@ -1539,7 +1531,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         using (writer.Indent())
         {
-            EmitMssqlValueDiffWorkset(writer, identityProjectionColumns, scalarKindByColumn);
+            EmitMssqlValueDiffWorkset(writer, tableModel, identityProjectionColumns);
             emitBlock(false);
         }
 
@@ -1685,7 +1677,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var documentIdCol = Quote(DocumentIdColumn);
         var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var updatableColumns = GetWritableStoredNonKeyColumns(tableModel, trigger.Name.Value);
-        var scalarKindByColumn = BuildScalarKindLookup(tableModel);
 
         // Identity propagation happens before the owning row update. The ON UPDATE NO ACTION
         // FKs are emitted as DocumentId-only on MSSQL (identity columns excluded), so neither
@@ -1744,10 +1735,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     {
                         writer.Append(" OR ");
                     }
-                    var colName = referrer.ColumnMappings[i].SourceColumn;
-                    var col = Quote(colName);
-                    scalarKindByColumn.TryGetValue(colName, out var kind);
-                    EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col, kind);
+                    EmitMssqlColumnValueDiffPredicate(
+                        writer,
+                        tableModel,
+                        "i",
+                        "d",
+                        referrer.ColumnMappings[i].SourceColumn
+                    );
                 }
                 writer.AppendLine();
                 writer.Append("AND ");
@@ -1845,8 +1839,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </remarks>
     private void EmitMssqlValueDiffWorkset(
         SqlWriter writer,
-        IReadOnlyList<DbColumnName> identityProjectionColumns,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn
+        DbTableModel tableModel,
+        IReadOnlyList<DbColumnName> identityProjectionColumns
     )
     {
         var documentIdCol = Quote(DocumentIdColumn);
@@ -1869,10 +1863,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" OR ");
             }
-            var colName = identityProjectionColumns[i];
-            var col = Quote(colName);
-            scalarKindByColumn.TryGetValue(colName, out var kind);
-            EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col, kind);
+            EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
     }
@@ -2211,7 +2202,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitPeopleAuthViews(
         SqlWriter writer,
         AuthEdOrgHierarchy? authHierarchy,
-        IReadOnlyList<ConcreteResourceModel> concreteResources)
+        IReadOnlyList<ConcreteResourceModel> concreteResources
+    )
     {
         // These views assume all five association tables (StudentSchoolAssociation,
         // StudentContactAssociation, StaffEducationOrganizationAssignmentAssociation,
@@ -2229,14 +2221,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             "StudentContactAssociation",
             "StaffEducationOrganizationAssignmentAssociation",
             "StaffEducationOrganizationEmploymentAssociation",
-            "StudentEducationOrganizationResponsibilityAssociation"
+            "StudentEducationOrganizationResponsibilityAssociation",
         };
 
-        if (!requiredResourceNames
-                .All(requiredResourceName => concreteResources.Any(r =>
+        if (
+            !requiredResourceNames.All(requiredResourceName =>
+                concreteResources.Any(r =>
                     DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
                     && r.ResourceKey.Resource.ResourceName == requiredResourceName
-                )))
+                )
+            )
+        )
         {
             return;
         }
@@ -2474,11 +2469,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         return storedColumns;
     }
 
-    private static Dictionary<DbColumnName, ScalarKind?> BuildScalarKindLookup(DbTableModel tableModel)
-    {
-        return tableModel.Columns.ToDictionary(c => c.ColumnName, c => c.ScalarType?.Kind);
-    }
-
     private static IReadOnlyList<DbColumnName> GetKeyColumnsForDocumentStamping(
         DbTableModel tableModel,
         string triggerName
@@ -2548,10 +2538,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitMssqlColumnValueDiffDisjunction(
         SqlWriter writer,
+        DbTableModel tableModel,
         string leftAlias,
         string rightAlias,
-        IReadOnlyList<DbColumnName> columns,
-        Dictionary<DbColumnName, ScalarKind?> scalarKindByColumn
+        IReadOnlyList<DbColumnName> columns
     )
     {
         for (int i = 0; i < columns.Count; i++)
@@ -2561,10 +2551,41 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" OR ");
             }
 
-            var quotedColumn = Quote(columns[i]);
-            scalarKindByColumn.TryGetValue(columns[i], out var kind);
-            EmitMssqlNullSafeNotEqual(writer, leftAlias, quotedColumn, rightAlias, quotedColumn, kind);
+            EmitMssqlColumnValueDiffPredicate(writer, tableModel, leftAlias, rightAlias, columns[i]);
         }
+    }
+
+    private void EmitMssqlColumnValueDiffPredicate(
+        SqlWriter writer,
+        DbTableModel tableModel,
+        string leftAlias,
+        string rightAlias,
+        DbColumnName columnName
+    )
+    {
+        var quotedColumn = Quote(columnName);
+        EmitMssqlNullSafeNotEqual(
+            writer,
+            leftAlias,
+            quotedColumn,
+            rightAlias,
+            quotedColumn,
+            GetScalarKind(tableModel, columnName)
+        );
+    }
+
+    private static ScalarKind? GetScalarKind(DbTableModel tableModel, DbColumnName columnName)
+    {
+        var columnModel = tableModel.Columns.FirstOrDefault(column => column.ColumnName == columnName);
+
+        if (columnModel is null)
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName.Value}' was not found on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
+            );
+        }
+
+        return columnModel.ScalarType?.Kind;
     }
 
     private void EmitMssqlPropagationOldValueConjunction(
