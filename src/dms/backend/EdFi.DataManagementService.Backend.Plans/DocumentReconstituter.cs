@@ -93,25 +93,8 @@ public static class DocumentReconstituter
         var rootScopeLocatorColumns = rootTableRows.TableModel.IdentityMetadata.RootScopeLocatorColumns;
         if (rootScopeLocatorColumns.Count == 0)
         {
-            // Fallback: look for a ParentKeyPart column named DocumentId
-            var docIdOrdinal = FindColumnOrdinalByKindAndName(
-                rootTableRows.TableModel,
-                ColumnKind.ParentKeyPart,
-                "DocumentId"
-            );
-            if (docIdOrdinal >= 0)
-            {
-                foreach (var row in rootTableRows.Rows)
-                {
-                    if (Convert.ToInt64(row[docIdOrdinal]) == documentId)
-                    {
-                        return row;
-                    }
-                }
-            }
-
             throw new InvalidOperationException(
-                $"Cannot reconstitute document: no root row found for DocumentId {documentId}."
+                "Cannot reconstitute document: RootScopeLocatorColumns is empty on the root table model."
             );
         }
 
@@ -515,25 +498,9 @@ public static class DocumentReconstituter
 
         if (parentScopeColumns.Count == 0)
         {
-            // Fallback: match by root DocumentId
-            var rootScopeColumns = childTableModel.IdentityMetadata.RootScopeLocatorColumns;
-            if (rootScopeColumns.Count > 0)
-            {
-                var rootLocatorOrdinal = FindColumnOrdinalByName(childTableModel, rootScopeColumns[0]);
-                List<object?[]> result = [];
-                foreach (var row in childTableRows.Rows)
-                {
-                    if (Convert.ToInt64(row[rootLocatorOrdinal]) == documentId)
-                    {
-                        result.Add(row);
-                    }
-                }
-                return result;
-            }
-
             throw new InvalidOperationException(
                 $"Cannot filter child rows for table '{childTableModel.Table}': "
-                    + "neither ImmediateParentScopeLocatorColumns nor RootScopeLocatorColumns are configured."
+                    + "ImmediateParentScopeLocatorColumns is empty."
             );
         }
 
@@ -827,24 +794,6 @@ public static class DocumentReconstituter
         for (var i = 0; i < tableModel.Columns.Count; i++)
         {
             if (tableModel.Columns[i].Kind == kind)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    /// <summary>
-    /// Finds the ordinal of the first column with the given kind and name.
-    /// Returns -1 if not found.
-    /// </summary>
-    private static int FindColumnOrdinalByKindAndName(DbTableModel tableModel, ColumnKind kind, string name)
-    {
-        for (var i = 0; i < tableModel.Columns.Count; i++)
-        {
-            var column = tableModel.Columns[i];
-            if (column.Kind == kind && column.ColumnName.Value == name)
             {
                 return i;
             }
