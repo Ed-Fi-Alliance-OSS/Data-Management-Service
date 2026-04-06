@@ -1228,3 +1228,408 @@ public class Given_DocumentReconstituter_With_Nested_Collection_And_Root_Extensi
         _result["addresses"]![0]!["periods"]![0]!["beginDate"]!.GetValue<string>().Should().Be("2024-01-01");
     }
 }
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Child_Extension_Collection
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "Contact");
+    private static readonly DbTableName _addressTableName = new(_schema, "ContactAddress");
+    private static readonly DbTableName _extensionScopeTableName = new(_schema, "ContactExtensionAddress");
+    private static readonly DbTableName _extCollectionTableName = new(
+        _schema,
+        "ContactExtensionAddressDeliveryNote"
+    );
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _addressesScope = new(
+        "$.addresses[*]",
+        [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
+    );
+
+    private static readonly JsonPathExpression _extensionScope = new(
+        "$.addresses[*]._ext.sample",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _deliveryNotesScope = new(
+        "$.addresses[*]._ext.sample.deliveryNotes[*]",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("deliveryNotes"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _contactIdPath = new(
+        "$.contactId",
+        [new JsonPathSegment.Property("contactId")]
+    );
+
+    private static readonly JsonPathExpression _cityPath = new(
+        "$.addresses[*].city",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("city"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _isUrbanPath = new(
+        "$.addresses[*]._ext.sample.isUrban",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("isUrban"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _notePath = new(
+        "$.addresses[*]._ext.sample.deliveryNotes[*].note",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("deliveryNotes"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("note"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        // Root table: Contact
+        var rootColumns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("ContactId"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: false,
+                SourceJsonPath: _contactIdPath,
+                TargetResource: null
+            ),
+        };
+
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Contact",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: rootColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        // Collection table: ContactAddress
+        var addressColumns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("CollectionItemId"),
+                Kind: ColumnKind.CollectionKey,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Contact_DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Ordinal"),
+                Kind: ColumnKind.Ordinal,
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("City"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                IsNullable: false,
+                SourceJsonPath: _cityPath,
+                TargetResource: null
+            ),
+        };
+
+        var addressTableModel = new DbTableModel(
+            Table: _addressTableName,
+            JsonScope: _addressesScope,
+            Key: new TableKey(
+                "PK_ContactAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: addressColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Contact_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("Contact_DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        // CollectionExtensionScope table: ContactExtensionAddress
+        var extensionScopeColumns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("BaseCollectionItemId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Contact_DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("IsUrban"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: false,
+                SourceJsonPath: _isUrbanPath,
+                TargetResource: null
+            ),
+        };
+
+        var extensionScopeTableModel = new DbTableModel(
+            Table: _extensionScopeTableName,
+            JsonScope: _extensionScope,
+            Key: new TableKey(
+                "PK_ContactExtensionAddress",
+                [new DbKeyColumn(new DbColumnName("BaseCollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: extensionScopeColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.CollectionExtensionScope,
+                PhysicalRowIdentityColumns: [new DbColumnName("BaseCollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Contact_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        // ExtensionCollection table: ContactExtensionAddressDeliveryNote
+        var extCollectionColumns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("CollectionItemId"),
+                Kind: ColumnKind.CollectionKey,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Contact_DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("BaseCollectionItemId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Ordinal"),
+                Kind: ColumnKind.Ordinal,
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("Note"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 100),
+                IsNullable: false,
+                SourceJsonPath: _notePath,
+                TargetResource: null
+            ),
+        };
+
+        var extCollectionTableModel = new DbTableModel(
+            Table: _extCollectionTableName,
+            JsonScope: _deliveryNotesScope,
+            Key: new TableKey(
+                "PK_ContactExtensionAddressDeliveryNote",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns: extCollectionColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.ExtensionCollection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Contact_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("BaseCollectionItemId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        // Row data:
+        // Root: DocumentId=1, ContactId=42
+        object?[] rootRow = [1L, 42];
+        // Address 1: CollectionItemId=10, Contact_DocumentId=1, Ordinal=0, City="Austin"
+        object?[] addressRow1 = [10L, 1L, 0, "Austin"];
+        // Address 2: CollectionItemId=20, Contact_DocumentId=1, Ordinal=1, City="Dallas"
+        object?[] addressRow2 = [20L, 1L, 1, "Dallas"];
+        // Extension scope for address 1: BaseCollectionItemId=10, Contact_DocumentId=1, IsUrban=true
+        object?[] extScopeRow1 = [10L, 1L, true];
+        // Extension scope for address 2: BaseCollectionItemId=20, Contact_DocumentId=1, IsUrban=false
+        object?[] extScopeRow2 = [20L, 1L, false];
+        // Delivery note under address 1 ext scope: CollectionItemId=100, Contact_DocumentId=1, BaseCollectionItemId=10, Ordinal=0, Note="Ring bell"
+        object?[] noteRow1 = [100L, 1L, 10L, 0, "Ring bell"];
+        // Delivery note under address 2 ext scope: CollectionItemId=200, Contact_DocumentId=1, BaseCollectionItemId=20, Ordinal=0, Note="Leave at door"
+        object?[] noteRow2 = [200L, 1L, 20L, 0, "Leave at door"];
+
+        var rootTableRows = new HydratedTableRows(rootTableModel, [rootRow]);
+        var addressTableRows = new HydratedTableRows(addressTableModel, [addressRow1, addressRow2]);
+        var extScopeTableRows = new HydratedTableRows(extensionScopeTableModel, [extScopeRow1, extScopeRow2]);
+        var extCollectionTableRows = new HydratedTableRows(extCollectionTableModel, [noteRow1, noteRow2]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                rootTableRows,
+                addressTableRows,
+                extScopeTableRows,
+                extCollectionTableRows,
+            ],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_return_a_json_object()
+    {
+        _result.Should().BeOfType<JsonObject>();
+    }
+
+    [Test]
+    public void It_should_emit_contactId()
+    {
+        _result["contactId"]!.GetValue<int>().Should().Be(42);
+    }
+
+    [Test]
+    public void It_should_emit_two_addresses()
+    {
+        _result["addresses"]!.AsArray().Should().HaveCount(2);
+    }
+
+    [Test]
+    public void It_should_emit_address_0_city()
+    {
+        _result["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Austin");
+    }
+
+    [Test]
+    public void It_should_emit_address_1_city()
+    {
+        _result["addresses"]![1]!["city"]!.GetValue<string>().Should().Be("Dallas");
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_isUrban_as_true()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["isUrban"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_emit_address_1_ext_sample_isUrban_as_false()
+    {
+        _result["addresses"]![1]!["_ext"]!["sample"]!["isUrban"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_with_one_item()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_0_note()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Ring bell");
+    }
+
+    [Test]
+    public void It_should_emit_address_1_ext_sample_deliveryNotes_with_one_item()
+    {
+        _result["addresses"]![1]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_should_emit_address_1_ext_sample_deliveryNotes_0_note()
+    {
+        _result["addresses"]![1]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Leave at door");
+    }
+}
