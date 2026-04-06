@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -56,6 +57,8 @@ public class Given_Relational_Write_Current_State_Loader
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].ParameterName.Should().Be("@DocumentId");
         command.Parameters[0].Value.Should().Be(345L);
+        result.ReconstitutedDocument.Should().NotBeNull("the loader should reconstitute the stored document");
+        result.ReconstitutedDocument!["name"]!.GetValue<string>().Should().Be("Lincoln High");
     }
 
     [Test]
@@ -175,7 +178,7 @@ public class Given_Relational_Write_Current_State_Loader
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75),
                     false,
-                    new JsonPathExpression("$.name", []),
+                    new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
                     null,
                     new ColumnStorage.Stored()
                 ),
@@ -208,7 +211,7 @@ public class Given_Relational_Write_Current_State_Loader
                 new WriteColumnBinding(
                     tableModel.Columns[1],
                     new WriteValueSource.Scalar(
-                        new JsonPathExpression("$.name", []),
+                        new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
                         new RelationalScalarType(ScalarKind.String, MaxLength: 75)
                     ),
                     "Name"

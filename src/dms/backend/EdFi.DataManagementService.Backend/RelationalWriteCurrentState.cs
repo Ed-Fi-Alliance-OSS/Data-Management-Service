@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -127,6 +128,29 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             );
         }
 
-        return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
+        // Reconstitute the stored JSON document from hydrated rows
+        var descriptorUriLookup = await DescriptorProjectionExecutor
+            .ExecuteAsync(
+                writeSession.Connection,
+                writeSession.Transaction,
+                [.. request.ReadPlan.DescriptorProjectionPlansInOrder],
+                new PageKeysetSpec.Single(request.TargetContext.DocumentId),
+                request.Dialect,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var reconstitutedDocument = DocumentReconstituter.Reconstitute(
+            documentMetadata.DocumentId,
+            hydratedPage.TableRowsInDependencyOrder,
+            [.. request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder],
+            request.ReadPlan.Model.DescriptorEdgeSources,
+            descriptorUriLookup
+        );
+
+        return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder)
+        {
+            ReconstitutedDocument = reconstitutedDocument,
+        };
     }
 }
