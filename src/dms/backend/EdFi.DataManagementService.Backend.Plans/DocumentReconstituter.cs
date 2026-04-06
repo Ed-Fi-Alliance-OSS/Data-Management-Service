@@ -158,10 +158,7 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var propertyName = ExtractScopeRelativePropertyName(
-                column.SourceJsonPath.Value,
-                tableModel.JsonScope
-            );
+            var propertyName = ExtractLastPropertySegment(column.SourceJsonPath.Value);
             target[propertyName] = ConvertToJsonValue(value);
         }
     }
@@ -242,10 +239,7 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var propertyName = ExtractScopeRelativePropertyName(
-                source.DescriptorValuePath,
-                tableModel.JsonScope
-            );
+            var propertyName = ExtractLastPropertySegment(source.DescriptorValuePath);
             target[propertyName] = JsonValue.Create(uri);
         }
     }
@@ -704,31 +698,6 @@ public static class DocumentReconstituter
         }
 
         return (extName, projectName);
-    }
-
-    /// <summary>
-    /// Extracts the scope-relative property name from a column's SourceJsonPath.
-    /// Given a path like "$.addresses[*].city" and scope "$.addresses[*]", returns "city".
-    /// For root scope "$" and path "$.schoolId", returns "schoolId".
-    /// </summary>
-    private static string ExtractScopeRelativePropertyName(
-        JsonPathExpression sourceJsonPath,
-        JsonPathExpression tableScope
-    )
-    {
-        // The property name is the last Property segment
-        for (var i = sourceJsonPath.Segments.Count - 1; i >= 0; i--)
-        {
-            if (sourceJsonPath.Segments[i] is JsonPathSegment.Property prop)
-            {
-                return prop.Name;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot extract scope-relative property name from path '{sourceJsonPath.Canonical}' "
-                + $"with scope '{tableScope.Canonical}'."
-        );
     }
 
     /// <summary>
