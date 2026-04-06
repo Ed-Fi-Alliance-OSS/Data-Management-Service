@@ -6,34 +6,29 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
 public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
-    IRelationalWriteTargetContextResolver targetContextResolver,
-    IReferenceResolver referenceResolver,
-    IRelationalWriteFlattener writeFlattener,
-    IRelationalWriteTerminalStage terminalStage,
+    IRelationalWriteExecutor writeExecutor,
+    IRelationalWriteTargetLookupService targetLookupService,
     IDescriptorWriteHandler descriptorWriteHandler
 ) : IDocumentStoreRepository, IQueryHandler
 {
+    private const string ProfileAwareRelationalWritesPendingMessage =
+        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
+
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IRelationalWriteTargetContextResolver _targetContextResolver =
-        targetContextResolver ?? throw new ArgumentNullException(nameof(targetContextResolver));
-    private readonly IReferenceResolver _referenceResolver =
-        referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
-    private readonly IRelationalWriteFlattener _writeFlattener =
-        writeFlattener ?? throw new ArgumentNullException(nameof(writeFlattener));
-    private readonly IRelationalWriteTerminalStage _terminalStage =
-        terminalStage ?? throw new ArgumentNullException(nameof(terminalStage));
+    private readonly IRelationalWriteExecutor _writeExecutor =
+        writeExecutor ?? throw new ArgumentNullException(nameof(writeExecutor));
+    private readonly IRelationalWriteTargetLookupService _targetLookupService =
+        targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
 
@@ -51,6 +46,13 @@ public sealed class RelationalDocumentStoreRepository(
             "Entering RelationalDocumentStoreRepository.UpsertDocument - {TraceId}",
             relationalUpsertRequest.TraceId.Value
         );
+
+        if (relationalUpsertRequest.BackendProfileWriteContext is not null)
+        {
+            return Task.FromResult<UpsertResult>(
+                new UpsertResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
+            );
+        }
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
 
@@ -74,35 +76,22 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             relationalUpsertRequest.ResourceInfo,
             RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetRequest.Post(
+                relationalUpsertRequest.DocumentInfo.ReferentialId,
+                relationalUpsertRequest.DocumentUuid
+            ),
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
-            relationalUpsertRequest.BackendProfileWriteContext,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
-            static validationFailures => new UpsertResult.UpsertFailureValidation(validationFailures),
-            static policyMessage => new UpsertResult.UpsertFailureNotAuthorized([policyMessage]),
-            static (invalidDocumentReferences, invalidDescriptorReferences) =>
-                new UpsertResult.UpsertFailureReference(
-                    invalidDocumentReferences,
-                    invalidDescriptorReferences
-                ),
-            async (mappingSet, resource) =>
-                await _targetContextResolver
-                    .ResolveForPostAsync(
-                        mappingSet,
-                        resource,
-                        relationalUpsertRequest.DocumentInfo.ReferentialId,
-                        relationalUpsertRequest.DocumentUuid
-                    )
-                    .ConfigureAwait(false),
-            static terminalStageResult =>
-                terminalStageResult switch
+            static executorResult =>
+                executorResult switch
                 {
-                    RelationalWriteTerminalStageResult.Upsert(var result) => result,
-                    RelationalWriteTerminalStageResult.Update => throw new InvalidOperationException(
-                        "Relational terminal stage returned an update result for a POST request."
+                    RelationalWriteExecutorResult.Upsert(var result) => result,
+                    RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
+                        "Relational write executor returned an update result for a POST request."
                     ),
                     _ => throw new InvalidOperationException(
-                        $"Relational terminal stage returned unsupported result type '{terminalStageResult.GetType().Name}' for a POST request."
+                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
                     ),
                 }
         );
@@ -139,6 +128,13 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.TraceId.Value
         );
 
+        if (relationalUpdateRequest.BackendProfileWriteContext is not null)
+        {
+            return Task.FromResult<UpdateResult>(
+                new UpdateResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
+            );
+        }
+
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -161,30 +157,19 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             relationalUpdateRequest.ResourceInfo,
             RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
-            relationalUpdateRequest.BackendProfileWriteContext,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
-            static validationFailures => new UpdateResult.UpdateFailureValidation(validationFailures),
-            static policyMessage => new UpdateResult.UpdateFailureNotAuthorized([policyMessage]),
-            static (invalidDocumentReferences, invalidDescriptorReferences) =>
-                new UpdateResult.UpdateFailureReference(
-                    invalidDocumentReferences,
-                    invalidDescriptorReferences
-                ),
-            async (mappingSet, resource) =>
-                await _targetContextResolver
-                    .ResolveForPutAsync(mappingSet, resource, relationalUpdateRequest.DocumentUuid)
-                    .ConfigureAwait(false),
-            static terminalStageResult =>
-                terminalStageResult switch
+            static executorResult =>
+                executorResult switch
                 {
-                    RelationalWriteTerminalStageResult.Update(var result) => result,
-                    RelationalWriteTerminalStageResult.Upsert => throw new InvalidOperationException(
-                        "Relational terminal stage returned an upsert result for a PUT request."
+                    RelationalWriteExecutorResult.Update(var result) => result,
+                    RelationalWriteExecutorResult.Upsert => throw new InvalidOperationException(
+                        "Relational write executor returned an upsert result for a PUT request."
                     ),
                     _ => throw new InvalidOperationException(
-                        $"Relational terminal stage returned unsupported result type '{terminalStageResult.GetType().Name}' for a PUT request."
+                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
                     ),
                 }
         );
@@ -236,15 +221,11 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest,
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
-        BackendProfileWriteContext? backendProfileWriteContext,
         Func<string, TResult> failureFactory,
-        Func<WriteValidationFailure[], TResult> validationFailureFactory,
-        Func<string, TResult> policyFailureFactory,
-        Func<DocumentReferenceFailure[], DescriptorReferenceFailure[], TResult> referenceFailureFactory,
-        Func<MappingSet, QualifiedResourceName, Task<RelationalWriteTargetContext>> resolveTargetContextAsync,
-        Func<RelationalWriteTerminalStageResult, TResult> terminalResultProjector
+        Func<RelationalWriteExecutorResult, TResult> executorResultProjector
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -252,11 +233,7 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(documentReferences);
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
-        ArgumentNullException.ThrowIfNull(validationFailureFactory);
-        ArgumentNullException.ThrowIfNull(policyFailureFactory);
-        ArgumentNullException.ThrowIfNull(referenceFailureFactory);
-        ArgumentNullException.ThrowIfNull(resolveTargetContextAsync);
-        ArgumentNullException.ThrowIfNull(terminalResultProjector);
+        ArgumentNullException.ThrowIfNull(executorResultProjector);
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
         ResourceWritePlan writePlan;
@@ -274,104 +251,190 @@ public sealed class RelationalDocumentStoreRepository(
             return failureFactory(ex.Message);
         }
 
-        // ── Profile guard rails (defense-in-depth backup) ────────────────────
-        if (backendProfileWriteContext != null)
-        {
-            // Validate request-side contract against compiled scope catalog
-            var scopeCatalog = backendProfileWriteContext.CompiledScopeCatalog;
-            ProfileFailure[] contractFailures = ProfileWriteContractValidator.ValidateRequestContract(
-                backendProfileWriteContext.Request,
-                scopeCatalog,
-                profileName: backendProfileWriteContext.ProfileName,
-                resourceName: resourceInfo.ResourceName.Value,
-                method: operationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT",
-                operation: operationKind == RelationalWriteOperationKind.Post ? "upsert" : "update"
-            );
+        var readPlanPreparation = PrepareExistingDocumentReadPlan(mappingSet, resource);
 
-            if (contractFailures.Length > 0)
+        for (var attemptIndex = 0; attemptIndex < 2; attemptIndex++)
+        {
+            var targetResolution = await ResolveTargetContextAsync(
+                    mappingSet,
+                    resource,
+                    operationKind,
+                    targetRequest
+                )
+                .ConfigureAwait(false);
+
+            if (targetResolution.ImmediateResult is not null)
             {
-                // Category-5 contract mismatches are internal errors (not client validation),
-                // so surface through failureFactory (→ UnknownFailure → HTTP 500).
-                return failureFactory(string.Join("; ", contractFailures.Select(f => f.Message)));
+                return executorResultProjector(targetResolution.ImmediateResult);
             }
-        }
 
-        try
-        {
-            var targetContext = await resolveTargetContextAsync(mappingSet, resource).ConfigureAwait(false);
-
-            // Root creatability guard: reject only when the POST would create a new document.
-            // RootResourceCreatable applies only to new-document creation, not upsert-to-existing.
             if (
-                backendProfileWriteContext != null
-                && operationKind == RelationalWriteOperationKind.Post
-                && targetContext is RelationalWriteTargetContext.CreateNew
-                && !backendProfileWriteContext.Request.RootResourceCreatable
+                targetResolution.TargetContext is RelationalWriteTargetContext.ExistingDocument
+                && readPlanPreparation.ReadPlan is null
             )
             {
-                return policyFailureFactory(
-                    "The resource cannot be created because the profile does not allow creation of the root resource."
+                return failureFactory(
+                    readPlanPreparation.FailureMessage
+                        ?? RelationalWriteSupport.BuildMissingExistingDocumentReadPlanMessage(resource)
                 );
             }
 
-            var resolvedReferences = await _referenceResolver
-                .ResolveAsync(
-                    new ReferenceResolverRequest(
-                        MappingSet: mappingSet,
-                        RequestResource: resource,
-                        DocumentReferences: documentReferences,
-                        DescriptorReferences: descriptorReferences
+            var executorResult = await _writeExecutor
+                .ExecuteAsync(
+                    new RelationalWriteExecutorRequest(
+                        mappingSet,
+                        operationKind,
+                        targetRequest,
+                        writePlan,
+                        readPlanPreparation.ReadPlan,
+                        requestBody,
+                        resourceInfo.AllowIdentityUpdates,
+                        traceId,
+                        new ReferenceResolverRequest(
+                            MappingSet: mappingSet,
+                            RequestResource: resource,
+                            DocumentReferences: documentReferences,
+                            DescriptorReferences: descriptorReferences
+                        ),
+                        targetContext: targetResolution.TargetContext!
                     )
                 )
                 .ConfigureAwait(false);
 
-            if (resolvedReferences.HasFailures)
+            if (
+                executorResult.AttemptOutcome is RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare
+                && attemptIndex == 0
+            )
             {
-                return referenceFailureFactory(
-                    [.. resolvedReferences.InvalidDocumentReferences],
-                    [.. resolvedReferences.InvalidDescriptorReferences]
-                );
+                continue;
             }
 
-            // ── Stored-state projection stub ──────────────────────────────────
-            // DMS-1105 will supply the stored document from targetContext for
-            // ExistingDocument flows. When available, this is where the repository
-            // would call backendProfileWriteContext.StoredStateProjectionInvoker
-            // to produce the ProfileAppliedWriteContext for update/upsert-to-existing.
-            //
-            // TODO(DMS-1105): IStoredStateProjectionInvoker.ProjectStoredState currently
-            // returns ProfileAppliedWriteContext directly — typed failures from the second
-            // pipeline run are lost and surface as InvalidOperationException. When this
-            // stub is activated, change the return type to a result type that can convey
-            // ProfileWritePipelineResult failures back to the repository for proper HTTP
-            // status mapping (see CapturedStoredStateProjectionInvoker in
-            // ProfileWritePipelineMiddleware).
-            ProfileAppliedWriteContext? profileWriteContext = null;
-
-            var flatteningInput = new FlatteningInput(
-                operationKind,
-                targetContext,
-                writePlan,
-                requestBody,
-                resolvedReferences
-            );
-            var flattenedWriteSet = _writeFlattener.Flatten(flatteningInput);
-            var terminalStageResult = await _terminalStage
-                .ExecuteAsync(
-                    new RelationalWriteTerminalStageRequest(flatteningInput, flattenedWriteSet, traceId)
-                    {
-                        ProfileWriteContext = profileWriteContext,
-                    }
-                )
-                .ConfigureAwait(false);
-
-            return terminalResultProjector(terminalStageResult);
+            return executorResultProjector(executorResult);
         }
-        catch (RelationalWriteRequestValidationException ex)
+
+        throw new InvalidOperationException(
+            $"Relational {operationKind} write retry loop exited without a final executor result."
+        );
+    }
+
+    private async Task<TargetContextResolution> ResolveTargetContextAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest
+    )
+    {
+        var targetLookupResult = targetRequest switch
         {
-            return validationFailureFactory(ex.ValidationFailures);
+            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
+                await _targetLookupService
+                    .ResolveForPostAsync(mappingSet, resource, referentialId, candidateDocumentUuid)
+                    .ConfigureAwait(false),
+            RelationalWriteTargetRequest.Put(var documentUuid) => await _targetLookupService
+                .ResolveForPutAsync(mappingSet, resource, documentUuid)
+                .ConfigureAwait(false),
+            _ => throw new InvalidOperationException(
+                $"Relational repository target lookup does not support target request type '{targetRequest.GetType().Name}'."
+            ),
+        };
+
+        var targetContext = RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult);
+
+        if (targetContext is not null)
+        {
+            return new TargetContextResolution(targetContext, null);
+        }
+
+        if (
+            operationKind == RelationalWriteOperationKind.Put
+            && targetLookupResult is RelationalWriteTargetLookupResult.NotFound
+        )
+        {
+            return new TargetContextResolution(
+                null,
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists())
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Relational {operationKind} repository target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+        );
+    }
+
+    private static ExistingDocumentReadPlanPreparation PrepareExistingDocumentReadPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        try
+        {
+            return new ExistingDocumentReadPlanPreparation(GetReadPlanOrThrow(mappingSet, resource), null);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new ExistingDocumentReadPlanPreparation(null, ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new ExistingDocumentReadPlanPreparation(null, ex.Message);
         }
     }
+
+    private static ResourceReadPlan GetReadPlanOrThrow(MappingSet mappingSet, QualifiedResourceName resource)
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
+        {
+            return readPlan;
+        }
+
+        var concreteResourceModel =
+            mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(model =>
+                model.RelationalModel.Resource == resource
+            )
+            ?? throw new KeyNotFoundException(
+                $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}' does not contain resource "
+                    + $"'{RelationalWriteSupport.FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+            );
+
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+        {
+            throw new NotSupportedException(
+                $"Read plan for resource '{RelationalWriteSupport.FormatResource(resource)}' was intentionally omitted: "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
+                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+            );
+        }
+
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
+        {
+            throw new InvalidOperationException(
+                $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
+                    + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
+                    + "was found. This indicates an internal compilation/selection bug."
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
+                + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
+                + "is not recognized."
+        );
+    }
+
+    private sealed record ExistingDocumentReadPlanPreparation(
+        ResourceReadPlan? ReadPlan,
+        string? FailureMessage
+    );
+
+    private sealed record TargetContextResolution(
+        RelationalWriteTargetContext? TargetContext,
+        RelationalWriteExecutorResult? ImmediateResult
+    );
 
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);

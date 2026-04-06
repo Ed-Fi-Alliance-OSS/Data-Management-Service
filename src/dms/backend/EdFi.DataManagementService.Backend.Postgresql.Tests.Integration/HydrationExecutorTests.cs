@@ -695,23 +695,18 @@ public class Given_A_Reference_Bearing_Resource
         var rootRows = _result.TableRowsInDependencyOrder[0];
         rootRows.Rows.Should().HaveCount(3);
 
-        // Doc 401: School_DocumentId=10, School_SchoolId=255901, Calendar_DocumentId=50, Calendar_CalendarCode='CAL-101'
         rootRows.Rows[0][1].Should().NotBeNull();
         ((long)rootRows.Rows[0][1]!).Should().Be(10);
         ((long)rootRows.Rows[0][2]!).Should().Be(255901);
         ((long)rootRows.Rows[0][3]!).Should().Be(50);
         ((string)rootRows.Rows[0][4]!).Should().Be("CAL-101");
 
-        // Doc 402: all reference columns NULL
         rootRows.Rows[1][1].Should().BeNull();
         rootRows.Rows[1][2].Should().BeNull();
         rootRows.Rows[1][3].Should().BeNull();
         rootRows.Rows[1][4].Should().BeNull();
 
-        // Doc 403: School_DocumentId=20, School_SchoolId=255902, Calendar_DocumentId=60, Calendar_CalendarCode='CAL-202'
-        ((long)rootRows.Rows[2][1]!)
-            .Should()
-            .Be(20);
+        ((long)rootRows.Rows[2][1]!).Should().Be(20);
         ((long)rootRows.Rows[2][2]!).Should().Be(255902);
         ((long)rootRows.Rows[2][3]!).Should().Be(60);
         ((string)rootRows.Rows[2][4]!).Should().Be("CAL-202");
@@ -785,5 +780,177 @@ public class Given_A_Reference_Bearing_Resource
     {
         await using var cmd = new NpgsqlCommand(sql, connection);
         await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
+{
+    private NpgsqlDataSource _dataSource = null!;
+    private HydratedPage _firstResult = null!;
+    private HydratedPage _secondResult = null!;
+    private bool _tempTableExistsBeforeSecondHydration;
+
+    private const string TestSchema = "hydreuse";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydreuse CASCADE;
+            CREATE SCHEMA hydreuse;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE hydreuse."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL
+            );
+
+            CREATE TABLE hydreuse."SchoolAddress" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL REFERENCES hydreuse."School"("DocumentId"),
+                "Ordinal" integer NOT NULL,
+                "City" varchar(100) NOT NULL
+            );
+
+            CREATE TABLE hydreuse."SchoolAddressPeriod" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL,
+                "ParentCollectionItemId" bigint NOT NULL REFERENCES hydreuse."SchoolAddress"("CollectionItemId"),
+                "Ordinal" integer NOT NULL,
+                "BeginDate" varchar(10) NOT NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            VALUES
+                (401, '12121212-1111-1111-1111-121212121212'),
+                (402, '34343434-2222-2222-2222-343434343434');
+
+            INSERT INTO hydreuse."School" ("DocumentId", "SchoolId")
+            VALUES (401, 700001), (402, 700002);
+
+            INSERT INTO hydreuse."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
+            VALUES (4001, 401, 0, 'Gamma'), (4002, 402, 0, 'Delta');
+
+            INSERT INTO hydreuse."SchoolAddressPeriod" ("CollectionItemId", "School_DocumentId", "ParentCollectionItemId", "Ordinal", "BeginDate")
+            VALUES (8001, 401, 4001, 0, '2024-01-01'), (8002, 402, 4002, 0, '2024-02-01');
+            """
+        );
+
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql);
+
+        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await hydrationConnection.BeginTransactionAsync();
+
+        _firstResult = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            plan,
+            new PageKeysetSpec.Single(401L),
+            SqlDialect.Pgsql,
+            transaction,
+            CancellationToken.None
+        );
+
+        _tempTableExistsBeforeSecondHydration = await TempTableExistsAsync(hydrationConnection, transaction);
+
+        _secondResult = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            plan,
+            new PageKeysetSpec.Single(402L),
+            SqlDialect.Pgsql,
+            transaction,
+            CancellationToken.None
+        );
+
+        await transaction.RollbackAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydreuse CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (401, 402);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls()
+    {
+        _tempTableExistsBeforeSecondHydration.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_allows_the_second_hydration_batch_to_reuse_the_same_transaction()
+    {
+        _firstResult.DocumentMetadata.Should().ContainSingle();
+        _firstResult.DocumentMetadata[0].DocumentId.Should().Be(401L);
+        _secondResult.DocumentMetadata.Should().ContainSingle();
+        _secondResult.DocumentMetadata[0].DocumentId.Should().Be(402L);
+        _secondResult.TableRowsInDependencyOrder.Should().HaveCount(3);
+        ((long)_secondResult.TableRowsInDependencyOrder[0].Rows[0][0]!).Should().Be(402L);
+        ((int)_secondResult.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(700002);
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<bool> TempTableExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.oid = pg_my_temp_schema()
+                  AND c.relname = 'page'
+            );
+            """,
+            connection,
+            transaction
+        );
+
+        var result = await command.ExecuteScalarAsync();
+        return result is true;
     }
 }

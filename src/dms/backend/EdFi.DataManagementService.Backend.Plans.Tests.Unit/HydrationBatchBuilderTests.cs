@@ -37,8 +37,19 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     [Test]
     public void It_should_emit_pgsql_temp_table_creation()
     {
+        _pgsqlBatch.Should().Contain("DROP TABLE IF EXISTS \"page\";");
         _pgsqlBatch.Should().Contain("CREATE TEMP TABLE");
         _pgsqlBatch.Should().Contain("ON COMMIT DROP");
+    }
+
+    [Test]
+    public void It_should_drop_the_existing_pgsql_temp_table_before_recreating_it()
+    {
+        var dropIndex = _pgsqlBatch.IndexOf("DROP TABLE IF EXISTS \"page\";", StringComparison.Ordinal);
+        var createIndex = _pgsqlBatch.IndexOf("CREATE TEMP TABLE \"page\"", StringComparison.Ordinal);
+
+        dropIndex.Should().BeGreaterThanOrEqualTo(0);
+        createIndex.Should().BeGreaterThan(dropIndex);
     }
 
     [Test]

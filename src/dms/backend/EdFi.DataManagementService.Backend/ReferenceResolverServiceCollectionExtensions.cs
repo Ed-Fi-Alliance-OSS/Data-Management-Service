@@ -32,25 +32,53 @@ public static class ReferenceResolverServiceCollectionExtensions
 
     internal static IServiceCollection AddReferenceResolver<
         TReferenceResolverAdapterFactory,
-        TRelationalCommandExecutor
+        TRelationalCommandExecutor,
+        TRelationalWriteSessionFactory,
+        TSessionDocumentHydrator
     >(this IServiceCollection services)
         where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
         where TRelationalCommandExecutor : class, IRelationalCommandExecutor
+        where TRelationalWriteSessionFactory : class, IRelationalWriteSessionFactory
+        where TSessionDocumentHydrator : class, ISessionDocumentHydrator
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddOptions();
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalCommandExecutor, TRelationalCommandExecutor>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteSessionFactory, TRelationalWriteSessionFactory>()
+        );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteFlattener, RelationalWriteFlattener>());
+        services.TryAdd(ServiceDescriptor.Scoped<ISessionDocumentHydrator, TSessionDocumentHydrator>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteFreshnessChecker, RelationalWriteFreshnessChecker>()
+        );
         services.TryAdd(
             ServiceDescriptor.Scoped<
-                IRelationalWriteTargetContextResolver,
-                RelationalWriteTargetContextResolver
+                IRelationalWriteNoProfileMergeSynthesizer,
+                RelationalWriteNoProfileMergeSynthesizer
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<IRelationalWriteTerminalStage, DefaultRelationalWriteTerminalStage>()
+            ServiceDescriptor.Scoped<IRelationalWriteNoProfilePersister, RelationalWriteNoProfilePersister>()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteTargetLookupService,
+                RelationalWriteTargetLookupService
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteTargetLookupResolver,
+                RelationalWriteTargetLookupResolver
+            >()
+        );
+        services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
     }

@@ -38,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     defaults:
       run:
         shell: pwsh
@@ -83,20 +82,21 @@ jobs:
           path: coveragereport
 
       - name: Upload Test Results
-        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
           name: Unit Tests
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
 
   run-integration-tests:
     name: Run Integration Tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     defaults:
       run:
         shell: pwsh
@@ -157,13 +157,15 @@ jobs:
         run: ./build-dms.ps1 IntegrationTest -Configuration ${{ env.CONFIGURATION }}
 
       - name: Upload Integration Test Results
-        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
           name: Integration Tests
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
 
   run-e2e-tests:
     name: Run ${{matrix.queryhandler}} E2E Tests (IdentityProvider ${{matrix.identityprovider}})
@@ -174,7 +176,6 @@ jobs:
         queryhandler: [postgresql]
     permissions:
       contents: read
-      checks: write
     defaults:
       run:
         shell: pwsh
@@ -255,20 +256,21 @@ jobs:
           retention-days: 10
 
       - name: Upload Test Results
-        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
           name: E2E Test Results
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Route Qualifiers)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     defaults:
       run:
         shell: pwsh
@@ -366,13 +368,15 @@ jobs:
           retention-days: 10
 
       - name: Upload Test Results
-        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
           name: Instance Management E2E Test Results
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs

@@ -187,15 +187,27 @@ public class Given_PostgresqlRelationalCommandExecutor
     }
 }
 
-internal sealed class RecordingDbConnection(RecordingDbCommand command) : DbConnection
+internal sealed class RecordingDbConnection(
+    RecordingDbCommand command,
+    Func<RecordingDbConnection, IsolationLevel, RecordingDbTransaction>? transactionFactory = null
+) : DbConnection
 {
     private ConnectionState _state = ConnectionState.Open;
+    private readonly Func<RecordingDbConnection, IsolationLevel, RecordingDbTransaction> _transactionFactory =
+        transactionFactory
+        ?? ((connection, isolationLevel) => new RecordingDbTransaction(connection, isolationLevel));
 
     public RecordingDbCommand Command { get; } = command ?? throw new ArgumentNullException(nameof(command));
 
     public int CreateCommandCallCount { get; private set; }
 
     public int DisposeCallCount { get; private set; }
+
+    public int BeginTransactionCallCount { get; private set; }
+
+    public IsolationLevel? LastBeginTransactionIsolationLevel { get; private set; }
+
+    public RecordingDbTransaction? LastTransaction { get; private set; }
 
     public int OpenAsyncCallCount { get; private set; }
 
@@ -227,8 +239,13 @@ internal sealed class RecordingDbConnection(RecordingDbCommand command) : DbConn
         return Task.CompletedTask;
     }
 
-    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
-        throw new NotSupportedException();
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+    {
+        BeginTransactionCallCount++;
+        LastBeginTransactionIsolationLevel = isolationLevel;
+        LastTransaction = _transactionFactory(this, isolationLevel);
+        return LastTransaction;
+    }
 
     protected override DbCommand CreateDbCommand()
     {
@@ -282,7 +299,15 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
 
     public int ExecuteReaderCallCount { get; private set; }
 
+    public int ExecuteNonQueryCallCount { get; private set; }
+
+    public int ExecuteScalarCallCount { get; private set; }
+
     public int DisposeCallCount { get; private set; }
+
+    public int NonQueryResult { get; set; } = 1;
+
+    public object? ScalarResult { get; set; }
 
     public new RecordingDbConnection? Connection
     {
@@ -290,11 +315,25 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
         set => DbConnection = value;
     }
 
+    public new RecordingDbTransaction? Transaction
+    {
+        get => DbTransaction as RecordingDbTransaction;
+        set => DbTransaction = value;
+    }
+
     public override void Cancel() { }
 
-    public override int ExecuteNonQuery() => throw new NotSupportedException();
+    public override int ExecuteNonQuery()
+    {
+        ExecuteNonQueryCallCount++;
+        return NonQueryResult;
+    }
 
-    public override object? ExecuteScalar() => throw new NotSupportedException();
+    public override object? ExecuteScalar()
+    {
+        ExecuteScalarCallCount++;
+        return ScalarResult;
+    }
 
     public override void Prepare() { }
 
@@ -314,6 +353,20 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
         cancellationToken.ThrowIfCancellationRequested();
         ExecuteReaderCallCount++;
         return Task.FromResult(_reader);
+    }
+
+    public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ExecuteNonQueryCallCount++;
+        return Task.FromResult(NonQueryResult);
+    }
+
+    public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ExecuteScalarCallCount++;
+        return Task.FromResult(ScalarResult);
     }
 
     protected override void Dispose(bool disposing)
@@ -430,4 +483,59 @@ internal sealed class RecordingDbParameter : DbParameter
     public override int Size { get; set; }
 
     public override void ResetDbType() => DbType = DbType.Object;
+}
+
+internal sealed class RecordingDbTransaction(RecordingDbConnection connection, IsolationLevel isolationLevel)
+    : DbTransaction
+{
+    public override IsolationLevel IsolationLevel { get; } = isolationLevel;
+
+    protected override DbConnection DbConnection { get; } =
+        connection ?? throw new ArgumentNullException(nameof(connection));
+
+    public int CommitCallCount { get; private set; }
+
+    public int RollbackCallCount { get; private set; }
+
+    public int DisposeCallCount { get; private set; }
+
+    public override void Commit()
+    {
+        CommitCallCount++;
+    }
+
+    public override Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CommitCallCount++;
+        return Task.CompletedTask;
+    }
+
+    public override void Rollback()
+    {
+        RollbackCallCount++;
+    }
+
+    public override Task RollbackAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RollbackCallCount++;
+        return Task.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            DisposeCallCount++;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        DisposeCallCount++;
+        return ValueTask.CompletedTask;
+    }
 }

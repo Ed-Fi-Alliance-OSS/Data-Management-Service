@@ -141,28 +141,37 @@ public class Given_RelationalWriteFlattener
         extensionRow.CollectionCandidates.Should().HaveCount(2);
         extensionRow.CollectionCandidates[0].OrdinalPath.Should().Equal(0);
         extensionRow.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        var firstExtensionCollectionItemId = extensionRow
+            .CollectionCandidates[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        extensionRow.CollectionCandidates[0].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
+        extensionRow.CollectionCandidates[0].Values[2].Should().Be(new FlattenedWriteValue.Literal(0));
         extensionRow
             .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Attendance")
-            );
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("Attendance"));
         extensionRow.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Attendance");
 
         extensionRow.CollectionCandidates[1].OrdinalPath.Should().Equal(1);
         extensionRow.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        var secondExtensionCollectionItemId = extensionRow
+            .CollectionCandidates[1]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        secondExtensionCollectionItemId.Token.Should().NotBe(firstExtensionCollectionItemId.Token);
+        extensionRow.CollectionCandidates[1].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
+        extensionRow.CollectionCandidates[1].Values[2].Should().Be(new FlattenedWriteValue.Literal(1));
         extensionRow
             .CollectionCandidates[1]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(1),
-                new FlattenedWriteValue.Literal("Behavior")
-            );
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("Behavior"));
         extensionRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Behavior");
     }
 
@@ -197,13 +206,23 @@ public class Given_RelationalWriteFlattener
         result.RootRow.RootExtensionRows.Should().BeEmpty();
         addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
         addressCandidate.CollectionCandidates.Should().BeEmpty();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        var alignedScopeCollectionItemId = addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScopeCollectionItemId.Token.Should().Be(addressCollectionItemId.Token);
         addressCandidate
             .AttachedAlignedScopeData[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal("Purple")
-            );
+            .Values[1]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("Purple"));
         addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
     }
 
@@ -239,42 +258,61 @@ public class Given_RelationalWriteFlattener
         );
 
         var result = _sut.Flatten(flatteningInput);
-        var alignedScope = result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Single();
-
-        alignedScope
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(null)
-            );
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        var alignedScope = addressCandidate.AttachedAlignedScopeData.Single();
+        var alignedScopeCollectionItemId = alignedScope
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScopeCollectionItemId.Token.Should().Be(addressCollectionItemId.Token);
+        alignedScope.Values[1].Should().Be(new FlattenedWriteValue.Literal(null));
 
         alignedScope.CollectionCandidates.Should().HaveCount(2);
         alignedScope.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
         alignedScope.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        var firstAlignedChildCollectionItemId = alignedScope
+            .CollectionCandidates[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScope.CollectionCandidates[0].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
         alignedScope
             .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Bus")
-            );
+            .Values[2]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Which.Token.Should()
+            .Be(addressCollectionItemId.Token);
+        alignedScope.CollectionCandidates[0].Values[3].Should().Be(new FlattenedWriteValue.Literal(0));
+        alignedScope.CollectionCandidates[0].Values[4].Should().Be(new FlattenedWriteValue.Literal("Bus"));
         alignedScope.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Bus");
 
         alignedScope.CollectionCandidates[1].OrdinalPath.Should().Equal(0, 1);
         alignedScope.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        var secondAlignedChildCollectionItemId = alignedScope
+            .CollectionCandidates[1]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        secondAlignedChildCollectionItemId.Token.Should().NotBe(firstAlignedChildCollectionItemId.Token);
+        alignedScope.CollectionCandidates[1].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
         alignedScope
             .CollectionCandidates[1]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(1),
-                new FlattenedWriteValue.Literal("Meal")
-            );
+            .Values[2]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Which.Token.Should()
+            .Be(addressCollectionItemId.Token);
+        alignedScope.CollectionCandidates[1].Values[3].Should().Be(new FlattenedWriteValue.Literal(1));
+        alignedScope.CollectionCandidates[1].Values[4].Should().Be(new FlattenedWriteValue.Literal("Meal"));
         alignedScope.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Meal");
     }
 
@@ -388,30 +426,39 @@ public class Given_RelationalWriteFlattener
         result.RootRow.CollectionCandidates.Should().HaveCount(2);
         result.RootRow.CollectionCandidates[0].OrdinalPath.Should().Equal(0);
         result.RootRow.CollectionCandidates[0].RequestOrder.Should().Be(0);
+        var firstCollectionItemId = result
+            .RootRow.CollectionCandidates[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        result.RootRow.CollectionCandidates[0].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
+        result.RootRow.CollectionCandidates[0].Values[2].Should().Be(new FlattenedWriteValue.Literal(0));
+        result.RootRow.CollectionCandidates[0].Values[3].Should().Be(new FlattenedWriteValue.Literal("Home"));
         result
             .RootRow.CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Home"),
-                new FlattenedWriteValue.Literal("1 Main St")
-            );
+            .Values[4]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("1 Main St"));
         result.RootRow.CollectionCandidates[0].SemanticIdentityValues.Should().Equal("Home");
 
         result.RootRow.CollectionCandidates[1].OrdinalPath.Should().Equal(1);
         result.RootRow.CollectionCandidates[1].RequestOrder.Should().Be(1);
+        var secondCollectionItemId = result
+            .RootRow.CollectionCandidates[1]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        secondCollectionItemId.Token.Should().NotBe(firstCollectionItemId.Token);
+        result.RootRow.CollectionCandidates[1].Values[1].Should().Be(new FlattenedWriteValue.Literal(345L));
+        result.RootRow.CollectionCandidates[1].Values[2].Should().Be(new FlattenedWriteValue.Literal(1));
+        result.RootRow.CollectionCandidates[1].Values[3].Should().Be(new FlattenedWriteValue.Literal("Work"));
         result
             .RootRow.CollectionCandidates[1]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(1),
-                new FlattenedWriteValue.Literal("Work"),
-                new FlattenedWriteValue.Literal("2 State St")
-            );
+            .Values[4]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("2 State St"));
         result.RootRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Work");
     }
 
@@ -450,6 +497,26 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
         var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        var firstNestedCollectionItemId = addressCandidate
+            .CollectionCandidates[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        var secondNestedCollectionItemId = addressCandidate
+            .CollectionCandidates[1]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        firstNestedCollectionItemId.Token.Should().NotBe(addressCollectionItemId.Token);
+        secondNestedCollectionItemId.Token.Should().NotBe(addressCollectionItemId.Token);
+        secondNestedCollectionItemId.Token.Should().NotBe(firstNestedCollectionItemId.Token);
 
         addressCandidate.CollectionCandidates.Should().HaveCount(2);
         addressCandidate.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
@@ -458,21 +525,13 @@ public class Given_RelationalWriteFlattener
             .CollectionCandidates[0]
             .SemanticIdentityValues.Should()
             .Equal(new DateOnly(2026, 8, 20));
-        addressCandidate
-            .CollectionCandidates[0]
-            .Values[0]
-            .Should()
-            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        addressCandidate.CollectionCandidates[0].Values[0].Should().BeSameAs(firstNestedCollectionItemId);
         addressCandidate
             .CollectionCandidates[0]
             .Values[1]
             .Should()
             .BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
-        addressCandidate
-            .CollectionCandidates[0]
-            .Values[2]
-            .Should()
-            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        addressCandidate.CollectionCandidates[0].Values[2].Should().BeSameAs(addressCollectionItemId);
         addressCandidate.CollectionCandidates[0].Values[3].Should().Be(new FlattenedWriteValue.Literal(0));
         addressCandidate
             .CollectionCandidates[0]
@@ -491,6 +550,13 @@ public class Given_RelationalWriteFlattener
             .CollectionCandidates[1]
             .SemanticIdentityValues.Should()
             .Equal(new DateOnly(2027, 8, 20));
+        addressCandidate.CollectionCandidates[1].Values[0].Should().BeSameAs(secondNestedCollectionItemId);
+        addressCandidate
+            .CollectionCandidates[1]
+            .Values[1]
+            .Should()
+            .BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        addressCandidate.CollectionCandidates[1].Values[2].Should().BeSameAs(addressCollectionItemId);
         addressCandidate.CollectionCandidates[1].Values[3].Should().Be(new FlattenedWriteValue.Literal(1));
         addressCandidate
             .CollectionCandidates[1]
