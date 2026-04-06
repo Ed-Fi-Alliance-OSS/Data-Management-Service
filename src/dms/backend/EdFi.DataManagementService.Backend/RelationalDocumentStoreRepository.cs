@@ -82,7 +82,6 @@ public sealed class RelationalDocumentStoreRepository(
             ),
             relationalUpsertRequest.DocumentInfo.DocumentReferences,
             relationalUpsertRequest.DocumentInfo.DescriptorReferences,
-            relationalUpsertRequest.BackendProfileWriteContext,
             static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
             static executorResult =>
                 executorResult switch
@@ -161,7 +160,6 @@ public sealed class RelationalDocumentStoreRepository(
             new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
             relationalUpdateRequest.DocumentInfo.DocumentReferences,
             relationalUpdateRequest.DocumentInfo.DescriptorReferences,
-            relationalUpdateRequest.BackendProfileWriteContext,
             static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
             static executorResult =>
                 executorResult switch
@@ -226,7 +224,6 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetRequest targetRequest,
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
-        BackendProfileWriteContext? backendProfileWriteContext,
         Func<string, TResult> failureFactory,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector
     )
@@ -237,11 +234,6 @@ public sealed class RelationalDocumentStoreRepository(
         ArgumentNullException.ThrowIfNull(descriptorReferences);
         ArgumentNullException.ThrowIfNull(failureFactory);
         ArgumentNullException.ThrowIfNull(executorResultProjector);
-
-        if (backendProfileWriteContext is not null)
-        {
-            return failureFactory(ProfileAwareRelationalWritesPendingMessage);
-        }
 
         var resource = RelationalWriteSupport.ToQualifiedResourceName(resourceInfo);
         ResourceWritePlan writePlan;

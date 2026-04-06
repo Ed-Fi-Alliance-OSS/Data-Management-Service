@@ -24,7 +24,7 @@
       "Keep or update the existing profile orchestration tests so they still assert that the repository fences before target lookup and executor execution.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_A_Profiled_Relational_Post|FullyQualifiedName~Given_A_Profiled_Relational_Put|FullyQualifiedName~Given_RelationalDocumentStoreRepositoryTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Encapsulation",
