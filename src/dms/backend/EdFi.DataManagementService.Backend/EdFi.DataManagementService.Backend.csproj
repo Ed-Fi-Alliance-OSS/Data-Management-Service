@@ -25,6 +25,7 @@
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Core.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql" />

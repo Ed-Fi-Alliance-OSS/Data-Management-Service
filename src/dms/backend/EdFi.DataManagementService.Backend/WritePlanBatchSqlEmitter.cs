@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Backend;
 /// Emits deterministic batched DML SQL from compiled write-plan metadata so runtime batching stays aligned to the
 /// authoritative compiled plan surface instead of hand-rewriting SQL text in the persister.
 /// </summary>
-public sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
+internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
 

@@ -34,6 +34,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanBatchSqlEmitter\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_Relational_Write_No_Profile_Persister\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
