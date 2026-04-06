@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -168,9 +170,9 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
 
     private static TestRelationalWriteSession CreateWriteSession(DataTableReader reader)
     {
-        var command = new RecordingDbCommand(reader);
-        var connection = new RecordingDbConnection(command);
-        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var command = new TrackingDbCommand(reader);
+        var connection = new NpgsqlTestDbConnection(command);
+        var transaction = new TestDbTransaction(connection);
 
         return new TestRelationalWriteSession(connection, transaction);
     }
@@ -202,11 +204,11 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
     }
 
     private sealed class TestRelationalWriteSession(
-        RecordingDbConnection connection,
-        RecordingDbTransaction transaction
+        NpgsqlTestDbConnection connection,
+        TestDbTransaction transaction
     ) : IRelationalWriteSession
     {
-        public RecordingDbConnection Connection { get; } = connection;
+        public NpgsqlTestDbConnection Connection { get; } = connection;
 
         DbConnection IRelationalWriteSession.Connection => Connection;
 
@@ -221,5 +223,200 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             throw new NotSupportedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class NpgsqlTestDbConnection(TrackingDbCommand command) : DbConnection
+    {
+        private ConnectionState _state = ConnectionState.Open;
+
+        public TrackingDbCommand Command { get; } = command;
+
+        public int CreateCommandCallCount { get; private set; }
+
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "Host=localhost;Database=test";
+
+        public override string Database => "test";
+
+        public override string DataSource => "npgsql";
+
+        public override string ServerVersion => "1.0";
+
+        public override ConnectionState State => _state;
+
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+
+        public override void Close() => _state = ConnectionState.Closed;
+
+        public override void Open() => _state = ConnectionState.Open;
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            new TestDbTransaction(this);
+
+        protected override DbCommand CreateDbCommand()
+        {
+            CreateCommandCallCount++;
+            Command.AttachConnection(this);
+            return Command;
+        }
+    }
+
+    private sealed class TestDbTransaction(DbConnection connection) : DbTransaction
+    {
+        public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
+
+        protected override DbConnection DbConnection { get; } = connection;
+
+        public override void Commit() { }
+
+        public override void Rollback() { }
+    }
+
+    private sealed class TrackingDbCommand(DbDataReader reader) : DbCommand
+    {
+        private readonly TrackingDbParameterCollection _parameters = [];
+        private readonly DbDataReader _reader = reader;
+
+        [AllowNull]
+        public override string CommandText { get; set; } = string.Empty;
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; } = CommandType.Text;
+
+        protected override DbConnection? DbConnection { get; set; }
+
+        protected override DbParameterCollection DbParameterCollection => _parameters;
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+
+        public new List<TrackingDbParameter> Parameters => _parameters.Items;
+
+        public void AttachConnection(NpgsqlTestDbConnection connection) => DbConnection = connection;
+
+        public override void Cancel() { }
+
+        public override int ExecuteNonQuery() => throw new NotSupportedException();
+
+        public override object? ExecuteScalar() => throw new NotSupportedException();
+
+        public override void Prepare() { }
+
+        protected override DbParameter CreateDbParameter() => new TrackingDbParameter();
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => _reader;
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+            CommandBehavior behavior,
+            CancellationToken cancellationToken
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_reader);
+        }
+    }
+
+    private sealed class TrackingDbParameterCollection : DbParameterCollection
+    {
+        public List<TrackingDbParameter> Items { get; } = [];
+
+        public override int Count => Items.Count;
+
+        public override object SyncRoot => ((ICollection)Items).SyncRoot!;
+
+        public override int Add(object value)
+        {
+            Items.Add((TrackingDbParameter)value);
+            return Items.Count - 1;
+        }
+
+        public override void AddRange(Array values)
+        {
+            foreach (var value in values)
+            {
+                Add(value!);
+            }
+        }
+
+        public override void Clear() => Items.Clear();
+
+        public override bool Contains(object value) => Items.Contains((TrackingDbParameter)value);
+
+        public override bool Contains(string value) =>
+            Items.Exists(parameter => parameter.ParameterName == value);
+
+        public override void CopyTo(Array array, int index) => ((ICollection)Items).CopyTo(array, index);
+
+        public override IEnumerator GetEnumerator() => Items.GetEnumerator();
+
+        protected override DbParameter GetParameter(int index) => Items[index];
+
+        protected override DbParameter GetParameter(string parameterName) =>
+            Items.Single(parameter => parameter.ParameterName == parameterName);
+
+        public override int IndexOf(object value) => Items.IndexOf((TrackingDbParameter)value);
+
+        public override int IndexOf(string parameterName) =>
+            Items.FindIndex(parameter => parameter.ParameterName == parameterName);
+
+        public override void Insert(int index, object value) =>
+            Items.Insert(index, (TrackingDbParameter)value);
+
+        public override void Remove(object value) => Items.Remove((TrackingDbParameter)value);
+
+        public override void RemoveAt(int index) => Items.RemoveAt(index);
+
+        public override void RemoveAt(string parameterName)
+        {
+            var index = IndexOf(parameterName);
+
+            if (index >= 0)
+            {
+                Items.RemoveAt(index);
+            }
+        }
+
+        protected override void SetParameter(int index, DbParameter value) =>
+            Items[index] = (TrackingDbParameter)value;
+
+        protected override void SetParameter(string parameterName, DbParameter value)
+        {
+            var index = IndexOf(parameterName);
+
+            if (index < 0)
+            {
+                Items.Add((TrackingDbParameter)value);
+                return;
+            }
+
+            Items[index] = (TrackingDbParameter)value;
+        }
+    }
+
+    private sealed class TrackingDbParameter : DbParameter
+    {
+        public override DbType DbType { get; set; }
+
+        public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
+
+        public override bool IsNullable { get; set; }
+
+        [AllowNull]
+        public override string ParameterName { get; set; } = string.Empty;
+
+        [AllowNull]
+        public override string SourceColumn { get; set; } = string.Empty;
+
+        public override object? Value { get; set; }
+
+        public override bool SourceColumnNullMapping { get; set; }
+
+        public override int Size { get; set; }
+
+        public override void ResetDbType() => DbType = DbType.Object;
     }
 }

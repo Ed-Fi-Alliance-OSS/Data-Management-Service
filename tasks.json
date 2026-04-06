@@ -6,7 +6,7 @@
       "Add/adjust unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/SessionRelationalCommandExecutorTests.cs` to cover PostgreSQL, SQL Server, and unknown connection types.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_SessionRelationalCommandExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming",

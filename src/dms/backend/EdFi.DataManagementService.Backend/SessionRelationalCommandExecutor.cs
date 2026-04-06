@@ -46,13 +46,15 @@ internal sealed class SessionRelationalCommandExecutor(DbConnection connection, 
         ArgumentNullException.ThrowIfNull(connection);
 
         var connectionType = connection.GetType();
-        var fullName = connectionType.FullName ?? connectionType.Name;
+        var typeName = connectionType.FullName ?? connectionType.Name;
 
-        return fullName switch
+        return typeName switch
         {
-            _ when fullName.Contains("Npgsql", StringComparison.Ordinal) => SqlDialect.Pgsql,
-            _ when fullName.Contains("SqlClient", StringComparison.Ordinal) => SqlDialect.Mssql,
-            _ => SqlDialect.Pgsql,
+            _ when typeName.Contains("Npgsql", StringComparison.Ordinal) => SqlDialect.Pgsql,
+            _ when typeName.Contains("SqlClient", StringComparison.Ordinal) => SqlDialect.Mssql,
+            _ => throw new NotSupportedException(
+                $"Unsupported DbConnection type '{typeName}' for relational dialect detection."
+            ),
         };
     }
 }
