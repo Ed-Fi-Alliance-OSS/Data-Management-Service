@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -40,6 +41,14 @@ internal sealed record RelationalWriteCurrentState
     public DocumentMetadataRow DocumentMetadata { get; init; }
 
     public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder { get; init; }
+
+    /// <summary>
+    /// The fully reconstituted stored JSON document, including reference identity values,
+    /// descriptor URIs, nested collections, and <c>_ext</c> overlays.
+    /// Populated when the current-state loader has projection metadata available.
+    /// Consumed by Core's stored-state projector (C6) for profile-constrained write flows.
+    /// </summary>
+    public JsonNode? ReconstitutedDocument { get; init; }
 }
 
 internal interface IRelationalWriteCurrentStateLoader
