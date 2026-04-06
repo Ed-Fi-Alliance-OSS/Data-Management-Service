@@ -3,22 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_DescriptorProjectionExecutor_With_No_Plans
+public class Given_DescriptorProjectionExecutor_With_No_Pairs
 {
     private IReadOnlyDictionary<long, string> _result = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _result = DescriptorProjectionExecutor.BuildLookupFromPlans([], []);
+        _result = DescriptorProjectionExecutor.BuildLookupFromPairs([]);
     }
 
     [Test]
@@ -33,23 +31,6 @@ public class Given_DescriptorProjectionExecutor_With_Resolved_Pairs
 {
     private IReadOnlyDictionary<long, string> _result = null!;
 
-    private static readonly DescriptorProjectionPlan _dummyPlan = new(
-        SelectByKeysetSql: "SELECT DescriptorId, Uri FROM dms.Descriptor;",
-        ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-        SourcesInOrder:
-        [
-            new DescriptorProjectionSource(
-                DescriptorValuePath: new JsonPathExpression(
-                    "$.gradeLevelDescriptor",
-                    [new JsonPathSegment.Property("gradeLevelDescriptor")]
-                ),
-                Table: new DbTableName(new DbSchemaName("edfi"), "GradingPeriod"),
-                DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
-                DescriptorIdColumnOrdinal: 3
-            ),
-        ]
-    );
-
     [SetUp]
     public void SetUp()
     {
@@ -59,7 +40,7 @@ public class Given_DescriptorProjectionExecutor_With_Resolved_Pairs
             (202L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade"),
         ];
 
-        _result = DescriptorProjectionExecutor.BuildLookupFromPlans([_dummyPlan], pairs);
+        _result = DescriptorProjectionExecutor.BuildLookupFromPairs(pairs);
     }
 
     [Test]

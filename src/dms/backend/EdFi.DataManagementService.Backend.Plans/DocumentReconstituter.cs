@@ -52,14 +52,13 @@ public static class DocumentReconstituter
             throw new InvalidOperationException("Cannot reconstitute document: no table rows provided.");
         }
 
-        // Phase 1: Find root table and root row
+        // Phase 1: Find root table and root row, emit root scalars
         var rootTableRows = tableRowsInDependencyOrder[0];
         var rootTableModel = rootTableRows.TableModel;
         var rootRow = FindRootRow(documentId, rootTableRows);
 
         var result = new JsonObject();
 
-        // Phase 1: Emit root scalars
         EmitScalars(result, rootRow, rootTableModel);
 
         // Phase 2: Emit references on root
@@ -532,7 +531,10 @@ public static class DocumentReconstituter
                 return result;
             }
 
-            return [.. childTableRows.Rows];
+            throw new InvalidOperationException(
+                $"Cannot filter child rows for table '{childTableModel.Table}': "
+                    + "neither ImmediateParentScopeLocatorColumns nor RootScopeLocatorColumns are configured."
+            );
         }
 
         // For root children, the parent scope locator is DocumentId

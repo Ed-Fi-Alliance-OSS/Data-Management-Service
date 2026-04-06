@@ -75,21 +75,18 @@ public static class DescriptorProjectionExecutor
     /// This overload exists for unit-test use where the caller already holds the resolved pairs
     /// and only needs the lookup assembled — no database access is required.
     /// </remarks>
-    /// <param name="plans">Compiled descriptor projection plans (used only to check emptiness).</param>
     /// <param name="pairs">Pre-resolved <c>(DescriptorId, Uri)</c> pairs to index.</param>
     /// <returns>
     /// A read-only dictionary mapping each <c>DescriptorId</c> to its URI.
-    /// Returns an empty dictionary when either <paramref name="plans"/> or <paramref name="pairs"/> is empty.
+    /// Returns an empty dictionary when <paramref name="pairs"/> is empty.
     /// </returns>
-    public static IReadOnlyDictionary<long, string> BuildLookupFromPlans(
-        IReadOnlyList<DescriptorProjectionPlan> plans,
+    public static IReadOnlyDictionary<long, string> BuildLookupFromPairs(
         IReadOnlyList<(long DescriptorId, string Uri)> pairs
     )
     {
-        ArgumentNullException.ThrowIfNull(plans);
         ArgumentNullException.ThrowIfNull(pairs);
 
-        if (plans.Count == 0 || pairs.Count == 0)
+        if (pairs.Count == 0)
         {
             return new Dictionary<long, string>();
         }
