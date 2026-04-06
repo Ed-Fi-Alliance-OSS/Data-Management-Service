@@ -14,16 +14,20 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
 {
     public RelationalWriteCurrentStateLoadRequest(
         ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        SqlDialect dialect
     )
     {
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        Dialect = dialect;
     }
 
     public ResourceReadPlan ReadPlan { get; init; }
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
+
+    public SqlDialect Dialect { get; init; }
 }
 
 internal sealed record RelationalWriteCurrentState
