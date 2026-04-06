@@ -163,9 +163,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFreshnessChecker>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteNonCollectionPersister>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>()
                 .Should()
-                .BeOfType<RelationalWriteNonCollectionPersister>();
+                .BeOfType<RelationalWriteNoProfilePersister>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
                 .Should()
@@ -265,9 +265,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFreshnessChecker>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteNonCollectionPersister>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>()
                 .Should()
-                .BeOfType<RelationalWriteNonCollectionPersister>();
+                .BeOfType<RelationalWriteNoProfilePersister>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
                 .Should()
