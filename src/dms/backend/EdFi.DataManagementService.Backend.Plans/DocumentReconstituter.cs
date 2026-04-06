@@ -158,8 +158,12 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var propertyName = ExtractLastPropertySegment(column.SourceJsonPath.Value);
-            target[propertyName] = ConvertToJsonValue(value);
+            var (targetObject, propertyName) = ResolvePathRelativeToScope(
+                target,
+                column.SourceJsonPath.Value,
+                tableModel.JsonScope
+            );
+            targetObject[propertyName] = ConvertToJsonValue(value);
         }
     }
 
@@ -185,7 +189,7 @@ public static class DocumentReconstituter
                 var projectionResult = ReferenceIdentityProjector.Project(row, binding);
                 if (projectionResult is ReferenceProjectionResult.Present present)
                 {
-                    EmitReferenceObject(target, present);
+                    EmitReferenceObject(target, present, tableModel.JsonScope);
                 }
             }
         }
@@ -194,18 +198,30 @@ public static class DocumentReconstituter
     /// <summary>
     /// Emits a single reference object into the target JSON object.
     /// </summary>
-    private static void EmitReferenceObject(JsonObject target, ReferenceProjectionResult.Present present)
+    private static void EmitReferenceObject(
+        JsonObject target,
+        ReferenceProjectionResult.Present present,
+        JsonPathExpression scope
+    )
     {
-        var referencePropertyName = ExtractLastPropertySegment(present.ReferenceObjectPath);
+        var (referenceParent, referencePropertyName) = ResolvePathRelativeToScope(
+            target,
+            present.ReferenceObjectPath,
+            scope
+        );
         var referenceObject = new JsonObject();
 
         foreach (var field in present.FieldsInOrder)
         {
-            var fieldPropertyName = ExtractLastPropertySegment(field.ReferenceJsonPath);
-            referenceObject[fieldPropertyName] = ConvertToJsonValue(field.Value);
+            var (fieldParent, fieldPropertyName) = ResolvePathRelativeToScope(
+                referenceObject,
+                field.ReferenceJsonPath,
+                present.ReferenceObjectPath
+            );
+            fieldParent[fieldPropertyName] = ConvertToJsonValue(field.Value);
         }
 
-        target[referencePropertyName] = referenceObject;
+        referenceParent[referencePropertyName] = referenceObject;
     }
 
     /// <summary>
@@ -239,8 +255,12 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var propertyName = ExtractLastPropertySegment(source.DescriptorValuePath);
-            target[propertyName] = JsonValue.Create(uri);
+            var (targetObject, propertyName) = ResolvePathRelativeToScope(
+                target,
+                source.DescriptorValuePath,
+                tableModel.JsonScope
+            );
+            targetObject[propertyName] = JsonValue.Create(uri);
         }
     }
 
@@ -327,6 +347,11 @@ public static class DocumentReconstituter
             parentTableModel,
             childTableRows
         );
+
+        if (matchingRows.Count == 0)
+        {
+            return;
+        }
 
         // Sort by ordinal if an Ordinal column exists
         var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
@@ -450,9 +475,13 @@ public static class DocumentReconstituter
             descriptorUriLookup
         );
 
-        // Recurse for extension collection children
+        // Recurse for extension collection children.
+        // Use the extension scope's own CollectionKey if it has one; otherwise
+        // fall back to parentCollectionItemId. CollectionExtensionScope tables
+        // use BaseCollectionItemId (a ParentKeyPart, not CollectionKey) as their
+        // row identity, which equals the parent collection item's key.
         var collectionKeyOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.CollectionKey);
-        long? extensionScopeId = null;
+        long? extensionScopeId = parentCollectionItemId;
         if (collectionKeyOrdinal >= 0 && extensionRow[collectionKeyOrdinal] is not null)
         {
             extensionScopeId = Convert.ToInt64(extensionRow[collectionKeyOrdinal]);
@@ -701,23 +730,48 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
-    /// Extracts the last Property segment name from a JsonPathExpression.
-    /// e.g., "$.schoolReference" => "schoolReference"
-    /// e.g., "$.schoolReference.schoolId" => "schoolId"
+    /// Given a full JSON path and the owning table/scope path, resolves the correct
+    /// target JSON object and property name. Creates intermediate JSON objects for any
+    /// inlined nested property segments between the scope and the target property.
+    /// <para>
+    /// For example, with scope <c>$</c> and path <c>$.contentStandard.beginDate</c>,
+    /// this creates the <c>contentStandard</c> intermediate object and returns it with
+    /// property name <c>beginDate</c>.
+    /// </para>
     /// </summary>
-    private static string ExtractLastPropertySegment(JsonPathExpression path)
+    private static (JsonObject TargetObject, string PropertyName) ResolvePathRelativeToScope(
+        JsonObject scopeObject,
+        JsonPathExpression fullPath,
+        JsonPathExpression scopePath
+    )
     {
-        for (var i = path.Segments.Count - 1; i >= 0; i--)
+        var startIndex = scopePath.Segments.Count;
+        var target = scopeObject;
+
+        // Walk intermediate property segments, creating nested objects as needed
+        for (var i = startIndex; i < fullPath.Segments.Count - 1; i++)
         {
-            if (path.Segments[i] is JsonPathSegment.Property prop)
+            if (fullPath.Segments[i] is JsonPathSegment.Property prop)
             {
-                return prop.Name;
+                if (target[prop.Name] is not JsonObject child)
+                {
+                    child = new JsonObject();
+                    target[prop.Name] = child;
+                }
+
+                target = child;
             }
         }
 
-        throw new InvalidOperationException(
-            $"Cannot extract last property segment from path '{path.Canonical}'."
-        );
+        // The last segment is the property name
+        if (fullPath.Segments[^1] is not JsonPathSegment.Property lastProp)
+        {
+            throw new InvalidOperationException(
+                $"Expected last segment of '{fullPath.Canonical}' to be a property."
+            );
+        }
+
+        return (target, lastProp.Name);
     }
 
     /// <summary>
