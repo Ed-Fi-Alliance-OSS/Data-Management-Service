@@ -689,6 +689,9 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
             }
         }
 
+        // Batched collection updates emit sequential UPDATE statements. For multi-row reorders, move the affected
+        // siblings to temporary negative ordinals first so swaps do not trip the unique (ParentScope, Ordinal)
+        // constraint before the final contiguous ordinals are applied.
         if (rowsToUpdate.Count > 1 && hasOrdinalReorder)
         {
             await ExecuteParameterizedBatchesAsync(

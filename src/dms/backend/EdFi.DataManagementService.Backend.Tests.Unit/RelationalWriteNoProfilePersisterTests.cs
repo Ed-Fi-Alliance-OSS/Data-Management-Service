@@ -961,7 +961,7 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
-    public async Task It_uses_temporary_negative_ordinals_before_final_batch_updates_for_collection_reorders()
+    public async Task It_uses_temporary_negative_ordinals_to_avoid_transient_ordinal_uniqueness_collisions_during_collection_reorders()
     {
         var rootPlan = CreateRootPlan();
         var collectionPlan = CreateCollectionPlan() with
@@ -995,6 +995,8 @@ public class Given_Relational_Write_No_Profile_Persister
         await _sut.PersistAsync(request, mergeResult, writeSession);
         writeSession.Commands.Should().HaveCount(2);
 
+        // A sequential swap from 0<->1 would collide on the sibling-order uniqueness constraint unless the first pass
+        // moves both matched rows out of the way.
         writeSession
             .Commands[0]
             .CommandText.Should()

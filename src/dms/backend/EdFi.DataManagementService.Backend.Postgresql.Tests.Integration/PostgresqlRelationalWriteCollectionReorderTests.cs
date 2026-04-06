@@ -536,6 +536,16 @@ public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder
             );
     }
 
+    [Test]
+    public void It_succeeds_for_a_two_row_swap_under_the_db_sibling_ordinal_uniqueness_constraint()
+    {
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        _stateAfterUpdate.Addresses.Should().HaveCount(2);
+        _stateAfterUpdate.Addresses.Select(static row => row.Ordinal).Should().Equal(0, 1);
+        _stateAfterUpdate.Addresses.Select(static row => row.Ordinal).Should().OnlyHaveUniqueItems();
+        _stateAfterUpdate.Addresses.Select(static row => row.City).Should().Equal("Dallas", "Austin");
+    }
+
     private async Task ExecuteCreateAsync()
     {
         using var scope = _serviceProvider.CreateScope();
