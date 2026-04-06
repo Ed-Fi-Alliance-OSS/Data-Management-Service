@@ -27,6 +27,7 @@ public class Given_RelationalWriteContracts
     [Test]
     public void It_keeps_root_document_and_collection_item_keys_unresolved_for_create_flows()
     {
+        var collectionItemId = NewCollectionItemId();
         var flatteningInput = new FlatteningInput(
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
@@ -41,7 +42,7 @@ public class Given_RelationalWriteContracts
             requestOrder: 0,
             values:
             [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                collectionItemId,
                 FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Home"),
@@ -64,11 +65,7 @@ public class Given_RelationalWriteContracts
         flatteningInput.SelectedBody.Should().BeSameAs(_fixture.SelectedBody);
         flatteningInput.TargetContext.Should().BeOfType<RelationalWriteTargetContext.CreateNew>();
         writeSet.RootRow.Values[0].Should().BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
-        writeSet
-            .RootRow.CollectionCandidates[0]
-            .Values[0]
-            .Should()
-            .BeSameAs(FlattenedWriteValue.UnresolvedCollectionItemId.Instance);
+        writeSet.RootRow.CollectionCandidates[0].Values[0].Should().BeSameAs(collectionItemId);
         writeSet
             .RootRow.CollectionCandidates[0]
             .Values[1]
@@ -79,13 +76,10 @@ public class Given_RelationalWriteContracts
     [Test]
     public void It_keeps_collection_aligned_extension_scope_rows_attached_to_the_owning_collection_candidate()
     {
+        var addressCollectionItemId = NewCollectionItemId();
         var alignedScopeData = new CandidateAttachedAlignedScopeData(
             _fixture.CollectionExtensionScopePlan,
-            values:
-            [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal("Purple"),
-            ]
+            values: [addressCollectionItemId, new FlattenedWriteValue.Literal("Purple")]
         );
 
         var topLevelCollectionCandidate = new CollectionWriteCandidate(
@@ -94,7 +88,7 @@ public class Given_RelationalWriteContracts
             requestOrder: 0,
             values:
             [
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
+                addressCollectionItemId,
                 FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
                 new FlattenedWriteValue.Literal(0),
                 new FlattenedWriteValue.Literal("Home"),
@@ -131,17 +125,16 @@ public class Given_RelationalWriteContracts
         var act = () =>
             new RootExtensionWriteRowBuffer(
                 _fixture.CollectionExtensionScopePlan,
-                values:
-                [
-                    FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                    new FlattenedWriteValue.Literal("Purple"),
-                ]
+                values: [NewCollectionItemId(), new FlattenedWriteValue.Literal("Purple")]
             );
 
         act.Should()
             .Throw<ArgumentException>()
             .WithMessage("*RootExtensionWriteRowBuffer*RootExtension*CollectionExtensionScope*");
     }
+
+    private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
+        FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
     private sealed record ContractFixture(
         DocumentUuid DocumentUuid,

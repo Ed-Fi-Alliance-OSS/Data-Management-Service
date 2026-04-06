@@ -160,6 +160,14 @@ internal class UpsertHandler(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
                 requestInfo.FrontendRequest.TraceId
             ),
+            UpsertFailureImmutableIdentity failure => new(
+                StatusCode: 400,
+                Body: ForImmutableIdentity(
+                    failure.FailureMessage,
+                    traceId: requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
             UnknownFailure failure => new(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

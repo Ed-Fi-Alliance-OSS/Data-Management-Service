@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
@@ -16,7 +20,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
-            MssqlRelationalCommandExecutor
+            MssqlRelationalCommandExecutor,
+            MssqlRelationalWriteSessionFactory,
+            MssqlSessionDocumentHydrator
         >();
     }
 }
@@ -31,4 +37,30 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
     {
         return new MssqlReferenceResolverAdapter(_commandExecutor);
     }
+
+    public IReferenceResolverAdapter CreateSessionAdapter(DbConnection connection, DbTransaction transaction)
+    {
+        return new MssqlReferenceResolverAdapter(
+            new SessionRelationalCommandExecutor(connection, transaction)
+        );
+    }
+}
+
+internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
+{
+    public Task<HydratedPage> HydrateAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        CancellationToken cancellationToken = default
+    ) =>
+        HydrationExecutor.ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            transaction,
+            cancellationToken
+        );
 }

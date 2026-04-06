@@ -1,0 +1,133 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "abstractResources": {},
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "Program": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "Program",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.programName",
+                "referenceJsonPath": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName"
+              }
+            ]
+          }
+        },
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$._ext.sample.interventions[*].interventionCode"
+            ],
+            "nestedConstraints": [
+              {
+                "basePath": "$._ext.sample.interventions[*]",
+                "paths": [
+                  "$.visits[*].visitCode"
+                ]
+              }
+            ]
+          }
+        ],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "campusCode": {
+                      "type": "string",
+                      "maxLength": 20
+                    },
+                    "addresses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_ext": {
+                            "type": "object",
+                            "properties": {
+                              "sample": {
+                                "type": "object",
+                                "properties": {
+                                  "zone": {
+                                    "type": "string",
+                                    "maxLength": 20
+                                  },
+                                  "sponsorReferences": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "programReference": {
+                                          "type": "object",
+                                          "properties": {
+                                            "programName": {
+                                              "type": "string",
+                                              "maxLength": 20
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "interventions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "interventionCode": {
+                            "type": "string",
+                            "maxLength": 20
+                          },
+                          "visits": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "visitCode": {
+                                  "type": "string",
+                                  "maxLength": 20
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

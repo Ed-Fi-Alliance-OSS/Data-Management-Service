@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,7 +33,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
-        scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
+        scope.ServiceProvider.GetService<IDescriptorWriteHandler>().Should().BeNull();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
+        scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
         factory.Should().BeOfType<TestReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<TestReferenceResolverAdapter>();
     }
@@ -45,17 +49,32 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         services.AddReferenceResolver<
             ExecutorBackedReferenceResolverAdapterFactory,
-            TestRelationalCommandExecutor
+            TestRelationalCommandExecutor,
+            TestRelationalWriteSessionFactory,
+            TestSessionDocumentHydrator
         >();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
-        var targetContextResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
-        var terminalStage = scope.ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>();
+        var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
+        var currentStateLoader =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
+        var writeFreshnessChecker =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
+        var noProfileMergeSynthesizer =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
+        var nonCollectionPersister =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNonCollectionPersister>();
+        var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
+        var targetLookupService =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
+        var targetLookupResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
+        var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var factory = scope
             .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
             .Should()
@@ -68,9 +87,17 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
-        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
-        terminalStage.Should().BeOfType<DefaultRelationalWriteTerminalStage>();
+        sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
+        currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
+        writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
+        noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
+        nonCollectionPersister.Should().BeOfType<RelationalWriteNonCollectionPersister>();
+        descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
+        targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
+        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
+        writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         factory.CommandExecutor.Should().BeSameAs(commandExecutor);
         adapter.CommandExecutor.Should().BeSameAs(commandExecutor);
     }
@@ -85,6 +112,11 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
     private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
     {
         public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
+
+        public IReferenceResolverAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        ) => new TestReferenceResolverAdapter();
     }
 
     private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
@@ -108,6 +140,16 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public IReferenceResolverAdapter CreateAdapter()
         {
             return new ExecutorBackedReferenceResolverAdapter(CommandExecutor);
+        }
+
+        public IReferenceResolverAdapter CreateSessionAdapter(
+            DbConnection connection,
+            DbTransaction transaction
+        )
+        {
+            return new ExecutorBackedReferenceResolverAdapter(
+                new SessionRelationalCommandExecutor(connection, transaction)
+            );
         }
     }
 
@@ -133,6 +175,28 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         public Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,
             Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class TestRelationalWriteSessionFactory : IRelationalWriteSessionFactory
+    {
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class TestSessionDocumentHydrator : ISessionDocumentHydrator
+    {
+        public Task<HydratedPage> HydrateAsync(
+            DbConnection connection,
+            DbTransaction transaction,
+            ResourceReadPlan plan,
+            PageKeysetSpec keyset,
             CancellationToken cancellationToken = default
         )
         {

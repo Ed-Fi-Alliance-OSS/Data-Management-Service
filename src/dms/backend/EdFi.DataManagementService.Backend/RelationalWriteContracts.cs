@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -45,8 +44,65 @@ public abstract record RelationalWriteTargetContext
     /// </summary>
     /// <param name="DocumentId">The persisted relational document id.</param>
     /// <param name="DocumentUuid">The persisted externally visible document id.</param>
-    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid)
-        : RelationalWriteTargetContext;
+    /// <param name="ObservedContentVersion">
+    /// The stored representation stamp observed during target lookup for this existing document.
+    /// </param>
+    public sealed record ExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ObservedContentVersion = 0
+    ) : RelationalWriteTargetContext;
+}
+
+/// <summary>
+/// Repository-facing target selection inputs retained alongside the resolved executor target context.
+/// </summary>
+public abstract record RelationalWriteTargetRequest
+{
+    /// <summary>
+    /// POST may create a brand-new document or update an existing document resolved by referential id.
+    /// </summary>
+    /// <param name="ReferentialId">The natural-identity lookup key for POST upsert semantics.</param>
+    /// <param name="CandidateDocumentUuid">
+    /// The caller-reserved document uuid to use when lookup resolves to a new document.
+    /// </param>
+    public sealed record Post(ReferentialId ReferentialId, DocumentUuid CandidateDocumentUuid)
+        : RelationalWriteTargetRequest;
+
+    /// <summary>
+    /// PUT must resolve an already persisted document by external document uuid.
+    /// </summary>
+    /// <param name="DocumentUuid">The externally visible document id addressed by the caller.</param>
+    public sealed record Put(DocumentUuid DocumentUuid) : RelationalWriteTargetRequest;
+}
+
+/// <summary>
+/// Operation-correct relational write lookup result before translation to executor-facing target context.
+/// </summary>
+public abstract record RelationalWriteTargetLookupResult
+{
+    /// <summary>
+    /// POST resolved to a brand-new document.
+    /// </summary>
+    /// <param name="DocumentUuid">The externally visible document id reserved by the caller.</param>
+    public sealed record CreateNew(DocumentUuid DocumentUuid) : RelationalWriteTargetLookupResult;
+
+    /// <summary>
+    /// POST or PUT resolved to an already persisted document.
+    /// </summary>
+    /// <param name="DocumentId">The persisted relational document id.</param>
+    /// <param name="DocumentUuid">The persisted externally visible document id.</param>
+    /// <param name="ObservedContentVersion">The stored representation stamp observed during lookup.</param>
+    public sealed record ExistingDocument(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        long ObservedContentVersion
+    ) : RelationalWriteTargetLookupResult;
+
+    /// <summary>
+    /// PUT did not resolve to a persisted document.
+    /// </summary>
+    public sealed record NotFound : RelationalWriteTargetLookupResult;
 }
 
 /// <summary>
@@ -135,11 +191,9 @@ public abstract record FlattenedWriteValue
     /// <summary>
     /// A stable <c>CollectionItemId</c> remains unresolved and will be bound by a later write stage.
     /// </summary>
-    public sealed record UnresolvedCollectionItemId : FlattenedWriteValue
+    public sealed record UnresolvedCollectionItemId(Guid Token) : FlattenedWriteValue
     {
-        private UnresolvedCollectionItemId() { }
-
-        public static UnresolvedCollectionItemId Instance { get; } = new();
+        public static UnresolvedCollectionItemId Create() => new(Guid.NewGuid());
     }
 }
 
@@ -401,32 +455,127 @@ public sealed record CandidateAttachedAlignedScopeData
 }
 
 /// <summary>
-/// Input contract for the terminal write stage.
+/// Input contract for executor-owned relational write orchestration.
 /// </summary>
-public sealed record RelationalWriteTerminalStageRequest
+public sealed record RelationalWriteExecutorRequest
 {
-    public RelationalWriteTerminalStageRequest(
-        FlatteningInput flatteningInput,
-        FlattenedWriteSet flattenedWriteSet,
+    public RelationalWriteExecutorRequest(
+        MappingSet mappingSet,
+        RelationalWriteOperationKind operationKind,
+        RelationalWriteTargetRequest targetRequest,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan? existingDocumentReadPlan,
+        JsonNode selectedBody,
+        bool allowIdentityUpdates,
         TraceId traceId,
-        string? diagnosticIdentifier = null
+        ReferenceResolverRequest referenceResolutionRequest,
+        RelationalWriteTargetContext targetContext
     )
     {
-        FlatteningInput = flatteningInput ?? throw new ArgumentNullException(nameof(flatteningInput));
-        FlattenedWriteSet = flattenedWriteSet ?? throw new ArgumentNullException(nameof(flattenedWriteSet));
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        OperationKind = operationKind;
+        TargetRequest = targetRequest ?? throw new ArgumentNullException(nameof(targetRequest));
+        WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
+        ExistingDocumentReadPlan = existingDocumentReadPlan;
+        SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
+        AllowIdentityUpdates = allowIdentityUpdates;
         TraceId = traceId;
-        DiagnosticIdentifier = diagnosticIdentifier;
+        ReferenceResolutionRequest =
+            referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
+        TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+
+        if (
+            (OperationKind, TargetRequest)
+            is not
+                (RelationalWriteOperationKind.Post, RelationalWriteTargetRequest.Post)
+                and not
+                (RelationalWriteOperationKind.Put, RelationalWriteTargetRequest.Put)
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(targetRequest)} must match relational write operation '{OperationKind}'.",
+                nameof(targetRequest)
+            );
+        }
+
+        if (
+            TargetContext is RelationalWriteTargetContext.CreateNew
+            && OperationKind != RelationalWriteOperationKind.Post
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(targetContext)} cannot be CreateNew for relational write operation '{OperationKind}'.",
+                nameof(targetContext)
+            );
+        }
+
+        if (
+            ExistingDocumentReadPlan is not null
+            && ExistingDocumentReadPlan.Model.Resource != WritePlan.Model.Resource
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(existingDocumentReadPlan)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
+                nameof(existingDocumentReadPlan)
+            );
+        }
+
+        if (!ReferenceEquals(MappingSet, ReferenceResolutionRequest.MappingSet))
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must reference the same mapping set instance supplied to the executor request.",
+                nameof(referenceResolutionRequest)
+            );
+        }
+
+        if (ReferenceResolutionRequest.RequestResource != WritePlan.Model.Resource)
+        {
+            throw new ArgumentException(
+                $"{nameof(referenceResolutionRequest)} must target resource '{RelationalWriteSupport.FormatResource(WritePlan.Model.Resource)}'.",
+                nameof(referenceResolutionRequest)
+            );
+        }
     }
 
     /// <summary>
-    /// The selected write inputs used to produce <see cref="FlattenedWriteSet" />.
+    /// The active mapping set selected for the current request.
     /// </summary>
-    public FlatteningInput FlatteningInput { get; init; }
+    public MappingSet MappingSet { get; init; }
 
     /// <summary>
-    /// The flattened write tree produced from <see cref="FlatteningInput" />.
+    /// The write entrypoint that initiated executor orchestration.
     /// </summary>
-    public FlattenedWriteSet FlattenedWriteSet { get; init; }
+    public RelationalWriteOperationKind OperationKind { get; init; }
+
+    /// <summary>
+    /// The original request-side lookup input retained for retry, freshness, and diagnostics.
+    /// </summary>
+    public RelationalWriteTargetRequest TargetRequest { get; init; }
+
+    /// <summary>
+    /// The repository-resolved target document context for the active executor attempt.
+    /// </summary>
+    public RelationalWriteTargetContext TargetContext { get; init; }
+
+    /// <summary>
+    /// The compiled write plan selected for the write resource.
+    /// </summary>
+    public ResourceWritePlan WritePlan { get; init; }
+
+    /// <summary>
+    /// The compiled read plan selected for existing-document flows, when available.
+    /// </summary>
+    public ResourceReadPlan? ExistingDocumentReadPlan { get; init; }
+
+    /// <summary>
+    /// The caller-selected body the executor will eventually persist.
+    /// </summary>
+    public JsonNode SelectedBody { get; init; }
+
+    /// <summary>
+    /// Whether identity-changing writes are allowed for this resource once the executor supports them.
+    /// </summary>
+    public bool AllowIdentityUpdates { get; init; }
 
     /// <summary>
     /// The request trace id for diagnostics.
@@ -434,44 +583,145 @@ public sealed record RelationalWriteTerminalStageRequest
     public TraceId TraceId { get; init; }
 
     /// <summary>
-    /// Optional caller-supplied diagnostic identifier for logs or tracing.
+    /// Reference-resolution inputs the executor must resolve inside the shared write session.
     /// </summary>
-    public string? DiagnosticIdentifier { get; init; }
-
-    /// <summary>
-    /// Optional profile write context for profile-constrained writes.
-    /// Present when a writable profile applies and stored-state projection has completed.
-    /// DMS-1124 consumes this for hidden-member preservation during merge execution.
-    /// </summary>
-    public ProfileAppliedWriteContext? ProfileWriteContext { get; init; }
+    public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
 }
 
 /// <summary>
-/// Terminal-stage result wrapper that preserves the repository's POST/PUT result split.
+/// Backend-local classification of one executor attempt.
 /// </summary>
-public abstract record RelationalWriteTerminalStageResult
+public abstract record RelationalWriteExecutorAttemptOutcome
 {
     /// <summary>
-    /// The terminal stage completed a POST write path.
+    /// The executor applied a real relational write.
     /// </summary>
-    public sealed record Upsert(UpsertResult Result) : RelationalWriteTerminalStageResult;
+    public sealed record AppliedWrite : RelationalWriteExecutorAttemptOutcome
+    {
+        private AppliedWrite() { }
+
+        public static AppliedWrite Instance { get; } = new();
+    }
 
     /// <summary>
-    /// The terminal stage completed a PUT write path.
+    /// The executor proved the request was unchanged and committed a guarded no-op.
     /// </summary>
-    public sealed record Update(UpdateResult Result) : RelationalWriteTerminalStageResult;
+    public sealed record GuardedNoOp : RelationalWriteExecutorAttemptOutcome
+    {
+        private GuardedNoOp() { }
+
+        public static GuardedNoOp Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// The executor detected an unchanged compare, but freshness was lost before success could be returned.
+    /// </summary>
+    public sealed record StaleNoOpCompare : RelationalWriteExecutorAttemptOutcome
+    {
+        private StaleNoOpCompare() { }
+
+        public static StaleNoOpCompare Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// The executor exited through a non-attempt-success path such as validation or not-yet-implemented work.
+    /// </summary>
+    public sealed record Failed : RelationalWriteExecutorAttemptOutcome
+    {
+        private Failed() { }
+
+        public static Failed Instance { get; } = new();
+    }
 }
 
 /// <summary>
-/// Final write stage invoked after plan selection, reference resolution, and flattening succeed.
+/// Executor result wrapper that preserves the repository's POST/PUT result split.
 /// </summary>
-public interface IRelationalWriteTerminalStage
+public abstract record RelationalWriteExecutorResult
+{
+    protected RelationalWriteExecutorResult(RelationalWriteExecutorAttemptOutcome attemptOutcome)
+    {
+        AttemptOutcome = attemptOutcome ?? throw new ArgumentNullException(nameof(attemptOutcome));
+    }
+
+    /// <summary>
+    /// Internal classification of the executor attempt.
+    /// </summary>
+    public RelationalWriteExecutorAttemptOutcome AttemptOutcome { get; init; }
+
+    /// <summary>
+    /// The executor completed a POST write path.
+    /// </summary>
+    public sealed record Upsert : RelationalWriteExecutorResult
+    {
+        public Upsert(UpsertResult result)
+            : this(result, RelationalWriteExecutorAttemptOutcome.Failed.Instance) { }
+
+        public Upsert(UpsertResult result, RelationalWriteExecutorAttemptOutcome attemptOutcome)
+            : base(attemptOutcome)
+        {
+            Result = result ?? throw new ArgumentNullException(nameof(result));
+        }
+
+        public UpsertResult Result { get; init; }
+
+        public void Deconstruct(out UpsertResult result)
+        {
+            result = Result;
+        }
+
+        public void Deconstruct(
+            out UpsertResult result,
+            out RelationalWriteExecutorAttemptOutcome attemptOutcome
+        )
+        {
+            result = Result;
+            attemptOutcome = AttemptOutcome;
+        }
+    }
+
+    /// <summary>
+    /// The executor completed a PUT write path.
+    /// </summary>
+    public sealed record Update : RelationalWriteExecutorResult
+    {
+        public Update(UpdateResult result)
+            : this(result, RelationalWriteExecutorAttemptOutcome.Failed.Instance) { }
+
+        public Update(UpdateResult result, RelationalWriteExecutorAttemptOutcome attemptOutcome)
+            : base(attemptOutcome)
+        {
+            Result = result ?? throw new ArgumentNullException(nameof(result));
+        }
+
+        public UpdateResult Result { get; init; }
+
+        public void Deconstruct(out UpdateResult result)
+        {
+            result = Result;
+        }
+
+        public void Deconstruct(
+            out UpdateResult result,
+            out RelationalWriteExecutorAttemptOutcome attemptOutcome
+        )
+        {
+            result = Result;
+            attemptOutcome = AttemptOutcome;
+        }
+    }
+}
+
+/// <summary>
+/// Relational write executor invoked after repository guard rails and request shaping succeed.
+/// </summary>
+public interface IRelationalWriteExecutor
 {
     /// <summary>
-    /// Executes the terminal relational write stage.
+    /// Executes the relational write.
     /// </summary>
-    Task<RelationalWriteTerminalStageResult> ExecuteAsync(
-        RelationalWriteTerminalStageRequest request,
+    Task<RelationalWriteExecutorResult> ExecuteAsync(
+        RelationalWriteExecutorRequest request,
         CancellationToken cancellationToken = default
     );
 }

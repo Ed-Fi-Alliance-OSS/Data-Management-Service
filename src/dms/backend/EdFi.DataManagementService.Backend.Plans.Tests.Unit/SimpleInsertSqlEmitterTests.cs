@@ -84,6 +84,77 @@ public class Given_SimpleInsertSqlEmitter
     }
 
     [Test]
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_multi_row_insert_sql_with_canonical_multiline_format(SqlDialect dialect)
+    {
+        var sql = new SimpleInsertSqlEmitter(dialect).EmitBatch(
+            table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+            orderedColumns:
+            [
+                new DbColumnName("SchoolId"),
+                new DbColumnName("SchoolYear"),
+                new DbColumnName("StudentUniqueId"),
+            ],
+            orderedParameterNamesByRow:
+            [
+                ["schoolId_0", "schoolYear_0", "studentUniqueId_0"],
+                ["schoolId_1", "schoolYear_1", "studentUniqueId_1"],
+            ]
+        );
+
+        sql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    INSERT INTO "edfi"."StudentSchoolAssociation"
+                    (
+                        "SchoolId",
+                        "SchoolYear",
+                        "StudentUniqueId"
+                    )
+                    VALUES
+                    (
+                        @schoolId_0,
+                        @schoolYear_0,
+                        @studentUniqueId_0
+                    ),
+                    (
+                        @schoolId_1,
+                        @schoolYear_1,
+                        @studentUniqueId_1
+                    )
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    INSERT INTO [edfi].[StudentSchoolAssociation]
+                    (
+                        [SchoolId],
+                        [SchoolYear],
+                        [StudentUniqueId]
+                    )
+                    VALUES
+                    (
+                        @schoolId_0,
+                        @schoolYear_0,
+                        @studentUniqueId_0
+                    ),
+                    (
+                        @schoolId_1,
+                        @schoolYear_1,
+                        @studentUniqueId_1
+                    )
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_column_and_parameter_counts_do_not_match()
     {
         var act = () =>
@@ -99,6 +170,28 @@ public class Given_SimpleInsertSqlEmitter
                 "Column and parameter counts must match. Column count: 2. Parameter count: 1. (Parameter 'orderedParameterNames')"
             )
             .WithParameterName("orderedParameterNames");
+    }
+
+    [Test]
+    public void It_should_reject_multi_row_batches_with_misaligned_parameter_counts()
+    {
+        var act = () =>
+            new SimpleInsertSqlEmitter(SqlDialect.Pgsql).EmitBatch(
+                table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
+                orderedColumns: [new DbColumnName("SchoolId"), new DbColumnName("SchoolYear")],
+                orderedParameterNamesByRow:
+                [
+                    ["schoolId_0", "schoolYear_0"],
+                    ["schoolId_1"],
+                ]
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Column and parameter counts must match for row 1. Column count: 2. Parameter count: 1. (Parameter 'orderedParameterNamesByRow')"
+            )
+            .WithParameterName("orderedParameterNamesByRow");
     }
 
     [Test]

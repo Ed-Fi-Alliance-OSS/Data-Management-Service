@@ -1,0 +1,203 @@
+[
+  {
+    "category": "Guarded No-Op Freshness Uses Session-Loaded ContentVersion",
+    "description": "Fix the guarded no-op path so freshness is validated against the ContentVersion observed by the executor's session-owned current-state load, not only the earlier repository target lookup. Acceptance: when an existing-document write loads current state and the hydrated `DocumentMetadata.ContentVersion` is newer than the repository lookup stamp, the executor updates the active existing-target context before guarded no-op freshness revalidation; unchanged PUT and POST-as-update requests do not return `StaleNoOpCompare` or `WriteConflict` solely because the document changed before the current-state load but remained unchanged afterward; the current-state loader's `DocumentMetadata` is no longer dead data for freshness decisions; repository stale retry still occurs only when freshness is actually lost after compare, and not because of a stale pre-session lookup value.",
+    "steps-to-verify": [
+      "Add backend unit coverage for an existing-document guarded no-op where repository lookup observes one `ContentVersion`, current-state load observes a newer `ContentVersion`, and the freshness check sees that newer value still current; assert the executor returns `GuardedNoOp` instead of `StaleNoOpCompare`.",
+      "Add or update backend unit coverage showing the executor rewrites the active `RelationalWriteTargetContext.ExistingDocument.ObservedContentVersion` from the session-loaded `DocumentMetadata.ContentVersion` before calling `IRelationalWriteFreshnessChecker`.",
+      "Add or update repository unit coverage proving the single stale-no-op retry still happens only when freshness is truly lost after compare, and does not trigger solely because the pre-session lookup stamp was older than the session-loaded current-state stamp.",
+      "Add PostgreSQL integration coverage for an unchanged PUT or POST-as-update where the target changes before the write attempt begins but remains stable after current-state load; assert success, no resource-table DML, and unchanged `dms.Document.ContentVersion` during the no-op attempt.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalWriteGuardedNoOpTests|FullyQualifiedName~RelationalWriteCurrentStateLoaderTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalWriteGuardedNoOpTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "POST-As-Update Immutable Identity Failure Classification",
+    "description": "Correct the client-visible error classification for immutable-identity failures on POST-as-update. Acceptance: when a POST resolves to an existing document and the merged identity projection changes for a resource with `allowIdentityUpdates=false`, the relational backend no longer returns `UpsertResult.UnknownFailure`; the request fails through an explicit immutable-identity result contract rather than a generic system-error path, a new `UpsertResult.UpsertFailureImmutableIdentity` with the same client-visible response behavior in core as UpdateResult.UpdateFailureImmutableIdentity on the PUT path; `UpsertFailureIdentityConflict` is not reused for this update-time immutable-identity case; the core upsert handler no longer maps this case to HTTP 500; no relational DML is committed for the rejected request.",
+    "steps-to-verify": [
+      "Update backend unit tests for `RelationalWriteIdentityStability` or `DefaultRelationalWriteExecutor` to assert POST-as-update immutable-identity failures do not return `UnknownFailure` and instead use the chosen explicit immutable-identity result contract.",
+      "Add or update core handler tests for the upsert path to assert the frontend response for this case is not HTTP 500, uses the chosen immutable-identity mapping, and carries the expected immutable-identity detail.",
+      "Add an integration test for relational POST-as-update with an identity-changing request against an existing document with `allowIdentityUpdates=false`; assert failure classification, no committed row changes, and no misleading system-error response.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandlerTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reduce Existing-Target Lookup Translation Drift",
+    "description": "Narrow the duplicated existing-target lookup orchestration so repository-owned initial lookup and executor-owned POST re-evaluation cannot drift on `DocumentId`, `DocumentUuid`, or observed `ContentVersion`. Acceptance: shared translation logic or a thin shared helper is used where practical for POST and PUT lookup-result-to-target-context conversion; duplicated branching that can diverge on freshness-stamp handling is removed or reduced to minimal wrappers; this task remains scoped to drift prevention and cleanup around target lookup translation, not a broader redesign of repository versus executor ownership.",
+    "steps-to-verify": [
+      "Refactor the repository and executor lookup code so the result-to-target-context translation logic is shared or centralized enough to prevent divergence in `DocumentId`, `DocumentUuid`, and observed `ContentVersion` handling.",
+      "Add backend unit tests covering initial lookup and POST re-evaluation with matching assertions for `DocumentId`, `DocumentUuid`, and observed `ContentVersion`, including not-found and existing-document cases.",
+      "Search the backend for leftover duplicate target-lookup branching and remove dead wrappers or helper code that no longer serves the runtime path.",
+      "Run: `rg --line-number --no-heading \"ResolveTargetContextAsync|ResolveForPostAsync|ResolveForPutAsync|RelationalWriteTargetLookupResult\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Eliminate Shared Collection Item Placeholder Tokens",
+    "description": "Remove or internalize the reusable `FlattenedWriteValue.UnresolvedCollectionItemId.Instance` sentinel so runtime write paths cannot accidentally reuse one placeholder token across multiple inserted rows. Acceptance: production flattening and any other runtime row-buffer creation paths always allocate a unique unresolved collection token per new stable-row-identity reservation site; no public or production-facing API encourages reuse of a singleton placeholder for collection inserts; persistence continues to reserve exactly one `CollectionItemId` per distinct unresolved token and never collapses separate inserted rows onto the same reserved id because they shared a sentinel value; tests that still need a fixed placeholder for isolated contract assertions use an explicit test-local token or another non-production helper instead of the production singleton.",
+    "steps-to-verify": [
+      "Remove, internalize, or otherwise block production use of `FlattenedWriteValue.UnresolvedCollectionItemId.Instance` so the runtime path cannot emit a shared unresolved token for multiple inserted rows.",
+      "Audit relational write production code for unresolved collection token creation and ensure every new collection row reservation site uses a fresh token value rather than a singleton placeholder.",
+      "Add or update backend unit coverage proving that two new collection rows emitted in one write request carry distinct unresolved tokens and therefore reserve distinct `CollectionItemId` values during persistence.",
+      "Add or update backend unit coverage proving aligned scope rows that are supposed to share a base collection identity still share the owning row's token intentionally, while sibling inserted rows do not.",
+      "Run: `rg --line-number --no-heading \"UnresolvedCollectionItemId\\.Instance|UnresolvedCollectionItemId\\.Create\\(\" ./src/dms`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattenerTests|FullyQualifiedName~RelationalWriteNoProfileMergeSynthesizerTests|FullyQualifiedName~RelationalWriteExtensionCollectionMergeSynthesizerTests|FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~RelationalWriteContractsTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Unify Batched DML SQL Generation With Plan Compilation",
+    "description": "Reduce SQL drift risk by moving batched insert and multi-row update/delete command generation onto the same authoritative compilation/emitter path as single-row write SQL instead of maintaining a second runtime-only SQL-construction path. Acceptance: batched relational write SQL for inserts and repeated update/delete statements is generated from shared compiler/emitter logic or plan-carried templates rather than ad hoc regex-based parameter rewriting in the persister; batching continues to respect dialect-specific identifier quoting and parameter-limit partitioning for PostgreSQL and SQL Server; the runtime persister is simplified so it orchestrates batches without reimplementing SQL-shape knowledge already owned by the plan compiler; tests cover both dialects so batch SQL remains behaviorally aligned with compiled single-row statements when plan emission changes.",
+    "steps-to-verify": [
+      "Refactor batched DML generation so the persister no longer hand-builds a separate SQL dialect surface for batch commands when equivalent compiler or emitter logic can be reused.",
+      "Remove or reduce runtime-only SQL text rewriting helpers that are only compensating for duplicated SQL generation, especially regex-based parameter renaming and local identifier quoting logic, unless they remain thin wrappers over shared emitted templates.",
+      "Add or update unit coverage proving PostgreSQL and SQL Server batch command generation stays aligned with the same table-plan metadata used for single-row `InsertSql`, `UpdateSql`, `DeleteByParentSql`, and collection-merge statements.",
+      "Add or update unit coverage for parameter-limit chunking to show batch partitioning still honors `BulkInsertBatching.MaxRowsPerBatch` and does not regress multi-batch execution behavior.",
+      "Run: `rg --line-number --no-heading \"BuildParameterizedBatchCommand|BuildInsertBatchCommand|RenameBatchParameters|QuoteIdentifier|BuildInsertBatchSql\" ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~PostgresqlRelationalCommandExecutorTests|FullyQualifiedName~MssqlRelationalWriteSessionFactoryTests|FullyQualifiedName~PostgresqlRelationalWriteSessionFactoryTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~WritePlanCompilerMssqlContractTests|FullyQualifiedName~Given_WritePlanCompiler_InsertSql|FullyQualifiedName~Given_WritePlanCompiler_CollectionMerge|FullyQualifiedName~PlanWriteBatchingConventionsTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Short-Circuit Missing Existing-Document Read Plans Before Executor Work",
+    "description": "Fail existing-document relational writes earlier when target lookup resolves an existing document but no compiled relational read plan is available, instead of opening an executor session and resolving references before returning the deterministic guard-rail failure. Acceptance: once repository target lookup determines the request will execute against an existing document, the repository returns the prepared missing-read-plan failure immediately if `ExistingDocumentReadPlan` is unavailable; the executor is not invoked for this scenario; no write transaction is opened and no in-session reference resolution or hydration work is performed for a known guard-rail failure; PUT not-found handling remains unchanged and continues to short-circuit before executor execution; POST create flows without a read-plan dependency still proceed normally.",
+    "steps-to-verify": [
+      "Refactor repository orchestration so existing-document requests without a compiled read plan fail before `IRelationalWriteExecutor.ExecuteAsync(...)` is called.",
+      "Add or update repository unit tests for PUT-existing and POST-as-update-existing cases with a missing read plan to assert the repository returns the deterministic unknown failure immediately and does not call the executor.",
+      "Add or update executor or repository seam tests to assert reference resolution is not attempted for the missing-read-plan existing-document guard-rail path.",
+      "Confirm PUT not-found still short-circuits as `UpdateFailureNotExists` before executor work, and POST create-new still bypasses the existing-document read-plan guard rail.",
+      "Run: `rg --line-number --no-heading \"PrepareExistingDocumentReadPlan|MissingExistingDocumentReadPlanFailureMessage|TryBuildMissingExistingDocumentReadPlanResult|ExecuteAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~DefaultRelationalWriteExecutorTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative StudentSchoolAssociation Key-Unification Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentSchoolAssociation` fixture. Acceptance: the smoke proves coherent key unification for `SchoolId_Unified` and `SchoolYear_Unified`, persists the root extension row, preserves authoritative replace semantics across root and child tables, updates changed state on PUT, and leaves rowsets and `dms.Document.ContentVersion` unchanged for a repeat PUT. Include a negative variant where the unified members disagree across references and assert a validation failure with no committed document, root, extension, or child-table writes.",
+    "steps-to-verify": [
+      "Current branch audit (2026-04-03): `rg` found no PostgreSQL integration fixture or filterable integration test for `StudentSchoolAssociation` under `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/`.",
+      "Recommended fixture filename: `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs`.",
+      "Add a new authoritative sample integration fixture for `StudentSchoolAssociation` in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/` using the sample authoritative generated DDL and seed all required referenced documents and descriptors.",
+      "Assert the create path persists exactly one `edfi.StudentSchoolAssociation` row with unified `SchoolId_Unified` and `SchoolYear_Unified` values matching the coherent request references, plus exactly one `sample.StudentSchoolAssociationExtension` row and the expected authoritative child rows.",
+      "Assert a changed PUT updates root and extension data, reuses stable `CollectionItemId` values for retained child collection rows, removes omitted child rows, inserts replacement rows, and applies any ordinal changes without creating a second document.",
+      "Assert a repeat PUT leaves table rowsets byte-for-byte equivalent at the logical row level and does not increment `dms.Document.ContentVersion`.",
+      "Add a negative authoritative write where the school-identity members disagree; assert the API result is a validation failure for key-unification conflict and all affected tables, including `dms.Document`, remain unchanged after the rejected attempt.",
+      "For the negative variant, assert unchanged counts and unchanged logical rowsets for `dms.Document`, `edfi.StudentSchoolAssociation`, `sample.StudentSchoolAssociationExtension`, and the authoritative child tables touched by the fixture, not only the top-level result contract.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative SurveyQuestion Collection Stability Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `SurveyQuestion` fixture with `SurveyQuestionMatrice` children. Acceptance: the smoke proves `Namespace_Unified` and `SurveyIdentifier_Unified` are derived consistently from sibling references, create persists the root and both child collections, changed PUT reuses stable collection ids for retained matrix and response-choice rows, reorder and replacement semantics work predictably, and a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Current branch audit (2026-04-03): `rg` found no PostgreSQL integration fixture or filterable integration test for `SurveyQuestion` under `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/`.",
+      "Recommended fixture filename: `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleSurveyQuestionSmokeTests.cs`.",
+      "Add a new authoritative sample integration fixture for `SurveyQuestion` that seeds the referenced `Survey`, `SurveySection`, and required descriptors, then exercises matrices and response choices in the request body.",
+      "Assert the create path persists one `edfi.SurveyQuestion` row with unified namespace and survey identifier values populated from coherent references, plus the expected `edfi.SurveyQuestionMatrice` and `edfi.SurveyQuestionResponseChoice` rows.",
+      "Assert a changed PUT retains `CollectionItemId` values for logical child rows that remain present, updates ordinals when request order changes, deletes omitted rows, and inserts new rows for replacements rather than duplicating retained rows.",
+      "Assert a repeat PUT produces authoritative no-op behavior: no logical rowset drift across root or child tables and no `dms.Document.ContentVersion` change.",
+      "Confirm the persisted readback order and stable ids make reorder assertions deterministic for both `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice`.",
+      "Prefer one changed PUT that exercises both collection reorder and replacement in the same scenario so `SurveyQuestionMatrice` and `SurveyQuestionResponseChoice` are each proven to preserve retained ids while removing omitted rows and inserting replacements.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~SurveyQuestion\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative StudentSectionAssociation Extension Child Collections",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentSectionAssociation` fixture with root-extension child collections. Acceptance: the smoke proves authoritative persistence of the root extension row and its extension child collection, changed PUT retains stable collection ids for retained extension items, reorder and removal semantics work under authoritative replace rules, and a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `StudentSectionAssociation` that seeds referenced `Section`, `Student`, descriptors, and any related program documents needed by the extension child collection.",
+      "Assert the create path persists one `edfi.StudentSectionAssociation` row, one `sample.StudentSectionAssociationExtension` row, and the expected `sample.StudentSectionAssociationExtensionRelatedGeneralStud_00521721f5` rows linked to the owning document.",
+      "Assert a changed PUT retains stable `CollectionItemId` values for extension child rows whose semantic identity is unchanged, reorders ordinals where request order changes, deletes omitted extension child rows, and inserts replacements without disturbing unrelated retained rows.",
+      "Assert a repeat PUT produces no logical rowset changes and does not increment `dms.Document.ContentVersion`.",
+      "Verify the extension child collection assertions are scoped to authoritative merge semantics, not additive merge behavior, by proving omitted rows are removed from persistence.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSectionAssociation\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative StudentAcademicRecord Large-Document Smoke",
+    "description": "Add authoritative PostgreSQL integration coverage for the sample `StudentAcademicRecord` fixture as a large multi-table document. Acceptance: the smoke creates and updates a realistic full-surface document that spans the base root row, root extension row, and multiple collection tables; changed PUT updates root and extension values, reuses stable collection ids for retained child rows across several tables, removes omitted rows, inserts replacements, and a repeat PUT leaves all rowsets and `dms.Document.ContentVersion` unchanged. The scenario should be large enough to exercise real parameter pressure without failing batching or compiled SQL limits.",
+    "steps-to-verify": [
+      "Add a new authoritative sample integration fixture for `StudentAcademicRecord` that seeds required referenced documents and descriptors and populates several child collections such as academic honors, diplomas, grade point averages, recognitions, or report cards in one request.",
+      "Assert the create path persists exactly one `edfi.StudentAcademicRecord` row, one `sample.StudentAcademicRecordExtension` row, and the expected child rows across multiple collection tables.",
+      "Assert a changed PUT updates root and extension fields, preserves stable `CollectionItemId` values for retained child rows in each populated collection table, deletes omitted rows, inserts replacements, and correctly handles reorder semantics where applicable.",
+      "Assert a repeat PUT leaves persisted rowsets unchanged across all touched tables and does not increment `dms.Document.ContentVersion`.",
+      "Verify the chosen payload is large enough to prove the write path can persist a multi-table authoritative document without SQL parameter-limit or batching regressions in PostgreSQL.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentAcademicRecord\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative Multi-Table POST-As-Update Smoke",
+    "description": "Add authoritative PostgreSQL POST-as-update coverage for a multi-table relational resource, preferably `StudentAcademicRecord` or `StudentSchoolAssociation`. Acceptance: an initial POST creates the document, a second POST with the same referential identity and a different candidate document uuid resolves to the existing document, preserves the original `DocumentId` and `DocumentUuid`, updates root, extension, and child-table state in place, reuses stable collection ids for retained rows, removes omitted rows, inserts replacements, and does not create a second `dms.Document` row for the incoming candidate uuid.",
+    "steps-to-verify": [
+      "Choose a multi-table authoritative resource with a compiled read plan and root plus child-table coverage, then add a new integration fixture in `PostgresqlRelationalWritePostAsUpdateSmokeTests.cs` or a companion file.",
+      "Assert the first POST returns insert success and persists the initial root, extension, and child-table state for the chosen authoritative resource.",
+      "Assert the second POST, using the persisted referential id and a different candidate document uuid, returns update success, preserves the original `DocumentId` and `DocumentUuid`, and updates the existing rowset in place across root, extension, and child tables.",
+      "Assert retained child rows keep their stable collection ids, omitted rows are deleted, replacement rows are inserted, and no duplicate `dms.Document` row exists for the incoming candidate document uuid after the update.",
+      "If the second POST body is repeated unchanged, assert the follow-up authoritative POST-as-update behaves as a guarded no-op with unchanged rowsets and unchanged `dms.Document.ContentVersion`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostAsUpdate\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authoritative ds-5.2 Contact Nested Base Collections",
+    "description": "Add authoritative PostgreSQL integration coverage for the ds-5.2 `Contact` fixture with nested base collections, focusing on `ContactAddress` and nested `ContactAddressPeriod`. Acceptance: the smoke proves authoritative create persists the root row, base address collection rows, and nested address-period rows; changed PUT retains stable collection ids for retained addresses and retained nested periods, removes omitted addresses or periods, inserts replacements, and preserves parent-child linkage by `ParentCollectionItemId`; a repeat PUT leaves rowsets and `dms.Document.ContentVersion` unchanged.",
+    "steps-to-verify": [
+      "Add a new authoritative ds-5.2 integration fixture for `Contact` that seeds required descriptors and populates at least two addresses with nested `periods` so nested authoritative replace semantics are observable.",
+      "Assert the create path persists one `edfi.Contact` row, the expected `edfi.ContactAddress` rows, and the expected `edfi.ContactAddressPeriod` rows linked through the owning address `CollectionItemId` values.",
+      "Assert a changed PUT preserves stable address `CollectionItemId` values for retained addresses, preserves nested `ContactAddressPeriod` ids for retained period rows under the same owning address, deletes omitted nested rows, inserts replacements, and keeps `ParentCollectionItemId` values aligned to the correct parent address after reorder or replacement.",
+      "Assert a repeat PUT produces authoritative no-op behavior with unchanged logical rowsets across `Contact`, `ContactAddress`, and `ContactAddressPeriod`, plus unchanged `dms.Document.ContentVersion`.",
+      "Verify the scenario covers nested-scope authoritative replace semantics that the current ds-5.2 school smoke does not exercise.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Contact\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Move POST Upsert Existence Resolution Into The Write Session",
+    "description": "Close the POST create-vs-create race where repository-owned pre-session target lookup can resolve `CreateNew`, then a concurrent writer can insert the same identity before this attempt persists rows. Acceptance: POST upsert does not rely on a pre-session `CreateNew` decision for correctness; existence resolution for the create-vs-existing branch is performed or revalidated inside the executor-owned connection/transaction before any new `dms.Document` row is inserted; when a concurrent writer creates the target between repository orchestration and persistence, the second request follows the POST-as-update path against the existing document instead of inserting a duplicate document row or surfacing an avoidable write-conflict/identity-conflict outcome; successful concurrent POST-as-update preserves the original persisted `DocumentId` and `DocumentUuid`, and repository-level PUT not-found short-circuit behavior remains unchanged.",
+    "steps-to-verify": [
+      "Refactor POST write orchestration so the create-vs-existing decision that matters for persistence is owned by the executor session rather than by a stale repository lookup result.",
+      "Ensure the executor revalidates POST targets before inserting `dms.Document`, and routes a concurrent create into existing-document current-state load, merge, guarded no-op, or persistence as appropriate.",
+      "Add backend unit coverage for a POST request whose initial lookup would have resolved `CreateNew`, but whose in-session revalidation finds an existing document; assert the path updates the existing target context and does not call the create-new document insert branch.",
+      "Add backend unit or repository seam coverage proving PUT still short-circuits missing targets as `UpdateFailureNotExists` before executor work, and that this refactor does not reintroduce the old PUT-to-create fallback.",
+      "Add PostgreSQL integration coverage for two concurrent POST requests with the same referential identity where one writer wins the create and the other arrives before its own persistence step; assert exactly one `dms.Document` row exists afterward, the losing request resolves as update against the existing document, and the persisted root/child rows match last-writer semantics rather than duplicate-document semantics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutorTests|FullyQualifiedName~RelationalDocumentStoreRepositoryTests|FullyQualifiedName~RelationalWriteTargetLookupResolverTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlRelationalWritePostAsUpdateSmokeTests|FullyQualifiedName~Concurrent|FullyQualifiedName~PostAsUpdate\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Restore SimpleInsertSqlEmitter Contract Stability",
+    "description": "Fix the `SimpleInsertSqlEmitter` single-row argument-validation regression introduced by forwarding `Emit(...)` through `EmitBatch(...)` without preserving the previous exception contract. Acceptance: the plans unit suite passes again; single-row `Emit(...)` either preserves the historical exception message/parameter name for mismatched column and parameter counts or the tests are intentionally updated to the new documented contract with no ambiguity; the public behavior for invalid single-row inputs is deterministic and covered by unit tests; the fix does not regress valid single-row or multi-row SQL emission behavior for PostgreSQL and SQL Server.",
+    "steps-to-verify": [
+      "Decide whether `SimpleInsertSqlEmitter.Emit(...)` should preserve its historical exception contract or whether the branch intentionally changes that contract, then make code and tests agree.",
+      "Add or update unit coverage for invalid single-row calls so the expected `ArgumentException` message and parameter name are explicit and stable.",
+      "Confirm valid single-row `Emit(...)` output still matches the existing canonical SQL snapshots, and that `EmitBatch(...)` still validates multi-row parameter counts correctly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_SimpleInsertSqlEmitter\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reduce Duplicate Insert SQL Emitter Logic",
+    "description": "Eliminate or narrow the duplicated insert-SQL generation logic now split between `SimpleInsertSqlEmitter` and `WritePlanBatchSqlEmitter`. Acceptance: there is a single authoritative implementation, or a clearly shared helper, for deterministic multi-row `INSERT` SQL layout, parameter suffixing, identifier quoting, and row-count validation; `WritePlanBatchSqlEmitter` no longer silently drifts from the plans compiler's canonical insert formatting rules; the runtime persister still emits valid PostgreSQL and SQL Server batch SQL; and unit coverage proves insert-batch SQL stays aligned with the plan-compilation emitter surface when either side changes.",
+    "steps-to-verify": [
+      "Refactor shared insert-SQL emission so `SimpleInsertSqlEmitter` and `WritePlanBatchSqlEmitter` do not maintain separate copies of the same formatting and parameter-suffix rules.",
+      "Remove dead or redundant helper code left behind by the refactor, especially duplicate parameter-name suffix builders and duplicate parenthesized insert-value formatting logic.",
+      "Add or update unit coverage comparing batch insert SQL emitted for the same ordered columns and parameter sets through the shared path for both PostgreSQL and SQL Server.",
+      "Add or update persister-focused tests to prove multi-row insert commands still honor `BulkInsertBatching.MaxRowsPerBatch` and preserve parameter-name uniqueness after the refactor.",
+      "Run: `rg --line-number --no-heading \"EmitInsertBatch|EmitBatch\\(|BuildBatchParameterName|AppendParenthesizedValueLines|QuoteIdentifier\" ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteNonCollectionPersisterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~SimpleInsertSqlEmitterTests|FullyQualifiedName~WritePlanBatchSqlEmitterTests\"`"
+    ],
+    "completed": true
+  }
+]

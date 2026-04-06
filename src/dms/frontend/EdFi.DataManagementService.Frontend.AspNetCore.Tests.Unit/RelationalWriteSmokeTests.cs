@@ -142,7 +142,7 @@ public class Given_A_Host_Using_The_Relational_Backend
         }
         """;
 
-    private CapturingRelationalWriteTerminalStage _terminalStage = null!;
+    private CapturingRelationalWriteExecutor _writeExecutor = null!;
     private CapturingRelationalWriteFlattener _flattener = null!;
     private WebApplicationFactory<Program> _factory = null!;
     private string _schemaDirectory = null!;
@@ -160,12 +160,14 @@ public class Given_A_Host_Using_The_Relational_Backend
             File.Delete(_startupStatusFilePath);
         }
 
-        _terminalStage = new CapturingRelationalWriteTerminalStage();
         _flattener = new CapturingRelationalWriteFlattener();
-        _factory = CreateFactory(
+        _writeExecutor = new CapturingRelationalWriteExecutor(
             _flattener,
+            RelationalWriteSmokeSupport.CreateEmptyResolvedReferences()
+        );
+        _factory = CreateFactory(
             new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetMappingSet),
-            _terminalStage
+            _writeExecutor
         );
     }
 
@@ -200,15 +202,12 @@ public class Given_A_Host_Using_The_Relational_Backend
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
         _flattener.Inputs.Should().ContainSingle();
-        _terminalStage.Requests.Should().ContainSingle();
-        _terminalStage
+        _writeExecutor.Requests.Should().ContainSingle();
+        _writeExecutor
             .Requests[0]
-            .FlatteningInput.WritePlan.Model.Resource.Should()
+            .WritePlan.Model.Resource.Should()
             .Be(new QualifiedResourceName("TestProject", "Widget"));
-        _terminalStage.Requests[0].FlatteningInput.SelectedBody["widgetName"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Smoke Widget");
+        _writeExecutor.Requests[0].SelectedBody["widgetName"]!.GetValue<string>().Should().Be("Smoke Widget");
     }
 
     // The public HTTP path still relies on Core normalization; backend-local strict parsing only applies
@@ -231,12 +230,12 @@ public class Given_A_Host_Using_The_Relational_Backend
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
         _flattener.Inputs.Should().ContainSingle();
-        _terminalStage.Requests.Should().ContainSingle();
+        _writeExecutor.Requests.Should().ContainSingle();
         _flattener.Inputs[0].SelectedBody["submittedAt"]!
             .GetValue<string>()
             .Should()
             .Be("2009-05-07T14:15:30Z");
-        _terminalStage.Requests[0].FlatteningInput.SelectedBody["submittedAt"]!
+        _writeExecutor.Requests[0].SelectedBody["submittedAt"]!
             .GetValue<string>()
             .Should()
             .Be("2009-05-07T14:15:30Z");
@@ -245,12 +244,15 @@ public class Given_A_Host_Using_The_Relational_Backend
     [Test]
     public async Task It_returns_bad_request_when_the_real_relational_flattener_rejects_an_invalid_scalar_value()
     {
-        var terminalStage = new CapturingRelationalWriteTerminalStage();
+        var resolvedReferences = RelationalWriteSmokeSupport.CreateEmptyResolvedReferences();
+        var writeExecutor = new CapturingRelationalWriteExecutor(
+            new RelationalWriteFlattener(),
+            resolvedReferences
+        );
 
         using var factory = CreateFactory(
-            new RelationalWriteFlattener(),
             new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetCountValidationMappingSet),
-            terminalStage
+            writeExecutor
         );
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
@@ -275,13 +277,12 @@ public class Given_A_Host_Using_The_Relational_Backend
             .GetValue<string>()
             .Should()
             .Contain("Column 'WidgetCount' on table 'testproject.Widget' expected scalar kind 'Int32'");
-        terminalStage.Requests.Should().BeEmpty();
+        writeExecutor.Requests.Should().ContainSingle();
     }
 
     private WebApplicationFactory<Program> CreateFactory(
-        IRelationalWriteFlattener flattener,
         IMappingSetProvider mappingSetProvider,
-        CapturingRelationalWriteTerminalStage terminalStage
+        CapturingRelationalWriteExecutor writeExecutor
     )
     {
         var claimSetProvider = new AllowAllWidgetClaimSetProvider();
@@ -353,44 +354,6 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-                var targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
-                A.CallTo(() =>
-                        targetContextResolver.ResolveForPostAsync(
-                            A<MappingSet>._,
-                            A<QualifiedResourceName>._,
-                            A<ReferentialId>._,
-                            A<DocumentUuid>._,
-                            A<CancellationToken>._
-                        )
-                    )
-                    .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetContext>(
-                            new RelationalWriteTargetContext.CreateNew(call.GetArgument<DocumentUuid>(3))
-                        )
-                    );
-                A.CallTo(() =>
-                        targetContextResolver.ResolveForPutAsync(
-                            A<MappingSet>._,
-                            A<QualifiedResourceName>._,
-                            A<DocumentUuid>._,
-                            A<CancellationToken>._
-                        )
-                    )
-                    .ReturnsLazily(call =>
-                        Task.FromResult<RelationalWriteTargetContext>(
-                            new RelationalWriteTargetContext.ExistingDocument(
-                                345L,
-                                call.GetArgument<DocumentUuid>(2)
-                            )
-                        )
-                    );
-
-                var referenceResolver = A.Fake<IReferenceResolver>();
-                A.CallTo(() =>
-                        referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                    )
-                    .Returns(RelationalWriteSmokeSupport.CreateEmptyResolvedReferences());
-
                 services.RemoveAll<IJwtValidationService>();
                 services.RemoveAll<IClaimSetProvider>();
                 services.RemoveAll<IApplicationContextProvider>();
@@ -398,10 +361,8 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IDatabaseFingerprintReader>();
                 services.RemoveAll<IResourceKeyValidator>();
                 services.RemoveAll<IMappingSetProvider>();
-                services.RemoveAll<IRelationalWriteTargetContextResolver>();
-                services.RemoveAll<IReferenceResolver>();
-                services.RemoveAll<IRelationalWriteFlattener>();
-                services.RemoveAll<IRelationalWriteTerminalStage>();
+                services.RemoveAll<IRelationalWriteTargetLookupService>();
+                services.RemoveAll<IRelationalWriteExecutor>();
 
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
@@ -410,10 +371,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IDatabaseFingerprintReader, EffectiveSchemaFingerprintReader>();
                 services.AddSingleton(resourceKeyValidator);
                 services.AddSingleton(mappingSetProvider);
-                services.AddSingleton(targetContextResolver);
-                services.AddSingleton(referenceResolver);
-                services.AddSingleton(flattener);
-                services.AddSingleton<IRelationalWriteTerminalStage>(terminalStage);
+                services.AddSingleton<IRelationalWriteTargetLookupService>(
+                    new CapturingRelationalWriteTargetLookupService()
+                );
+                services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });
@@ -472,25 +433,95 @@ public class Given_A_Host_Using_The_Relational_Backend
         }
     }
 
-    private sealed class CapturingRelationalWriteTerminalStage : IRelationalWriteTerminalStage
+    private sealed class CapturingRelationalWriteExecutor(
+        IRelationalWriteFlattener flattener,
+        ResolvedReferenceSet resolvedReferences
+    ) : IRelationalWriteExecutor
     {
-        public List<RelationalWriteTerminalStageRequest> Requests { get; } = [];
+        private readonly IRelationalWriteFlattener _flattener =
+            flattener ?? throw new ArgumentNullException(nameof(flattener));
 
-        public Task<RelationalWriteTerminalStageResult> ExecuteAsync(
-            RelationalWriteTerminalStageRequest request,
+        private readonly ResolvedReferenceSet _resolvedReferences =
+            resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
+
+        public List<RelationalWriteExecutorRequest> Requests { get; } = [];
+
+        public Task<RelationalWriteExecutorResult> ExecuteAsync(
+            RelationalWriteExecutorRequest request,
             CancellationToken cancellationToken = default
         )
         {
             Requests.Add(request);
+            var targetContext = request.TargetContext;
 
-            return Task.FromResult<RelationalWriteTerminalStageResult>(
-                new RelationalWriteTerminalStageResult.Upsert(
-                    new UpsertResult.InsertSuccess(
-                        (
-                            (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
-                        ).DocumentUuid
+            try
+            {
+                _ = _flattener.Flatten(
+                    new FlatteningInput(
+                        request.OperationKind,
+                        targetContext,
+                        request.WritePlan,
+                        request.SelectedBody,
+                        _resolvedReferences
                     )
-                )
+                );
+            }
+            catch (RelationalWriteRequestValidationException ex)
+            {
+                return Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureValidation(ex.ValidationFailures)
+                    )
+                );
+            }
+
+            return Task.FromResult<RelationalWriteExecutorResult>(
+                targetContext switch
+                {
+                    RelationalWriteTargetContext.CreateNew(var documentUuid) =>
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.InsertSuccess(documentUuid)
+                        ),
+                    RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpdateSuccess(documentUuid)
+                        ),
+                    _ => throw new InvalidOperationException(
+                        $"Unsupported target context type '{targetContext.GetType().Name}'."
+                    ),
+                }
+            );
+        }
+    }
+
+    private sealed class CapturingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
+    {
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<RelationalWriteTargetLookupResult>(
+                new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<RelationalWriteTargetLookupResult>(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
             );
         }
     }
