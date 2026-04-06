@@ -134,8 +134,7 @@ public class Given_Relational_Write_Current_State_Loader
                 345L,
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                 ObservedContentVersion: 44L
-            ),
-            SqlDialect.Pgsql
+            )
         );
     }
 

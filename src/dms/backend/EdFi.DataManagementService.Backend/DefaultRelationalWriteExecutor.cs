@@ -357,11 +357,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         var currentState = await _currentStateLoader
             .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(
-                    request.ExistingDocumentReadPlan!,
-                    targetContext,
-                    request.MappingSet.Key.Dialect
-                ),
+                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
                 writeSession,
                 cancellationToken
             )
@@ -453,8 +449,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             .LoadAsync(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ExistingDocumentReadPlan!,
-                    existingTargetContext,
-                    request.MappingSet.Key.Dialect
+                    existingTargetContext
                 ),
                 writeSession,
                 cancellationToken

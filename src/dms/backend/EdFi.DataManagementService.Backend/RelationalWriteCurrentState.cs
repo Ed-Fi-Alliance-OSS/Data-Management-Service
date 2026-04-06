@@ -15,20 +15,16 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
 {
     public RelationalWriteCurrentStateLoadRequest(
         ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        SqlDialect dialect
+        RelationalWriteTargetContext.ExistingDocument targetContext
     )
     {
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
-        Dialect = dialect;
     }
 
     public ResourceReadPlan ReadPlan { get; init; }
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
-
-    public SqlDialect Dialect { get; init; }
 }
 
 internal sealed record RelationalWriteCurrentState
@@ -133,9 +129,8 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             .ExecuteAsync(
                 writeSession.Connection,
                 writeSession.Transaction,
-                [.. request.ReadPlan.DescriptorProjectionPlansInOrder],
+                request.ReadPlan.DescriptorProjectionPlansInOrder,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
-                request.Dialect,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -143,7 +138,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
         var reconstitutedDocument = DocumentReconstituter.Reconstitute(
             documentMetadata.DocumentId,
             hydratedPage.TableRowsInDependencyOrder,
-            [.. request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder],
+            request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
             request.ReadPlan.Model.DescriptorEdgeSources,
             descriptorUriLookup
         );

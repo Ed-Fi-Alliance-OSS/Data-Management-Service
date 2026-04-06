@@ -23,7 +23,6 @@ public static class DescriptorProjectionExecutor
     /// <param name="transaction">The active write-session transaction bound to the connection.</param>
     /// <param name="plans">Compiled descriptor projection plans to execute.</param>
     /// <param name="keyset">The page keyset specification used to parameterize each query.</param>
-    /// <param name="dialect">The SQL dialect for the target database.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
     /// A read-only dictionary mapping each <c>DescriptorId</c> to its canonical URI string.
@@ -34,7 +33,6 @@ public static class DescriptorProjectionExecutor
         DbTransaction transaction,
         IReadOnlyList<DescriptorProjectionPlan> plans,
         PageKeysetSpec keyset,
-        SqlDialect dialect,
         CancellationToken ct
     )
     {
