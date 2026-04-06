@@ -101,7 +101,8 @@ public class WebApplicationBuilderExtensionsTests
             using var scope = serviceProvider.CreateScope();
 
             scope.ServiceProvider.GetService<IReferenceResolver>().Should().BeNull();
-            scope.ServiceProvider.GetService<IRelationalWriteTargetContextResolver>().Should().BeNull();
+            scope.ServiceProvider.GetService<IRelationalWriteTargetLookupService>().Should().BeNull();
+            scope.ServiceProvider.GetService<IRelationalWriteTargetLookupResolver>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapterFactory>().Should().BeNull();
             scope.ServiceProvider.GetService<IReferenceResolverAdapter>().Should().BeNull();
             scope.ServiceProvider.GetService<IRelationalCommandExecutor>().Should().BeNull();
@@ -154,13 +155,33 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFlattener>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>()
                 .Should()
-                .BeOfType<RelationalWriteTargetContextResolver>();
+                .BeOfType<RelationalWriteCurrentStateLoader>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>()
                 .Should()
-                .BeOfType<DefaultRelationalWriteTerminalStage>();
+                .BeOfType<RelationalWriteFreshnessChecker>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>()
+                .Should()
+                .BeOfType<RelationalWriteNoProfilePersister>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
+                .Should()
+                .BeOfType<RelationalWriteTargetLookupService>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
+                .Should()
+                .BeOfType<RelationalWriteTargetLookupResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteExecutor>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>()
+                .Should()
+                .BeOfType<PostgresqlRelationalWriteSessionFactory>();
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
@@ -236,13 +257,35 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteFlattener>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>()
                 .Should()
-                .BeOfType<RelationalWriteTargetContextResolver>();
+                .BeOfType<RelationalWriteCurrentStateLoader>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>()
+                .ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>()
                 .Should()
-                .BeOfType<DefaultRelationalWriteTerminalStage>();
+                .BeOfType<RelationalWriteFreshnessChecker>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>()
+                .Should()
+                .BeOfType<RelationalWriteNoProfilePersister>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
+                .Should()
+                .BeOfType<RelationalWriteTargetLookupService>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
+                .Should()
+                .BeOfType<RelationalWriteTargetLookupResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
+                .Should()
+                .BeOfType<DefaultRelationalWriteExecutor>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>()
+                .Should()
+                .Match<IRelationalWriteSessionFactory>(factory =>
+                    factory.GetType().Name == "MssqlRelationalWriteSessionFactory"
+                );
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()

@@ -29,17 +29,34 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         var resolver = scope.ServiceProvider.GetRequiredService<IReferenceResolver>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
-        var targetContextResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetContextResolver>();
-        var terminalStage = scope.ServiceProvider.GetRequiredService<IRelationalWriteTerminalStage>();
+        var currentStateLoader =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
+        var writeFreshnessChecker =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
+        var noProfileMergeSynthesizer =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
+        var noProfilePersister =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>();
+        var targetLookupService =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
+        var targetLookupResolver =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
+        var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
+        var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
-        targetContextResolver.Should().BeOfType<RelationalWriteTargetContextResolver>();
-        terminalStage.Should().BeOfType<DefaultRelationalWriteTerminalStage>();
+        currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
+        writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
+        noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
+        noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
+        targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
+        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
+        writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
+        writeSessionFactory.Should().BeOfType<MssqlRelationalWriteSessionFactory>();
         factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();

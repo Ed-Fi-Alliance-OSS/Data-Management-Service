@@ -16,13 +16,13 @@ namespace EdFi.DataManagementService.Backend;
 /// <c>dms.Document</c>, <c>dms.Descriptor</c>, and <c>dms.ReferentialIdentity</c>.
 /// </summary>
 internal sealed class DescriptorWriteHandler(
-    IRelationalWriteTargetContextResolver targetContextResolver,
+    IRelationalWriteTargetLookupService targetLookupService,
     IRelationalCommandExecutor commandExecutor,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
-    private readonly IRelationalWriteTargetContextResolver _targetContextResolver =
-        targetContextResolver ?? throw new ArgumentNullException(nameof(targetContextResolver));
+    private readonly IRelationalWriteTargetLookupService _targetLookupService =
+        targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly ILogger<DescriptorWriteHandler> _logger =
@@ -55,7 +55,7 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
-        var targetContext = await _targetContextResolver
+        var targetLookupResult = await _targetLookupService
             .ResolveForPostAsync(
                 request.MappingSet,
                 request.Resource,
@@ -64,6 +64,12 @@ internal sealed class DescriptorWriteHandler(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        var targetContext =
+            RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+            ?? throw new InvalidOperationException(
+                $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor POST."
+            );
 
         try
         {
@@ -78,7 +84,7 @@ internal sealed class DescriptorWriteHandler(
                     )
                     .ConfigureAwait(false),
 
-                RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid) =>
+                RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) =>
                     await UpdateDescriptorForUpsertAsync(
                             request,
                             body,
@@ -136,17 +142,30 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
-        var targetContext = await _targetContextResolver
+        var targetLookupResult = await _targetLookupService
             .ResolveForPutAsync(request.MappingSet, request.Resource, request.DocumentUuid, cancellationToken)
             .ConfigureAwait(false);
+
+        if (targetLookupResult is RelationalWriteTargetLookupResult.NotFound)
+        {
+            return new UpdateResult.UpdateFailureNotExists();
+        }
+
+        var targetContext =
+            RelationalWriteSupport.TryTranslateTargetContext(targetLookupResult)
+            ?? throw new InvalidOperationException(
+                $"Unexpected target lookup result type '{targetLookupResult.GetType().Name}' for descriptor PUT."
+            );
 
         if (
             targetContext
             is not RelationalWriteTargetContext.ExistingDocument
-            (var documentId, var documentUuid)
+            (var documentId, var documentUuid, _)
         )
         {
-            return new UpdateResult.UpdateFailureNotExists();
+            throw new InvalidOperationException(
+                $"Unexpected target context type '{targetContext.GetType().Name}' for descriptor PUT."
+            );
         }
 
         var persisted = await ReadPersistedDescriptorAsync(

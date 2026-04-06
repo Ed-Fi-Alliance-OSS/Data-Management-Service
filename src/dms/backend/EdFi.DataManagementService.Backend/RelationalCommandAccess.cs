@@ -61,6 +61,40 @@ internal sealed record RelationalParameter
     public Action<DbParameter>? ConfigureParameter { get; }
 }
 
+internal static class SessionRelationalCommandFactory
+{
+    public static DbCommand CreateCommand(
+        DbConnection connection,
+        DbTransaction transaction,
+        RelationalCommand command
+    )
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(command);
+
+        var dbCommand = connection.CreateCommand();
+        dbCommand.Transaction = transaction;
+        dbCommand.CommandText = command.CommandText;
+
+        AddParameters(dbCommand, command.Parameters);
+
+        return dbCommand;
+    }
+
+    private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)
+    {
+        foreach (var parameter in parameters)
+        {
+            var dbParameter = dbCommand.CreateParameter();
+            dbParameter.ParameterName = parameter.Name;
+            dbParameter.Value = parameter.Value ?? DBNull.Value;
+            parameter.ConfigureParameter?.Invoke(dbParameter);
+            dbCommand.Parameters.Add(dbParameter);
+        }
+    }
+}
+
 /// <summary>
 /// Minimal relational reader surface for shared write-prerequisite materializers.
 /// </summary>

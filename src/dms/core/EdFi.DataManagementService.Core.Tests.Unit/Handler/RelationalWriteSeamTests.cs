@@ -13,13 +13,12 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
-using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -31,6 +30,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class Given_Relational_Write_Seam
 {
+    private const string PendingProfileWriteMessage =
+        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
+
     private RelationalWriteSeamFixture _fixture = null!;
 
     [SetUp]
@@ -45,21 +47,12 @@ public class Given_Relational_Write_Seam
         SqlDialect dialect
     )
     {
+        var documentInfo = _fixture.CreateDocumentInfo();
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Upsert(
+            writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
-                    (
-                        (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
-                    ).DocumentUuid
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
                 )
             )
         );
@@ -67,32 +60,36 @@ public class Given_Relational_Write_Seam
         var requestInfo = await harness.ExecuteUpsertAsync(
             RelationalWriteSeamFixture.CreateComplexBody(),
             _fixture.CreateSupportedMappingSet(dialect),
-            _fixture.CreateDocumentInfo()
+            documentInfo
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(201);
-        harness.TerminalStage.Requests.Should().ContainSingle();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
 
-        var request = harness.TerminalStage.Requests.Single();
-        request.FlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
-        request.FlatteningInput.SelectedBody.Should().BeSameAs(requestInfo.ParsedBody);
-        request.FlatteningInput.TargetContext.Should().BeOfType<RelationalWriteTargetContext.CreateNew>();
-        request
-            .FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
-            );
-        request.FlattenedWriteSet.RootRow.RootExtensionRows.Should().ContainSingle();
-        request.FlattenedWriteSet.RootRow.CollectionCandidates.Should().ContainSingle();
-
+        var request = harness.WriteExecutor.Requests.Single();
         var createdDocumentUuid = (
-            (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
-        ).DocumentUuid;
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
+        request.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
+        request.SelectedBody.Should().BeSameAs(requestInfo.ParsedBody);
+        request
+            .TargetRequest.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(
+                    documentInfo.ReferentialId,
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
+                )
+            );
+        request
+            .TargetContext.Should()
+            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(createdDocumentUuid));
+        request.ExistingDocumentReadPlan.Should().NotBeNull();
+        request
+            .ReferenceResolutionRequest.RequestResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "Student"));
+        request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
+        request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
+
         requestInfo
             .FrontendResponse.LocationHeaderPath.Should()
             .Be($"/ed-fi/students/{createdDocumentUuid.Value}");
@@ -105,19 +102,9 @@ public class Given_Relational_Write_Seam
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: _ => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                existingDocumentUuid
-            ),
-            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Update(
+            writeResultFactory: request => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateSuccess(
-                    (
-                        (RelationalWriteTargetContext.ExistingDocument)request.FlatteningInput.TargetContext
-                    ).DocumentUuid
+                    ((RelationalWriteTargetRequest.Put)request.TargetRequest).DocumentUuid
                 )
             )
         );
@@ -130,48 +117,92 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(204);
-        harness.TerminalStage.Requests.Should().ContainSingle();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
 
-        var request = harness.TerminalStage.Requests.Single();
-        request.FlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        var request = harness.WriteExecutor.Requests.Single();
+        request.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         request
-            .FlatteningInput.TargetContext.Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid));
+            .TargetRequest.Should()
+            .BeEquivalentTo(new RelationalWriteTargetRequest.Put(existingDocumentUuid));
         request
-            .FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
+            .TargetContext.Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
             );
+        request.ExistingDocumentReadPlan.Should().NotBeNull();
+        request.ReferenceResolutionRequest.DocumentReferences.Should().HaveCount(3);
+        request.ReferenceResolutionRequest.DescriptorReferences.Should().ContainSingle();
         requestInfo
             .FrontendResponse.LocationHeaderPath.Should()
             .Be($"/ed-fi/students/{existingDocumentUuid.Value}");
     }
 
+    [Test]
+    public async Task It_maps_profiled_post_requests_to_the_temporary_fenced_500_response()
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called."),
+            targetLookupResultFactory: _ =>
+                throw new AssertionException("Target lookup should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            RelationalWriteSeamFixture.CreateComplexBody(),
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(),
+            backendProfileWriteContext: CreateBackendProfileWriteContext(
+                RelationalWriteSeamFixture.CreateComplexBody()
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        requestInfo.FrontendResponse.Body!["error"]!
+            .GetValue<string>()
+            .Should()
+            .Be(PendingProfileWriteMessage);
+        harness.WriteExecutor.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_maps_profiled_put_requests_to_the_temporary_fenced_500_response()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called."),
+            targetLookupResultFactory: _ =>
+                throw new AssertionException("Target lookup should not be called.")
+        );
+
+        var requestInfo = await harness.ExecuteUpdateAsync(
+            RelationalWriteSeamFixture.CreateComplexBody(),
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(),
+            existingDocumentUuid,
+            backendProfileWriteContext: CreateBackendProfileWriteContext(
+                RelationalWriteSeamFixture.CreateComplexBody()
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        requestInfo.FrontendResponse.Body!["error"]!
+            .GetValue<string>()
+            .Should()
+            .Be(PendingProfileWriteMessage);
+        harness.WriteExecutor.Requests.Should().BeEmpty();
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_keeps_put_create_new_requests_on_the_update_contract_for_both_dialects(
-        SqlDialect dialect
-    )
+    public async Task It_short_circuits_missing_put_targets_to_not_found_for_both_dialects(SqlDialect dialect)
     {
         var requestedDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(documentUuid),
-            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Update(
-                new UpdateResult.UpdateSuccess(
-                    (
-                        (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
-                    ).DocumentUuid
-                )
+            targetLookupResultFactory: _ => new RelationalWriteTargetLookupResult.NotFound(),
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNotExists()
             )
         );
 
@@ -182,31 +213,16 @@ public class Given_Relational_Write_Seam
             requestedDocumentUuid
         );
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(204);
-        harness.TerminalStage.Requests.Should().ContainSingle();
-
-        var request = harness.TerminalStage.Requests.Single();
-        request.FlatteningInput.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
-        request
-            .FlatteningInput.TargetContext.Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(requestedDocumentUuid));
-        request
-            .FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
-            );
-        requestInfo
-            .FrontendResponse.LocationHeaderPath.Should()
-            .Be($"/ed-fi/students/{requestedDocumentUuid.Value}");
+        requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+        requestInfo.FrontendResponse.Body!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Resource to update was not found");
+        harness.WriteExecutor.Requests.Should().BeEmpty();
     }
 
     [Test]
-    public async Task It_short_circuits_reference_failures_before_terminal_handoff()
+    public async Task It_surfaces_executor_owned_reference_failures_through_the_handler()
     {
         var invalidReference = DocumentReferenceFailure.From(
             _fixture.CreateRootSchoolReference(),
@@ -214,18 +230,9 @@ public class Given_Relational_Write_Seam
         );
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateReferenceFailureSet(
-                invalidDocumentReferences: [invalidReference]
-            ),
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureReference([invalidReference], [])
+            )
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -249,138 +256,19 @@ public class Given_Relational_Write_Seam
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(409);
         requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("$.schoolReference");
-        harness.TerminalStage.Requests.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_routes_missing_resolved_reference_lookups_to_the_centralized_server_error_response()
+    public async Task It_surfaces_executor_owned_validation_failures_through_the_handler()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertThroughExceptionMiddlewareAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "schoolYear": 2026,
-                  "schoolReference": {
-                    "schoolId": 255901
-                  }
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: true,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureValidation([
+                    new WriteValidationFailure(new JsonPath("$.schoolYear"), "expected scalar kind 'Int32'"),
+                ])
             )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["message"]!
-            .GetValue<string>()
-            .Should()
-            .Be(
-                "The server encountered an unexpected condition that prevented it from fulfilling the request."
-            );
-        requestInfo.FrontendResponse.Body!["traceId"]!
-            .GetValue<string>()
-            .Should()
-            .Be("relational-write-seam");
-        var loggedFailure = harness
-            .ExceptionLogger.Entries.Should()
-            .ContainSingle(entry =>
-                entry.Level == LogLevel.Error
-                && entry.Message.Contains("Unknown Error - relational-write-seam")
-            )
-            .Which;
-        loggedFailure.Exception.Should().BeOfType<InvalidOperationException>();
-        loggedFailure
-            .Exception!.Message.Should()
-            .Contain("resolved lookup set did not contain a matching 'Ed-Fi.School' entry");
-        loggedFailure.Exception.Message.Should().Contain("$.schoolReference");
-        harness.TerminalStage.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_duplicate_semantic_identity_failures_as_data_validation_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: RelationalWriteSeamFixture.CreateEmptyResolvedReferences(),
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "addresses": [
-                    {
-                      "addressType": "Home"
-                    },
-                    {
-                      "addressType": "Home"
-                    }
-                  ]
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: false,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
-            )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Data validation failed. See 'validationErrors' for details.");
-        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.addresses[1]"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("duplicate semantic identity values ['Home']");
-        harness.TerminalStage.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_scalar_read_failures_as_data_validation_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -408,53 +296,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Contain("expected scalar kind 'Int32'");
-        harness.TerminalStage.Requests.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_surfaces_backend_local_strict_datetime_parse_failures_for_an_unnormalized_selected_body_before_terminal_handoff()
-    {
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
-        );
-
-        var requestInfo = await harness.ExecuteUpsertAsync(
-            JsonNode.Parse(
-                """
-                {
-                  "schoolYear": 2026,
-                  "lastModified": "2026-08-19 16:30:45"
-                }
-                """
-            )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(
-                includeRootSchoolReference: false,
-                includeNestedPeriodReferences: false,
-                includeProgramTypeDescriptor: false
-            )
-        );
-
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Data validation failed. See 'validationErrors' for details.");
-        requestInfo.FrontendResponse.Body!["validationErrors"]!["$.lastModified"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("expected scalar kind 'DateTime'");
-        harness.TerminalStage.Requests.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [Test]
@@ -462,19 +304,9 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Upsert(
+            writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
-                    (
-                        (RelationalWriteTargetContext.CreateNew)request.FlatteningInput.TargetContext
-                    ).DocumentUuid
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
                 )
             )
         );
@@ -487,21 +319,8 @@ public class Given_Relational_Write_Seam
             originalBody: RelationalWriteSeamFixture.CreateOriginalBodyJson()
         );
 
-        harness.TerminalStage.Requests.Should().ContainSingle();
-
-        var request = harness.TerminalStage.Requests.Single();
-        request.FlatteningInput.SelectedBody.Should().BeSameAs(selectedBody);
-        request
-            .FlattenedWriteSet.RootRow.Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
-                new FlattenedWriteValue.Literal(2030),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null)
-            );
-        request.FlattenedWriteSet.RootRow.RootExtensionRows.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+        harness.WriteExecutor.Requests.Single().SelectedBody.Should().BeSameAs(selectedBody);
     }
 
     [Test]
@@ -509,16 +328,7 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called.")
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -532,7 +342,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Contain("Write plan lookup failed for resource 'Ed-Fi.Student'");
-        harness.TerminalStage.Requests.Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().BeEmpty();
     }
 
     [Test]
@@ -540,16 +350,7 @@ public class Given_Relational_Write_Seam
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.CreateNew(
-                documentUuid
-            ),
-            putTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
-            ),
-            terminalStageResultFactory: _ =>
-                throw new AssertionException("Terminal stage should not be called.")
+            writeResultFactory: _ => throw new AssertionException("Write executor should not be called.")
         );
 
         Func<Task> act = async () =>
@@ -562,117 +363,23 @@ public class Given_Relational_Write_Seam
         act.Should().ThrowAsync<ArgumentNullException>().Result.Which.ParamName.Should().Be("mappingSet");
     }
 
-    [Test]
-    public async Task It_flattens_complex_nested_collections_and_extensions_before_terminal_handoff()
+    private static BackendProfileWriteContext CreateBackendProfileWriteContext(JsonNode requestBody)
     {
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
-        var harness = RelationalWriteSeamHarness.Create(
-            resourceInfo: _fixture.ResourceInfo,
-            resolvedReferences: _fixture.ResolvedReferences,
-            postTargetContextFactory: documentUuid => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                documentUuid
+        return new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody,
+                RootResourceCreatable: true,
+                RequestScopeStates: [],
+                VisibleRequestCollectionItems: []
             ),
-            putTargetContextFactory: _ => new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                existingDocumentUuid
-            ),
-            terminalStageResultFactory: request => new RelationalWriteTerminalStageResult.Update(
-                new UpdateResult.UpdateSuccess(
-                    (
-                        (RelationalWriteTargetContext.ExistingDocument)request.FlatteningInput.TargetContext
-                    ).DocumentUuid
-                )
-            )
+            ProfileName: "test-profile",
+            CompiledScopeCatalog: [],
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
         );
-
-        await harness.ExecuteUpdateAsync(
-            RelationalWriteSeamFixture.CreateComplexBody(),
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
-            _fixture.CreateDocumentInfo(),
-            existingDocumentUuid
-        );
-
-        harness.TerminalStage.Requests.Should().ContainSingle();
-
-        var request = harness.TerminalStage.Requests.Single();
-        var rootRow = request.FlattenedWriteSet.RootRow;
-        var rootExtensionRow = rootRow.RootExtensionRows.Single();
-        var addressCandidate = rootRow.CollectionCandidates.Single();
-        var alignedScope = addressCandidate.AttachedAlignedScopeData.Single();
-
-        rootRow
-            .Values.Should()
-            .Equal(
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(2026),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(null),
-                new FlattenedWriteValue.Literal(901L),
-                new FlattenedWriteValue.Literal(77L)
-            );
-
-        rootExtensionRow
-            .Values.Should()
-            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal("Green"));
-        rootExtensionRow.CollectionCandidates.Should().HaveCount(2);
-        rootExtensionRow
-            .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Attendance")
-            );
-        rootExtensionRow.CollectionCandidates[1].SemanticIdentityValues.Should().Equal("Behavior");
-
-        addressCandidate.OrdinalPath.Should().Equal(0);
-        addressCandidate
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal("Home"),
-                new FlattenedWriteValue.Literal("1 Main St")
-            );
-        addressCandidate.CollectionCandidates.Should().HaveCount(2);
-        addressCandidate.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
-        addressCandidate
-            .CollectionCandidates[0]
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(345L),
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal(0),
-                new FlattenedWriteValue.Literal(new DateOnly(2026, 8, 20)),
-                new FlattenedWriteValue.Literal(9901L)
-            );
-        addressCandidate
-            .CollectionCandidates[1]
-            .Values[5]
-            .Should()
-            .Be(new FlattenedWriteValue.Literal(9902L));
-
-        alignedScope
-            .Values.Should()
-            .Equal(
-                FlattenedWriteValue.UnresolvedCollectionItemId.Instance,
-                new FlattenedWriteValue.Literal("Purple")
-            );
-        alignedScope.CollectionCandidates.Should().HaveCount(2);
-        alignedScope.CollectionCandidates[0].OrdinalPath.Should().Equal(0, 0);
-        alignedScope
-            .CollectionCandidates.Select(candidate => candidate.SemanticIdentityValues[0])
-            .Should()
-            .Equal("Bus", "Meal");
     }
 
     private sealed class RelationalWriteSeamHarness
     {
-        private readonly IPipelineStep _exceptionLoggingMiddleware;
         private readonly IPipelineStep _upsertHandler;
         private readonly IPipelineStep _updateHandler;
         private readonly ResourceInfo _resourceInfo;
@@ -681,15 +388,12 @@ public class Given_Relational_Write_Seam
         private RelationalWriteSeamHarness(
             ResourceInfo resourceInfo,
             IDocumentStoreRepository repository,
-            CapturingTerminalStage terminalStage,
-            CapturingLogger exceptionLogger
+            CapturingWriteExecutor writeExecutor
         )
         {
             _resourceInfo = resourceInfo;
-            TerminalStage = terminalStage;
-            ExceptionLogger = exceptionLogger;
+            WriteExecutor = writeExecutor;
             _serviceProvider = new RepositoryServiceProvider(repository);
-            _exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(exceptionLogger);
             _upsertHandler = new UpsertHandler(
                 NullLogger.Instance,
                 ResiliencePipeline.Empty,
@@ -704,71 +408,35 @@ public class Given_Relational_Write_Seam
             );
         }
 
-        public CapturingTerminalStage TerminalStage { get; }
-
-        public CapturingLogger ExceptionLogger { get; }
+        public CapturingWriteExecutor WriteExecutor { get; }
 
         public static RelationalWriteSeamHarness Create(
             ResourceInfo resourceInfo,
-            ResolvedReferenceSet resolvedReferences,
-            Func<DocumentUuid, RelationalWriteTargetContext> postTargetContextFactory,
-            Func<DocumentUuid, RelationalWriteTargetContext> putTargetContextFactory,
-            Func<
-                RelationalWriteTerminalStageRequest,
-                RelationalWriteTerminalStageResult
-            > terminalStageResultFactory
+            Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> writeResultFactory,
+            Func<RelationalWriteTargetRequest, RelationalWriteTargetLookupResult>? targetLookupResultFactory =
+                null
         )
         {
-            var targetContextResolver = A.Fake<IRelationalWriteTargetContextResolver>();
-            A.CallTo(() =>
-                    targetContextResolver.ResolveForPostAsync(
-                        A<MappingSet>._,
-                        A<QualifiedResourceName>._,
-                        A<ReferentialId>._,
-                        A<DocumentUuid>._,
-                        A<CancellationToken>._
-                    )
-                )
-                .ReturnsLazily(call =>
-                    Task.FromResult(postTargetContextFactory(call.GetArgument<DocumentUuid>(3)))
-                );
-            A.CallTo(() =>
-                    targetContextResolver.ResolveForPutAsync(
-                        A<MappingSet>._,
-                        A<QualifiedResourceName>._,
-                        A<DocumentUuid>._,
-                        A<CancellationToken>._
-                    )
-                )
-                .ReturnsLazily(call =>
-                    Task.FromResult(putTargetContextFactory(call.GetArgument<DocumentUuid>(2)))
-                );
-
-            var referenceResolver = A.Fake<IReferenceResolver>();
-            A.CallTo(() =>
-                    referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                )
-                .Returns(Task.FromResult(resolvedReferences));
-
-            var terminalStage = new CapturingTerminalStage(terminalStageResultFactory);
+            var writeExecutor = new CapturingWriteExecutor(writeResultFactory);
+            var targetLookupService = new RecordingRelationalWriteTargetLookupService(
+                targetLookupResultFactory
+            );
             var repository = new RelationalDocumentStoreRepository(
                 NullLogger<RelationalDocumentStoreRepository>.Instance,
-                targetContextResolver,
-                referenceResolver,
-                new RelationalWriteFlattener(),
-                terminalStage,
+                writeExecutor,
+                targetLookupService,
                 new DefaultDescriptorWriteHandler()
             );
-            var exceptionLogger = new CapturingLogger();
 
-            return new RelationalWriteSeamHarness(resourceInfo, repository, terminalStage, exceptionLogger);
+            return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);
         }
 
         public async Task<RequestInfo> ExecuteUpsertAsync(
             JsonNode parsedBody,
             MappingSet? mappingSet,
             DocumentInfo documentInfo,
-            string? originalBody = null
+            string? originalBody = null,
+            BackendProfileWriteContext? backendProfileWriteContext = null
         )
         {
             var requestInfo = CreateRequestInfo(
@@ -777,31 +445,10 @@ public class Given_Relational_Write_Seam
                 mappingSet,
                 documentInfo,
                 No.DocumentUuid,
-                originalBody
+                originalBody,
+                backendProfileWriteContext
             );
             await _upsertHandler.Execute(requestInfo, NullNext);
-            return requestInfo;
-        }
-
-        public async Task<RequestInfo> ExecuteUpsertThroughExceptionMiddlewareAsync(
-            JsonNode parsedBody,
-            MappingSet? mappingSet,
-            DocumentInfo documentInfo,
-            string? originalBody = null
-        )
-        {
-            var requestInfo = CreateRequestInfo(
-                RequestMethod.POST,
-                parsedBody,
-                mappingSet,
-                documentInfo,
-                No.DocumentUuid,
-                originalBody
-            );
-            await _exceptionLoggingMiddleware.Execute(
-                requestInfo,
-                () => _upsertHandler.Execute(requestInfo, NullNext)
-            );
             return requestInfo;
         }
 
@@ -810,7 +457,8 @@ public class Given_Relational_Write_Seam
             MappingSet? mappingSet,
             DocumentInfo documentInfo,
             DocumentUuid documentUuid,
-            string? originalBody = null
+            string? originalBody = null,
+            BackendProfileWriteContext? backendProfileWriteContext = null
         )
         {
             var requestInfo = CreateRequestInfo(
@@ -819,7 +467,8 @@ public class Given_Relational_Write_Seam
                 mappingSet,
                 documentInfo,
                 documentUuid,
-                originalBody
+                originalBody,
+                backendProfileWriteContext
             );
             await _updateHandler.Execute(requestInfo, NullNext);
             return requestInfo;
@@ -831,7 +480,8 @@ public class Given_Relational_Write_Seam
             MappingSet? mappingSet,
             DocumentInfo documentInfo,
             DocumentUuid documentUuid,
-            string? originalBody
+            string? originalBody,
+            BackendProfileWriteContext? backendProfileWriteContext
         )
         {
             var frontendRequest = new FrontendRequest(
@@ -846,13 +496,13 @@ public class Given_Relational_Write_Seam
                 RouteQualifiers: []
             );
 
-            // Seam tests inject ParsedBody directly, so they bypass the normal HTTP parse/coercion middleware.
             return new RequestInfo(frontendRequest, method, _serviceProvider)
             {
                 ResourceInfo = _resourceInfo,
                 DocumentInfo = documentInfo,
                 ParsedBody = parsedBody,
                 MappingSet = mappingSet,
+                BackendProfileWriteContext = backendProfileWriteContext,
                 PathComponents = new PathComponents(
                     new ProjectEndpointName("ed-fi"),
                     new EndpointName("students"),
@@ -862,19 +512,71 @@ public class Given_Relational_Write_Seam
         }
     }
 
-    private sealed class CapturingTerminalStage(
-        Func<RelationalWriteTerminalStageRequest, RelationalWriteTerminalStageResult> resultFactory
-    ) : IRelationalWriteTerminalStage
+    private sealed class CapturingWriteExecutor(
+        Func<RelationalWriteExecutorRequest, RelationalWriteExecutorResult> resultFactory
+    ) : IRelationalWriteExecutor
     {
-        public List<RelationalWriteTerminalStageRequest> Requests { get; } = [];
+        public List<RelationalWriteExecutorRequest> Requests { get; } = [];
 
-        public Task<RelationalWriteTerminalStageResult> ExecuteAsync(
-            RelationalWriteTerminalStageRequest request,
+        public Task<RelationalWriteExecutorResult> ExecuteAsync(
+            RelationalWriteExecutorRequest request,
             CancellationToken cancellationToken = default
         )
         {
             Requests.Add(request);
             return Task.FromResult(resultFactory(request));
+        }
+    }
+
+    private sealed class RecordingRelationalWriteTargetLookupService(
+        Func<RelationalWriteTargetRequest, RelationalWriteTargetLookupResult>? resultFactory
+    ) : IRelationalWriteTargetLookupService
+    {
+        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            ReferentialId referentialId,
+            DocumentUuid candidateDocumentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                (resultFactory ?? DefaultResultFactory)(
+                    new RelationalWriteTargetRequest.Post(referentialId, candidateDocumentUuid)
+                )
+            );
+        }
+
+        public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+            MappingSet mappingSet,
+            QualifiedResourceName resource,
+            DocumentUuid documentUuid,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                (resultFactory ?? DefaultResultFactory)(new RelationalWriteTargetRequest.Put(documentUuid))
+            );
+        }
+
+        private static RelationalWriteTargetLookupResult DefaultResultFactory(
+            RelationalWriteTargetRequest request
+        )
+        {
+            return request switch
+            {
+                RelationalWriteTargetRequest.Post(_, var candidateDocumentUuid) =>
+                    new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid),
+                RelationalWriteTargetRequest.Put(var documentUuid) =>
+                    new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported target request type '{request.GetType().Name}'."
+                ),
+            };
         }
     }
 
@@ -903,41 +605,5 @@ public class Given_Relational_Write_Seam
         public bool IsSchemaValid => true;
 
         public List<ApiSchemaFailure> ApiSchemaFailures => [];
-    }
-
-    public sealed record LogEntry(LogLevel Level, string Message, Exception? Exception);
-
-    public sealed class CapturingLogger : ILogger
-    {
-        public List<LogEntry> Entries { get; } = [];
-
-        public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull
-        {
-            return NullScope.Instance;
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception));
-        }
-    }
-
-    private sealed class NullScope : IDisposable
-    {
-        public static NullScope Instance { get; } = new();
-
-        public void Dispose() { }
     }
 }

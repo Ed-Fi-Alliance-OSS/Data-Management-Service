@@ -18,6 +18,20 @@ Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is th
 
 This story must extend the executor/no-op path introduced in `DMS-984`; it must not fork a separate profile-only persist path or rebuild collection merge behavior against a different metadata shape.
 
+In the rebased `DMS-984` branch, relational repository orchestration currently short-circuits any write carrying `BackendProfileWriteContext` with:
+
+- `UnknownFailure`
+- HTTP `500`
+- `profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124`
+
+This story owns removing that temporary fence once `DMS-1123` and `DMS-1105` are in place and routing valid profiled relational writes through the shared executor/no-op path.
+
+The hand-off is:
+
+- `DMS-1123` supplies request-body source selection so profiled flattening uses `WritableRequestBody`,
+- `DMS-1105` supplies the reconstituted current stored document plus current-state load needed for profiled existing-document flows, and
+- `DMS-1124` consumes both within the shared `DMS-984` executor/no-op path without reopening body-source selection or creating a separate profile-only pipeline.
+
 - For profiled `PUT`, and for profiled `POST` when upsert resolves to an existing document, compare the current persisted rowset to the profile-applied post-merge rowset the executor would actually write and skip DML when they are identical.
 - Guarded no-op comparison must reuse the same merge-ordering and post-merge rowset-synthesis logic as the profiled executor path; do not introduce a compare-only profile merge implementation.
 - Profile-scoped guarded no-op decisions remain provisional until the executor revalidates the observed `ContentVersion`; stale compares hand off to the same outer concurrency layer used by the shared `DMS-984` executor path.
@@ -58,6 +72,7 @@ The profiled runtime executor follow-on and downstream test-migration stories sh
 ## Acceptance Criteria
 
 - Profile-scoped non-collection decisions consume Core-projected `StoredScopeStates`, and profile-scoped collection merges consume Core-projected `VisibleStoredCollectionRows` keyed by compiled scope identity; runtime execution does not evaluate writable-profile predicates in backend or infer hidden-vs-absent from `VisibleStoredBody` alone.
+- Valid profiled relational `POST` create, `PUT`, and POST-as-update requests no longer fail with the temporary `UnknownFailure` / `500` fence message and instead enter the shared `DMS-984` executor/no-op path.
 - Before profiled DML proceeds, runtime classifies every affected non-storage-managed compiled binding as visible/writable, hidden/preserved, clear-on-visible-absent, or storage-managed, and treats any unaccounted binding as a deterministic profile-runtime failure.
 - `PUT` and POST-as-update short-circuit as successful no-ops when the comparable profile-applied stored/writable rowset is unchanged, including the `ProfileUnchangedWriteGuardedNoOp` scenario.
 - Guarded no-op comparison reuses the same merge-ordering and post-merge rowset-synthesis logic as execution, either by invoking the same helper or a shared helper built from the same executor-facing metadata; runtime does not maintain a separate profile-specific compare-only merge path.
@@ -70,20 +85,23 @@ The profiled runtime executor follow-on and downstream test-migration stories sh
 - `ProfileHiddenExtensionRowPreservation` and `ProfileHiddenExtensionChildCollectionPreservation` follow the same preservation/merge rules as base data.
 - `ProfileVisibleButAbsentNonCollectionScope` deletes separate-table rows or clears only the bindings classified as visible-and-clearable for inlined parent/root-row scopes according to the compiled mapping; bindings still governed by hidden preserved member paths are not cleared, and hidden scopes are not treated as deletes.
 - `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` fail deterministically as profile-based policy/validation errors before insert DML commits.
+- Profile root-creatability enforcement follows the executor's final in-session POST target outcome: create-only checks run only when POST resolves to create-new, while POST resolving to an existing document flows onto the profiled update path.
 - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` includes a three-level chain where an existing visible middle-level parent still allows descendant update/create, while a new visible middle-level parent is rejected because a required middle-level member is hidden and therefore blocks descendant extension-child creation in the same request.
 - Profile-scoped collection/common-type/extension collection merges start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously.
 - Implementation works on both PostgreSQL and SQL Server with appropriate batching/parameterization behavior.
 
 ## Tasks
 
-1. Extend the `DMS-984` executor/no-op path to consume `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` without forking a separate profile-only persist pipeline.
-2. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
-3. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
-4. Extend the shared no-op comparison path to support profile-applied rowset synthesis, including `ProfileUnchangedWriteGuardedNoOp`, the same `ContentVersion` freshness recheck, and stale-compare handoff to the outer concurrency layer, without introducing a profile-only compare implementation.
-5. Add integration tests that cover the shared profiled runtime baseline above:
+1. Remove the temporary repository fence for valid profiled relational writes once `DMS-1123` body-source selection and `DMS-1105` current-document reconstitution are available, and route those requests into the shared `DMS-984` executor/no-op path.
+2. Extend the `DMS-984` executor/no-op path to consume `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` without forking a separate profile-only persist pipeline.
+3. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
+4. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
+5. Extend the shared no-op comparison path to support profile-applied rowset synthesis, including `ProfileUnchangedWriteGuardedNoOp`, the same `ContentVersion` freshness recheck, and stale-compare handoff to the outer concurrency layer, without introducing a profile-only compare implementation.
+6. Move profile root-creatability enforcement to the executor's final in-session POST target outcome so create-new and POST-as-update are handled by the correct profiled path.
+7. Add integration tests that cover the shared profiled runtime baseline above and replace temporary fence-focused assertions with positive runtime assertions for profiled executor entry:
    - `ProfileVisibleRowUpdateWithHiddenRowPreservation`, including no-previously-visible, interleaved update-plus-insert, nested collection, root-level extension child-collection, and collection-aligned extension child-collection ordering variants,
    - `ProfileVisibleRowDeleteWithHiddenRowPreservation`, including a delete-all-visible-while-hidden-rows-remain case,
    - `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation`, including key-unified canonical storage, synthetic presence, and hidden FK/descriptor coverage,
    - `ProfileHiddenExtensionRowPreservation` plus `ProfileHiddenExtensionChildCollectionPreservation`,
-   - `ProfileRootCreateRejectedWhenNonCreatable` plus `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, including an update-allowed/create-denied pairing and the three-level parent-create-denied/child-denied chain, and
+   - `ProfileRootCreateRejectedWhenNonCreatable` plus `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, including an update-allowed/create-denied pairing, correct POST create-vs-update target handling, and the three-level parent-create-denied/child-denied chain, and
    - `ProfileUnchangedWriteGuardedNoOp` for unchanged PUT / POST-as-update requests with no DML-visible state or update-tracking changes (pgsql + mssql where available).
