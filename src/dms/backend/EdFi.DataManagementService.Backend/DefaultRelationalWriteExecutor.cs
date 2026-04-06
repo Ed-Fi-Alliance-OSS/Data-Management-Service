@@ -16,7 +16,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
-    IRelationalWriteNonCollectionPersister nonCollectionPersister
+    IRelationalWriteNoProfilePersister noProfilePersister
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -41,8 +41,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
 
-    private readonly IRelationalWriteNonCollectionPersister _nonCollectionPersister =
-        nonCollectionPersister ?? throw new ArgumentNullException(nameof(nonCollectionPersister));
+    private readonly IRelationalWriteNoProfilePersister _noProfilePersister =
+        noProfilePersister ?? throw new ArgumentNullException(nameof(noProfilePersister));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -167,7 +167,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
             }
 
-            await _nonCollectionPersister
+            await _noProfilePersister
                 .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 

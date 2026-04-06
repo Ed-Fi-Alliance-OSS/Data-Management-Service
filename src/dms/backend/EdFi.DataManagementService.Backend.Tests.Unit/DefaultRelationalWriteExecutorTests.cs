@@ -27,7 +27,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
-    private RecordingRelationalWriteNonCollectionPersister _nonCollectionPersister = null!;
+    private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -40,7 +40,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
-        _nonCollectionPersister = new RecordingRelationalWriteNonCollectionPersister();
+        _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
@@ -49,7 +49,7 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
-            _nonCollectionPersister
+            _noProfilePersister
         );
     }
 
@@ -141,7 +141,7 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo([new JsonPath("$.schoolTypeDescriptor")]);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
         _noProfileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
@@ -245,7 +245,7 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.CapturedRequest!.TargetContext.DocumentId.Should().Be(345L);
         _currentStateLoader.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer
             .CapturedRequest!.CurrentState.Should()
@@ -309,8 +309,8 @@ public class Given_Default_Relational_Write_Executor
         _currentStateLoader.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
         _writeFlattener.CapturedInput.Should().NotBeNull();
         _writeFlattener.CapturedInput!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
-        _nonCollectionPersister.CapturedRequest.Should().NotBeNull();
-        _nonCollectionPersister.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
+        _noProfilePersister.CapturedRequest.Should().NotBeNull();
+        _noProfilePersister.CapturedRequest!.TargetContext.Should().BeEquivalentTo(existingTargetContext);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -335,7 +335,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeFreshnessChecker.CapturedRequest.Should().NotBeNull();
         _writeFreshnessChecker.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
@@ -381,7 +381,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
@@ -547,7 +547,7 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             new RelationalWriteNoProfileMergeSynthesizer(),
-            _nonCollectionPersister
+            _noProfilePersister
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -564,7 +564,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
@@ -758,7 +758,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -782,10 +782,10 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
-        _nonCollectionPersister.CapturedRequest.Should().NotBeNull();
-        _nonCollectionPersister.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
-        _nonCollectionPersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.CapturedRequest.Should().NotBeNull();
+        _noProfilePersister.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
+        _noProfilePersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -815,10 +815,10 @@ public class Given_Default_Relational_Write_Executor
                 )
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
-        _nonCollectionPersister.CapturedRequest.Should().NotBeNull();
-        _nonCollectionPersister.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
-        _nonCollectionPersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.CapturedRequest.Should().NotBeNull();
+        _noProfilePersister.CapturedRequest!.TargetRequest.Should().BeEquivalentTo(request.TargetRequest);
+        _noProfilePersister.CapturedWriteSession.Should().BeSameAs(_writeSessionFactory.Session);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -852,7 +852,7 @@ public class Given_Default_Relational_Write_Executor
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeFreshnessChecker.IsCurrentCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
@@ -870,12 +870,12 @@ public class Given_Default_Relational_Write_Executor
             currentName: "Lincoln High",
             mergedName: "Lincoln High Updated"
         );
-        _nonCollectionPersister.ExceptionToThrow = new InvalidOperationException("boom");
+        _noProfilePersister.ExceptionToThrow = new InvalidOperationException("boom");
 
         var act = () => _sut.ExecuteAsync(request);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -956,7 +956,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
-        _nonCollectionPersister.TryPersistCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
@@ -1653,8 +1653,7 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
-    private sealed class RecordingRelationalWriteNonCollectionPersister
-        : IRelationalWriteNonCollectionPersister
+    private sealed class RecordingRelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
     {
         public int TryPersistCallCount { get; private set; }
 

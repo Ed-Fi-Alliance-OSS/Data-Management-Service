@@ -18,14 +18,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Relational_Write_Non_Collection_Persister
+public class Given_Relational_Write_No_Profile_Persister
 {
-    private RelationalWriteNonCollectionPersister _sut = null!;
+    private RelationalWriteNoProfilePersister _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNonCollectionPersister();
+        _sut = new RelationalWriteNoProfilePersister();
     }
 
     [Test]
@@ -1288,7 +1288,7 @@ public class Given_Relational_Write_Non_Collection_Persister
                 : null,
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             false,
-            new TraceId("non-collection-persister-test"),
+            new TraceId("no-profile-persister-test"),
             new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], []),
             targetContext: operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetContext.ExistingDocument(

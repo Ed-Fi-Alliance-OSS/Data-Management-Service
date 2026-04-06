@@ -35,8 +35,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
-        var nonCollectionPersister =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteNonCollectionPersister>();
+        var noProfilePersister =
+            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
         var targetLookupResolver =
@@ -52,7 +52,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
-        nonCollectionPersister.Should().BeOfType<RelationalWriteNonCollectionPersister>();
+        noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();

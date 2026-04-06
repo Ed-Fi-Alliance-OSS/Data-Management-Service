@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteNonCollectionPersister
+internal interface IRelationalWriteNoProfilePersister
 {
     Task PersistAsync(
         RelationalWriteExecutorRequest request,
@@ -22,7 +22,7 @@ internal interface IRelationalWriteNonCollectionPersister
     );
 }
 
-internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNonCollectionPersister
+internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
 {
     public async Task PersistAsync(
         RelationalWriteExecutorRequest request,
@@ -37,7 +37,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
         var targetContext =
             request.TargetContext
             ?? throw new InvalidOperationException(
-                "Relational non-collection persistence requires an executor-resolved target context."
+                "Relational no-profile persistence requires an executor-resolved target context."
             );
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
@@ -1135,7 +1135,7 @@ internal sealed class RelationalWriteNonCollectionPersister : IRelationalWriteNo
             0 => null,
             1 => rows[0],
             _ => throw new InvalidOperationException(
-                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during non-collection persistence. "
+                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during no-profile persistence. "
                     + "Only zero or one row is supported before collection merge execution lands."
             ),
         };

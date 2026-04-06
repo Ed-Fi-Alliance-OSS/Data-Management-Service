@@ -63,10 +63,7 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
-                IRelationalWriteNonCollectionPersister,
-                RelationalWriteNonCollectionPersister
-            >()
+            ServiceDescriptor.Scoped<IRelationalWriteNoProfilePersister, RelationalWriteNoProfilePersister>()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
         services.TryAdd(
