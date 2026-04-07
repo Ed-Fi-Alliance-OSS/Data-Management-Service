@@ -31,3 +31,4 @@ Authorization remains out of scope.
 - `DMS-1006` — `04-change-query-selection.md` — Implement Change Query candidate selection (journal + verify)
 - `DMS-1007` — `05-change-query-api.md` — Implement Change Query endpoints (optional/future-facing)
 - `DMS-1008` — `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)
+- `DMS-1127` — `07-mssql-fallback-update-tracking.md` — Validate SQL Server fallback-managed propagation preserves stamps/journals

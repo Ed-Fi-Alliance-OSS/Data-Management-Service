@@ -26,4 +26,5 @@ Authorization remains out of scope.
 - `DMS-997` — `01-referentialidentity-maintenance.md` — Insert/update primary + alias referential identities
 - `DMS-998` — `02-identity-change-detection.md` — Detect identity projection changes reliably
 - `DMS-999` — `03-identity-propagation.md` — Identity propagation via cascades/triggers (no closure traversal)
+- `DMS-1128` — `03a-mssql-hybrid-cascade-classification.md` — Implement MSSQL hybrid cascade classification, trigger inventory, and DDL emission
 - `DMS-1000` — `04-cache-invalidation.md` — Evict/update identity-resolution caches after commit

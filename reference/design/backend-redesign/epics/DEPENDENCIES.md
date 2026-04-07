@@ -3,7 +3,7 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 125 story files).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 126 story files).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -267,6 +267,7 @@ Epic: `10-update-tracking-change-queries/EPIC.md`
 | E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01 | — | Change Query candidate selection (journal + verify) |
 | E10-S05 | [`05-change-query-api.md`](10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
 | E10-S06 | [`06-descriptor-stamping.md`](10-update-tracking-change-queries/06-descriptor-stamping.md) | E10-S00 | E07-S06 | Ensure `dms.Descriptor` updates stamp/journal descriptor documents |
+| E10-S07 | [`07-mssql-fallback-update-tracking.md`](10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md) | E09-S03, E10-S00, E10-S01 | E04-S04 | SQL Server fallback-managed propagation update-tracking verification + nested-trigger prerequisite |
 
 ### E11 — Delete Path & Conflict Diagnostics
 
@@ -601,6 +602,10 @@ Recommended Jira link creation:
 | Hard | `E10-S04` | `DMS-1006` | `10-update-tracking-change-queries/04-change-query-selection.md` | `E10-S05` | `DMS-1007` | `10-update-tracking-change-queries/05-change-query-api.md` |
 | Soft | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` | `E10-S06` | `DMS-1008` | `10-update-tracking-change-queries/06-descriptor-stamping.md` |
 | Hard | `E10-S00` | `DMS-1002` | `10-update-tracking-change-queries/00-token-stamping.md` | `E10-S06` | `DMS-1008` | `10-update-tracking-change-queries/06-descriptor-stamping.md` |
+| Soft | `E04-S04` | `DMS-961` | `04-verification-harness/04-db-apply-smoke.md` | `E10-S07` | `DMS-1127` | `10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md` |
+| Hard | `E09-S03` | `DMS-999` | `09-identity-concurrency/03-identity-propagation.md` | `E10-S07` | `DMS-1127` | `10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md` |
+| Hard | `E10-S00` | `DMS-1002` | `10-update-tracking-change-queries/00-token-stamping.md` | `E10-S07` | `DMS-1127` | `10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md` |
+| Hard | `E10-S01` | `DMS-1003` | `10-update-tracking-change-queries/01-journaling-contract.md` | `E10-S07` | `DMS-1127` | `10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md` |
 | Hard | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` | `E11-S00` | `DMS-1010` | `11-delete-path/00-delete-by-id.md` |
 | Hard | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` | `E11-S00` | `DMS-1010` | `11-delete-path/00-delete-by-id.md` |
 | Hard | `E11-S00` | `DMS-1010` | `11-delete-path/00-delete-by-id.md` | `E11-S01` | `DMS-1011` | `11-delete-path/01-conflict-mapping.md` |

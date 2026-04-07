@@ -119,6 +119,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1006` — Change Query Candidate Selection (Journal-Driven) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/04-change-query-selection.md`
   - `DMS-1007` — Change Query API Endpoints (Optional / Future-Facing) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/05-change-query-api.md`
   - `DMS-1008` — Ensure Descriptor Writes Stamp and Journal Correctly (`dms.Descriptor`) — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/06-descriptor-stamping.md`
+  - `DMS-1127` — Validate SQL Server Fallback-Managed Propagation Preserves Update Tracking — `reference/design/backend-redesign/epics/10-update-tracking-change-queries/07-mssql-fallback-update-tracking.md`
 
 - `DMS-1009` — Delete Path & Conflict Diagnostics — `reference/design/backend-redesign/epics/11-delete-path/EPIC.md`
   - `DMS-1010` — Implement Delete-by-Id for Relational Store — `reference/design/backend-redesign/epics/11-delete-path/00-delete-by-id.md`
