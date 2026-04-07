@@ -322,7 +322,8 @@ public static class DocumentReconstituter
     )
     {
         var childTableModel = childTableRows.TableModel;
-        var collectionPropertyName = ExtractCollectionPropertyName(
+        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
+            parentObject,
             childTableModel.JsonScope,
             parentTableModel.JsonScope
         );
@@ -396,7 +397,7 @@ public static class DocumentReconstituter
 
         // For extension collections, the parent is an _ext.projectName scope,
         // so the property needs to land on the correct parent
-        parentObject[collectionPropertyName] = array;
+        collectionTarget[collectionPropertyName] = array;
     }
 
     /// <summary>
@@ -605,7 +606,7 @@ public static class DocumentReconstituter
 
     /// <summary>
     /// Returns true if the suffix represents exactly one array level deeper.
-    /// e.g., "addresses[*]" or "periods[*]" — a property name followed by [*] with no further nesting.
+    /// Allows intermediate dots from inlined object paths (e.g., "contentStandard.authors[*]").
     /// </summary>
     private static bool IsOneArrayLevelDeeper(string suffix)
     {
@@ -614,10 +615,17 @@ public static class DocumentReconstituter
             return false;
         }
 
-        var propertyPart = suffix[..^3]; // Remove "[*]"
+        // Count [*] occurrences — exactly one means one collection level deeper.
+        // Multiple [*] means a grandchild or deeper, not an immediate child.
+        var count = 0;
+        var idx = 0;
+        while ((idx = suffix.IndexOf("[*]", idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += 3;
+        }
 
-        // Should be a simple property name (no dots, no further array access)
-        return propertyPart.Length > 0 && !propertyPart.Contains('.') && !propertyPart.Contains('[');
+        return count == 1;
     }
 
     /// <summary>
@@ -637,27 +645,48 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
-    /// Extracts the collection property name from a child collection scope relative to its parent.
-    /// e.g., parent "$", child "$.addresses[*]" => "addresses"
-    /// e.g., parent "$.addresses[*]", child "$.addresses[*].periods[*]" => "periods"
+    /// Resolves the target JSON object and property name for a collection array, navigating
+    /// through intermediate inlined-object segments and creating them as needed.
+    /// e.g., parent "$", child "$.addresses[*]" => (rootObject, "addresses")
+    /// e.g., parent "$", child "$.contentStandard.authors[*]" => (contentStandardObject, "authors")
     /// </summary>
-    private static string ExtractCollectionPropertyName(
-        JsonPathExpression childScope,
+    private static (JsonObject TargetObject, string PropertyName) ResolveCollectionTarget(
+        JsonObject scopeObject,
+        JsonPathExpression collectionScope,
         JsonPathExpression parentScope
     )
     {
-        // Walk segments to find the first Property segment after the parent's segments
-        var parentSegmentCount = parentScope.Segments.Count;
-        for (var i = parentSegmentCount; i < childScope.Segments.Count; i++)
+        var startIndex = parentScope.Segments.Count;
+        var target = scopeObject;
+
+        for (var i = startIndex; i < collectionScope.Segments.Count; i++)
         {
-            if (childScope.Segments[i] is JsonPathSegment.Property prop)
+            if (collectionScope.Segments[i] is not JsonPathSegment.Property prop)
             {
-                return prop.Name;
+                continue;
             }
+
+            // If the next segment is AnyArrayElement, this property is the collection name
+            if (
+                i + 1 < collectionScope.Segments.Count
+                && collectionScope.Segments[i + 1] is JsonPathSegment.AnyArrayElement
+            )
+            {
+                return (target, prop.Name);
+            }
+
+            // Otherwise this is an intermediate inlined-object segment — navigate or create
+            if (target[prop.Name] is not JsonObject child)
+            {
+                child = new JsonObject();
+                target[prop.Name] = child;
+            }
+
+            target = child;
         }
 
         throw new InvalidOperationException(
-            $"Cannot extract collection property name from child scope '{childScope.Canonical}' "
+            $"Cannot resolve collection target from child scope '{collectionScope.Canonical}' "
                 + $"relative to parent scope '{parentScope.Canonical}'."
         );
     }
