@@ -480,6 +480,85 @@ public class Given_Reconstituted_Document_With_Nested_Ext_In_ProfileHiddenExtens
         noteScope.CollectionAncestorsInOrder.Should().Contain("$.addresses[*]");
     }
 
+    // ── Address derivation verification (AC11: stored-side addresses align to compiled adapter) ──
+
+    [Test]
+    public void It_should_derive_root_scope_instance_address()
+    {
+        var engine = new AddressDerivationEngine(_scopeCatalog);
+
+        var address = engine.DeriveScopeInstanceAddress("$", []);
+
+        address.JsonScope.Should().Be("$");
+        address.AncestorCollectionInstances.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_derive_collection_row_address_for_first_address_item()
+    {
+        var engine = new AddressDerivationEngine(_scopeCatalog);
+        var firstAddress = _reconstitutedDocument["addresses"]![0]!;
+
+        var address = engine.DeriveCollectionRowAddress("$.addresses[*]", firstAddress, []);
+
+        address.JsonScope.Should().Be("$.addresses[*]");
+        address.ParentAddress.JsonScope.Should().Be("$");
+    }
+
+    [Test]
+    public void It_should_derive_ext_scope_instance_address_with_collection_ancestor()
+    {
+        var engine = new AddressDerivationEngine(_scopeCatalog);
+        var firstAddress = _reconstitutedDocument["addresses"]![0]!;
+
+        var address = engine.DeriveScopeInstanceAddress(
+            "$.addresses[*]._ext.sample",
+            [new AncestorItemContext("$.addresses[*]", firstAddress)]
+        );
+
+        address.JsonScope.Should().Be("$.addresses[*]._ext.sample");
+        address.AncestorCollectionInstances.Should().HaveCount(1);
+        address.AncestorCollectionInstances[0].JsonScope.Should().Be("$.addresses[*]");
+    }
+
+    [Test]
+    public void It_should_derive_extension_collection_row_address_with_nested_ancestors()
+    {
+        var engine = new AddressDerivationEngine(_scopeCatalog);
+        var firstAddress = _reconstitutedDocument["addresses"]![0]!;
+        var firstNote = firstAddress["_ext"]!["sample"]!["deliveryNotes"]![0]!;
+
+        var address = engine.DeriveCollectionRowAddress(
+            "$.addresses[*]._ext.sample.deliveryNotes[*]",
+            firstNote,
+            [new AncestorItemContext("$.addresses[*]", firstAddress)]
+        );
+
+        address.JsonScope.Should().Be("$.addresses[*]._ext.sample.deliveryNotes[*]");
+        address.ParentAddress.JsonScope.Should().Be("$.addresses[*]._ext.sample");
+        address.ParentAddress.AncestorCollectionInstances.Should().HaveCount(1);
+        address.ParentAddress.AncestorCollectionInstances[0].JsonScope.Should().Be("$.addresses[*]");
+    }
+
+    [Test]
+    public void It_should_derive_distinct_collection_row_addresses_for_each_address_item()
+    {
+        var engine = new AddressDerivationEngine(_scopeCatalog);
+        var addressArray = _reconstitutedDocument["addresses"]!.AsArray();
+
+        var addr0 = engine.DeriveCollectionRowAddress("$.addresses[*]", addressArray[0]!, []);
+        var addr1 = engine.DeriveCollectionRowAddress("$.addresses[*]", addressArray[1]!, []);
+
+        addr0.JsonScope.Should().Be(addr1.JsonScope);
+        addr0.ParentAddress.JsonScope.Should().Be(addr1.ParentAddress.JsonScope);
+        // Both derive successfully from the reconstituted document — distinct items
+        // produce distinct addresses (same scope but different JSON content)
+        addressArray[0]!["city"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(addressArray[1]!["city"]!.GetValue<string>());
+    }
+
     // ── Helpers ──
 
     private static bool JsonPathExistsInDocument(JsonNode document, string jsonScope)

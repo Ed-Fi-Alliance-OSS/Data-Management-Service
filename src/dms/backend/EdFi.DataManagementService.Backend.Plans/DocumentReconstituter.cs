@@ -758,8 +758,16 @@ public static class DocumentReconstituter
             float f => JsonValue.Create(f),
             bool b => JsonValue.Create(b),
             string str => JsonValue.Create(str),
-            DateTime dt => JsonValue.Create(dt.ToString("O")),
-            DateTimeOffset dto => JsonValue.Create(dto.ToString("O")),
+            DateTime dt => JsonValue.Create(
+                dt.ToUniversalTime()
+                    .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
+            ),
+            DateTimeOffset dto => JsonValue.Create(
+                dto.UtcDateTime.ToString(
+                    "yyyy-MM-ddTHH:mm:ssZ",
+                    System.Globalization.CultureInfo.InvariantCulture
+                )
+            ),
             DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
             TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
             Guid g => JsonValue.Create(g.ToString()),

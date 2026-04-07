@@ -15,16 +15,26 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
 {
     public RelationalWriteCurrentStateLoadRequest(
         ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        bool requiresReconstitution = false
     )
     {
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        RequiresReconstitution = requiresReconstitution;
     }
 
     public ResourceReadPlan ReadPlan { get; init; }
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, the loader performs descriptor projection and JSON reconstitution
+    /// so the result includes <see cref="RelationalWriteCurrentState.ReconstitutedDocument"/>.
+    /// When <c>false</c> (the default), the extra SQL round-trip and in-memory assembly are skipped
+    /// because the reconstituted document is not needed for non-profiled writes.
+    /// </summary>
+    public bool RequiresReconstitution { get; init; }
 }
 
 internal sealed record RelationalWriteCurrentState
@@ -122,6 +132,11 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                 $"Current-state load returned metadata for document id {documentMetadata.DocumentId}, "
                     + $"but target document id was {request.TargetContext.DocumentId}."
             );
+        }
+
+        if (!request.RequiresReconstitution)
+        {
+            return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
         }
 
         // Reconstitute the stored JSON document from hydrated rows
