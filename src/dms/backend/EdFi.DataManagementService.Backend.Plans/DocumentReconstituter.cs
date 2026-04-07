@@ -91,10 +91,11 @@ public static class DocumentReconstituter
     private static object?[] FindRootRow(long documentId, HydratedTableRows rootTableRows)
     {
         var rootScopeLocatorColumns = rootTableRows.TableModel.IdentityMetadata.RootScopeLocatorColumns;
-        if (rootScopeLocatorColumns.Count == 0)
+        if (rootScopeLocatorColumns.Count != 1)
         {
             throw new InvalidOperationException(
-                "Cannot reconstitute document: RootScopeLocatorColumns is empty on the root table model."
+                "Cannot reconstitute document: expected exactly one RootScopeLocatorColumn on the root table model, "
+                    + $"but found {rootScopeLocatorColumns.Count}."
             );
         }
 
@@ -501,11 +502,11 @@ public static class DocumentReconstituter
         var childTableModel = childTableRows.TableModel;
         var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
 
-        if (parentScopeColumns.Count == 0)
+        if (parentScopeColumns.Count != 1)
         {
             throw new InvalidOperationException(
                 $"Cannot filter child rows for table '{childTableModel.Table}': "
-                    + "ImmediateParentScopeLocatorColumns is empty."
+                    + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
             );
         }
 
