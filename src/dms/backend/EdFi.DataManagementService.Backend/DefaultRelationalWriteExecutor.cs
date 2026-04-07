@@ -133,6 +133,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
             );
 
+            if (request.ProfileWriteContext is not null)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return BuildProfilePersistPendingResult(request.OperationKind);
+            }
+
             var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
                 new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
             );
@@ -290,6 +296,25 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureValidation(validationFailures)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private const string ProfilePersistPendingMessage =
+        "Profile-aware relational merge/persist pending DMS-1124.";
+
+    private static RelationalWriteExecutorResult BuildProfilePersistPendingResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure(ProfilePersistPendingMessage)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UnknownFailure(ProfilePersistPendingMessage)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };

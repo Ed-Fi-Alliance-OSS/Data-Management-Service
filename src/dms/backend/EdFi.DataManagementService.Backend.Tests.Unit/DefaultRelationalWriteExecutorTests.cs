@@ -9,8 +9,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -1047,6 +1050,62 @@ public class Given_Default_Relational_Write_Executor
             );
 
         act.Should().Throw<ArgumentException>().WithParameterName("targetRequest");
+    }
+
+    [Test]
+    public async Task It_fences_profiled_writes_after_flattening_before_merge_persist()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        {
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener.FlattenCallCount.Should().Be(1, "flattener must be called for profiled writes");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "no-profile merge must not run when profile context is present");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "no-profile persister must not run when profile context is present");
+        _writeSessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(1, "session must be rolled back when profile persist is fenced");
+        _writeSessionFactory
+            .Session.CommitCallCount.Should()
+            .Be(0, "session must not be committed when profile persist is fenced");
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("DMS-1124");
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
