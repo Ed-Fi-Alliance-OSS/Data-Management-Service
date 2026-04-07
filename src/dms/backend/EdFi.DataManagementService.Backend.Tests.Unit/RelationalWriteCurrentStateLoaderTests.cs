@@ -20,6 +20,54 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Relational_Write_Current_State_Loader
 {
     [Test]
+    public async Task It_skips_reconstitution_when_not_required()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var readPlan = new ResourceReadPlan(
+            resourceModel,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
+            [],
+            []
+        );
+        var nonReconstitutionRequest = new RelationalWriteCurrentStateLoadRequest(
+            readPlan,
+            new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                ObservedContentVersion: 44L
+            ),
+            requiresReconstitution: false
+        );
+        var command = new RecordingDbCommand(
+            CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        345L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((345L, "Lincoln High"))
+            )
+        );
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var session = new TestRelationalWriteSession(connection, transaction);
+        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+
+        var result = (await sut.LoadAsync(nonReconstitutionRequest, session))!;
+
+        result.DocumentMetadata.DocumentId.Should().Be(345L);
+        result.TableRowsInDependencyOrder.Should().ContainSingle();
+        result.ReconstitutedDocument.Should().BeNull("reconstitution was not requested");
+    }
+
+    [Test]
     public async Task It_loads_a_single_existing_document_through_the_session_connection_and_transaction()
     {
         var request = CreateLoadRequest();
