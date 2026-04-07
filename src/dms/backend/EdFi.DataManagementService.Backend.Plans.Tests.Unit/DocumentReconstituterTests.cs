@@ -1944,6 +1944,213 @@ public class Given_DocumentReconstituter_With_Inlined_Nested_Scalars
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_Collection_Under_Inlined_Object
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "EducationContent");
+    private static readonly DbTableName _authorTableName = new(_schema, "EducationContentAuthor");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _contentIdPath = new(
+        "$.contentIdentifier",
+        [new JsonPathSegment.Property("contentIdentifier")]
+    );
+
+    private static readonly JsonPathExpression _contentStandardTitlePath = new(
+        "$.contentStandard.title",
+        [new JsonPathSegment.Property("contentStandard"), new JsonPathSegment.Property("title")]
+    );
+
+    private static readonly JsonPathExpression _authorScope = new(
+        "$.contentStandard.authors[*]",
+        [
+            new JsonPathSegment.Property("contentStandard"),
+            new JsonPathSegment.Property("authors"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _authorNamePath = new(
+        "$.contentStandard.authors[*].author",
+        [
+            new JsonPathSegment.Property("contentStandard"),
+            new JsonPathSegment.Property("authors"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("author"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_EducationContent",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ContentIdentifier"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 225),
+                    false,
+                    _contentIdPath,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ContentStandard_Title"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    true,
+                    _contentStandardTitlePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var authorTableModel = new DbTableModel(
+            Table: _authorTableName,
+            JsonScope: _authorScope,
+            Key: new TableKey(
+                "PK_EducationContentAuthor",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Author"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
+                    false,
+                    _authorNamePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        // Root row: DocumentId=1, ContentIdentifier, ContentStandard_Title
+        object?[] rootRow = [1L, "content-123", "State Standards"];
+        // Two author rows under DocumentId=1
+        object?[] authorRow1 = [1L, 10L, 0, "Smith, J."];
+        object?[] authorRow2 = [1L, 11L, 1, "Jones, A."];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                new HydratedTableRows(rootTableModel, [rootRow]),
+                new HydratedTableRows(authorTableModel, [authorRow1, authorRow2]),
+            ],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_root_scalar()
+    {
+        _result["contentIdentifier"]!.GetValue<string>().Should().Be("content-123");
+    }
+
+    [Test]
+    public void It_should_create_intermediate_contentStandard_object()
+    {
+        _result["contentStandard"].Should().BeOfType<JsonObject>();
+    }
+
+    [Test]
+    public void It_should_emit_contentStandard_title()
+    {
+        _result["contentStandard"]!["title"]!.GetValue<string>().Should().Be("State Standards");
+    }
+
+    [Test]
+    public void It_should_emit_authors_array_inside_contentStandard()
+    {
+        _result["contentStandard"]!["authors"].Should().NotBeNull();
+        _result["contentStandard"]!["authors"]!.AsArray().Count.Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_emit_first_author()
+    {
+        _result["contentStandard"]!["authors"]![0]!["author"]!.GetValue<string>().Should().Be("Smith, J.");
+    }
+
+    [Test]
+    public void It_should_emit_second_author()
+    {
+        _result["contentStandard"]!["authors"]![1]!["author"]!.GetValue<string>().Should().Be("Jones, A.");
+    }
+
+    [Test]
+    public void It_should_not_emit_authors_on_root()
+    {
+        // authors must be nested under contentStandard, not on the root object
+        _result["authors"].Should().BeNull();
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_With_Empty_Collection
 {
     private JsonNode _result = null!;
