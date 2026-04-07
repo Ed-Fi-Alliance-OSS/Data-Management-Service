@@ -312,9 +312,6 @@ public class Given_A_Profiled_Relational_Put
 /// </summary>
 internal static class OrchestrationTestHelpers
 {
-    public const string PendingProfileWriteMessage =
-        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
-
     public static ResourceInfo CreateResourceInfo() =>
         new(
             ProjectName: new ProjectName("Ed-Fi"),
