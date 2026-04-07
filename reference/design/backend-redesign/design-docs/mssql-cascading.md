@@ -73,8 +73,8 @@ ODS/MetaEd already uses a narrower MSSQL cascade strategy:
 
 Relevant implementation points:
 
-- `~/work/dms-root/MetaEd-js/packages/metaed-plugin-edfi-ods-relational/src/enhancer/UpdateCascadeTopLevelEntityEnhancer.ts:25`
-- `~/work/dms-root/MetaEd-js/packages/metaed-plugin-edfi-ods-relational/src/enhancer/ForeignKeyCreatingTableEnhancer.ts:185`
+- `metaed-plugin-edfi-ods-relational/src/enhancer/UpdateCascadeTopLevelEntityEnhancer.ts:25`
+- `metaed-plugin-edfi-ods-relational/src/enhancer/ForeignKeyCreatingTableEnhancer.ts:185`
 
 The ODS idea is sound and should inform DMS. However, DMS is not structurally identical to ODS:
 
