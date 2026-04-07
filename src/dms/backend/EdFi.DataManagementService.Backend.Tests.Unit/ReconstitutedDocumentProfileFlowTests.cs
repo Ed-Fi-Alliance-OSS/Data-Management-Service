@@ -551,12 +551,13 @@ public class Given_Reconstituted_Document_With_Nested_Ext_In_ProfileHiddenExtens
 
         addr0.JsonScope.Should().Be(addr1.JsonScope);
         addr0.ParentAddress.JsonScope.Should().Be(addr1.ParentAddress.JsonScope);
-        // Both derive successfully from the reconstituted document — distinct items
-        // produce distinct addresses (same scope but different JSON content)
-        addressArray[0]!["city"]!
-            .GetValue<string>()
-            .Should()
-            .NotBe(addressArray[1]!["city"]!.GetValue<string>());
+
+        // Semantic identity must be populated and distinct
+        addr0.SemanticIdentityInOrder.Should().HaveCount(1);
+        addr1.SemanticIdentityInOrder.Should().HaveCount(1);
+        addr0.SemanticIdentityInOrder[0].RelativePath.Should().Be("city");
+        addr0.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("Austin");
+        addr1.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("Dallas");
     }
 
     // ── Helpers ──
@@ -664,7 +665,10 @@ public class Given_Reconstituted_Document_With_Nested_Ext_In_ProfileHiddenExtens
             ],
             KeyUnificationPlans: [],
             CollectionMergePlan: new CollectionMergePlan(
-                SemanticIdentityBindings: [],
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(RelativePath: _cityPath, BindingIndex: 3),
+                ],
                 StableRowIdentityBindingIndex: 1,
                 UpdateByStableRowIdentitySql: "-- placeholder",
                 DeleteByStableRowIdentitySql: "-- placeholder",
@@ -749,7 +753,10 @@ public class Given_Reconstituted_Document_With_Nested_Ext_In_ProfileHiddenExtens
             ],
             KeyUnificationPlans: [],
             CollectionMergePlan: new CollectionMergePlan(
-                SemanticIdentityBindings: [],
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(RelativePath: _notePath, BindingIndex: 4),
+                ],
                 StableRowIdentityBindingIndex: 2,
                 UpdateByStableRowIdentitySql: "-- placeholder",
                 DeleteByStableRowIdentitySql: "-- placeholder",
