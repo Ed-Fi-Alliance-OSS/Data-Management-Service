@@ -1,0 +1,74 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Introduce explicit reference-derived write metadata in the relational write-plan contracts for both propagated reference identity column bindings and key-unification member inventory. Acceptance: propagated reference identity bindings and unified reference-derived members are no longer represented as ordinary JSON scalar reads; the external contract, DTO, and codec layers can identify each derived binding or member by reference site plus logical reference-member path; later key-unification work can consume the new contract shape without reopening serialization changes; the design continues to use existing `ResolvedReferenceSet` and `DocumentReference.DocumentIdentity` rather than widening the resolver payload; and compiler or runtime mismatches in the new metadata shape fail fast as internal invariant breaches.",
+    "steps-to-verify": [
+      "Add or update plan-contract serialization or normalization tests so reference-derived column bindings and key-unification members survive round-tripping and are visible in normalized test output.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Plan Compilation",
+    "description": "Update `WritePlanCompiler` and related helpers to compile non-unified propagated reference identity bindings from explicit reference-derived sources, plus any shared source-kind plumbing that flattening and later unified-member planning require. Acceptance: non-unified propagated scalar identity columns compile from reference-derived sources instead of `WriteValueSource.Scalar`; descriptor-backed propagated identity bindings compile from descriptor-document-id storage rather than raw URI strings; the compiler emits the shared provenance or source metadata needed downstream without taking ownership of key-unified member precedence; and any narrow model or DDL cleanup stays limited to what this compilation work requires.",
+    "steps-to-verify": [
+      "Extend `Given_WritePlanCompiler_BindingsAndSources` coverage for direct propagated reference identity columns and descriptor-backed reference identity members.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Extend `KeyUnificationWritePlanCompiler` so key-unified reference identity sites use reference-derived producers instead of the old JSON-bound scalar path. Acceptance: canonical storage columns for unified reference identity parts are computed from explicit reference-derived members; mixed classes can include both ordinary JSON-bound members and reference-derived members without contract churn; reference-derived members take deterministic precedence when both can feed the same canonical storage column; descriptor-backed unified members resolve to descriptor `DocumentId` values; optional or absent reference sites keep presence-gated aliases semantically absent; and reference-derived provenance remains discoverable by reference site plus member path for follow-on profile accounting in DMS-1124.",
+    "steps-to-verify": [
+      "Add or update `Given_WritePlanCompiler_KeyUnification` tests for reference-derived canonical producers, descriptor-backed members, and one optional absent-site case.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_KeyUnification\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Lookup",
+    "description": "Extend the flattening-time resolved-reference lookup adapter to expose propagated identity-part values without changing the external resolver contract. Acceptance: the compiled reference-derived binding order is the authoritative bridge between local propagated bindings and ordered `DocumentReference.DocumentIdentity` values for the matched resolved reference occurrence; no path-matching implementation is introduced between reference-object member paths and target-identity paths; scalar identity parts are sourced from ordered `DocumentReference.DocumentIdentity` values; descriptor-backed identity parts are sourced from existing descriptor-resolution results and materialize local descriptor `DocumentId` values; nested collection occurrences resolve by ordinal path; and count or order drift between compiled metadata and resolved reference payloads fails deterministically instead of silently falling back to request JSON.",
+    "steps-to-verify": [
+      "Add focused backend unit coverage for root and nested reference lookups, descriptor-backed propagated members, and count or order invariant-breach cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Flattening",
+    "description": "Update `RelationalWriteFlattener` to materialize propagated reference identity columns and unified canonical storage columns from resolved reference-derived values on both create and existing-document flows. Acceptance: root and nested reference sites populate `..._DocumentId` plus propagated identity storage from resolved reference data rather than raw body scalars; descriptor-backed and key-unified reference identity members materialize the correct canonical or storage columns and presence flags; one explicit optional-absent-path case proves aliases remain semantically absent while canonical storage stays the real propagation target; and impossible reference-derived mismatches fail fast instead of degrading to generic scalar reads.",
+    "steps-to-verify": [
+      "Extend `Given_RelationalWriteFlattener` tests for direct propagated bindings, unified reference-derived members, descriptor-backed reference members, and optional absent-site behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_RelationalWriteFlattener\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Runtime Proof",
+    "description": "Add focused PostgreSQL integration proof for DMS-985 runtime behavior. Acceptance: one POST create scenario asserts persisted propagated reference identity columns for at least one non-unified reference site and one descriptor-backed reference identity member; one existing-document scenario changes the referenced target or referenced identity part so `..._DocumentId` and propagated identity storage are re-populated from resolved references rather than merely preserved; assertions confirm valid writes satisfy the all-or-none storage shape without adding new DB-exception classification work; and one cascade scenario proves a referenced identity update reaches the stored propagated columns populated by the runtime write path.",
+    "steps-to-verify": [
+      "Add a focused PostgreSQL integration fixture or test class dedicated to propagated reference identity columns so create, changed-`PUT`, and cascade behavior are asserted directly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative PostgreSQL Regression",
+    "description": "Extend the authoritative PostgreSQL `StudentSchoolAssociation` runtime smoke to act as the story's authoritative sample proof. Acceptance: create assertions include persisted canonical or unified reference-derived columns on the root association row and the alternative-graduation-plan child rows; changed `PUT` assertions prove those reference-derived columns update correctly when the referenced alternative-graduation-plan target changes; repeat-`PUT` no-op behavior remains unchanged; and the authoritative sample remains the story's primary end-to-end runtime demonstration alongside the focused PostgreSQL fixture.",
+    "steps-to-verify": [
+      "Update the authoritative PostgreSQL sample test to assert the newly reference-derived persisted columns on create and changed `PUT`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server DDL Or Trigger Regression",
+    "description": "Keep SQL Server proof on the DDL or trigger surface and scope it independently from the PostgreSQL runtime work. Acceptance: existing SQL Server authoritative DDL or trigger tests continue to prove eligible propagation edges update canonical or storage columns through trigger fallback; add only narrow DDL or trigger assertions if the runtime or required model cleanup exposes a gap; and do not take on a separate SQL Server runtime scenario unless the implementation ends up touching dialect-specific executor behavior.",
+    "steps-to-verify": [
+      "Inspect existing `Identity_propagation` smoke coverage and add narrow SQL Server DDL or trigger assertions only if the runtime or model changes expose a missing guarantee.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Identity_propagation\"`"
+    ],
+    "completed": false
+  }
+]
