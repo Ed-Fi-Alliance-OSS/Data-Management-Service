@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -18,6 +19,54 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Relational_Write_Current_State_Loader
 {
+    [Test]
+    public async Task It_skips_reconstitution_when_not_required()
+    {
+        var writePlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
+        var readPlan = new ResourceReadPlan(
+            resourceModel,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
+            [],
+            []
+        );
+        var nonReconstitutionRequest = new RelationalWriteCurrentStateLoadRequest(
+            readPlan,
+            new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                ObservedContentVersion: 44L
+            ),
+            requiresReconstitution: false
+        );
+        var command = new RecordingDbCommand(
+            CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        345L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((345L, "Lincoln High"))
+            )
+        );
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var session = new TestRelationalWriteSession(connection, transaction);
+        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+
+        var result = (await sut.LoadAsync(nonReconstitutionRequest, session))!;
+
+        result.DocumentMetadata.DocumentId.Should().Be(345L);
+        result.TableRowsInDependencyOrder.Should().ContainSingle();
+        result.ReconstitutedDocument.Should().BeNull("reconstitution was not requested");
+    }
+
     [Test]
     public async Task It_loads_a_single_existing_document_through_the_session_connection_and_transaction()
     {
@@ -56,6 +105,8 @@ public class Given_Relational_Write_Current_State_Loader
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].ParameterName.Should().Be("@DocumentId");
         command.Parameters[0].Value.Should().Be(345L);
+        result.ReconstitutedDocument.Should().NotBeNull("the loader should reconstitute the stored document");
+        result.ReconstitutedDocument!["name"]!.GetValue<string>().Should().Be("Lincoln High");
     }
 
     [Test]
@@ -131,7 +182,8 @@ public class Given_Relational_Write_Current_State_Loader
                 345L,
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                 ObservedContentVersion: 44L
-            )
+            ),
+            requiresReconstitution: true
         );
     }
 
@@ -174,7 +226,7 @@ public class Given_Relational_Write_Current_State_Loader
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75),
                     false,
-                    new JsonPathExpression("$.name", []),
+                    new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
                     null,
                     new ColumnStorage.Stored()
                 ),
@@ -207,7 +259,7 @@ public class Given_Relational_Write_Current_State_Loader
                 new WriteColumnBinding(
                     tableModel.Columns[1],
                     new WriteValueSource.Scalar(
-                        new JsonPathExpression("$.name", []),
+                        new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
                         new RelationalScalarType(ScalarKind.String, MaxLength: 75)
                     ),
                     "Name"
