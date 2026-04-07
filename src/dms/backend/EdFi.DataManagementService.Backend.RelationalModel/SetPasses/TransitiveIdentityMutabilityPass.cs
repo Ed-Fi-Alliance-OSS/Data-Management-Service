@@ -23,6 +23,15 @@ public sealed class TransitiveIdentityMutabilityPass : IRelationalModelSetPass
 
         // Build resource name -> builder context map for all concrete (non-extension) resources.
         Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = [];
+        HashSet<QualifiedResourceName> abstractResources = [];
+
+        foreach (var resourceKey in context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder)
+        {
+            if (resourceKey.IsAbstractResource)
+            {
+                abstractResources.Add(resourceKey.Resource);
+            }
+        }
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
@@ -45,8 +54,9 @@ public sealed class TransitiveIdentityMutabilityPass : IRelationalModelSetPass
             builderContext.TransitivelyAllowIdentityUpdates = builderContext.AllowIdentityUpdates;
         }
 
-        // Fixed-point propagation: if a resource has a part-of-identity reference to a
-        // transitively-mutable target, mark it as transitively mutable too.
+        // Fixed-point propagation: if a resource has a part-of-identity reference to an
+        // abstract target or a transitively-mutable concrete target, mark it as transitively
+        // mutable too.
         bool changed = true;
         while (changed)
         {
@@ -65,10 +75,15 @@ public sealed class TransitiveIdentityMutabilityPass : IRelationalModelSetPass
                         continue;
                     }
 
-                    if (!builderContextsByResource.TryGetValue(
-                            mapping.TargetResource,
-                            out var targetBuilderContext
-                        ) || !targetBuilderContext.TransitivelyAllowIdentityUpdates)
+                    if (
+                        !abstractResources.Contains(mapping.TargetResource)
+                        && (
+                            !builderContextsByResource.TryGetValue(
+                                mapping.TargetResource,
+                                out var targetBuilderContext
+                            ) || !targetBuilderContext.TransitivelyAllowIdentityUpdates
+                        )
+                    )
                     {
                         continue;
                     }

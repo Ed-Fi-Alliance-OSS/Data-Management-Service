@@ -19,7 +19,9 @@
       "studentschoolassociations": "studentSchoolAssociations",
       "resourceas": "resourceAs",
       "resourcebs": "resourceBs",
-      "keyunifiedresources": "keyUnifiedResources"
+      "keyunifiedresources": "keyUnifiedResources",
+      "edorgdependentresources": "edOrgDependentResources",
+      "edorgdependentchildresources": "edOrgDependentChildResources"
     },
     "educationOrganizationHierarchy": {
       "EducationOrganization": {},
@@ -35,7 +37,9 @@
       "StudentSchoolAssociation": "studentSchoolAssociations",
       "ResourceA": "resourceAs",
       "ResourceB": "resourceBs",
-      "KeyUnifiedResource": "keyUnifiedResources"
+      "KeyUnifiedResource": "keyUnifiedResources",
+      "EdOrgDependentResource": "edOrgDependentResources",
+      "EdOrgDependentChildResource": "edOrgDependentChildResources"
     },
     "resourceSchemas": {
       "students": {
@@ -406,6 +410,125 @@
             }
           },
           "required": ["keyUnifiedResourceId", "resourceAReference", "resourceBReference"]
+        }
+      },
+      "edOrgDependentResources": {
+        "resourceName": "EdOrgDependentResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.edOrgDependentResourceId",
+          "$.educationOrganizationReference.educationOrganizationId"
+        ],
+        "documentPathsMapping": {
+          "EdOrgDependentResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.edOrgDependentResourceId"
+          },
+          "EducationOrganization": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "EducationOrganization",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.educationOrganizationId",
+                "referenceJsonPath": "$.educationOrganizationReference.educationOrganizationId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "edOrgDependentResourceId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "educationOrganizationReference": {
+              "type": "object",
+              "properties": {
+                "educationOrganizationId": {
+                  "type": "integer"
+                }
+              },
+              "required": ["educationOrganizationId"]
+            }
+          },
+          "required": ["edOrgDependentResourceId", "educationOrganizationReference"]
+        }
+      },
+      "edOrgDependentChildResources": {
+        "resourceName": "EdOrgDependentChildResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.edOrgDependentChildResourceId",
+          "$.edOrgDependentResourceReference.edOrgDependentResourceId",
+          "$.edOrgDependentResourceReference.educationOrganizationId"
+        ],
+        "documentPathsMapping": {
+          "EdOrgDependentChildResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.edOrgDependentChildResourceId"
+          },
+          "EdOrgDependentResourceReference": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "EdOrgDependentResource",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.edOrgDependentResourceId",
+                "referenceJsonPath": "$.edOrgDependentResourceReference.edOrgDependentResourceId"
+              },
+              {
+                "identityJsonPath": "$.educationOrganizationReference.educationOrganizationId",
+                "referenceJsonPath": "$.edOrgDependentResourceReference.educationOrganizationId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "edOrgDependentChildResourceId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "edOrgDependentResourceReference": {
+              "type": "object",
+              "properties": {
+                "edOrgDependentResourceId": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "educationOrganizationId": {
+                  "type": "integer"
+                }
+              },
+              "required": ["edOrgDependentResourceId", "educationOrganizationId"]
+            }
+          },
+          "required": ["edOrgDependentChildResourceId", "edOrgDependentResourceReference"]
         }
       }
     }

@@ -1,6 +1,6 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "1acb653e8acf6278a49130d19b48f13cdd9cf750dca58d5e73dde85f88985169",
+  "effective_schema_hash": "944f17699511435162631bce81c2e9847f454da6852158449af8f3da6c4a8874",
   "relational_mapping_version": "v1",
   "projects": [
     {
@@ -12,6 +12,18 @@
     }
   ],
   "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentChildResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentResource",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
     {
       "project_name": "Ed-Fi",
       "resource_name": "KeyUnifiedResource",
@@ -227,6 +239,97 @@
       ],
       "include_columns": [
         "SourceEducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourc_42d6c19595",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "EdOrgDependentResourceReference_DocumentId",
+        "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+        "EdOrgDependentResourceReference_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "PK_EdOrgDependentChildResource",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EdOrgDependentChildResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "EdOrgDependentChildResourceId",
+        "EdOrgDependentResourceReference_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_EdOrgDependentResource_EducationOrganization_Docu_abaf527b99",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "PK_EdOrgDependentResource",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EdOrgDependentResource_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "EdOrgDependentResourceId",
+        "EducationOrganization_DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EdOrgDependentResource_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "EdOrgDependentResourceId",
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -539,6 +642,98 @@
   ],
   "triggers": [
     {
+      "name": "TR_EdOrgDependentChildResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EdOrgDependentChildResourceId",
+        "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+        "EdOrgDependentResourceReference_EducationOrganizationId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentChildResource",
+      "identity_elements": [
+        {
+          "column": "EdOrgDependentChildResourceId",
+          "identity_json_path": "$.edOrgDependentChildResourceId"
+        },
+        {
+          "column": "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+          "identity_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId"
+        },
+        {
+          "column": "EdOrgDependentResourceReference_EducationOrganizationId",
+          "identity_json_path": "$.edOrgDependentResourceReference.educationOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_EdOrgDependentChildResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentChildResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EdOrgDependentChildResourceId",
+        "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+        "EdOrgDependentResourceReference_EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "TR_EdOrgDependentResource_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EdOrgDependentResourceId",
+        "EducationOrganization_EducationOrganizationId"
+      ],
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentResource",
+      "identity_elements": [
+        {
+          "column": "EdOrgDependentResourceId",
+          "identity_json_path": "$.edOrgDependentResourceId"
+        },
+        {
+          "column": "EducationOrganization_EducationOrganizationId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_EdOrgDependentResource_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "EdOrgDependentResource"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "EdOrgDependentResourceId",
+        "EducationOrganization_EducationOrganizationId"
+      ]
+    },
+    {
       "name": "TR_KeyUnifiedResource_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -554,7 +749,7 @@
         "StudentUniqueId_Unified",
         "ResourceBReference_ResourceBId"
       ],
-      "resource_key_id": 2,
+      "resource_key_id": 4,
       "project_name": "Ed-Fi",
       "resource_name": "KeyUnifiedResource",
       "identity_elements": [
@@ -611,7 +806,7 @@
         "ResourceAId",
         "StudentReference_StudentUniqueId"
       ],
-      "resource_key_id": 3,
+      "resource_key_id": 5,
       "project_name": "Ed-Fi",
       "resource_name": "ResourceA",
       "identity_elements": [
@@ -654,7 +849,7 @@
         "ResourceBId",
         "StudentReference_StudentUniqueId"
       ],
-      "resource_key_id": 4,
+      "resource_key_id": 6,
       "project_name": "Ed-Fi",
       "resource_name": "ResourceB",
       "identity_elements": [
@@ -749,7 +944,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "resource_key_id": 5,
+      "resource_key_id": 7,
       "project_name": "Ed-Fi",
       "resource_name": "School",
       "identity_elements": [
@@ -759,7 +954,7 @@
         }
       ],
       "superclass_alias": {
-        "resource_key_id": 1,
+        "resource_key_id": 3,
         "project_name": "Ed-Fi",
         "resource_name": "EducationOrganization",
         "identity_elements": [
@@ -797,7 +992,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "resource_key_id": 6,
+      "resource_key_id": 8,
       "project_name": "Ed-Fi",
       "resource_name": "Student",
       "identity_elements": [
@@ -835,7 +1030,7 @@
         "StudentUniqueId",
         "SchoolReference_SchoolId"
       ],
-      "resource_key_id": 7,
+      "resource_key_id": 9,
       "project_name": "Ed-Fi",
       "resource_name": "StudentSchoolAssociation",
       "identity_elements": [
@@ -866,6 +1061,369 @@
     }
   ],
   "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EdOrgDependentChildResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "EdOrgDependentChildResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EdOrgDependentResourceReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.edOrgDependentResourceReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EdOrgDependentResourceReference_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.edOrgDependentResourceReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EdOrgDependentChildResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.edOrgDependentChildResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_EdOrgDependentChildResource_NK",
+              "columns": [
+                "EdOrgDependentChildResourceId",
+                "EdOrgDependentResourceReference_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_EdOrgDependentChildResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_EdOrgDependentChildResource_EdOrgDependentResourc_ff9296b2cd",
+              "columns": [
+                "EdOrgDependentResourceReference_DocumentId",
+                "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+                "EdOrgDependentResourceReference_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EdOrgDependentResource"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EdOrgDependentResourceId",
+                "EducationOrganization_EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_EdOrgDependentChildResource_EdOrgDependentResourc_eef3efb07d",
+              "fk_column": "EdOrgDependentResourceReference_DocumentId",
+              "dependent_columns": [
+                "EdOrgDependentResourceReference_EdOrgDependentResourceId",
+                "EdOrgDependentResourceReference_EducationOrganizationId"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.edOrgDependentResourceReference",
+          "table": {
+            "schema": "edfi",
+            "name": "EdOrgDependentChildResource"
+          },
+          "fk_column": "EdOrgDependentResourceReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EdOrgDependentResource"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
+              "column": "EdOrgDependentResourceReference_EdOrgDependentResourceId"
+            },
+            {
+              "reference_json_path": "$.edOrgDependentResourceReference.educationOrganizationId",
+              "column": "EdOrgDependentResourceReference_EducationOrganizationId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EdOrgDependentResource"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "EdOrgDependentResource",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EducationOrganization_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EdOrgDependentResourceId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 64
+              },
+              "is_nullable": false,
+              "source_path": "$.edOrgDependentResourceId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_EdOrgDependentResource_NK",
+              "columns": [
+                "EdOrgDependentResourceId",
+                "EducationOrganization_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_EdOrgDependentResource_RefKey",
+              "columns": [
+                "DocumentId",
+                "EdOrgDependentResourceId",
+                "EducationOrganization_EducationOrganizationId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_EdOrgDependentResource_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_EdOrgDependentResource_EducationOrganization_RefKey",
+              "columns": [
+                "EducationOrganization_DocumentId",
+                "EducationOrganization_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EducationOrganizationIdentity"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_EdOrgDependentResource_EducationOrganization_AllNone",
+              "fk_column": "EducationOrganization_DocumentId",
+              "dependent_columns": [
+                "EducationOrganization_EducationOrganizationId"
+              ]
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.educationOrganizationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "EdOrgDependentResource"
+          },
+          "fk_column": "EducationOrganization_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganization"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.educationOrganizationReference.educationOrganizationId",
+              "column": "EducationOrganization_EducationOrganizationId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
     {
       "resource": {
         "project_name": "Ed-Fi",

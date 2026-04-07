@@ -1728,7 +1728,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine(documentIdCol);
 
                 // Only update if identity columns actually changed.
-                writer.Append("WHERE ");
+                writer.Append("WHERE (");
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
@@ -1743,7 +1743,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                         referrer.ColumnMappings[i].SourceColumn
                     );
                 }
-                writer.AppendLine();
+                writer.AppendLine(")");
                 writer.Append("AND ");
                 EmitMssqlPropagationOldValueConjunction(writer, referrer.ColumnMappings);
                 writer.AppendLine(";");

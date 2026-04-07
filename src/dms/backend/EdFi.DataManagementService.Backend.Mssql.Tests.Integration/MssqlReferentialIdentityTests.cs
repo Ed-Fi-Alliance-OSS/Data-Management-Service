@@ -390,6 +390,159 @@ public class MssqlReferentialIdentityTests
     }
 
     [Test]
+    public async Task Cascaded_recompute_via_abstract_reference_updates_dependent_referential_identity()
+    {
+        // Arrange — Insert School (schoolId=100) → 2 RI rows (School + EducationOrganization alias)
+        var schoolDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, 100);
+
+        // Insert EdOrgDependentResource referencing EducationOrganization (educationOrganizationId=100)
+        var edOrgDepDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "EdOrgDependentResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[EdOrgDependentResource] ([DocumentId], [EdOrgDependentResourceId], [EducationOrganization_DocumentId], [EducationOrganization_EducationOrganizationId])
+            VALUES (@documentId, @edOrgDependentResourceId, @schoolDocumentId, @educationOrganizationId);
+            """,
+            new SqlParameter("@documentId", edOrgDepDocumentId),
+            new SqlParameter("@edOrgDependentResourceId", "dep-1"),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@educationOrganizationId", 100)
+        );
+
+        // Insert EdOrgDependentChildResource referencing EdOrgDependentResource (dep-1, educationOrganizationId=100)
+        var edOrgDepChildDocumentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            "Ed-Fi",
+            "EdOrgDependentChildResource"
+        );
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[EdOrgDependentChildResource] ([DocumentId], [EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId], [EdOrgDependentResourceReference_EdOrgDependentResourceId], [EdOrgDependentResourceReference_EducationOrganizationId])
+            VALUES (@documentId, @childResourceId, @edOrgDepDocumentId, @edOrgDependentResourceId, @educationOrganizationId);
+            """,
+            new SqlParameter("@documentId", edOrgDepChildDocumentId),
+            new SqlParameter("@childResourceId", "child-1"),
+            new SqlParameter("@edOrgDepDocumentId", edOrgDepDocumentId),
+            new SqlParameter("@edOrgDependentResourceId", "dep-1"),
+            new SqlParameter("@educationOrganizationId", 100)
+        );
+
+        // Pre-assert: 4 RI rows — School, EducationOrganization alias, EdOrgDependentResource, EdOrgDependentChildResource
+        var oldSchoolRI = ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "100"));
+        var oldEdOrgRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EducationOrganization",
+            ("$.educationOrganizationId", "100")
+        );
+        var oldEdOrgDepRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentResource",
+            ("$.edOrgDependentResourceId", "dep-1"),
+            ("$.educationOrganizationReference.educationOrganizationId", "100")
+        );
+        var oldEdOrgDepChildRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentChildResource",
+            ("$.edOrgDependentChildResourceId", "child-1"),
+            ("$.edOrgDependentResourceReference.edOrgDependentResourceId", "dep-1"),
+            ("$.edOrgDependentResourceReference.educationOrganizationId", "100")
+        );
+
+        var referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(4);
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == oldSchoolRI
+                && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == oldEdOrgRI
+                && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == oldEdOrgDepRI
+                && (long)r["DocumentId"]! == edOrgDepDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == oldEdOrgDepChildRI
+                && (long)r["DocumentId"]! == edOrgDepChildDocumentId
+            );
+
+        // Act — Update School identity (100 → 200)
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [SchoolId] = @newSchoolId, [EducationOrganizationId] = @newEdOrgId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@newSchoolId", 200),
+            new SqlParameter("@newEdOrgId", 200),
+            new SqlParameter("@documentId", schoolDocumentId)
+        );
+
+        // Assert — old RI IDs gone, new ones present
+        var newSchoolRI = ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "200"));
+        var newEdOrgRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EducationOrganization",
+            ("$.educationOrganizationId", "200")
+        );
+        var newEdOrgDepRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentResource",
+            ("$.edOrgDependentResourceId", "dep-1"),
+            ("$.educationOrganizationReference.educationOrganizationId", "200")
+        );
+        var newEdOrgDepChildRI = ComputeReferentialId(
+            "Ed-Fi",
+            "EdOrgDependentChildResource",
+            ("$.edOrgDependentChildResourceId", "child-1"),
+            ("$.edOrgDependentResourceReference.edOrgDependentResourceId", "dep-1"),
+            ("$.edOrgDependentResourceReference.educationOrganizationId", "200")
+        );
+
+        referentialIds = await QueryReferentialIdentityRowsAsync();
+        referentialIds.Should().HaveCount(4);
+
+        referentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldSchoolRI);
+        referentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgRI);
+        referentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgDepRI);
+        referentialIds.Should().NotContain(r => (Guid)r["ReferentialId"]! == oldEdOrgDepChildRI);
+
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newSchoolRI
+                && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgRI
+                && (long)r["DocumentId"]! == schoolDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepRI
+                && (long)r["DocumentId"]! == edOrgDepDocumentId
+            );
+        referentialIds
+            .Should()
+            .Contain(r =>
+                (Guid)r["ReferentialId"]! == newEdOrgDepChildRI
+                && (long)r["DocumentId"]! == edOrgDepChildDocumentId
+            );
+    }
+
+    [Test]
     public async Task Direct_insert_duplicate_referential_id_is_rejected()
     {
         // Arrange — two documents so (DocumentId, ResourceKeyId) pairs differ

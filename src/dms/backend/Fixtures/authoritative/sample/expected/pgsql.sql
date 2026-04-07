@@ -9182,7 +9182,7 @@ BEGIN
         FOREIGN KEY ("SectionOrProgramChoiceProgram_DocumentId", "SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -9377,16 +9377,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_49e9b9ac86'
+        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationParticipation"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationParticipation"
-        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_49e9b9ac86"
+        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e"
         FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
         REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -10474,7 +10474,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -11621,16 +11621,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ContactExtensionStudentProgramAssociation_Student_50a9025b1b'
+        WHERE conname = 'FK_ContactExtensionStudentProgramAssociation_Student_1eada17699'
         AND conrelid = to_regclass('"sample"."ContactExtensionStudentProgramAssociation"')
     )
     THEN
         ALTER TABLE "sample"."ContactExtensionStudentProgramAssociation"
-        ADD CONSTRAINT "FK_ContactExtensionStudentProgramAssociation_Student_50a9025b1b"
+        ADD CONSTRAINT "FK_ContactExtensionStudentProgramAssociation_Student_1eada17699"
         FOREIGN KEY ("StudentProgramAssociation_DocumentId", "StudentProgramAssociation_BeginDate", "StudentProgramAssociation_EducationOrganizationId", "StudentProgramAssociation_ProgramEducationOrganizationId", "StudentProgramAssociation_ProgramName", "StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId", "StudentProgramAssociation_StudentUniqueId")
         REFERENCES "edfi"."StudentProgramAssociation" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -12429,7 +12429,7 @@ BEGIN
         FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -12633,7 +12633,7 @@ BEGIN
         FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -12752,7 +12752,7 @@ BEGIN
         FOREIGN KEY ("StudentAcademicRecord_DocumentId", "StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId")
         REFERENCES "edfi"."StudentAcademicRecord" ("DocumentId", "EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -12888,7 +12888,7 @@ BEGIN
         FOREIGN KEY ("CourseProgram_DocumentId", "CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -13984,6 +13984,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112'
+        AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
+        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112"
+        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
+        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
     )
@@ -13993,23 +14010,6 @@ BEGIN
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_b3652c0b53'
-        AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_b3652c0b53"
-        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
-        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -14962,7 +14962,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluationElement_DocumentId", "ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -15795,7 +15795,7 @@ BEGIN
         FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16092,16 +16092,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_2734101a98'
+        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_0d4b603fcc'
         AND conrelid = to_regclass('"edfi"."InterventionInterventionPrescription"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionInterventionPrescription"
-        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_2734101a98"
+        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_0d4b603fcc"
         FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
         REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16568,16 +16568,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_17c2c6097e'
+        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef'
         AND conrelid = to_regclass('"edfi"."InterventionStudy"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudy"
-        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_17c2c6097e"
+        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef"
         FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
         REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17155,7 +17155,7 @@ BEGIN
         FOREIGN KEY ("ChartOfAccountChartOfAccount_DocumentId", "ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified")
         REFERENCES "edfi"."ChartOfAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17274,7 +17274,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17325,7 +17325,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17376,7 +17376,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17971,7 +17971,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -18022,7 +18022,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19807,7 +19807,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19875,7 +19875,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluationObjective_DocumentId", "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19926,7 +19926,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -20062,7 +20062,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -20376,16 +20376,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_9ad4d519c6'
+        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70'
         AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
-        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_9ad4d519c6"
+        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70"
         FOREIGN KEY ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId")
         REFERENCES "edfi"."StudentCompetencyObjective" ("DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -20521,7 +20521,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -21575,7 +21575,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -22782,7 +22782,7 @@ BEGIN
         FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -22960,16 +22960,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_57012f9256'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_57012f9256"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df"
         FOREIGN KEY ("EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b", "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified")
         REFERENCES "edfi"."StaffEducationOrganizationEmploymentAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -23445,7 +23445,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24958,7 +24958,7 @@ BEGIN
         FOREIGN KEY ("ReportCard_DocumentId", "ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId")
         REFERENCES "edfi"."ReportCard" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25629,16 +25629,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd'
+        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f"
         FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
         REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25714,16 +25714,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2'
+        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663"
         FOREIGN KEY ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea", "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1")
         REFERENCES "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25731,16 +25731,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0'
+        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20"
         FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
         REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25850,16 +25850,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_78e6b86746'
+        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationBatteryPartAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_78e6b86746"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc"
         FOREIGN KEY ("StudentAssessmentRegistration_DocumentId", "StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId")
         REFERENCES "edfi"."StudentAssessmentRegistration" ("DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25978,7 +25978,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26131,7 +26131,7 @@ BEGIN
         FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26275,6 +26275,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41'
+        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentCompetencyObjective"
+        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41"
+        FOREIGN KEY ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
+        REFERENCES "edfi"."CompetencyObjective" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
     )
@@ -26283,23 +26300,6 @@ BEGIN
         ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355"
         FOREIGN KEY ("ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
         REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_7ed8529b29'
-        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentCompetencyObjective"
-        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_7ed8529b29"
-        FOREIGN KEY ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
-        REFERENCES "edfi"."CompetencyObjective" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26488,7 +26488,7 @@ BEGIN
         FOREIGN KEY ("InterventionStudy_DocumentId", "InterventionStudy_EducationOrganizationId", "InterventionStudy_InterventionStudyIdentificationCode")
         REFERENCES "edfi"."InterventionStudy" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionStudyIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26632,16 +26632,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentContactAssociationExtensionStaffEducationO_64f6669d27'
+        WHERE conname = 'FK_StudentContactAssociationExtensionStaffEducationO_9a2ca2f872'
         AND conrelid = to_regclass('"sample"."StudentContactAssociationExtensionStaffEducationOrga_709a93ba3a"')
     )
     THEN
         ALTER TABLE "sample"."StudentContactAssociationExtensionStaffEducationOrga_709a93ba3a"
-        ADD CONSTRAINT "FK_StudentContactAssociationExtensionStaffEducationO_64f6669d27"
+        ADD CONSTRAINT "FK_StudentContactAssociationExtensionStaffEducationO_9a2ca2f872"
         FOREIGN KEY ("StaffEducationOrganizationEmploymentAssociation_DocumentId", "StaffEducationOrganizationEmploymentAssociation_Educ_aecac5928f", "StaffEducationOrganizationEmploymentAssociation_Empl_d9c1171fb4", "StaffEducationOrganizationEmploymentAssociation_HireDate", "StaffEducationOrganizationEmploymentAssociation_StaffUniqueId")
         REFERENCES "edfi"."StaffEducationOrganizationEmploymentAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27210,16 +27210,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtension__d52ba4f209'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationExtension__c8a3ad8d59'
         AND conrelid = to_regclass('"sample"."StudentEducationOrganizationAssociationExtension"')
     )
     THEN
         ALTER TABLE "sample"."StudentEducationOrganizationAssociationExtension"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtension__d52ba4f209"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationExtension__c8a3ad8d59"
         FOREIGN KEY ("FavoriteProgram_DocumentId", "FavoriteProgram_EducationOrganizationId", "FavoriteProgram_ProgramName", "FavoriteProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28409,7 +28409,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28545,7 +28545,7 @@ BEGIN
         FOREIGN KEY ("CohortCohort_DocumentId", "CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28579,7 +28579,7 @@ BEGIN
         FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
         REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28749,7 +28749,7 @@ BEGIN
         FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
         REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28825,16 +28825,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_459a3913d6'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_459a3913d6"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29097,16 +29097,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_9c59b3174a'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_9c59b3174a"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29318,16 +29318,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_72a38d286a'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_72a38d286a"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29514,7 +29514,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29718,7 +29718,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29837,7 +29837,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29913,23 +29913,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__45f36dc00e'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__45f36dc00e"
-        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
-        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__58a3090861'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
@@ -29974,6 +29957,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26"
+        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
+        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30083,23 +30083,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_6571f443d0'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_6571f443d0"
-        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
-        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
@@ -30110,6 +30093,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435"
+        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
+        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30279,7 +30279,7 @@ BEGIN
         FOREIGN KEY ("GraduationPlan_DocumentId", "GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear")
         REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30474,16 +30474,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306'
+        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociationAlternativeGraduationPlan"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
-        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306"
+        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238"
         FOREIGN KEY ("AlternativeGraduationPlan_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear")
         REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30678,16 +30678,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_dad7d0e991'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_dad7d0e991"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30857,7 +30857,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31180,7 +31180,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31375,16 +31375,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_dd22e89a0b'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_dd22e89a0b"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31698,23 +31698,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_49aba18441'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_49aba18441"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
@@ -31725,6 +31708,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c"
+        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -31894,7 +31894,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -32285,7 +32285,7 @@ BEGIN
         FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -32370,7 +32370,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33109,23 +33109,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_BusRoute_StaffEducationOrganizationAssignmentAsso_54871b1d67'
-        AND conrelid = to_regclass('"sample"."BusRoute"')
-    )
-    THEN
-        ALTER TABLE "sample"."BusRoute"
-        ADD CONSTRAINT "FK_BusRoute_StaffEducationOrganizationAssignmentAsso_54871b1d67"
-        FOREIGN KEY ("StaffEducationOrganizationAssignmentAssociation_DocumentId", "StaffEducationOrganizationAssignmentAssociation_BeginDate", "StaffEducationOrganizationAssignmentAssociation_Educ_50282edcf9", "StaffEducationOrganizationAssignmentAssociation_Staf_4a33b875fa", "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId")
-        REFERENCES "edfi"."StaffEducationOrganizationAssignmentAssociation" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "StaffClassificationDescriptor_DescriptorId", "StaffUniqueId_Unified")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_BusRoute_StaffEducationOrganizationAssignmentAsso_ab3e755c15'
         AND conrelid = to_regclass('"sample"."BusRoute"')
     )
@@ -33136,6 +33119,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_BusRoute_StaffEducationOrganizationAssignmentAsso_df7dbb2cd1'
+        AND conrelid = to_regclass('"sample"."BusRoute"')
+    )
+    THEN
+        ALTER TABLE "sample"."BusRoute"
+        ADD CONSTRAINT "FK_BusRoute_StaffEducationOrganizationAssignmentAsso_df7dbb2cd1"
+        FOREIGN KEY ("StaffEducationOrganizationAssignmentAssociation_DocumentId", "StaffEducationOrganizationAssignmentAssociation_BeginDate", "StaffEducationOrganizationAssignmentAssociation_Educ_50282edcf9", "StaffEducationOrganizationAssignmentAssociation_Staf_4a33b875fa", "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId")
+        REFERENCES "edfi"."StaffEducationOrganizationAssignmentAssociation" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "StaffClassificationDescriptor_DescriptorId", "StaffUniqueId_Unified")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33203,7 +33203,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33356,7 +33356,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33628,7 +33628,7 @@ BEGIN
         FOREIGN KEY ("GraduationPlan_DocumentId", "GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear")
         REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 

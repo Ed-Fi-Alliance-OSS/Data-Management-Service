@@ -79,14 +79,14 @@ public class Given_Default_Relational_Write_Executor
         );
         _referenceResolverAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, false, "$$.schoolId=255901"),
+            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, false, "$.schoolId=255901"),
             new ReferenceLookupResult(
                 descriptorReferentialId,
                 202L,
                 13,
                 13,
                 true,
-                "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
             ),
         ];
 

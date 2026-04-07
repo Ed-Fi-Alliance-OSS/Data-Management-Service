@@ -824,7 +824,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentAdministrationParticipation_AssessmentA_49e9b9ac86",
+                "name": "FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e",
                 "columns": [
                   "AssessmentAdministration_DocumentId",
                   "AssessmentAdministration_AdministrationIdentifier",
@@ -844,7 +844,7 @@
                   "AssigningEducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -5203,7 +5203,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -9612,7 +9612,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -17097,7 +17097,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -18136,7 +18136,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -18260,7 +18260,7 @@
                   "TermDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -18811,7 +18811,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -26153,23 +26153,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc",
-                "columns": [
-                  "DocumentId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Document"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "Cascade",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationInterventionPrescriptionAsso_b3652c0b53",
+                "name": "FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112",
                 "columns": [
                   "InterventionPrescriptionInterventionPrescription_DocumentId",
                   "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
@@ -26185,6 +26169,22 @@
                   "InterventionPrescriptionIdentificationCode"
                 ],
                 "on_delete": "NoAction",
+                "on_update": "Cascade"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc",
+                "columns": [
+                  "DocumentId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Document"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "Cascade",
                 "on_update": "NoAction"
               },
               {
@@ -30965,7 +30965,7 @@
                   "ProgramTypeDescriptor_Unified_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -35195,7 +35195,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -37438,7 +37438,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_InterventionStudy_InterventionPrescriptionInterve_17c2c6097e",
+                "name": "FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef",
                 "columns": [
                   "InterventionPrescriptionInterventionPrescription_DocumentId",
                   "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
@@ -37454,7 +37454,7 @@
                   "InterventionPrescriptionIdentificationCode"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -39719,7 +39719,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_InterventionInterventionPrescription_Intervention_2734101a98",
+                "name": "FK_InterventionInterventionPrescription_Intervention_0d4b603fcc",
                 "columns": [
                   "InterventionPrescriptionInterventionPrescription_DocumentId",
                   "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
@@ -39735,7 +39735,7 @@
                   "InterventionPrescriptionIdentificationCode"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -42223,7 +42223,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -42656,7 +42656,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -42891,7 +42891,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -43152,7 +43152,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -45997,7 +45997,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -46258,7 +46258,7 @@
                   "FiscalYear_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -54855,7 +54855,7 @@
                   "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -54915,7 +54915,7 @@
                   "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -55604,7 +55604,7 @@
                   "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -56169,7 +56169,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -58867,7 +58867,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ReportCardStudentCompetencyObjective_StudentCompe_9ad4d519c6",
+                "name": "FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70",
                 "columns": [
                   "StudentCompetencyObjective_DocumentId",
                   "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId",
@@ -58895,7 +58895,7 @@
                   "Student_StudentUniqueId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -59824,7 +59824,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -64710,7 +64710,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -66537,7 +66537,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -67311,7 +67311,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffEducationOrganizationAssignmentAssociation_E_57012f9256",
+                "name": "FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df",
                 "columns": [
                   "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b",
                   "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de",
@@ -67331,7 +67331,7 @@
                   "Staff_StaffUniqueId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -69349,7 +69349,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -78661,7 +78661,7 @@
                   "Student_StudentUniqueId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -79526,7 +79526,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistrationBatteryPartAssociati_78e6b86746",
+                "name": "FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc",
                 "columns": [
                   "StudentAssessmentRegistration_DocumentId",
                   "StudentAssessmentRegistration_AdministrationIdentifier",
@@ -79550,7 +79550,7 @@
                   "StudentUniqueId_Unified"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -80127,7 +80127,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd",
+                "name": "FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f",
                 "columns": [
                   "AssessmentAdministration_DocumentId",
                   "AssessmentAdministration_AdministrationIdentifier",
@@ -80147,7 +80147,7 @@
                   "AssigningEducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -80217,7 +80217,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2",
+                "name": "FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663",
                 "columns": [
                   "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
                   "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
@@ -80233,11 +80233,11 @@
                   "Student_StudentUniqueId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0",
+                "name": "FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20",
                 "columns": [
                   "StudentEducationOrganizationAssociation_DocumentId",
                   "StudentEducationOrganizationAssociation_EducationOrganizationId",
@@ -80253,7 +80253,7 @@
                   "Student_StudentUniqueId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -83375,7 +83375,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -84068,7 +84068,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -84673,23 +84673,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355",
-                "columns": [
-                  "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_7ed8529b29",
+                "name": "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41",
                 "columns": [
                   "ObjectiveCompetencyObjective_DocumentId",
                   "ObjectiveCompetencyObjective_EducationOrganizationId",
@@ -84705,6 +84689,22 @@
                   "EducationOrganization_EducationOrganizationId",
                   "Objective",
                   "ObjectiveGradeLevelDescriptor_DescriptorId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "Cascade"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355",
+                "columns": [
+                  "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
@@ -92945,7 +92945,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -93662,7 +93662,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -93698,7 +93698,7 @@
                   "InterventionIdentificationCode"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -94309,7 +94309,7 @@
                   "InterventionIdentificationCode"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -94667,7 +94667,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentLanguageInstructionProgramAssociation_Prog_459a3913d6",
+                "name": "FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -94685,7 +94685,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -95835,7 +95835,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentMigrantEducationProgramAssociation_Program_9c59b3174a",
+                "name": "FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -95853,7 +95853,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -96675,7 +96675,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_72a38d286a",
+                "name": "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -96693,7 +96693,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -97491,7 +97491,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -98294,7 +98294,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -98782,7 +98782,7 @@
                   "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -99227,36 +99227,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentProgramEvaluationStudentEvaluationElement__45f36dc00e",
-                "columns": [
-                  "StudentEvaluationElementProgramEvaluationElement_DocumentId",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178",
-                  "StudentEvaluationElementProgramEvaluationElement_ProgramName",
-                  "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466"
-                ],
-                "target_table": {
-                  "schema": "edfi",
-                  "name": "ProgramEvaluationElement"
-                },
-                "target_columns": [
-                  "DocumentId",
-                  "ProgramEvaluationElementTitle",
-                  "ProgramEducationOrganizationId_Unified",
-                  "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
-                  "ProgramEvaluationTitle_Unified",
-                  "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
-                  "ProgramName_Unified",
-                  "ProgramTypeDescriptor_Unified_DescriptorId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_StudentProgramEvaluationStudentEvaluationElement__58a3090861",
                 "columns": [
                   "StudentProgramEvaluation_DocumentId"
@@ -99302,6 +99272,36 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26",
+                "columns": [
+                  "StudentEvaluationElementProgramEvaluationElement_DocumentId",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178",
+                  "StudentEvaluationElementProgramEvaluationElement_ProgramName",
+                  "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466"
+                ],
+                "target_table": {
+                  "schema": "edfi",
+                  "name": "ProgramEvaluationElement"
+                },
+                "target_columns": [
+                  "DocumentId",
+                  "ProgramEvaluationElementTitle",
+                  "ProgramEducationOrganizationId_Unified",
+                  "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                  "ProgramEvaluationTitle_Unified",
+                  "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                  "ProgramName_Unified",
+                  "ProgramTypeDescriptor_Unified_DescriptorId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -99651,7 +99651,23 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentProgramEvaluationStudentEvaluationObjectiv_6571f443d0",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a",
+                "columns": [
+                  "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435",
                 "columns": [
                   "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId",
                   "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982",
@@ -99677,23 +99693,7 @@
                   "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a",
-                "columns": [
-                  "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -100821,7 +100821,7 @@
                   "GraduationSchoolYear_GraduationSchoolYear"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -101180,7 +101180,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306",
+                "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238",
                 "columns": [
                   "AlternativeGraduationPlan_DocumentId",
                   "AlternativeGraduationPlan_EducationOrganizationId",
@@ -101198,7 +101198,7 @@
                   "GraduationSchoolYear_GraduationSchoolYear"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -102255,7 +102255,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSchoolFoodServiceProgramAssociation_Progra_dad7d0e991",
+                "name": "FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -102273,7 +102273,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -103076,7 +103076,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -104059,7 +104059,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -105215,7 +105215,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSpecialEducationProgramAssociation_Program_dd22e89a0b",
+                "name": "FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -105233,7 +105233,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -106859,7 +106859,23 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_49aba18441",
+                "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe",
+                "columns": [
+                  "EligibilityDelayReasonDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c",
                 "columns": [
                   "ProgramProgram_DocumentId",
                   "ProgramProgram_EducationOrganizationId",
@@ -106877,23 +106893,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe",
-                "columns": [
-                  "EligibilityDelayReasonDescriptor_DescriptorId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -107385,7 +107385,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -110183,7 +110183,7 @@
                   "EducationOrganization_EducationOrganizationId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",
@@ -110469,7 +110469,7 @@
                   "ProgramTypeDescriptor_DescriptorId"
                 ],
                 "on_delete": "NoAction",
-                "on_update": "NoAction"
+                "on_update": "Cascade"
               },
               {
                 "kind": "ForeignKey",

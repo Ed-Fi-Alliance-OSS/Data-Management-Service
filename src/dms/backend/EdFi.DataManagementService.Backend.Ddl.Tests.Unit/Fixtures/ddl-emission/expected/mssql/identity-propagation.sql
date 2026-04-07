@@ -47,7 +47,7 @@ BEGIN
         FROM [edfi].[StudentSchoolAssociation] r
         INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]
         INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
+        WHERE ((i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL)))
         AND ((r.[SchoolId] = d.[SchoolId]) OR (r.[SchoolId] IS NULL AND d.[SchoolId] IS NULL));
 
     END
