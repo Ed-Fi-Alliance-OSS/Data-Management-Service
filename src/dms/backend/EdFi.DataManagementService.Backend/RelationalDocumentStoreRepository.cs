@@ -20,9 +20,6 @@ public sealed class RelationalDocumentStoreRepository(
     IDescriptorWriteHandler descriptorWriteHandler
 ) : IDocumentStoreRepository, IQueryHandler
 {
-    private const string ProfileAwareRelationalWritesPendingMessage =
-        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
-
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
@@ -126,13 +123,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.TraceId.Value
         );
 
-        if (relationalUpdateRequest.BackendProfileWriteContext is not null)
-        {
-            return Task.FromResult<UpdateResult>(
-                new UpdateResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
-            );
-        }
-
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -149,8 +139,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
+        var selectedBody =
+            profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
+
         return ExecuteWriteGuardRails<UpdateResult>(
-            requestBody: relationalUpdateRequest.EdfiDoc,
+            requestBody: selectedBody,
             traceId: relationalUpdateRequest.TraceId,
             mappingSet,
             relationalUpdateRequest.ResourceInfo,
@@ -169,7 +163,8 @@ public sealed class RelationalDocumentStoreRepository(
                     _ => throw new InvalidOperationException(
                         $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
                     ),
-                }
+                },
+            profileWriteContext
         );
     }
 
