@@ -47,13 +47,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.TraceId.Value
         );
 
-        if (relationalUpsertRequest.BackendProfileWriteContext is not null)
-        {
-            return Task.FromResult<UpsertResult>(
-                new UpsertResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
-            );
-        }
-
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -70,8 +63,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
+        var selectedBody =
+            profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
+
         return ExecuteWriteGuardRails<UpsertResult>(
-            requestBody: relationalUpsertRequest.EdfiDoc,
+            requestBody: selectedBody,
             traceId: relationalUpsertRequest.TraceId,
             mappingSet,
             relationalUpsertRequest.ResourceInfo,
@@ -93,7 +90,8 @@ public sealed class RelationalDocumentStoreRepository(
                     _ => throw new InvalidOperationException(
                         $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
                     ),
-                }
+                },
+            profileWriteContext
         );
     }
 
@@ -225,7 +223,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
-        Func<RelationalWriteExecutorResult, TResult> executorResultProjector
+        Func<RelationalWriteExecutorResult, TResult> executorResultProjector,
+        BackendProfileWriteContext? profileWriteContext = null
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -296,7 +295,8 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
-                        targetContext: targetResolution.TargetContext!
+                        targetContext: targetResolution.TargetContext!,
+                        profileWriteContext: profileWriteContext
                     )
                 )
                 .ConfigureAwait(false);
