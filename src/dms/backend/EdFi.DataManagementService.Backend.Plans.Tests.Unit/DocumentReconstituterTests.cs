@@ -1732,8 +1732,6 @@ public class Given_DocumentReconstituter_With_Null_Descriptor_FK
 [TestFixture]
 public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
 {
-    private JsonNode _result = null!;
-
     private static readonly DbSchemaName _schema = new("edfi");
     private static readonly DbTableName _tableName = new(_schema, "StudentSchoolAssociation");
 
@@ -1749,8 +1747,8 @@ public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
         "GradeLevelDescriptor"
     );
 
-    [SetUp]
-    public void SetUp()
+    [Test]
+    public void It_should_throw_for_non_null_descriptor_fk_with_no_resolved_uri()
     {
         var columns = new List<DbColumnModel>
         {
@@ -1800,27 +1798,26 @@ public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
             DescriptorResource: _gradeLevelDescriptorResource
         );
 
-        // FK value 999 is not in the lookup
+        // FK value 999 is not in the lookup — simulates a projection plan or executor defect
         object?[] row = [1L, 999L];
 
         var tableRows = new HydratedTableRows(tableModel, [row]);
 
-        _result = DocumentReconstituter.Reconstitute(
-            documentId: 1L,
-            tableRowsInDependencyOrder: [tableRows],
-            referenceProjectionPlans: [],
-            descriptorProjectionSources: [descriptorSource],
-            descriptorUriLookup: new Dictionary<long, string>
-            {
-                { 100L, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
-            }
-        );
-    }
+        var act = () =>
+            DocumentReconstituter.Reconstitute(
+                documentId: 1L,
+                tableRowsInDependencyOrder: [tableRows],
+                referenceProjectionPlans: [],
+                descriptorProjectionSources: [descriptorSource],
+                descriptorUriLookup: new Dictionary<long, string>
+                {
+                    { 100L, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+                }
+            );
 
-    [Test]
-    public void It_should_not_emit_the_descriptor_property()
-    {
-        _result["entryGradeLevelDescriptor"].Should().BeNull();
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*999*EntryGradeLevelDescriptor_DescriptorId*");
     }
 }
 

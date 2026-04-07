@@ -234,7 +234,11 @@ public static class DocumentReconstituter
             var descriptorId = Convert.ToInt64(descriptorIdValue);
             if (!descriptorUriLookup.TryGetValue(descriptorId, out var uri))
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Descriptor ID {descriptorId} in column '{source.FkColumn}' of table '{tableModel.Table}' "
+                        + "has no resolved URI in the descriptor lookup. "
+                        + "This indicates a descriptor projection plan or executor defect."
+                );
             }
 
             var (targetObject, propertyName) = ResolvePathRelativeToScope(
