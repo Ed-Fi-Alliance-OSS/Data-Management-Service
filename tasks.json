@@ -111,5 +111,29 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~FlatteningResolvedReferenceLookupSet\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Extraction Validation",
+    "description": "Harden propagated-reference identity extraction so malformed present members fail as deterministic write-validation errors instead of escaping as internal `500` exceptions. Acceptance: when a propagated reference identity member is present but `null`, a JSON object, or a JSON array, Core returns `400 Data Validation Failed` with a concrete JSON-path keyed validation error instead of allowing `InvalidOperationException` from `SelectNodesAndLocationFromArrayPathCoerceToStrings()` or `ReferenceExtractor` to escape; the behavior is consistent for root and nested reference sites; malformed present members are reported as invalid-present values rather than silently treated as missing optional members; empty reference objects and partial reference objects continue to report all-or-none failures deterministically; and middleware only maps request-shape validation failures, leaving true invariant breaches as internal errors.",
+    "steps-to-verify": [
+      "Update `ReferenceExtractor` and any supporting JSON helpers so reference identity extraction can distinguish missing members from present-but-invalid members and accumulate `WriteValidationFailure` entries for malformed values at the concrete member path.",
+      "Add focused unit coverage in `ReferenceExtractorTests` for root and nested propagated reference identity members with `null`, `{}`, and `[]` values, asserting `ReferenceExtractionValidationException` with deterministic path-specific failures.",
+      "Add middleware coverage in `ExtractDocumentInfoMiddlewareTests` proving POST and PUT requests with malformed propagated reference identity members return `400` validation responses instead of uncaught `InvalidOperationException` behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Duplicate ReferenceJsonPath Support",
+    "description": "Preserve supported same-site duplicate `DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath` members throughout propagated-reference extraction and runtime materialization. Acceptance: duplicate `ReferenceJsonPath` values within one reference site and one table remain supported as the design requires; `ReferenceExtractor` no longer overwrites earlier `DocumentIdentityElement` values when duplicate reference-member paths are present and instead preserves compiled binding order for referential-id calculation and downstream resolution; runtime lookup and flattening no longer resolve a duplicate logical member by arbitrarily picking the first matching binding index; propagated scalar and descriptor-backed identity columns sourced from the same logical reference path can both materialize correctly; and duplicate-path handling remains isolated to same-site groups without merging across different reference sites or tables.",
+    "steps-to-verify": [
+      "Update `ReferenceExtractor` so per-reference identity collection preserves ordered entries for duplicate `ReferenceJsonPath` bindings instead of keying them only by path string.",
+      "Update runtime reference-derived lookup metadata and `FlatteningResolvedReferenceLookupSet` so duplicate logical member paths are resolved by authoritative compiled binding or column identity rather than `ReferenceJsonPath -> first index` lookup.",
+      "Add Core unit coverage proving `ExtractReferences` preserves ordered `DocumentIdentityElements` and referential-id inputs when one reference site contains duplicate `referenceJsonPaths` entries.",
+      "Add backend unit coverage in `FlatteningResolvedReferenceLookupSetTests` and `RelationalWriteFlattenerTests` proving two propagated identity columns that share one logical reference path both materialize correctly for scalar and descriptor-backed cases.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~Given_RelationalWriteFlattener\"`"
+    ],
+    "completed": true
   }
 ]

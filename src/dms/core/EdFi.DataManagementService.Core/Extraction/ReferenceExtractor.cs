@@ -77,7 +77,7 @@ internal static class ReferenceExtractor
 
             var identityElementsByReferencePath = referenceOccurrences.ToDictionary(
                 occurrence => occurrence.jsonPath,
-                _ => new Dictionary<string, DocumentIdentityElement>(StringComparer.Ordinal),
+                _ => new DocumentIdentityElement?[identityElements.Length],
                 StringComparer.Ordinal
             );
             List<DocumentReference> documentReferencesForThisPath = [];
@@ -97,8 +97,13 @@ internal static class ReferenceExtractor
                 );
             }
 
-            foreach (var element in identityElements)
+            for (
+                var identityElementIndex = 0;
+                identityElementIndex < identityElements.Length;
+                identityElementIndex++
+            )
             {
+                var element = identityElements[identityElementIndex];
                 JsonPathAndValue[] pathValues = documentBody
                     .SelectNodesAndLocationFromArrayPathCoerceToStrings(
                         element.ReferenceJsonPath.Value,
@@ -113,7 +118,7 @@ internal static class ReferenceExtractor
                     if (
                         !identityElementsByReferencePath.TryGetValue(
                             concreteParentPath,
-                            out Dictionary<string, DocumentIdentityElement>? collectedIdentityElements
+                            out DocumentIdentityElement?[]? collectedIdentityElements
                         )
                     )
                     {
@@ -122,7 +127,7 @@ internal static class ReferenceExtractor
                         );
                     }
 
-                    collectedIdentityElements[element.ReferenceJsonPath.Value] = new DocumentIdentityElement(
+                    collectedIdentityElements[identityElementIndex] = new DocumentIdentityElement(
                         element.IdentityJsonPath,
                         pathValue.value
                     );
@@ -137,15 +142,17 @@ internal static class ReferenceExtractor
                     continue;
                 }
 
-                Dictionary<string, DocumentIdentityElement> collectedIdentityElements =
-                    identityElementsByReferencePath[referenceOccurrence.jsonPath];
+                DocumentIdentityElement?[] collectedIdentityElements = identityElementsByReferencePath[
+                    referenceOccurrence.jsonPath
+                ];
                 string[] missingReferencePaths = identityElements
-                    .Where(element => !collectedIdentityElements.ContainsKey(element.ReferenceJsonPath.Value))
-                    .Select(element =>
+                    .Select((element, index) => (element, index))
+                    .Where(entry => collectedIdentityElements[entry.index] is null)
+                    .Select(entry =>
                         BuildConcreteReferenceMemberPath(
                             referenceOccurrence.jsonPath,
                             wildcardParentPath,
-                            element.ReferenceJsonPath.Value
+                            entry.element.ReferenceJsonPath.Value
                         )
                     )
                     .ToArray();
@@ -167,11 +174,14 @@ internal static class ReferenceExtractor
                     documentPath.IsDescriptor
                 );
 
-                DocumentIdentity documentIdentity = new(
-                    identityElements
-                        .Select(element => collectedIdentityElements[element.ReferenceJsonPath.Value])
-                        .ToArray()
-                );
+                DocumentIdentity documentIdentity = new([
+                    .. collectedIdentityElements.Select(identityElement =>
+                        identityElement
+                        ?? throw new InvalidOperationException(
+                            $"Reference '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' was missing a collected identity element after validation."
+                        )
+                    ),
+                ]);
                 var documentReference = new DocumentReference(
                     resourceInfo,
                     documentIdentity,

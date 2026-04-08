@@ -188,6 +188,15 @@ public class Given_FlatteningResolvedReferenceLookupSet
         );
     }
 
+    private DbColumnName CreateReferenceDerivedColumn(int bindingIndex, int identityBindingIndex)
+    {
+        return _writePlan
+            .Model
+            .DocumentReferenceBindings[bindingIndex]
+            .IdentityBindings[identityBindingIndex]
+            .Column;
+    }
+
     [Test]
     public void It_returns_the_root_document_fk_for_the_empty_ordinal_path()
     {
@@ -207,22 +216,58 @@ public class Given_FlatteningResolvedReferenceLookupSet
     [Test]
     public void It_returns_root_reference_identity_values_from_the_resolved_reference_identity_order()
     {
-        _sut.GetReferenceIdentityValue(CreateReferenceDerivedSource(0, 0), []).Should().Be("255901");
+        _sut.GetReferenceIdentityValue(
+                CreateReferenceDerivedSource(0, 0),
+                CreateReferenceDerivedColumn(0, 0),
+                []
+            )
+            .Should()
+            .Be("255901");
     }
 
     [Test]
     public void It_returns_nested_reference_identity_values_from_the_resolved_reference_identity_order()
     {
-        _sut.GetReferenceIdentityValue(CreateReferenceDerivedSource(1, 0), [0]).Should().Be("255901");
-        _sut.GetReferenceIdentityValue(CreateReferenceDerivedSource(1, 0), [1]).Should().Be("255902");
-        _sut.GetReferenceIdentityValue(CreateReferenceDerivedSource(2, 0), [0, 1]).Should().Be("255902");
+        _sut.GetReferenceIdentityValue(
+                CreateReferenceDerivedSource(1, 0),
+                CreateReferenceDerivedColumn(1, 0),
+                [0]
+            )
+            .Should()
+            .Be("255901");
+        _sut.GetReferenceIdentityValue(
+                CreateReferenceDerivedSource(1, 0),
+                CreateReferenceDerivedColumn(1, 0),
+                [1]
+            )
+            .Should()
+            .Be("255902");
+        _sut.GetReferenceIdentityValue(
+                CreateReferenceDerivedSource(2, 0),
+                CreateReferenceDerivedColumn(2, 0),
+                [0, 1]
+            )
+            .Should()
+            .Be("255902");
     }
 
     [Test]
     public void It_returns_descriptor_backed_reference_identity_values_from_resolved_descriptor_lookups()
     {
-        _sut.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [0]).Should().Be(501L);
-        _sut.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [1]).Should().Be(502L);
+        _sut.GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [0]
+            )
+            .Should()
+            .Be(501L);
+        _sut.GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [1]
+            )
+            .Should()
+            .Be(502L);
     }
 
     [Test]
@@ -233,8 +278,42 @@ public class Given_FlatteningResolvedReferenceLookupSet
             CreateResolvedReferenceSetWithTargetDescriptorIdentityPaths()
         );
 
-        lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [0]).Should().Be(501L);
-        lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [1]).Should().Be(502L);
+        lookupSet
+            .GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [0]
+            )
+            .Should()
+            .Be(501L);
+        lookupSet
+            .GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [1]
+            )
+            .Should()
+            .Be(502L);
+    }
+
+    [Test]
+    public void It_resolves_duplicate_scalar_reference_json_paths_by_binding_column()
+    {
+        var (_, lookupSet, firstScalarColumn, secondScalarColumn, referenceSource) =
+            CreateDuplicateReferenceJsonPathScalarFixture();
+
+        lookupSet.GetReferenceIdentityValue(referenceSource, firstScalarColumn, []).Should().Be("255901");
+        lookupSet.GetReferenceIdentityValue(referenceSource, secondScalarColumn, []).Should().Be("255902");
+    }
+
+    [Test]
+    public void It_resolves_duplicate_scalar_and_descriptor_reference_json_paths_by_binding_column()
+    {
+        var (_, lookupSet, scalarColumn, descriptorColumn, referenceSource) =
+            CreateDuplicateReferenceJsonPathDescriptorFixture();
+
+        lookupSet.GetReferenceIdentityValue(referenceSource, scalarColumn, []).Should().Be("255901");
+        lookupSet.GetReferenceIdentityDescriptorId(referenceSource, descriptorColumn, []).Should().Be(501L);
     }
 
     [Test]
@@ -252,7 +331,12 @@ public class Given_FlatteningResolvedReferenceLookupSet
             CreateResolvedReferenceSetWithIdentityCountDrift()
         );
 
-        var act = () => lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [0]);
+        var act = () =>
+            lookupSet.GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [0]
+            );
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -269,7 +353,12 @@ public class Given_FlatteningResolvedReferenceLookupSet
             CreateResolvedReferenceSetWithIdentityKindDrift()
         );
 
-        var act = () => lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [0]);
+        var act = () =>
+            lookupSet.GetReferenceIdentityDescriptorId(
+                CreateReferenceDerivedSource(1, 1),
+                CreateReferenceDerivedColumn(1, 1),
+                [0]
+            );
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -505,6 +594,305 @@ public class Given_FlatteningResolvedReferenceLookupSet
             ),
             documentId,
             11
+        );
+    }
+
+    private static (
+        ResourceWritePlan WritePlan,
+        FlatteningResolvedReferenceLookupSet LookupSet,
+        DbColumnName FirstScalarColumn,
+        DbColumnName SecondScalarColumn,
+        ReferenceDerivedValueSourceMetadata ReferenceSource
+    ) CreateDuplicateReferenceJsonPathScalarFixture()
+    {
+        var table = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Program"),
+            Path("$"),
+            new TableKey(
+                "PK_Program",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    Path("$.schoolReference", new JsonPathSegment.Property("schoolReference")),
+                    _schoolResource,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PrimarySchoolCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String),
+                    true,
+                    Path(
+                        "$.schoolReference.schoolCode",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolCode")
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SecondarySchoolCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String),
+                    true,
+                    Path(
+                        "$.schoolReference.schoolCode",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolCode")
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var referencePath = Path("$.schoolReference", new JsonPathSegment.Property("schoolReference"));
+        var duplicatePath = Path(
+            "$.schoolReference.schoolCode",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCode")
+        );
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: referencePath,
+            Table: table.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
+            TargetResource: _schoolResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("PrimarySchoolCode")),
+                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SecondarySchoolCode")),
+            ]
+        );
+
+        var writePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _studentResource,
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings: [binding],
+                DescriptorEdgeSources: []
+            ),
+            []
+        );
+
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            writePlan,
+            new ResolvedReferenceSet(
+                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+                {
+                    [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
+                        _schoolResourceInfo,
+                        "$.schoolReference",
+                        101L,
+                        ("$.schoolId", "255901"),
+                        ("$.localEducationAgencyReference.schoolId", "255902")
+                    ),
+                },
+                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                InvalidDocumentReferences: [],
+                InvalidDescriptorReferences: [],
+                DocumentReferenceOccurrences: [],
+                DescriptorReferenceOccurrences: []
+            )
+        );
+
+        return (
+            writePlan,
+            lookupSet,
+            new DbColumnName("PrimarySchoolCode"),
+            new DbColumnName("SecondarySchoolCode"),
+            new ReferenceDerivedValueSourceMetadata(
+                BindingIndex: 0,
+                ReferenceObjectPath: referencePath,
+                ReferenceJsonPath: duplicatePath
+            )
+        );
+    }
+
+    private static (
+        ResourceWritePlan WritePlan,
+        FlatteningResolvedReferenceLookupSet LookupSet,
+        DbColumnName ScalarColumn,
+        DbColumnName DescriptorColumn,
+        ReferenceDerivedValueSourceMetadata ReferenceSource
+    ) CreateDuplicateReferenceJsonPathDescriptorFixture()
+    {
+        var table = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Program"),
+            Path("$"),
+            new TableKey(
+                "PK_Program",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    Path("$.schoolReference", new JsonPathSegment.Property("schoolReference")),
+                    _schoolResource,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String),
+                    true,
+                    Path(
+                        "$.schoolReference.schoolCategory",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolCategory")
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolCategoryDescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    Path(
+                        "$.schoolReference.schoolCategory",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolCategory")
+                    ),
+                    _schoolTypeDescriptorResource,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var referencePath = Path("$.schoolReference", new JsonPathSegment.Property("schoolReference"));
+        var duplicatePath = Path(
+            "$.schoolReference.schoolCategory",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategory")
+        );
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: referencePath,
+            Table: table.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
+            TargetResource: _schoolResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SchoolCode")),
+                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SchoolCategoryDescriptorId")),
+            ]
+        );
+
+        var writePlan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _studentResource,
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings: [binding],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: duplicatePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("SchoolCategoryDescriptorId"),
+                        DescriptorResource: _schoolTypeDescriptorResource
+                    ),
+                ]
+            ),
+            []
+        );
+
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            writePlan,
+            new ResolvedReferenceSet(
+                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+                {
+                    [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
+                        _schoolResourceInfo,
+                        "$.schoolReference",
+                        101L,
+                        ("$.schoolCategoryCode", "255901"),
+                        (
+                            DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                            "uri://ed-fi.org/schooltypedescriptor#elementary"
+                        )
+                    ),
+                },
+                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                {
+                    [new JsonPath("$.schoolReference.schoolCategory")] = CreateResolvedDescriptorReference(
+                        _schoolTypeDescriptorResourceInfo,
+                        "$.schoolReference.schoolCategory",
+                        501L
+                    ),
+                },
+                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                InvalidDocumentReferences: [],
+                InvalidDescriptorReferences: [],
+                DocumentReferenceOccurrences: [],
+                DescriptorReferenceOccurrences: []
+            )
+        );
+
+        return (
+            writePlan,
+            lookupSet,
+            new DbColumnName("SchoolCode"),
+            new DbColumnName("SchoolCategoryDescriptorId"),
+            new ReferenceDerivedValueSourceMetadata(
+                BindingIndex: 0,
+                ReferenceObjectPath: referencePath,
+                ReferenceJsonPath: duplicatePath
+            )
         );
     }
 

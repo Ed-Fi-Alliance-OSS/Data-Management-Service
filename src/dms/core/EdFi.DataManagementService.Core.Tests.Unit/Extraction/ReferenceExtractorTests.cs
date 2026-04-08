@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
@@ -52,6 +53,83 @@ public class ExtractDocumentReferencesTests
             .WithEndResource()
             .WithEndProject()
             .ToApiSchemaDocuments();
+    }
+
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDuplicateReferenceJsonPaths()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Section")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "EducationOrganization",
+                [
+                    new(
+                        "$.educationOrganizationId",
+                        "$.educationOrganizationReference.educationOrganizationId"
+                    ),
+                    new(
+                        "$.localEducationAgencyReference.educationOrganizationId",
+                        "$.educationOrganizationReference.educationOrganizationId"
+                    ),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_Duplicate_Reference_Json_Paths
+        : ExtractDocumentReferencesTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocumentsWithDuplicateReferenceJsonPaths();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var (documentReferences, _) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "educationOrganizationReference": {
+                            "educationOrganizationId": 255901
+                        }
+                    }
+                    """
+                )!,
+                NullLogger.Instance
+            );
+
+            _documentReference = documentReferences.Should().ContainSingle().Subject;
+        }
+
+        [Test]
+        public void It_preserves_duplicate_reference_members_in_document_identity_order()
+        {
+            _documentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    ("$.localEducationAgencyReference.educationOrganizationId", "255901")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_referential_id_from_the_preserved_duplicate_identity_order()
+        {
+            _documentReference
+                .ReferentialId.Should()
+                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
+        }
     }
 
     [TestFixture]

@@ -1621,6 +1621,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         var referenceIdentityValue = resolvedReferenceLookups.GetReferenceIdentityValue(
             referenceSource,
+            columnName,
             ordinalPath
         );
 
@@ -1658,6 +1659,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var descriptorId = resolvedReferenceLookups.GetReferenceIdentityDescriptorId(
             referenceSource,
+            columnName,
             ordinalPath
         );
 
