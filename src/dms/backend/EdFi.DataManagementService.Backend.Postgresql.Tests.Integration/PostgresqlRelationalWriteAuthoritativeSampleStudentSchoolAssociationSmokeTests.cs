@@ -158,7 +158,8 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         );
         var (baseDocumentReferences, baseDocumentReferenceArrays) = baseResourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
         var (alternativeGraduationPlanReferences, alternativeGraduationPlanReferenceArrays) =
             CreateAlternativeGraduationPlanDocumentReferences(requestBody, graduationPlanTypeDescriptorId);

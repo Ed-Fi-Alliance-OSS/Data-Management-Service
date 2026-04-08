@@ -855,6 +855,85 @@ public class ExtractDocumentReferencesTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_An_Empty_Reference_Object
+        : ExtractDocumentReferencesTests
+    {
+        private DocumentReference[] _documentReferences = [];
+        private DocumentReferenceArray[] _documentReferenceArrays = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            (_documentReferences, _documentReferenceArrays) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "sectionIdentifier": "Bob",
+                        "courseOfferingReference": {}
+                    }
+                    """
+                )!,
+                NullLogger.Instance,
+                ReferenceExtractionMode.LegacyCompatibility
+            );
+        }
+
+        [Test]
+        public void It_skips_the_incomplete_reference_instead_of_failing_validation()
+        {
+            _documentReferences.Should().BeEmpty();
+            _documentReferenceArrays.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_A_Malformed_Nested_Reference_Member
+        : ExtractDocumentReferencesTests
+    {
+        private DocumentReference[] _documentReferences = [];
+        private DocumentReferenceArray[] _documentReferenceArrays = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            (_documentReferences, _documentReferenceArrays) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "sectionIdentifier": "Bob",
+                        "classPeriods": [
+                            {
+                                "classPeriodReference": {
+                                    "classPeriodName": {},
+                                    "schoolId": "111"
+                                }
+                            }
+                        ]
+                    }
+                    """
+                )!,
+                NullLogger.Instance,
+                ReferenceExtractionMode.LegacyCompatibility
+            );
+        }
+
+        [Test]
+        public void It_skips_the_malformed_nested_reference_instead_of_failing_validation()
+        {
+            _documentReferences.Should().BeEmpty();
+            _documentReferenceArrays.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_No_References_In_Body
         : ExtractDocumentReferencesTests
     {

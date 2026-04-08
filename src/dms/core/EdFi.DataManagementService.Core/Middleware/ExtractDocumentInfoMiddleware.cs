@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -16,7 +17,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Extracts identity and reference information from a valid JSON document
 /// </summary>
-internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
+internal class ExtractDocumentInfoMiddleware(IOptions<Configuration.AppSettings> appSettings, ILogger _logger)
+    : IPipelineStep
 {
     /// <summary>
     /// Builds a DocumentInfo using the various extractors on a document body
@@ -37,21 +39,36 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
 
         DocumentReference[] documentReferences;
         DocumentReferenceArray[] documentReferenceArrays;
+        var extractionMode = appSettings.Value.UseRelationalBackend
+            ? ReferenceExtractionMode.RelationalWriteValidation
+            : ReferenceExtractionMode.LegacyCompatibility;
 
-        try
+        if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
+        {
+            try
+            {
+                (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
+                    requestInfo.ParsedBody,
+                    _logger,
+                    extractionMode
+                );
+            }
+            catch (ReferenceExtractionValidationException ex)
+            {
+                requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+                    ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            }
+        }
+        else
         {
             (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
                 requestInfo.ParsedBody,
-                _logger
+                _logger,
+                extractionMode
             );
-        }
-        catch (ReferenceExtractionValidationException ex)
-        {
-            requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
-                ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
-                requestInfo.FrontendRequest.TraceId
-            );
-            return;
         }
 
         requestInfo.DocumentInfo = new(

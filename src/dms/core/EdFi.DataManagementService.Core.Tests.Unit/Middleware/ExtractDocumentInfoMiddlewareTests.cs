@@ -5,12 +5,14 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -20,9 +22,18 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ExtractDocumentInfoMiddlewareTests
 {
-    internal static IPipelineStep BuildMiddleware()
+    internal static IPipelineStep BuildMiddleware(bool useRelationalBackend = true)
     {
-        return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
+        return new ExtractDocumentInfoMiddleware(
+            Options.Create(
+                new AppSettings
+                {
+                    AllowIdentityUpdateOverrides = "",
+                    UseRelationalBackend = useRelationalBackend,
+                }
+            ),
+            NullLogger.Instance
+        );
     }
 
     internal static RequestInfo CreateRequestInfo(
@@ -222,6 +233,54 @@ public class ExtractDocumentInfoMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Legacy_Post_Request_With_An_Empty_Reference_Object
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = """
+                {
+                    "sectionIdentifier": "Bob",
+                    "courseOfferingReference": {}
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
+
+            await BuildMiddleware(useRelationalBackend: false)
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_the_pipeline_without_creating_a_validation_response()
+        {
+            _nextCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_omits_the_malformed_reference_from_document_info()
+        {
+            _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
+            _requestInfo.DocumentInfo.DocumentReferenceArrays.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Put_Request_With_A_Partial_Nested_Reference_Object
         : ExtractDocumentInfoMiddlewareTests
     {
@@ -270,6 +329,60 @@ public class ExtractDocumentInfoMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Contain("$.classPeriods[0].classPeriodReference.schoolId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Legacy_Put_Request_With_A_Partial_Nested_Reference_Object
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = """
+                {
+                    "sectionIdentifier": "Bob",
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "Class Period 1"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.PUT, body);
+
+            await BuildMiddleware(useRelationalBackend: false)
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_the_pipeline_without_creating_a_validation_response()
+        {
+            _nextCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_omits_the_partial_nested_reference_from_document_info()
+        {
+            _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
+            _requestInfo.DocumentInfo.DocumentReferenceArrays.Should().BeEmpty();
         }
     }
 

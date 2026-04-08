@@ -1236,11 +1236,16 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         var (baseDocumentReferences, baseDocumentReferenceArrays) = _baseResourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
 
         var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
-            _extensionResourceSchema.ExtractReferences(requestBody, NullLogger.Instance);
+            _extensionResourceSchema.ExtractReferences(
+                requestBody,
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
+            );
 
         var descriptorReferences = _baseResourceSchema
             .ExtractDescriptors(requestBody, NullLogger.Instance)
@@ -4096,11 +4101,16 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
         var (baseDocumentReferences, baseDocumentReferenceArrays) = _baseResourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
 
         var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
-            _extensionResourceSchema.ExtractReferences(requestBody, NullLogger.Instance);
+            _extensionResourceSchema.ExtractReferences(
+                requestBody,
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
+            );
 
         var descriptorReferences = _baseResourceSchema
             .ExtractDescriptors(requestBody, NullLogger.Instance)

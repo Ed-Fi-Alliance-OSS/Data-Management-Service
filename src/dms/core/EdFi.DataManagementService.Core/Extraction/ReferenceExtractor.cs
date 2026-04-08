@@ -42,7 +42,8 @@ internal static class ReferenceExtractor
     public static (DocumentReference[], DocumentReferenceArray[]) ExtractReferences(
         this ResourceSchema resourceSchema,
         JsonNode documentBody,
-        ILogger logger
+        ILogger logger,
+        ReferenceExtractionMode extractionMode = ReferenceExtractionMode.RelationalWriteValidation
     )
     {
         logger.LogDebug("ReferenceExtractor.Extract");
@@ -102,12 +103,15 @@ internal static class ReferenceExtractor
                     continue;
                 }
 
-                validationFailures.Add(
-                    new WriteValidationFailure(
-                        new JsonPath(referenceOccurrence.jsonPath),
-                        $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a JSON object."
-                    )
-                );
+                if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
+                {
+                    validationFailures.Add(
+                        new WriteValidationFailure(
+                            new JsonPath(referenceOccurrence.jsonPath),
+                            $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a JSON object."
+                        )
+                    );
+                }
             }
 
             for (
@@ -152,12 +156,15 @@ internal static class ReferenceExtractor
 
                     invalidIdentityElements[identityElementIndex] = true;
 
-                    validationFailures.Add(
-                        new WriteValidationFailure(
-                            new JsonPath(pathValue.jsonPath),
-                            $"Reference identity member '{pathValue.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a scalar value when present, but was {DescribeInvalidReferenceIdentityMemberValue(pathValue.node)}."
-                        )
-                    );
+                    if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
+                    {
+                        validationFailures.Add(
+                            new WriteValidationFailure(
+                                new JsonPath(pathValue.jsonPath),
+                                $"Reference identity member '{pathValue.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a scalar value when present, but was {DescribeInvalidReferenceIdentityMemberValue(pathValue.node)}."
+                            )
+                        );
+                    }
                 }
             }
 
@@ -192,12 +199,15 @@ internal static class ReferenceExtractor
 
                 if (missingReferencePaths.Length > 0)
                 {
-                    validationFailures.Add(
-                        new WriteValidationFailure(
-                            new JsonPath(referenceOccurrence.jsonPath),
-                            $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must include all identifying values when present. Missing: {string.Join(", ", missingReferencePaths.Select(path => $"'{path}'"))}."
-                        )
-                    );
+                    if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
+                    {
+                        validationFailures.Add(
+                            new WriteValidationFailure(
+                                new JsonPath(referenceOccurrence.jsonPath),
+                                $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must include all identifying values when present. Missing: {string.Join(", ", missingReferencePaths.Select(path => $"'{path}'"))}."
+                            )
+                        );
+                    }
                     continue;
                 }
 

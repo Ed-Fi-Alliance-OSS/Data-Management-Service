@@ -158,7 +158,8 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
         );
         var (baseDocumentReferences, baseDocumentReferenceArrays) = baseResourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
         var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
             CreateExtensionDocumentReferences(requestBody, programTypeDescriptorId);
@@ -1129,7 +1130,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var createRequestBody = JsonNode.Parse(CreateRequestBodyJson)!;
         var (baseDocumentReferences, _) = _baseResourceSchema.ExtractReferences(
             createRequestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
         var sectionReference = baseDocumentReferences.Single(reference =>
             reference.Path == new JsonPath("$.sectionReference")

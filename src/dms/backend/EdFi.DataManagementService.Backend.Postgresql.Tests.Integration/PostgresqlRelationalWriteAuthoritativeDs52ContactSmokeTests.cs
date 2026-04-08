@@ -155,7 +155,8 @@ file static class AuthoritativeDs52ContactWriteIntegrationTestSupport
         );
         var (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
         var descriptorReferences = resourceSchema
             .ExtractDescriptors(requestBody, NullLogger.Instance)

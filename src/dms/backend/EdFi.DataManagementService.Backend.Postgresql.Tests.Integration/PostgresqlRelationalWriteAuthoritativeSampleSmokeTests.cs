@@ -154,7 +154,8 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
 
         var (baseDocumentReferences, baseDocumentReferenceArrays) = baseResourceSchema.ExtractReferences(
             requestBody,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
 
         var descriptorReferences = baseResourceSchema

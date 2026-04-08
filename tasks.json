@@ -6,7 +6,7 @@
       "Add or update `NormalizedPlanContractCodec` and `MappingSetManifestJsonEmitter` coverage so reference-derived column bindings and key-unification members survive round-tripping, appear in normalized and manifest output, and invalid DTO or manifest mutations fail fast instead of silently collapsing back to generic scalar shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Plan Compilation",
@@ -135,5 +135,37 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~Given_RelationalWriteFlattener\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Identity Normalization",
+    "description": "Normalize descriptor-valued identity members inside document references before referential-id calculation so reference-bearing identities follow the same case-insensitive descriptor behavior as standalone descriptor references. Acceptance: when a reference identity includes a descriptor URI member such as `$.graduationPlanReference.graduationPlanTypeDescriptor`, the extracted `DocumentIdentityElement` value is normalized consistently with descriptor extraction before `ReferentialId` hashing; POST and PUT reference resolution succeed for equivalent descriptor URIs regardless of input casing; the fix is limited to descriptor-valued identity members and does not alter scalar identity hashing semantics; and unit or integration coverage proves mixed-case payloads resolve to the same target row as lowercase payloads.",
+    "steps-to-verify": [
+      "Update Core reference-identity extraction so descriptor-valued members under document references are normalized before building `DocumentIdentity` and `ReferentialId`.",
+      "Add focused Core or backend coverage for a resource whose identity contains a descriptor-valued reference member, proving mixed-case and lowercase payloads resolve identically.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceResolver|FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Scope Control",
+    "description": "Constrain propagated-reference request-shape validation to the intended relational write surface so DMS-985 does not silently change legacy write behavior outside the relational backend seam. Acceptance: malformed or partial propagated reference objects still produce deterministic validation failures on the relational path, but the implementation no longer forces a new middleware-level failure mode onto unrelated or legacy write flows unless that behavior is explicitly intended and documented; `UseRelationalBackend=false` behavior remains unchanged or is covered by an intentional compatibility decision with tests; and the final design makes the responsibility boundary between Core extraction and relational write validation explicit instead of leaving it as branch-local scope creep.",
+    "steps-to-verify": [
+      "Review the current `ExtractDocumentInfoMiddleware` integration and move, gate, or otherwise isolate propagated-reference validation so only the intended write path owns the new behavior.",
+      "Add tests that prove relational writes still return concrete path-specific validation errors for empty or partial reference objects.",
+      "Add regression coverage for the non-relational or legacy path showing either unchanged behavior or an explicitly approved new behavior with test documentation.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractDocumentInfoMiddleware|FullyQualifiedName~ReferenceExtractor\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "SQL Server Runtime Cascade Verification",
+    "description": "Add an end-to-end SQL Server runtime proof that rows created through the relational write path populate propagated reference identity columns correctly and continue to participate in identity propagation fallback after the write. Acceptance: at least one SQL Server integration scenario creates a referrer through the real relational repository or executor path, asserts the persisted `..._DocumentId` and propagated identity-part storage columns immediately after create or changed update, then mutates the referenced identity and proves the same runtime-created referrer row receives the expected propagated update through SQL Server's trigger fallback; the proof is separate from pure DDL seeding tests; and it demonstrates that DMS-985 is satisfied by the runtime write path, not only by manually seeded storage.",
+    "steps-to-verify": [
+      "Add a focused SQL Server integration fixture that performs runtime create and changed update through the relational write path for a resource with propagated reference identity columns.",
+      "After the runtime write, update the referenced identity and assert the referrer row's propagated identity columns change through SQL Server's trigger-based propagation fallback.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity|FullyQualifiedName~Relational_Write\"`"
+    ],
+    "completed": false
   }
 ]

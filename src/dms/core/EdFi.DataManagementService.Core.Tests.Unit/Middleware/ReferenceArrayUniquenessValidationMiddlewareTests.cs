@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -145,7 +147,12 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
 
     internal static ExtractDocumentInfoMiddleware ExtractDocument()
     {
-        return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
+        return new ExtractDocumentInfoMiddleware(
+            Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
+            ),
+            NullLogger.Instance
+        );
     }
 
     internal static ReferenceArrayUniquenessValidationMiddleware Middleware()

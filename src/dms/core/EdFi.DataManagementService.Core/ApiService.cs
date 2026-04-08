@@ -203,7 +203,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_logger),
+            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
@@ -300,7 +300,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ExtractDocumentInfoMiddleware(_logger),
+            new ExtractDocumentInfoMiddleware(_appSettings, _logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
