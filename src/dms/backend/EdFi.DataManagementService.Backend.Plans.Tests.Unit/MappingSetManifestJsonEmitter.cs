@@ -450,6 +450,12 @@ internal static class MappingSetManifestJsonEmitter
                 writer.WriteNumber("binding_index", documentReference.BindingIndex);
                 break;
 
+            case WriteValueSource.ReferenceDerived referenceDerived:
+                writer.WriteString("kind", "reference_derived");
+                writer.WritePropertyName("reference_source");
+                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                break;
+
             case WriteValueSource.DescriptorReference descriptorReference:
                 writer.WriteString("kind", "descriptor_reference");
                 writer.WritePropertyName("descriptor_resource");
@@ -512,6 +518,17 @@ internal static class MappingSetManifestJsonEmitter
                 WriteQualifiedResourceName(writer, descriptor.DescriptorResource);
                 break;
 
+            case KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceDerived:
+                writer.WriteString("kind", "reference_derived");
+                writer.WriteString("member_path_column_name", referenceDerived.MemberPathColumn.Value);
+                writer.WriteString("relative_path", referenceDerived.RelativePath.Canonical);
+                WriteNullableString(writer, "presence_column_name", referenceDerived.PresenceColumn?.Value);
+                WriteNullableInt(writer, "presence_binding_index", referenceDerived.PresenceBindingIndex);
+                writer.WriteBoolean("presence_is_synthetic", referenceDerived.PresenceIsSynthetic);
+                writer.WritePropertyName("reference_source");
+                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(member),
@@ -520,6 +537,18 @@ internal static class MappingSetManifestJsonEmitter
                 );
         }
 
+        writer.WriteEndObject();
+    }
+
+    private static void WriteReferenceDerivedSource(
+        Utf8JsonWriter writer,
+        ReferenceDerivedValueSourceMetadata source
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("binding_index", source.BindingIndex);
+        writer.WriteString("reference_object_path", source.ReferenceObjectPath.Canonical);
+        writer.WriteString("reference_json_path", source.ReferenceJsonPath.Canonical);
         writer.WriteEndObject();
     }
 

@@ -139,6 +139,131 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_reference_derived_write_metadata_through_normalized_dto()
+    {
+        var writePlan = ReferenceDerivedWritePlanFixture.CreateWritePlan();
+        var model = writePlan.Model;
+        var encoded = NormalizedPlanContractCodec.Encode(writePlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, model);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+        var canonicalJson = NormalizedPlanDtoJson.EmitCanonicalJson(encoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        canonicalJson.Should().Contain("\"kind\": \"reference_derived\"");
+        canonicalJson.Should().Contain("\"reference_object_path\": \"$.schoolReference\"");
+        canonicalJson.Should().Contain("\"reference_json_path\": \"$.schoolReference.schoolYear\"");
+        canonicalJson.Should().Contain("\"reference_json_path\": \"$.schoolReference.schoolId\"");
+
+        var decodedTablePlan = decoded.TablePlansInDependencyOrder.Single();
+        var decodedReferenceDerivedSource = decodedTablePlan
+            .ColumnBindings[2]
+            .Source.Should()
+            .BeOfType<WriteValueSource.ReferenceDerived>()
+            .Subject;
+
+        decodedReferenceDerivedSource.ReferenceSource.BindingIndex.Should().Be(0);
+        decodedReferenceDerivedSource
+            .ReferenceSource.ReferenceObjectPath.Canonical.Should()
+            .Be("$.schoolReference");
+        decodedReferenceDerivedSource
+            .ReferenceSource.ReferenceJsonPath.Canonical.Should()
+            .Be("$.schoolReference.schoolYear");
+
+        var decodedReferenceDerivedMember = decodedTablePlan
+            .KeyUnificationPlans[0]
+            .MembersInOrder[0]
+            .Should()
+            .BeOfType<KeyUnificationMemberWritePlan.ReferenceDerivedMember>()
+            .Subject;
+
+        decodedReferenceDerivedMember.MemberPathColumn.Value.Should().Be("School_RefSchoolIdAlias");
+        decodedReferenceDerivedMember.ReferenceSource.BindingIndex.Should().Be(0);
+        decodedReferenceDerivedMember
+            .ReferenceSource.ReferenceObjectPath.Canonical.Should()
+            .Be("$.schoolReference");
+        decodedReferenceDerivedMember
+            .ReferenceSource.ReferenceJsonPath.Canonical.Should()
+            .Be("$.schoolReference.schoolId");
+        decodedReferenceDerivedMember.PresenceBindingIndex.Should().Be(1);
+        decodedReferenceDerivedMember.PresenceIsSynthetic.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_derived_write_source_targets_an_unknown_logical_reference_member()
+    {
+        var writePlan = ReferenceDerivedWritePlanFixture.CreateWritePlan();
+        var encoded = NormalizedPlanContractCodec.Encode(writePlan);
+        var tablePlan = encoded.TablePlansInDependencyOrder[0];
+        var bindings = tablePlan.ColumnBindings.ToArray();
+        var referenceDerivedSource = bindings[2]
+            .Source.Should()
+            .BeOfType<WriteValueSourceDto.ReferenceDerived>()
+            .Subject;
+
+        bindings[2] = bindings[2] with
+        {
+            Source = referenceDerivedSource with
+            {
+                ReferenceSource = referenceDerivedSource.ReferenceSource with
+                {
+                    ReferenceJsonPath = "$.schoolReference.schoolCode",
+                },
+            },
+        };
+
+        var mutated = encoded with
+        {
+            TablePlansInDependencyOrder = [tablePlan with { ColumnBindings = [.. bindings] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, writePlan.Model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("does not contain logical member '$.schoolReference.schoolCode'");
+        exception.Message.Should().Contain("$.schoolReference.schoolId");
+        exception.Message.Should().Contain("$.schoolReference.schoolYear");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_derived_key_unification_member_targets_the_wrong_logical_field()
+    {
+        var writePlan = ReferenceDerivedWritePlanFixture.CreateWritePlan();
+        var encoded = NormalizedPlanContractCodec.Encode(writePlan);
+        var tablePlan = encoded.TablePlansInDependencyOrder[0];
+        var keyUnificationPlans = tablePlan.KeyUnificationPlans.ToArray();
+        var members = keyUnificationPlans[0].MembersInOrder.ToArray();
+        var referenceDerivedMember = members[0]
+            .Should()
+            .BeOfType<KeyUnificationMemberWritePlanDto.ReferenceDerivedMember>()
+            .Subject;
+
+        members[0] = referenceDerivedMember with
+        {
+            ReferenceSource = referenceDerivedMember.ReferenceSource with
+            {
+                ReferenceJsonPath = "$.schoolReference.schoolYear",
+            },
+        };
+
+        keyUnificationPlans[0] = keyUnificationPlans[0] with { MembersInOrder = [.. members] };
+
+        var mutated = encoded with
+        {
+            TablePlansInDependencyOrder = [tablePlan with { KeyUnificationPlans = [.. keyUnificationPlans] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, writePlan.Model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("targets logical field '$.schoolReference.schoolYear'");
+        exception.Message.Should().Contain("column 'School_RefSchoolIdAlias'");
+    }
+
+    [Test]
     public void It_should_roundtrip_collection_merge_plan_through_normalized_dto()
     {
         var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
@@ -2688,6 +2813,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             WriteValueSource.Ordinal => nameof(WriteValueSource.Ordinal),
             WriteValueSource.Scalar => nameof(WriteValueSource.Scalar),
             WriteValueSource.DocumentReference => nameof(WriteValueSource.DocumentReference),
+            WriteValueSource.ReferenceDerived => nameof(WriteValueSource.ReferenceDerived),
             WriteValueSource.DescriptorReference => nameof(WriteValueSource.DescriptorReference),
             WriteValueSource.Precomputed => nameof(WriteValueSource.Precomputed),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source.GetType().Name),

@@ -212,6 +212,7 @@ internal static class NormalizedPlanContractCodec
 
             var decodedKeyUnificationPlans = DecodeKeyUnificationPlans(
                 tablePlanDto,
+                model,
                 tableModel,
                 columnsByName,
                 decodedColumnBindings.Length,
@@ -694,6 +695,7 @@ internal static class NormalizedPlanContractCodec
 
     private static IReadOnlyList<ExternalPlans.KeyUnificationWritePlan> DecodeKeyUnificationPlans(
         TableWritePlanDto tablePlanDto,
+        RelationalResourceModel model,
         DbTableModel tableModel,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
         int columnBindingCount,
@@ -805,6 +807,18 @@ internal static class NormalizedPlanContractCodec
                             PresenceBindingIndex: presenceBindingIndex,
                             PresenceIsSynthetic: memberDto.PresenceIsSynthetic
                         ),
+                    KeyUnificationMemberWritePlanDto.ReferenceDerivedMember referenceDerivedMember =>
+                        DecodeReferenceDerivedKeyUnificationMember(
+                            referenceDerivedMember,
+                            model,
+                            tableModel,
+                            memberPathColumnModel,
+                            relativePath,
+                            presenceColumnName,
+                            presenceBindingIndex,
+                            memberDto.PresenceIsSynthetic,
+                            memberArgument
+                        ),
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(tablePlanDto),
                         memberDto.GetType().Name,
@@ -857,6 +871,13 @@ internal static class NormalizedPlanContractCodec
             ),
             WriteValueSourceDto.DocumentReference documentReference => DecodeDocumentReferenceSource(
                 documentReference,
+                model,
+                tableModel,
+                columnModel,
+                argumentName
+            ),
+            WriteValueSourceDto.ReferenceDerived referenceDerived => DecodeReferenceDerivedWriteSource(
+                referenceDerived,
                 model,
                 tableModel,
                 columnModel,
@@ -926,6 +947,239 @@ internal static class NormalizedPlanContractCodec
         return new ExternalPlans.WriteValueSource.DocumentReference(source.BindingIndex);
     }
 
+    private static ExternalPlans.WriteValueSource.ReferenceDerived DecodeReferenceDerivedWriteSource(
+        WriteValueSourceDto.ReferenceDerived source,
+        RelationalResourceModel model,
+        DbTableModel tableModel,
+        DbColumnModel columnModel,
+        string argumentName
+    )
+    {
+        var (referenceSource, logicalFieldGroup) = DecodeReferenceDerivedSource(
+            source.ReferenceSource,
+            model,
+            argumentName
+        );
+
+        ValidateReferenceDerivedBindingColumn(logicalFieldGroup, tableModel, columnModel, argumentName);
+
+        return new ExternalPlans.WriteValueSource.ReferenceDerived(referenceSource);
+    }
+
+    private static ExternalPlans.KeyUnificationMemberWritePlan.ReferenceDerivedMember DecodeReferenceDerivedKeyUnificationMember(
+        KeyUnificationMemberWritePlanDto.ReferenceDerivedMember memberDto,
+        RelationalResourceModel model,
+        DbTableModel tableModel,
+        DbColumnModel memberPathColumnModel,
+        JsonPathExpression relativePath,
+        DbColumnName? presenceColumnName,
+        int? presenceBindingIndex,
+        bool presenceIsSynthetic,
+        string argumentName
+    )
+    {
+        var (referenceSource, logicalFieldGroup) = DecodeReferenceDerivedSource(
+            memberDto.ReferenceSource,
+            model,
+            $"{argumentName}.{nameof(KeyUnificationMemberWritePlanDto.ReferenceDerivedMember.ReferenceSource)}"
+        );
+
+        ValidateReferenceDerivedMemberColumn(
+            logicalFieldGroup,
+            tableModel,
+            memberPathColumnModel,
+            relativePath,
+            argumentName
+        );
+
+        return new ExternalPlans.KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+            MemberPathColumn: memberPathColumnModel.ColumnName,
+            RelativePath: relativePath,
+            ReferenceSource: referenceSource,
+            PresenceColumn: presenceColumnName,
+            PresenceBindingIndex: presenceBindingIndex,
+            PresenceIsSynthetic: presenceIsSynthetic
+        );
+    }
+
+    private static (
+        ExternalPlans.ReferenceDerivedValueSourceMetadata ReferenceSource,
+        DocumentReferenceFieldGroup LogicalFieldGroup
+    ) DecodeReferenceDerivedSource(
+        ReferenceDerivedValueSourceDto sourceDto,
+        RelationalResourceModel model,
+        string argumentName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sourceDto);
+
+        var bindingIndexArgument = $"{argumentName}.{nameof(ReferenceDerivedValueSourceDto.BindingIndex)}";
+        var binding = ResolveDocumentReferenceBindingByIndex(
+            model,
+            sourceDto.BindingIndex,
+            bindingIndexArgument
+        );
+        var referenceObjectPathArgument =
+            $"{argumentName}.{nameof(ReferenceDerivedValueSourceDto.ReferenceObjectPath)}";
+        var referenceObjectPath = CompileJsonPath(sourceDto.ReferenceObjectPath, referenceObjectPathArgument);
+
+        if (
+            !string.Equals(
+                binding.ReferenceObjectPath.Canonical,
+                referenceObjectPath.Canonical,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived source binding index '{sourceDto.BindingIndex}' requires reference-object path "
+                    + $"'{binding.ReferenceObjectPath.Canonical}', but '{argumentName}' provided "
+                    + $"'{referenceObjectPath.Canonical}'."
+            );
+        }
+
+        var referenceJsonPathArgument =
+            $"{argumentName}.{nameof(ReferenceDerivedValueSourceDto.ReferenceJsonPath)}";
+        var referenceJsonPath = CompileJsonPath(sourceDto.ReferenceJsonPath, referenceJsonPathArgument);
+        var logicalFieldGroup = binding
+            .GetLogicalFieldGroups()
+            .SingleOrDefault(group =>
+                string.Equals(
+                    group.ReferenceJsonPath.Canonical,
+                    referenceJsonPath.Canonical,
+                    StringComparison.Ordinal
+                )
+            );
+
+        if (logicalFieldGroup is null)
+        {
+            var logicalFields = string.Join(
+                ", ",
+                binding
+                    .GetLogicalFieldGroups()
+                    .Select(static group => $"'{group.ReferenceJsonPath.Canonical}'")
+            );
+
+            throw new InvalidOperationException(
+                $"Reference-derived source binding index '{sourceDto.BindingIndex}' for reference "
+                    + $"'{binding.ReferenceObjectPath.Canonical}' does not contain logical member "
+                    + $"'{referenceJsonPath.Canonical}'. Available logical members: "
+                    + $"{(logicalFields.Length == 0 ? "<none>" : logicalFields)}."
+            );
+        }
+
+        return (
+            new ExternalPlans.ReferenceDerivedValueSourceMetadata(
+                BindingIndex: sourceDto.BindingIndex,
+                ReferenceObjectPath: referenceObjectPath,
+                ReferenceJsonPath: referenceJsonPath
+            ),
+            logicalFieldGroup
+        );
+    }
+
+    private static void ValidateReferenceDerivedBindingColumn(
+        DocumentReferenceFieldGroup logicalFieldGroup,
+        DbTableModel tableModel,
+        DbColumnModel columnModel,
+        string argumentName
+    )
+    {
+        if (logicalFieldGroup.Table != tableModel.Table)
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived source '{argumentName}' targets table '{FormatTableName(tableModel.Table)}', "
+                    + $"but binding metadata requires '{FormatTableName(logicalFieldGroup.Table)}'."
+            );
+        }
+
+        ValidateReferenceDerivedColumnPath(
+            logicalFieldGroup.ReferenceJsonPath,
+            tableModel,
+            columnModel,
+            argumentName
+        );
+
+        if (!logicalFieldGroup.MemberColumns.Contains(columnModel.ColumnName))
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived source '{argumentName}' targets column '{columnModel.ColumnName.Value}' on "
+                    + $"table '{FormatTableName(tableModel.Table)}', but logical field "
+                    + $"'{logicalFieldGroup.ReferenceJsonPath.Canonical}' for reference "
+                    + $"'{logicalFieldGroup.ReferenceObjectPath.Canonical}' binds columns "
+                    + $"{FormatColumnList(logicalFieldGroup.MemberColumns)}."
+            );
+        }
+    }
+
+    private static void ValidateReferenceDerivedMemberColumn(
+        DocumentReferenceFieldGroup logicalFieldGroup,
+        DbTableModel tableModel,
+        DbColumnModel memberPathColumnModel,
+        JsonPathExpression relativePath,
+        string argumentName
+    )
+    {
+        ValidateReferenceDerivedBindingColumn(
+            logicalFieldGroup,
+            tableModel,
+            memberPathColumnModel,
+            argumentName
+        );
+
+        var expectedRelativePath = WritePlanJsonPathConventions.DeriveScopeRelativePath(
+            tableModel.JsonScope,
+            logicalFieldGroup.ReferenceJsonPath
+        );
+
+        if (!string.Equals(relativePath.Canonical, expectedRelativePath.Canonical, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived member '{argumentName}' has relative path '{relativePath.Canonical}', but "
+                    + $"logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' on table "
+                    + $"'{FormatTableName(tableModel.Table)}' requires '{expectedRelativePath.Canonical}'."
+            );
+        }
+    }
+
+    private static void ValidateReferenceDerivedColumnPath(
+        JsonPathExpression referenceJsonPath,
+        DbTableModel tableModel,
+        DbColumnModel columnModel,
+        string argumentName
+    )
+    {
+        var columnPath = columnModel.SourceJsonPath?.Canonical;
+
+        if (columnPath is null)
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnModel.ColumnName.Value}' on table '{FormatTableName(tableModel.Table)}' has no "
+                    + $"source JSONPath to validate reference-derived source '{argumentName}'."
+            );
+        }
+
+        if (!string.Equals(columnPath, referenceJsonPath.Canonical, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived source '{argumentName}' targets logical field "
+                    + $"'{referenceJsonPath.Canonical}', but column '{columnModel.ColumnName.Value}' on table "
+                    + $"'{FormatTableName(tableModel.Table)}' is bound to '{columnPath}'."
+            );
+        }
+    }
+
+    private static ReferenceDerivedValueSourceDto EncodeReferenceDerivedSource(
+        ExternalPlans.ReferenceDerivedValueSourceMetadata source
+    )
+    {
+        return new ReferenceDerivedValueSourceDto(
+            BindingIndex: source.BindingIndex,
+            ReferenceObjectPath: source.ReferenceObjectPath.Canonical,
+            ReferenceJsonPath: source.ReferenceJsonPath.Canonical
+        );
+    }
+
     private static WriteValueSourceDto EncodeWriteValueSource(ExternalPlans.WriteValueSource source)
     {
         return source switch
@@ -940,6 +1194,10 @@ internal static class NormalizedPlanContractCodec
             ),
             ExternalPlans.WriteValueSource.DocumentReference documentReference =>
                 new WriteValueSourceDto.DocumentReference(documentReference.BindingIndex),
+            ExternalPlans.WriteValueSource.ReferenceDerived referenceDerived =>
+                new WriteValueSourceDto.ReferenceDerived(
+                    EncodeReferenceDerivedSource(referenceDerived.ReferenceSource)
+                ),
             ExternalPlans.WriteValueSource.DescriptorReference descriptorReference =>
                 new WriteValueSourceDto.DescriptorReference(
                     DescriptorResource: EncodeQualifiedResourceName(descriptorReference.DescriptorResource),
@@ -978,6 +1236,15 @@ internal static class NormalizedPlanContractCodec
                     PresenceColumnName: descriptorMember.PresenceColumn?.Value,
                     PresenceBindingIndex: descriptorMember.PresenceBindingIndex,
                     PresenceIsSynthetic: descriptorMember.PresenceIsSynthetic
+                ),
+            ExternalPlans.KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceDerivedMember =>
+                new KeyUnificationMemberWritePlanDto.ReferenceDerivedMember(
+                    MemberPathColumnName: referenceDerivedMember.MemberPathColumn.Value,
+                    RelativePath: referenceDerivedMember.RelativePath.Canonical,
+                    ReferenceSource: EncodeReferenceDerivedSource(referenceDerivedMember.ReferenceSource),
+                    PresenceColumnName: referenceDerivedMember.PresenceColumn?.Value,
+                    PresenceBindingIndex: referenceDerivedMember.PresenceBindingIndex,
+                    PresenceIsSynthetic: referenceDerivedMember.PresenceIsSynthetic
                 ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(member),
@@ -1417,6 +1684,11 @@ internal static class NormalizedPlanContractCodec
     private static string FormatTableName(DbTableName tableName)
     {
         return $"{tableName.Schema.Value}.{tableName.Name}";
+    }
+
+    private static string FormatColumnList(IEnumerable<DbColumnName> columns)
+    {
+        return $"[{string.Join(", ", columns.Select(static column => $"'{column.Value}'"))}]";
     }
 
     private static string FormatResourceName(QualifiedResourceName resourceName)
