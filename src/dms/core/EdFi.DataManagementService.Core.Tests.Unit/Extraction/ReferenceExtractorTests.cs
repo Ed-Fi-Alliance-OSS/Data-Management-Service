@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
 [Parallelizable]
-public class ExtractDocumentReferencesTests
+public class ReferenceExtractorTests
 {
     internal static ApiSchemaDocuments BuildApiSchemaDocuments()
     {
@@ -80,10 +80,33 @@ public class ExtractDocumentReferencesTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDescriptorValuedReferenceIdentity()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("StudentSchoolAssociation")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "GraduationPlan",
+                [
+                    new("$.educationOrganizationId", "$.graduationPlanReference.educationOrganizationId"),
+                    new(
+                        "$.graduationPlanTypeDescriptor",
+                        "$.graduationPlanReference.graduationPlanTypeDescriptor"
+                    ),
+                    new("$.graduationSchoolYear", "$.graduationPlanReference.graduationSchoolYear"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Duplicate_Reference_Json_Paths
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         private DocumentReference _documentReference = null!;
 
@@ -134,8 +157,91 @@ public class ExtractDocumentReferencesTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Descriptor_Valued_Identity_Member
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _lowercaseDocumentReference = null!;
+        private DocumentReference _mixedCaseDocumentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithDescriptorValuedReferenceIdentity();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentSchoolAssociations"
+            );
+
+            _lowercaseDocumentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/graduationplantypedescriptor#foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+
+            _mixedCaseDocumentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_normalizes_descriptor_valued_identity_members_before_building_the_document_identity()
+        {
+            _mixedCaseDocumentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    (
+                        "$.graduationPlanTypeDescriptor",
+                        "uri://ed-fi.org/graduationplantypedescriptor#foundation"
+                    ),
+                    ("$.graduationSchoolYear", "2030")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_same_referential_id_for_mixed_case_and_lowercase_descriptor_values()
+        {
+            _mixedCaseDocumentReference.ReferentialId.Should().Be(_lowercaseDocumentReference.ReferentialId);
+        }
+
+        private static DocumentReference ExtractSingleReference(
+            ResourceSchema resourceSchema,
+            string documentBody
+        )
+        {
+            var (documentReferences, _) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(documentBody)!,
+                NullLogger.Instance
+            );
+
+            return documentReferences.Should().ContainSingle().Subject;
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_One_As_Scalar_And_Another_As_Collection
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -305,7 +411,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Course_Offering_Reference_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -424,7 +530,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Only_Single_Reference_In_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -510,7 +616,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Empty_Reference_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -545,7 +651,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Class_Period_Reference_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -635,7 +741,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_An_Empty_Reference_Object_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         private ReferenceExtractionValidationException _exception = null!;
 
@@ -684,7 +790,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_A_Partial_Nested_Reference_Object_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         private ReferenceExtractionValidationException _exception = null!;
 
@@ -740,7 +846,7 @@ public class ExtractDocumentReferencesTests
     public class Given_Extracting_Document_References_With_A_Malformed_Root_Reference_Identity_Member(
         string _invalidValueJson,
         string _expectedInvalidValueDescription
-    ) : ExtractDocumentReferencesTests
+    ) : ReferenceExtractorTests
     {
         private ReferenceExtractionValidationException _exception = null!;
 
@@ -799,7 +905,7 @@ public class ExtractDocumentReferencesTests
     public class Given_Extracting_Document_References_With_A_Malformed_Nested_Reference_Identity_Member(
         string _invalidValueJson,
         string _expectedInvalidValueDescription
-    ) : ExtractDocumentReferencesTests
+    ) : ReferenceExtractorTests
     {
         private ReferenceExtractionValidationException _exception = null!;
 
@@ -856,7 +962,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_An_Empty_Reference_Object
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         private DocumentReference[] _documentReferences = [];
         private DocumentReferenceArray[] _documentReferenceArrays = [];
@@ -892,7 +998,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_A_Malformed_Nested_Reference_Member
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         private DocumentReference[] _documentReferences = [];
         private DocumentReferenceArray[] _documentReferenceArrays = [];
@@ -934,8 +1040,7 @@ public class ExtractDocumentReferencesTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Extracting_Document_References_With_No_References_In_Body
-        : ExtractDocumentReferencesTests
+    public class Given_Extracting_Document_References_With_No_References_In_Body : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];

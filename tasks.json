@@ -6,7 +6,7 @@
       "Add or update `NormalizedPlanContractCodec` and `MappingSetManifestJsonEmitter` coverage so reference-derived column bindings and key-unification members survive round-tripping, appear in normalized and manifest output, and invalid DTO or manifest mutations fail fast instead of silently collapsing back to generic scalar shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Plan Compilation",
@@ -145,7 +145,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceResolver|FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Scope Control",
