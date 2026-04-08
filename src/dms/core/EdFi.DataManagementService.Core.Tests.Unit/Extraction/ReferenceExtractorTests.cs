@@ -964,8 +964,7 @@ public class ReferenceExtractorTests
     public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_An_Empty_Reference_Object
         : ReferenceExtractorTests
     {
-        private DocumentReference[] _documentReferences = [];
-        private DocumentReferenceArray[] _documentReferenceArrays = [];
+        private InvalidOperationException _exception = null!;
 
         [SetUp]
         public void Setup()
@@ -973,25 +972,31 @@ public class ReferenceExtractorTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            (_documentReferences, _documentReferenceArrays) = resourceSchema.ExtractReferences(
-                JsonNode.Parse(
-                    """
-                    {
-                        "sectionIdentifier": "Bob",
-                        "courseOfferingReference": {}
-                    }
-                    """
-                )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.LegacyCompatibility
-            );
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {}
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.LegacyCompatibility
+                );
+
+            _exception = act.Should().Throw<InvalidOperationException>().Which;
         }
 
         [Test]
-        public void It_skips_the_incomplete_reference_instead_of_failing_validation()
+        public void It_preserves_the_pre_relational_identity_count_mismatch_failure()
         {
-            _documentReferences.Should().BeEmpty();
-            _documentReferenceArrays.Should().BeEmpty();
+            _exception
+                .Message.Should()
+                .Be(
+                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
+                );
         }
     }
 
@@ -1000,8 +1005,7 @@ public class ReferenceExtractorTests
     public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_A_Malformed_Nested_Reference_Member
         : ReferenceExtractorTests
     {
-        private DocumentReference[] _documentReferences = [];
-        private DocumentReferenceArray[] _documentReferenceArrays = [];
+        private InvalidOperationException _exception = null!;
 
         [SetUp]
         public void Setup()
@@ -1009,32 +1013,34 @@ public class ReferenceExtractorTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            (_documentReferences, _documentReferenceArrays) = resourceSchema.ExtractReferences(
-                JsonNode.Parse(
-                    """
-                    {
-                        "sectionIdentifier": "Bob",
-                        "classPeriods": [
-                            {
-                                "classPeriodReference": {
-                                    "classPeriodName": {},
-                                    "schoolId": "111"
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": {},
+                                        "schoolId": "111"
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                    """
-                )!,
-                NullLogger.Instance,
-                ReferenceExtractionMode.LegacyCompatibility
-            );
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.LegacyCompatibility
+                );
+
+            _exception = act.Should().Throw<InvalidOperationException>().Which;
         }
 
         [Test]
-        public void It_skips_the_malformed_nested_reference_instead_of_failing_validation()
+        public void It_preserves_the_pre_relational_scalar_coercion_failure()
         {
-            _documentReferences.Should().BeEmpty();
-            _documentReferenceArrays.Should().BeEmpty();
+            _exception.Message.Should().Be("Unexpected JSONPath value error");
         }
     }
 

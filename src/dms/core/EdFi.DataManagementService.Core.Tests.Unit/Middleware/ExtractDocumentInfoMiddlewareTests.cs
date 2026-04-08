@@ -413,7 +413,7 @@ public class ExtractDocumentInfoMiddlewareTests
         : ExtractDocumentInfoMiddlewareTests
     {
         private RequestInfo _requestInfo = null!;
-        private bool _nextCalled;
+        private InvalidOperationException _exception = null!;
 
         [SetUp]
         public async Task Setup()
@@ -429,29 +429,26 @@ public class ExtractDocumentInfoMiddlewareTests
 
             _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
 
-            await BuildMiddleware(useRelationalBackend: false)
-                .Execute(
-                    _requestInfo,
-                    () =>
-                    {
-                        _nextCalled = true;
-                        return Task.CompletedTask;
-                    }
+            Func<Task> act = () =>
+                BuildMiddleware(useRelationalBackend: false).Execute(_requestInfo, NullNext);
+
+            _exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        }
+
+        [Test]
+        public void It_preserves_the_pre_relational_identity_count_mismatch_exception()
+        {
+            _exception
+                .Message.Should()
+                .Be(
+                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
                 );
         }
 
         [Test]
-        public void It_continues_the_pipeline_without_creating_a_validation_response()
+        public void It_does_not_translate_the_legacy_failure_into_a_validation_response()
         {
-            _nextCalled.Should().BeTrue();
             _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_omits_the_malformed_reference_from_document_info()
-        {
-            _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
-            _requestInfo.DocumentInfo.DocumentReferenceArrays.Should().BeEmpty();
         }
     }
 
@@ -514,7 +511,7 @@ public class ExtractDocumentInfoMiddlewareTests
         : ExtractDocumentInfoMiddlewareTests
     {
         private RequestInfo _requestInfo = null!;
-        private bool _nextCalled;
+        private InvalidOperationException _exception = null!;
 
         [SetUp]
         public async Task Setup()
@@ -536,29 +533,26 @@ public class ExtractDocumentInfoMiddlewareTests
 
             _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.PUT, body);
 
-            await BuildMiddleware(useRelationalBackend: false)
-                .Execute(
-                    _requestInfo,
-                    () =>
-                    {
-                        _nextCalled = true;
-                        return Task.CompletedTask;
-                    }
+            Func<Task> act = () =>
+                BuildMiddleware(useRelationalBackend: false).Execute(_requestInfo, NullNext);
+
+            _exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+        }
+
+        [Test]
+        public void It_preserves_the_pre_relational_identity_count_mismatch_exception()
+        {
+            _exception
+                .Message.Should()
+                .Be(
+                    "Reference 'ClassPeriod' at '$.classPeriods[0].classPeriodReference': expected 2 identity elements but found 1"
                 );
         }
 
         [Test]
-        public void It_continues_the_pipeline_without_creating_a_validation_response()
+        public void It_does_not_translate_the_legacy_failure_into_a_validation_response()
         {
-            _nextCalled.Should().BeTrue();
             _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_omits_the_partial_nested_reference_from_document_info()
-        {
-            _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
-            _requestInfo.DocumentInfo.DocumentReferenceArrays.Should().BeEmpty();
         }
     }
 

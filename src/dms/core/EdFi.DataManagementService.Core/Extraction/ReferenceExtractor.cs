@@ -182,6 +182,17 @@ internal static class ReferenceExtractor
                 bool[] invalidIdentityElements = invalidIdentityElementsByReferencePath[
                     referenceOccurrence.jsonPath
                 ];
+
+                if (Array.Exists(invalidIdentityElements, static invalid => invalid))
+                {
+                    if (extractionMode == ReferenceExtractionMode.LegacyCompatibility)
+                    {
+                        throw CreateLegacyCompatibilityInvalidReferenceIdentityValueException();
+                    }
+
+                    continue;
+                }
+
                 string[] missingReferencePaths = identityElements
                     .Select((element, index) => (element, index))
                     .Where(entry =>
@@ -199,6 +210,18 @@ internal static class ReferenceExtractor
 
                 if (missingReferencePaths.Length > 0)
                 {
+                    if (extractionMode == ReferenceExtractionMode.LegacyCompatibility)
+                    {
+                        throw CreateLegacyCompatibilityMissingIdentityException(
+                            documentPath,
+                            referenceOccurrence.jsonPath,
+                            identityElements.Length,
+                            collectedIdentityElements.Count(static identityElement =>
+                                identityElement is not null
+                            )
+                        );
+                    }
+
                     if (extractionMode == ReferenceExtractionMode.RelationalWriteValidation)
                     {
                         validationFailures.Add(
@@ -208,11 +231,6 @@ internal static class ReferenceExtractor
                             )
                         );
                     }
-                    continue;
-                }
-
-                if (Array.Exists(invalidIdentityElements, static invalid => invalid))
-                {
                     continue;
                 }
 
@@ -318,5 +336,22 @@ internal static class ReferenceExtractor
         }
 
         return $"{concreteReferenceObjectPath}{wildcardReferenceMemberPath[wildcardReferenceObjectPath.Length..]}";
+    }
+
+    private static InvalidOperationException CreateLegacyCompatibilityMissingIdentityException(
+        DocumentPath documentPath,
+        string concreteReferenceObjectPath,
+        int expectedIdentityElementCount,
+        int actualIdentityElementCount
+    )
+    {
+        return new InvalidOperationException(
+            $"Reference '{documentPath.ResourceName.Value}' at '{concreteReferenceObjectPath}': expected {expectedIdentityElementCount} identity elements but found {actualIdentityElementCount}"
+        );
+    }
+
+    private static InvalidOperationException CreateLegacyCompatibilityInvalidReferenceIdentityValueException()
+    {
+        return new InvalidOperationException("Unexpected JSONPath value error");
     }
 }

@@ -190,7 +190,7 @@
       "Add one flag-on middleware test and one flag-off middleware or handler-path test for both a root reference and a nested reference so the scope boundary is explicit and protected against future regressions.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractDocumentInfoMiddleware|FullyQualifiedName~ReferenceExtractor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Compiler Validation Consolidation",
