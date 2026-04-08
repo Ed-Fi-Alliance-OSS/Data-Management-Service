@@ -25,3 +25,10 @@ Decisions: lookup set now stores resolved document-reference occurrences per bin
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/FlatteningResolvedReferenceLookupSetTests.cs; tasks.json; progress.txt
 Verification: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj
 Notes next: RelationalWriteFlattener still needs WriteValueSource.ReferenceDerived + KeyUnificationMemberWritePlan.ReferenceDerivedMember materialization wired to these lookups.
+
+DMS-985 / reference/design/backend-redesign/epics/07-relational-write-path/04-propagated-reference-identity-columns.md
+Task: Flattening. Completed reference-derived materialization in RelationalWriteFlattener for direct propagated columns and key-unification members.
+Decisions: reference-derived values are presence-gated by the compiled reference object site, not by rereading logical leaf JSON; scalar identity strings convert through the destination column scalar type while descriptor-backed members resolve via descriptor lookup ids; absent optional sites stay semantically absent so mixed-source canonical fallback still works.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
+Verification: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter "FullyQualifiedName~Given_RelationalWriteFlattener"; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj
+Notes next: remaining work shifts to PostgreSQL runtime/cascade proofs, authoritative smoke tightening, and SQL Server trigger-surface verification.

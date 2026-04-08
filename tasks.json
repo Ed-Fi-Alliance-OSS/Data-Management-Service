@@ -42,7 +42,7 @@
       "Extend `Given_RelationalWriteFlattener` tests for direct propagated bindings, unified reference-derived members, descriptor-backed reference members, and optional absent-site behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_RelationalWriteFlattener\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Persisted-Column Runtime Proof",

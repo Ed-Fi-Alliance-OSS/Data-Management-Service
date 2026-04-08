@@ -631,25 +631,29 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             member.RelativePath
         );
 
-        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
-        {
-            return KeyUnificationMemberEvaluation.Absent;
-        }
-
         return member switch
         {
             KeyUnificationMemberWritePlan.ScalarMember scalarMember => EvaluateScalarKeyUnificationMember(
                 tableWritePlan,
                 scalarMember,
                 absolutePath,
-                memberNode
+                scopeNode
             ),
             KeyUnificationMemberWritePlan.DescriptorMember descriptorMember =>
                 EvaluateDescriptorKeyUnificationMember(
                     tableWritePlan,
                     descriptorMember,
                     absolutePath,
-                    memberNode,
+                    scopeNode,
+                    resolvedReferenceLookups,
+                    ordinalPath
+                ),
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceDerivedMember =>
+                EvaluateReferenceDerivedKeyUnificationMember(
+                    tableWritePlan,
+                    referenceDerivedMember,
+                    absolutePath,
+                    scopeNode,
                     resolvedReferenceLookups,
                     ordinalPath
                 ),
@@ -663,9 +667,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan.ScalarMember member,
         string absolutePath,
-        JsonNode memberNode
+        JsonNode scopeNode
     )
     {
+        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
         if (memberNode is not JsonValue jsonValue)
         {
             throw CreateInvalidKeyUnificationScalarReadException(
@@ -691,11 +700,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan.DescriptorMember member,
         string absolutePath,
-        JsonNode memberNode,
+        JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ReadOnlySpan<int> ordinalPath
     )
     {
+        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
         if (memberNode is not JsonValue jsonValue || !jsonValue.TryGetValue<string>(out _))
         {
             throw CreateRequestShapeValidationException(
@@ -722,6 +736,42 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return KeyUnificationMemberEvaluation.Present(descriptorId.Value);
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateReferenceDerivedKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ReferenceDerivedMember member,
+        string absolutePath,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetReferenceObjectNode(
+                tableWritePlan,
+                scopeNode,
+                member.ReferenceSource,
+                out var referenceNode
+            ) || referenceNode is null
+        )
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
+        var memberPathColumn = GetRequiredColumnModel(tableWritePlan, member.MemberPathColumn);
+
+        return KeyUnificationMemberEvaluation.Present(
+            ResolveReferenceDerivedLiteralValue(
+                tableWritePlan,
+                memberPathColumn,
+                member.MemberPathColumn,
+                member.ReferenceSource,
+                absolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            )
+        );
     }
 
     private static void ValidateKeyUnificationGuardrails(
@@ -827,6 +877,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 columnBinding,
                 scalar,
                 scopeNode
+            ),
+            WriteValueSource.ReferenceDerived referenceDerived => ResolveReferenceDerivedValue(
+                tableWritePlan,
+                columnBinding,
+                referenceDerived,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
             ),
             WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
                 flatteningInput,
@@ -1017,6 +1075,44 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         return new FlattenedWriteValue.Literal(
             ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
+        );
+    }
+
+    private static FlattenedWriteValue ResolveReferenceDerivedValue(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.ReferenceDerived referenceDerived,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetReferenceObjectNode(
+                tableWritePlan,
+                scopeNode,
+                referenceDerived.ReferenceSource,
+                out var referenceNode
+            ) || referenceNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        var absolutePath =
+            columnBinding.Column.SourceJsonPath?.Canonical
+            ?? referenceDerived.ReferenceSource.ReferenceJsonPath.Canonical;
+
+        return new FlattenedWriteValue.Literal(
+            ResolveReferenceDerivedLiteralValue(
+                tableWritePlan,
+                columnBinding.Column,
+                columnBinding.Column.ColumnName,
+                referenceDerived.ReferenceSource,
+                absolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            )
         );
     }
 
@@ -1334,6 +1430,24 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return TryNavigateRelativeNode(selectedBody, scopeSegments, out scopeNode);
     }
 
+    private static bool TryGetReferenceObjectNode(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        out JsonNode? referenceNode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(scopeNode);
+        ArgumentNullException.ThrowIfNull(referenceSource);
+
+        return TryNavigateRelativeNode(
+            scopeNode,
+            GetRelativePathWithinScope(tableWritePlan, referenceSource.ReferenceObjectPath),
+            out referenceNode
+        );
+    }
+
     private static IReadOnlyList<JsonPathSegment> GetRelativePathWithinScope(
         TableWritePlan tableWritePlan,
         JsonPathExpression absolutePath
@@ -1376,6 +1490,25 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         throw new InvalidOperationException(
             $"Table '{FormatTable(tableWritePlan)}' does not have a write binding for column '{columnName.Value}'."
+        );
+    }
+
+    private static DbColumnModel GetRequiredColumnModel(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName
+    )
+    {
+        var column = tableWritePlan.TableModel.Columns.FirstOrDefault(modelColumn =>
+            modelColumn.ColumnName.Equals(columnName)
+        );
+
+        if (column is not null)
+        {
+            return column;
+        }
+
+        throw new InvalidOperationException(
+            $"Table '{FormatTable(tableWritePlan)}' does not define column '{columnName.Value}'."
         );
     }
 
@@ -1473,6 +1606,168 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             ),
             _ => throw new InvalidOperationException(
                 $"Scalar kind '{scalarType.Kind}' is not supported by the relational write flattener."
+            ),
+        };
+    }
+
+    private static object ResolveReferenceDerivedLiteralValue(
+        TableWritePlan tableWritePlan,
+        DbColumnModel column,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        string absolutePath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        return column.Kind switch
+        {
+            ColumnKind.Scalar => ResolveReferenceDerivedScalarValue(
+                tableWritePlan,
+                column,
+                columnName,
+                referenceSource,
+                absolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            ),
+            ColumnKind.DescriptorFk => ResolveReferenceDerivedDescriptorValue(
+                tableWritePlan,
+                columnName,
+                referenceSource,
+                ordinalPath,
+                resolvedReferenceLookups
+            ),
+            _ => throw new InvalidOperationException(
+                $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' cannot materialize {nameof(WriteValueSource.ReferenceDerived)} from unsupported column kind '{column.Kind}'."
+            ),
+        };
+    }
+
+    private static object ResolveReferenceDerivedScalarValue(
+        TableWritePlan tableWritePlan,
+        DbColumnModel column,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        string absolutePath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (column.ScalarType is not { } scalarType)
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' cannot materialize {nameof(WriteValueSource.ReferenceDerived)} without scalar type metadata."
+            );
+        }
+
+        var referenceIdentityValue = resolvedReferenceLookups.GetReferenceIdentityValue(
+            referenceSource,
+            ordinalPath
+        );
+
+        if (referenceIdentityValue is null)
+        {
+            throw CreateMissingReferenceDerivedLookupException(
+                tableWritePlan,
+                columnName,
+                referenceSource,
+                ordinalPath
+            );
+        }
+
+        return ConvertReferenceDerivedScalarValue(
+            referenceIdentityValue,
+            scalarType,
+            tableWritePlan,
+            columnName,
+            absolutePath
+        );
+    }
+
+    private static long ResolveReferenceDerivedDescriptorValue(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        var descriptorId = resolvedReferenceLookups.GetReferenceIdentityDescriptorId(
+            referenceSource,
+            ordinalPath
+        );
+
+        if (descriptorId is not null)
+        {
+            return descriptorId.Value;
+        }
+
+        throw CreateMissingReferenceDerivedLookupException(
+            tableWritePlan,
+            columnName,
+            referenceSource,
+            ordinalPath
+        );
+    }
+
+    private static object ConvertReferenceDerivedScalarValue(
+        string referenceIdentityValue,
+        RelationalScalarType scalarType,
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        string absolutePath
+    )
+    {
+        return scalarType.Kind switch
+        {
+            ScalarKind.String => referenceIdentityValue,
+            ScalarKind.Int32
+                when int.TryParse(
+                    referenceIdentityValue,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var int32Value
+                ) => int32Value,
+            ScalarKind.Int64
+                when long.TryParse(
+                    referenceIdentityValue,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var int64Value
+                ) => int64Value,
+            ScalarKind.Decimal
+                when decimal.TryParse(
+                    referenceIdentityValue,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var decimalValue
+                ) => decimalValue,
+            ScalarKind.Boolean when bool.TryParse(referenceIdentityValue, out var boolValue) => boolValue,
+            ScalarKind.Date
+                when DateOnly.TryParseExact(
+                    referenceIdentityValue,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var dateOnlyValue
+                ) => dateOnlyValue,
+            ScalarKind.DateTime when TryReadDateTimeValue(referenceIdentityValue, out var dateTimeValue) =>
+                dateTimeValue,
+            ScalarKind.Time
+                when TimeOnly.TryParseExact(
+                    referenceIdentityValue,
+                    TimeOnlyFormat,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var timeOnlyValue
+                ) => timeOnlyValue,
+            _ => throw CreateInvalidReferenceDerivedValueException(
+                tableWritePlan,
+                columnName,
+                absolutePath,
+                scalarType,
+                referenceIdentityValue
             ),
         };
     }
@@ -1714,6 +2009,20 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    private static InvalidOperationException CreateInvalidReferenceDerivedValueException(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        string absolutePath,
+        RelationalScalarType scalarType,
+        string referenceIdentityValue
+    )
+    {
+        return new InvalidOperationException(
+            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected resolved reference-derived scalar kind "
+                + $"'{scalarType.Kind}' at path '{absolutePath}', but value '{referenceIdentityValue}' could not be converted."
+        );
+    }
+
     private static RelationalWriteRequestValidationException CreateRequestShapeValidationException(
         string path,
         string message
@@ -1755,6 +2064,20 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 + $"'{concretePath}', but the resolved lookup set did not contain a matching "
                 + $"'{RelationalWriteSupport.FormatResource(descriptorResource)}' entry for ordinal path "
                 + $"{FormatOrdinalPath(ordinalPath)}."
+        );
+    }
+
+    private static InvalidOperationException CreateMissingReferenceDerivedLookupException(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        return new InvalidOperationException(
+            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' depended on resolved reference-derived value at path "
+                + $"'{MaterializeConcretePath(referenceSource.ReferenceJsonPath.Canonical, ordinalPath)}', but the resolved lookup set did not contain a matching occurrence for reference site "
+                + $"'{MaterializeConcretePath(referenceSource.ReferenceObjectPath.Canonical, ordinalPath)}' at ordinal path {FormatOrdinalPath(ordinalPath)}."
         );
     }
 
