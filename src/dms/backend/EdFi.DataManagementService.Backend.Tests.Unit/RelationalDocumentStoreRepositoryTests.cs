@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
+[Parallelizable]
 public class Given_RelationalDocumentStoreRepositoryTests
 {
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");

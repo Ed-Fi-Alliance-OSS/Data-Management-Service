@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -21,7 +24,11 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var services = new ServiceCollection();
 
         services.AddLogging();
+        services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
+        services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddPostgresqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);
@@ -73,5 +80,14 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication() { }
     }
 }
