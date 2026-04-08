@@ -65,6 +65,59 @@ public class ArrayUniquenessValidationMiddlewareTests
         return requestInfo;
     }
 
+    internal static async Task<(
+        RequestInfo RequestInfo,
+        bool NextCalled
+    )> CreateRequestInfoAndCaptureNextAsync(
+        ApiSchemaDocuments apiSchema,
+        string jsonBody,
+        string endpointName
+    )
+    {
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: jsonBody,
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
+        );
+
+        RequestInfo requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+        {
+            ApiSchemaDocuments = apiSchema,
+            PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new(endpointName),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
+        );
+
+        requestInfo.ParsedBody = JsonNode.Parse(jsonBody)!;
+
+        var nextCalled = false;
+
+        await Middleware()
+            .Execute(
+                requestInfo,
+                () =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        return (requestInfo, nextCalled);
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Document_With_No_Array_Uniqueness_Constraints
@@ -1065,5 +1118,64 @@ public class ArrayUniquenessValidationMiddlewareTests
                     """
                 );
         }
+    }
+
+    [Test]
+    public async Task It_short_circuits_duplicate_extension_collection_items_before_later_pipeline_steps()
+    {
+        var apiSchema = new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Student")
+            .WithStartDocumentPathsMapping()
+            .WithEndDocumentPathsMapping()
+            .WithArrayUniquenessConstraint([
+                new
+                {
+                    nestedConstraints = new[]
+                    {
+                        new
+                        {
+                            basePath = "$.addresses[*]",
+                            paths = new[] { "$._ext.sample.services[*].serviceName" },
+                        },
+                    },
+                },
+            ])
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+
+        const string jsonBody = """
+            {
+              "studentUniqueId": "1000",
+              "addresses": [
+                {
+                  "_ext": {
+                    "sample": {
+                      "services": [
+                        {
+                          "serviceName": "Bus"
+                        },
+                        {
+                          "serviceName": "Bus"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+            """;
+
+        var (requestInfo, nextCalled) = await CreateRequestInfoAndCaptureNextAsync(
+            apiSchema,
+            jsonBody,
+            "students"
+        );
+
+        nextCalled.Should().BeFalse();
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("same identifying values");
     }
 }

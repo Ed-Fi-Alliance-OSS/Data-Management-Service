@@ -84,6 +84,60 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         return requestInfo;
     }
 
+    internal static async Task<(RequestInfo RequestInfo, bool NextCalled)> CreateContextAndCaptureNextAsync(
+        ApiSchemaDocuments apiSchema,
+        string jsonBody,
+        string endpointName,
+        RequestMethod method
+    )
+    {
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: jsonBody,
+            Form: null,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
+        );
+
+        RequestInfo requestInfo = new(frontEndRequest, method, No.ServiceProvider)
+        {
+            ApiSchemaDocuments = apiSchema,
+            PathComponents = new(
+                ProjectEndpointName: new("ed-fi"),
+                EndpointName: new(endpointName),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
+        );
+
+        requestInfo.ParsedBody = JsonNode.Parse(jsonBody)!;
+
+        await BuildResourceInfo().Execute(requestInfo, NullNext);
+        await ExtractDocument().Execute(requestInfo, NullNext);
+
+        var nextCalled = false;
+
+        await Middleware()
+            .Execute(
+                requestInfo,
+                () =>
+                {
+                    nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+        return (requestInfo, nextCalled);
+    }
+
     internal static BuildResourceInfoMiddleware BuildResourceInfo()
     {
         return new BuildResourceInfoMiddleware(NullLogger.Instance, new List<string>());
@@ -290,5 +344,45 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         {
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
+    }
+
+    [Test]
+    public async Task It_short_circuits_duplicate_reference_collection_items_before_later_pipeline_steps()
+    {
+        const string jsonBody = """
+            {
+              "schoolReference": {
+                "schoolId": 1
+              },
+              "bellScheduleName": "Test Schedule",
+              "totalInstructionalTime": 325,
+              "classPeriods": [
+                {
+                  "classPeriodReference": {
+                    "classPeriodName": "01 - Traditional",
+                    "schoolId": 1
+                  }
+                },
+                {
+                  "classPeriodReference": {
+                    "classPeriodName": "01 - Traditional",
+                    "schoolId": 1
+                  }
+                }
+              ]
+            }
+            """;
+
+        var (requestInfo, nextCalled) = await CreateContextAndCaptureNextAsync(
+            BellScheduleApiSchema(),
+            jsonBody,
+            "bellschedules",
+            RequestMethod.POST
+        );
+
+        nextCalled.Should().BeFalse();
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("same identifying values");
     }
 }
