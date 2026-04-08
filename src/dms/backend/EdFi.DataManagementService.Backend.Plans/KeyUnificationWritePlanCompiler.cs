@@ -96,6 +96,10 @@ internal static class KeyUnificationWritePlanCompiler
                     tableCompilationContext,
                     memberPathColumn
                 );
+                tableCompilationContext.ReferenceDerivedSourceByColumn.TryGetValue(
+                    memberPathColumnName,
+                    out var referenceDerivedSource
+                );
 
                 if (
                     presenceIsSynthetic
@@ -114,6 +118,7 @@ internal static class KeyUnificationWritePlanCompiler
                     keyClass.CanonicalColumn,
                     memberPathColumn,
                     relativePath,
+                    referenceDerivedSource,
                     presenceColumn,
                     presenceBindingIndex,
                     presenceIsSynthetic
@@ -400,11 +405,26 @@ internal static class KeyUnificationWritePlanCompiler
         DbColumnName canonicalColumn,
         DbColumnModel memberPathColumn,
         JsonPathExpression relativePath,
+        ReferenceDerivedValueSourceMetadata? referenceDerivedSource,
         DbColumnName? presenceColumn,
         int? presenceBindingIndex,
         bool presenceIsSynthetic
     )
     {
+        if (referenceDerivedSource is not null)
+        {
+            ValidateReferenceDerivedSourcePath(tableModel, memberPathColumn, referenceDerivedSource);
+
+            return new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                MemberPathColumn: memberPathColumn.ColumnName,
+                RelativePath: relativePath,
+                ReferenceSource: referenceDerivedSource,
+                PresenceColumn: presenceColumn,
+                PresenceBindingIndex: presenceBindingIndex,
+                PresenceIsSynthetic: presenceIsSynthetic
+            );
+        }
+
         if (memberPathColumn.Kind is ColumnKind.DescriptorFk)
         {
             if (memberPathColumn.TargetResource is not QualifiedResourceName descriptorResource)
@@ -438,6 +458,25 @@ internal static class KeyUnificationWritePlanCompiler
             PresenceColumn: presenceColumn,
             PresenceBindingIndex: presenceBindingIndex,
             PresenceIsSynthetic: presenceIsSynthetic
+        );
+    }
+
+    private static void ValidateReferenceDerivedSourcePath(
+        DbTableModel tableModel,
+        DbColumnModel memberPathColumn,
+        ReferenceDerivedValueSourceMetadata referenceDerivedSource
+    )
+    {
+        var sourcePath = memberPathColumn.SourceJsonPath?.Canonical ?? "<null>";
+
+        if (memberPathColumn.SourceJsonPath?.Canonical == referenceDerivedSource.ReferenceJsonPath.Canonical)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile key-unification plan for '{tableModel.Table}': reference-derived source mismatch for member path column '{memberPathColumn.ColumnName.Value}'. "
+                + $"DbColumnModel.SourceJsonPath '{sourcePath}' does not match ReferenceIdentityBinding.ReferenceJsonPath '{referenceDerivedSource.ReferenceJsonPath.Canonical}'."
         );
     }
 }

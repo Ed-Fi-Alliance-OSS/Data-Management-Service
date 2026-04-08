@@ -484,12 +484,21 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
 
         var bindingIndexByColumn = BuildBindingIndexByColumnMapOrThrow(tableModel, columnBindings);
+        var referenceDerivedSourceByColumn = writeSourceLookup
+            .ReferenceDerivedSourceByKey.Where(keyValuePair =>
+                keyValuePair.Key.Table.Equals(tableModel.Table)
+            )
+            .ToFrozenDictionary(
+                static keyValuePair => keyValuePair.Key.Column,
+                static keyValuePair => keyValuePair.Value
+            );
         var parameterNameByColumn = BuildParameterNameByColumnMapOrThrow(tableModel, columnBindings);
 
         return new WritePlanTableCompilationContext(
             TableModel: tableModel,
             ColumnByName: columnByName,
             BindingIndexByColumn: bindingIndexByColumn,
+            ReferenceDerivedSourceByColumn: referenceDerivedSourceByColumn,
             ParameterNameByColumn: parameterNameByColumn,
             KeyColumnNames: keyColumnNames,
             ColumnBindings: columnBindings

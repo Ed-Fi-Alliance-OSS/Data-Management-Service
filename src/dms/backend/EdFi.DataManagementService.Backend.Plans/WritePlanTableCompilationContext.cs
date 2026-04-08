@@ -12,6 +12,7 @@ internal sealed record WritePlanTableCompilationContext(
     DbTableModel TableModel,
     IReadOnlyDictionary<DbColumnName, DbColumnModel> ColumnByName,
     IReadOnlyDictionary<DbColumnName, int> BindingIndexByColumn,
+    IReadOnlyDictionary<DbColumnName, ReferenceDerivedValueSourceMetadata> ReferenceDerivedSourceByColumn,
     IReadOnlyDictionary<DbColumnName, string> ParameterNameByColumn,
     IReadOnlySet<DbColumnName> KeyColumnNames,
     IReadOnlyList<WriteColumnBinding> ColumnBindings

@@ -24,7 +24,7 @@
       "Add or update `Given_WritePlanCompiler_KeyUnification` tests for reference-derived canonical producers, one mixed-source case proving reference-derived precedence over an ordinary JSON-bound member for the same canonical column, descriptor-backed members, and one optional absent-site case.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_KeyUnification\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference Lookup",

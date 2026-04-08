@@ -133,6 +133,115 @@ public class Given_WritePlanCompiler_KeyUnification : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_compile_reference_derived_key_unification_members_for_optional_reference_sites()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+        var keyUnificationPlan = tablePlan.KeyUnificationPlans.Single();
+        var referenceDerivedMember = keyUnificationPlan
+            .MembersInOrder.Single()
+            .Should()
+            .BeOfType<KeyUnificationMemberWritePlan.ReferenceDerivedMember>()
+            .Subject;
+
+        keyUnificationPlan.CanonicalColumn.Should().Be(new DbColumnName("SchoolId_Canonical"));
+        referenceDerivedMember.MemberPathColumn.Should().Be(new DbColumnName("School_RefSchoolIdAlias"));
+        referenceDerivedMember.RelativePath.Canonical.Should().Be("$.schoolReference.schoolId");
+        referenceDerivedMember.ReferenceSource.BindingIndex.Should().Be(0);
+        referenceDerivedMember.ReferenceSource.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
+        referenceDerivedMember
+            .ReferenceSource.ReferenceJsonPath.Canonical.Should()
+            .Be("$.schoolReference.schoolId");
+        referenceDerivedMember.PresenceColumn.Should().Be(new DbColumnName("School_DocumentId"));
+        referenceDerivedMember
+            .PresenceBindingIndex.Should()
+            .Be(
+                tablePlan
+                    .ColumnBindings.Select((binding, index) => (binding, index))
+                    .Single(tuple => tuple.binding.Column.ColumnName.Value == "School_DocumentId")
+                    .index
+            );
+        referenceDerivedMember.PresenceIsSynthetic.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_preserve_reference_derived_precedence_over_ordinary_json_bound_members()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateMixedSourceModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+        var keyUnificationPlan = tablePlan.KeyUnificationPlans.Single();
+
+        keyUnificationPlan.MembersInOrder.Should().HaveCount(2);
+
+        keyUnificationPlan
+            .MembersInOrder[0]
+            .Should()
+            .BeOfType<KeyUnificationMemberWritePlan.ReferenceDerivedMember>()
+            .Which.MemberPathColumn.Should()
+            .Be(new DbColumnName("School_RefSchoolIdAlias"));
+
+        keyUnificationPlan
+            .MembersInOrder[1]
+            .Should()
+            .BeEquivalentTo(
+                new KeyUnificationMemberWritePlan.ScalarMember(
+                    MemberPathColumn: new DbColumnName("SchoolId_LocalAlias"),
+                    RelativePath: CreatePath(
+                        "$.localSchoolId",
+                        new JsonPathSegment.Property("localSchoolId")
+                    ),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_compile_descriptor_backed_reference_derived_key_unification_members()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateDescriptorBackedKeyUnificationModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+        var keyUnificationPlan = tablePlan.KeyUnificationPlans.Single();
+        var referenceDerivedMember = keyUnificationPlan
+            .MembersInOrder.Single()
+            .Should()
+            .BeOfType<KeyUnificationMemberWritePlan.ReferenceDerivedMember>()
+            .Subject;
+
+        keyUnificationPlan
+            .CanonicalBindingIndex.Should()
+            .Be(
+                tablePlan
+                    .ColumnBindings.Select((binding, index) => (binding, index))
+                    .Single(tuple =>
+                        tuple.binding.Column.ColumnName.Value == "SchoolCategoryDescriptorId_Canonical"
+                    )
+                    .index
+            );
+        referenceDerivedMember
+            .MemberPathColumn.Should()
+            .Be(new DbColumnName("SchoolCategoryDescriptorId_Alias"));
+        referenceDerivedMember
+            .RelativePath.Canonical.Should()
+            .Be("$.schoolReference.schoolCategoryDescriptor");
+        referenceDerivedMember.ReferenceSource.BindingIndex.Should().Be(0);
+        referenceDerivedMember.ReferenceSource.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
+        referenceDerivedMember
+            .ReferenceSource.ReferenceJsonPath.Canonical.Should()
+            .Be("$.schoolReference.schoolCategoryDescriptor");
+        referenceDerivedMember.PresenceColumn.Should().Be(new DbColumnName("School_DocumentId"));
+        referenceDerivedMember.PresenceIsSynthetic.Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_fail_fast_when_synthetic_presence_column_is_missing_null_or_true_constraint()
     {
         var unsupportedModel = CreateRootOnlyModelWithMissingSyntheticPresenceConstraint();
