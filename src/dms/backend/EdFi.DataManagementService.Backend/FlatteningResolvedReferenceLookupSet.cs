@@ -11,19 +11,32 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class FlatteningResolvedReferenceLookupSet
 {
-    private readonly OrdinalPathMap<long>?[] _documentIdMapsByBindingIndex;
+    private readonly DocumentReferenceBinding[] _documentReferenceBindings;
+    private readonly OrdinalPathMap<ResolvedDocumentReference>?[] _documentReferenceMapsByBindingIndex;
+    private readonly Dictionary<string, int>[] _identityBindingIndexByReferencePathByBindingIndex;
     private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> _descriptorIdMapsByKey;
+    private readonly Dictionary<string, QualifiedResourceName> _descriptorResourceByPath;
 
     private FlatteningResolvedReferenceLookupSet(
-        OrdinalPathMap<long>?[] documentIdMapsByBindingIndex,
-        Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey
+        DocumentReferenceBinding[] documentReferenceBindings,
+        OrdinalPathMap<ResolvedDocumentReference>?[] documentReferenceMapsByBindingIndex,
+        Dictionary<string, int>[] identityBindingIndexByReferencePathByBindingIndex,
+        Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey,
+        Dictionary<string, QualifiedResourceName> descriptorResourceByPath
     )
     {
-        _documentIdMapsByBindingIndex =
-            documentIdMapsByBindingIndex
-            ?? throw new ArgumentNullException(nameof(documentIdMapsByBindingIndex));
+        _documentReferenceBindings =
+            documentReferenceBindings ?? throw new ArgumentNullException(nameof(documentReferenceBindings));
+        _documentReferenceMapsByBindingIndex =
+            documentReferenceMapsByBindingIndex
+            ?? throw new ArgumentNullException(nameof(documentReferenceMapsByBindingIndex));
+        _identityBindingIndexByReferencePathByBindingIndex =
+            identityBindingIndexByReferencePathByBindingIndex
+            ?? throw new ArgumentNullException(nameof(identityBindingIndexByReferencePathByBindingIndex));
         _descriptorIdMapsByKey =
             descriptorIdMapsByKey ?? throw new ArgumentNullException(nameof(descriptorIdMapsByKey));
+        _descriptorResourceByPath =
+            descriptorResourceByPath ?? throw new ArgumentNullException(nameof(descriptorResourceByPath));
     }
 
     public static FlatteningResolvedReferenceLookupSet Create(
@@ -34,17 +47,16 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         ArgumentNullException.ThrowIfNull(writePlan);
         ArgumentNullException.ThrowIfNull(resolvedReferences);
 
-        var documentBindingIndexByPath = writePlan
-            .Model.DocumentReferenceBindings.Select(
-                (binding, index) => new { binding.ReferenceObjectPath, index }
-            )
+        var documentReferenceBindings = writePlan.Model.DocumentReferenceBindings.ToArray();
+        var documentBindingIndexByPath = documentReferenceBindings
+            .Select((binding, index) => new { binding.ReferenceObjectPath, index })
             .ToDictionary(
                 entry => entry.ReferenceObjectPath.Canonical,
                 entry => entry.index,
                 StringComparer.Ordinal
             );
-        var documentIdMapsByBindingIndex = new OrdinalPathMap<long>?[
-            writePlan.Model.DocumentReferenceBindings.Count
+        var documentReferenceMapsByBindingIndex = new OrdinalPathMap<ResolvedDocumentReference>?[
+            documentReferenceBindings.Length
         ];
 
         foreach (var entry in resolvedReferences.SuccessfulDocumentReferencesByPath)
@@ -58,8 +70,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 );
             }
 
-            var ordinalPathMap = documentIdMapsByBindingIndex[bindingIndex] ??= new OrdinalPathMap<long>();
-            ordinalPathMap.Add(parsedPath.OrdinalPath, entry.Value.DocumentId);
+            var ordinalPathMap = documentReferenceMapsByBindingIndex[bindingIndex] ??=
+                new OrdinalPathMap<ResolvedDocumentReference>();
+            ordinalPathMap.Add(parsedPath.OrdinalPath, entry.Value);
         }
 
         var descriptorLookupKeys = GetDescriptorLookupKeys(writePlan);
@@ -91,27 +104,77 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             ordinalPathMap.Add(parsedPath.OrdinalPath, entry.Value.DocumentId);
         }
 
-        return new(documentIdMapsByBindingIndex, descriptorIdMapsByKey);
+        return new(
+            documentReferenceBindings,
+            documentReferenceMapsByBindingIndex,
+            BuildIdentityBindingIndexByReferencePathByBindingIndex(documentReferenceBindings),
+            descriptorIdMapsByKey,
+            BuildDescriptorResourceByPath(writePlan)
+        );
     }
 
     public long? GetDocumentId(int bindingIndex, ReadOnlySpan<int> ordinalPath)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(bindingIndex);
+        return GetResolvedDocumentReference(bindingIndex, ordinalPath)?.DocumentId;
+    }
 
-        if (bindingIndex >= _documentIdMapsByBindingIndex.Length)
+    public string? GetReferenceIdentityValue(
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentNullException.ThrowIfNull(referenceSource);
+
+        return GetResolvedIdentityElement(
+            referenceSource,
+            ordinalPath,
+            expectedDescriptorIdentity: false
+        )?.IdentityValue;
+    }
+
+    public long? GetReferenceIdentityDescriptorId(
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentNullException.ThrowIfNull(referenceSource);
+
+        if (
+            GetResolvedIdentityElement(referenceSource, ordinalPath, expectedDescriptorIdentity: true) is null
+        )
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(bindingIndex),
-                bindingIndex,
-                "Document-reference binding index is out of range."
+            return null;
+        }
+
+        if (
+            !_descriptorResourceByPath.TryGetValue(
+                referenceSource.ReferenceJsonPath.Canonical,
+                out var descriptorResource
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference-derived logical member '{referenceSource.ReferenceJsonPath.Canonical}' on binding "
+                    + $"'{referenceSource.ReferenceObjectPath.Canonical}' does not match any compiled descriptor path."
             );
         }
 
-        var ordinalPathMap = _documentIdMapsByBindingIndex[bindingIndex];
+        var descriptorId = GetDescriptorId(
+            descriptorResource,
+            referenceSource.ReferenceJsonPath.Canonical,
+            ordinalPath
+        );
 
-        return ordinalPathMap is not null && ordinalPathMap.TryGet(ordinalPath, out var documentId)
-            ? documentId
-            : null;
+        if (descriptorId is not null)
+        {
+            return descriptorId.Value;
+        }
+
+        throw new InvalidOperationException(
+            $"Reference-derived logical member '{referenceSource.ReferenceJsonPath.Canonical}' on binding "
+                + $"'{referenceSource.ReferenceObjectPath.Canonical}' expected a resolved descriptor id at concrete path "
+                + $"'{MaterializeConcretePath(referenceSource.ReferenceJsonPath.Canonical, ordinalPath)}', but the descriptor lookup set did not contain one."
+        );
     }
 
     public long? GetDescriptorId(
@@ -151,6 +214,16 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     {
         HashSet<DescriptorLookupKey> descriptorLookupKeys = [];
 
+        foreach (var descriptorEdgeSource in writePlan.Model.DescriptorEdgeSources)
+        {
+            descriptorLookupKeys.Add(
+                new DescriptorLookupKey(
+                    descriptorEdgeSource.DescriptorResource,
+                    descriptorEdgeSource.DescriptorValuePath.Canonical
+                )
+            );
+        }
+
         foreach (var tableWritePlan in writePlan.TablePlansInDependencyOrder)
         {
             foreach (var columnBinding in tableWritePlan.ColumnBindings)
@@ -185,6 +258,181 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         return descriptorLookupKeys;
+    }
+
+    private ResolvedDocumentReference? GetResolvedDocumentReference(
+        int bindingIndex,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bindingIndex);
+
+        if (bindingIndex >= _documentReferenceMapsByBindingIndex.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bindingIndex),
+                bindingIndex,
+                "Document-reference binding index is out of range."
+            );
+        }
+
+        var ordinalPathMap = _documentReferenceMapsByBindingIndex[bindingIndex];
+
+        return ordinalPathMap is not null && ordinalPathMap.TryGet(ordinalPath, out var resolvedReference)
+            ? resolvedReference
+            : null;
+    }
+
+    private DocumentIdentityElement? GetResolvedIdentityElement(
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath,
+        bool expectedDescriptorIdentity
+    )
+    {
+        var binding = GetDocumentReferenceBinding(referenceSource.BindingIndex);
+        var resolvedReference = GetResolvedDocumentReference(referenceSource.BindingIndex, ordinalPath);
+
+        if (resolvedReference is null)
+        {
+            return null;
+        }
+
+        var identityBindingIndex = GetIdentityBindingIndexOrThrow(referenceSource);
+        var identityElements = resolvedReference.Reference.DocumentIdentity.DocumentIdentityElements;
+
+        if (identityElements.Length != binding.IdentityBindings.Count)
+        {
+            throw new InvalidOperationException(
+                $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
+                    + $"'{binding.ReferenceObjectPath.Canonical}' carried {identityElements.Length} identity value(s), "
+                    + $"but compiled metadata expects {binding.IdentityBindings.Count}."
+            );
+        }
+
+        var identityElement = identityElements[identityBindingIndex];
+        var isDescriptorIdentity =
+            identityElement.IdentityJsonPath == DocumentIdentity.DescriptorIdentityJsonPath;
+
+        if (isDescriptorIdentity == expectedDescriptorIdentity)
+        {
+            return identityElement;
+        }
+
+        var expectedKind = expectedDescriptorIdentity ? "descriptor" : "scalar";
+        var actualKind = isDescriptorIdentity ? "descriptor" : "scalar";
+
+        throw new InvalidOperationException(
+            $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
+                + $"'{binding.ReferenceObjectPath.Canonical}' had {actualKind} identity metadata at ordered position "
+                + $"{identityBindingIndex}, but compiled logical member '{referenceSource.ReferenceJsonPath.Canonical}' "
+                + $"requires {expectedKind} identity metadata."
+        );
+    }
+
+    private DocumentReferenceBinding GetDocumentReferenceBinding(int bindingIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bindingIndex);
+
+        if (bindingIndex >= _documentReferenceBindings.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bindingIndex),
+                bindingIndex,
+                "Document-reference binding index is out of range."
+            );
+        }
+
+        return _documentReferenceBindings[bindingIndex];
+    }
+
+    private int GetIdentityBindingIndexOrThrow(ReferenceDerivedValueSourceMetadata referenceSource)
+    {
+        var identityBindingIndexByReferencePath = _identityBindingIndexByReferencePathByBindingIndex[
+            referenceSource.BindingIndex
+        ];
+
+        if (
+            identityBindingIndexByReferencePath.TryGetValue(
+                referenceSource.ReferenceJsonPath.Canonical,
+                out var identityBindingIndex
+            )
+        )
+        {
+            return identityBindingIndex;
+        }
+
+        throw new InvalidOperationException(
+            $"Reference-derived logical member '{referenceSource.ReferenceJsonPath.Canonical}' does not match any compiled identity binding "
+                + $"for reference binding '{referenceSource.ReferenceObjectPath.Canonical}'."
+        );
+    }
+
+    private static Dictionary<string, int>[] BuildIdentityBindingIndexByReferencePathByBindingIndex(
+        IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings
+    )
+    {
+        var identityBindingIndexByReferencePathByBindingIndex = new Dictionary<string, int>[
+            documentReferenceBindings.Count
+        ];
+
+        for (var bindingIndex = 0; bindingIndex < documentReferenceBindings.Count; bindingIndex++)
+        {
+            Dictionary<string, int> identityBindingIndexByReferencePath = new(StringComparer.Ordinal);
+            var binding = documentReferenceBindings[bindingIndex];
+
+            for (
+                var identityBindingIndex = 0;
+                identityBindingIndex < binding.IdentityBindings.Count;
+                identityBindingIndex++
+            )
+            {
+                identityBindingIndexByReferencePath.TryAdd(
+                    binding.IdentityBindings[identityBindingIndex].ReferenceJsonPath.Canonical,
+                    identityBindingIndex
+                );
+            }
+
+            identityBindingIndexByReferencePathByBindingIndex[bindingIndex] =
+                identityBindingIndexByReferencePath;
+        }
+
+        return identityBindingIndexByReferencePathByBindingIndex;
+    }
+
+    private static Dictionary<string, QualifiedResourceName> BuildDescriptorResourceByPath(
+        ResourceWritePlan writePlan
+    )
+    {
+        Dictionary<string, QualifiedResourceName> descriptorResourceByPath = new(StringComparer.Ordinal);
+
+        foreach (var descriptorEdgeSource in writePlan.Model.DescriptorEdgeSources)
+        {
+            if (
+                descriptorResourceByPath.TryGetValue(
+                    descriptorEdgeSource.DescriptorValuePath.Canonical,
+                    out var existingResource
+                )
+            )
+            {
+                if (!existingResource.Equals(descriptorEdgeSource.DescriptorResource))
+                {
+                    throw new InvalidOperationException(
+                        $"Descriptor path '{descriptorEdgeSource.DescriptorValuePath.Canonical}' was compiled for multiple descriptor resources: "
+                            + $"'{RelationalWriteSupport.FormatResource(existingResource)}' and "
+                            + $"'{RelationalWriteSupport.FormatResource(descriptorEdgeSource.DescriptorResource)}'."
+                    );
+                }
+
+                continue;
+            }
+
+            descriptorResourceByPath.Add(
+                descriptorEdgeSource.DescriptorValuePath.Canonical,
+                descriptorEdgeSource.DescriptorResource
+            );
+        }
+
+        return descriptorResourceByPath;
     }
 
     private static string GetDescriptorLookupPath(
@@ -224,6 +472,50 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         QualifiedResourceName DescriptorResource,
         string WildcardPath
     );
+
+    private static string MaterializeConcretePath(string wildcardPath, ReadOnlySpan<int> ordinalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardPath);
+
+        System.Text.StringBuilder concretePath = new(wildcardPath.Length + ordinalPath.Length * 3);
+        var ordinalIndex = 0;
+        var pathIndex = 0;
+
+        while (pathIndex < wildcardPath.Length)
+        {
+            if (
+                pathIndex <= wildcardPath.Length - 3
+                && wildcardPath[pathIndex] == '['
+                && wildcardPath[pathIndex + 1] == '*'
+                && wildcardPath[pathIndex + 2] == ']'
+            )
+            {
+                if (ordinalIndex >= ordinalPath.Length)
+                {
+                    throw new InvalidOperationException(
+                        $"Path '{wildcardPath}' requires more ordinal components than were supplied."
+                    );
+                }
+
+                concretePath.Append('[').Append(ordinalPath[ordinalIndex]).Append(']');
+                ordinalIndex++;
+                pathIndex += 3;
+                continue;
+            }
+
+            concretePath.Append(wildcardPath[pathIndex]);
+            pathIndex++;
+        }
+
+        if (ordinalIndex != ordinalPath.Length)
+        {
+            throw new InvalidOperationException(
+                $"Path '{wildcardPath}' received {ordinalPath.Length} ordinal components, but only {ordinalIndex} wildcards were available."
+            );
+        }
+
+        return concretePath.ToString();
+    }
 
     private sealed class OrdinalPathMap<TValue>
     {
