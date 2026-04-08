@@ -60,7 +60,7 @@
       "Add a focused PostgreSQL integration fixture or test class that seeds a referrer through the write path, then verifies all-or-none storage and a subsequent referenced-identity cascade on the populated propagated columns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity_Cascade\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative PostgreSQL Verification",

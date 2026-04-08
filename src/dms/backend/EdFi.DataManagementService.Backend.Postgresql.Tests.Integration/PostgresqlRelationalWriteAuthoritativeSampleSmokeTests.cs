@@ -401,6 +401,21 @@ internal sealed record AuthoritativeSampleWritePersistedState(
     IReadOnlyList<AuthoritativeSampleWriteAssociationTermRow> Terms
 );
 
+internal sealed record PropagatedReferenceIdentityCascadeSeedData(
+    long SchoolDocumentId,
+    long StudentDocumentId
+);
+
+internal sealed record PropagatedReferenceIdentityCascadePersistedState(
+    AuthoritativeSampleWriteDocumentRow Document,
+    AuthoritativeSampleWriteAssociationRow Association
+);
+
+internal sealed record PropagatedReferenceIdentityCascadeReferenceShape(
+    int EducationOrganizationReferenceNonNullCount,
+    int StudentReferenceNonNullCount
+);
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
@@ -1494,5 +1509,448 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(row, "TermDescriptor_DescriptorId")
             ))
             .ToArray();
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture
+{
+    private const long EducationOrganizationId = 100;
+    private const long UpdatedEducationOrganizationId = 101;
+    private const string StudentUniqueId = "10001";
+
+    private const string CreateRequestBodyJson = """
+        {
+          "educationOrganizationReference": {
+            "educationOrganizationId": 100
+          },
+          "studentReference": {
+            "studentUniqueId": "10001"
+          },
+          "hispanicLatinoEthnicity": true
+        }
+        """;
+
+    private static readonly DocumentUuid AssociationDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000011")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ResourceInfo _resourceInfo = null!;
+    private ResourceSchema _baseResourceSchema = null!;
+    private ResourceSchema _extensionResourceSchema = null!;
+    private PropagatedReferenceIdentityCascadeSeedData _seedData = null!;
+    private UpsertResult _createResult = null!;
+    private PropagatedReferenceIdentityCascadePersistedState _stateAfterCreate = null!;
+    private PropagatedReferenceIdentityCascadeReferenceShape _shapeAfterCreate = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            AuthoritativeSampleWriteIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = AuthoritativeSampleWriteIntegrationTestSupport.CreateServiceProvider();
+
+        var (baseProjectSchema, baseResourceSchema) =
+            AuthoritativeSampleWriteIntegrationTestSupport.GetResourceSchema(
+                _fixture.EffectiveSchemaSet,
+                "ed-fi",
+                "StudentEducationOrganizationAssociation"
+            );
+        var (_, extensionResourceSchema) = AuthoritativeSampleWriteIntegrationTestSupport.GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "sample",
+            "StudentEducationOrganizationAssociation"
+        );
+
+        _resourceInfo = AuthoritativeSampleWriteIntegrationTestSupport.CreateResourceInfo(
+            baseProjectSchema,
+            baseResourceSchema
+        );
+        _baseResourceSchema = baseResourceSchema;
+        _extensionResourceSchema = extensionResourceSchema;
+        _seedData = await SeedReferenceDataAsync();
+
+        _createResult = await ExecuteCreateAsync();
+
+        if (_createResult is UpsertResult.UpsertFailureReference createReferenceFailure)
+        {
+            Assert.Fail(
+                $"Create reference failure: {AuthoritativeSampleWriteIntegrationTestSupport.FormatReferenceFailure(createReferenceFailure)}"
+            );
+        }
+
+        _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _stateAfterCreate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
+        _shapeAfterCreate = await ReadReferenceShapeAsync(_stateAfterCreate.Document.DocumentId);
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_should_store_runtime_written_reference_identity_columns_in_all_or_none_shape()
+    {
+        _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _stateAfterCreate.Document.DocumentUuid.Should().Be(AssociationDocumentUuid.Value);
+        _stateAfterCreate
+            .Document.ResourceKeyId.Should()
+            .Be(
+                _mappingSet.ResourceKeyIdByResource[
+                    new QualifiedResourceName("Ed-Fi", "StudentEducationOrganizationAssociation")
+                ]
+            );
+        _stateAfterCreate
+            .Association.Should()
+            .Be(
+                new AuthoritativeSampleWriteAssociationRow(
+                    _stateAfterCreate.Document.DocumentId,
+                    _seedData.SchoolDocumentId,
+                    EducationOrganizationId,
+                    _seedData.StudentDocumentId,
+                    StudentUniqueId,
+                    true
+                )
+            );
+        _shapeAfterCreate.Should().Be(new PropagatedReferenceIdentityCascadeReferenceShape(2, 2));
+    }
+
+    [Test]
+    public async Task It_should_cascade_abstract_reference_identity_updates_into_runtime_written_reference_columns()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "SchoolId" = @schoolId
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("schoolId", UpdatedEducationOrganizationId),
+            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+        );
+
+        var stateAfterCascade = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
+        var shapeAfterCascade = await ReadReferenceShapeAsync(stateAfterCascade.Document.DocumentId);
+
+        stateAfterCascade
+            .Association.Should()
+            .Be(
+                _stateAfterCreate.Association with
+                {
+                    EducationOrganizationId = UpdatedEducationOrganizationId,
+                }
+            );
+        shapeAfterCascade.Should().Be(_shapeAfterCreate);
+    }
+
+    private async Task<UpsertResult> ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var requestBody = JsonNode.Parse(CreateRequestBodyJson)!;
+        var request = new UpsertRequest(
+            ResourceInfo: _resourceInfo,
+            DocumentInfo: AuthoritativeSampleWriteIntegrationTestSupport.CreateDocumentInfo(
+                requestBody,
+                _resourceInfo,
+                _baseResourceSchema,
+                _extensionResourceSchema,
+                0
+            ),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId("pg-propagated-reference-identity-cascade-create"),
+            DocumentUuid: AssociationDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new AuthoritativeSampleWriteNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpsertDocument(request);
+    }
+
+    private void SetSelectedInstance(IServiceProvider serviceProvider)
+    {
+        serviceProvider
+            .GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWritePropagatedReferenceIdentityCascade",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+    }
+
+    private async Task<PropagatedReferenceIdentityCascadeSeedData> SeedReferenceDataAsync()
+    {
+        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "EducationOrganization"
+        );
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
+
+        var schoolDocumentId = await InsertDocumentAsync(
+            Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaab"),
+            schoolResourceKeyId
+        );
+        await InsertSchoolAsync(schoolDocumentId, EducationOrganizationId, "Alpha Academy");
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(
+                ("Ed-Fi", "School", false),
+                ("$.schoolId", EducationOrganizationId.ToString(CultureInfo.InvariantCulture))
+            ),
+            schoolDocumentId,
+            schoolResourceKeyId
+        );
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(
+                ("Ed-Fi", "EducationOrganization", false),
+                ("$.educationOrganizationId", EducationOrganizationId.ToString(CultureInfo.InvariantCulture))
+            ),
+            schoolDocumentId,
+            educationOrganizationResourceKeyId
+        );
+
+        var studentDocumentId = await InsertDocumentAsync(
+            Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbc"),
+            studentResourceKeyId
+        );
+        await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Casey", "Cole");
+        await InsertReferentialIdentityAsync(
+            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", StudentUniqueId)),
+            studentDocumentId,
+            studentResourceKeyId
+        );
+
+        return new(schoolDocumentId, studentDocumentId);
+    }
+
+    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
+    {
+        return await _database.ExecuteScalarAsync<short>(
+            """
+            SELECT "ResourceKeyId"
+            FROM "dms"."ResourceKey"
+            WHERE "ProjectName" = @projectName
+              AND "ResourceName" = @resourceName;
+            """,
+            new NpgsqlParameter("projectName", projectName),
+            new NpgsqlParameter("resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
+            VALUES (@documentUuid, @resourceKeyId)
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."School" ("DocumentId", "NameOfInstitution", "SchoolId")
+            VALUES (@documentId, @nameOfInstitution, @schoolId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
+            new NpgsqlParameter("schoolId", schoolId)
+        );
+    }
+
+    private async Task InsertStudentAsync(
+        long documentId,
+        string studentUniqueId,
+        string firstName,
+        string lastSurname
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Student" ("DocumentId", "BirthDate", "FirstName", "LastSurname", "StudentUniqueId")
+            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("birthDate", new DateOnly(2010, 1, 1)),
+            new NpgsqlParameter("firstName", firstName),
+            new NpgsqlParameter("lastSurname", lastSurname),
+            new NpgsqlParameter("studentUniqueId", studentUniqueId)
+        );
+    }
+
+    private async Task InsertReferentialIdentityAsync(
+        ReferentialId referentialId,
+        long documentId,
+        short resourceKeyId
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+            VALUES (@referentialId, @documentId, @resourceKeyId)
+            ON CONFLICT ("ReferentialId") DO NOTHING;
+            """,
+            new NpgsqlParameter("referentialId", referentialId.Value),
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private static ReferentialId CreateReferentialId(
+        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
+        params (string IdentityJsonPath, string IdentityValue)[] identityElements
+    )
+    {
+        return ReferentialIdCalculator.ReferentialIdFrom(
+            new BaseResourceInfo(
+                new ProjectName(targetResource.ProjectName),
+                new ResourceName(targetResource.ResourceName),
+                targetResource.IsDescriptor
+            ),
+            new DocumentIdentity([
+                .. identityElements.Select(identityElement => new DocumentIdentityElement(
+                    new JsonPath(identityElement.IdentityJsonPath),
+                    identityElement.IdentityValue
+                )),
+            ])
+        );
+    }
+
+    private async Task<PropagatedReferenceIdentityCascadePersistedState> ReadPersistedStateAsync(
+        Guid documentUuid
+    )
+    {
+        var document = await ReadDocumentAsync(documentUuid);
+
+        return new(Document: document, Association: await ReadAssociationAsync(document.DocumentId));
+    }
+
+    private async Task<AuthoritativeSampleWriteDocumentRow> ReadDocumentAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? new AuthoritativeSampleWriteDocumentRow(
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<AuthoritativeSampleWriteAssociationRow> ReadAssociationAsync(long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                "DocumentId",
+                "EducationOrganization_DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "Student_DocumentId",
+                "Student_StudentUniqueId",
+                "HispanicLatinoEthnicity"
+            FROM "edfi"."StudentEducationOrganizationAssociation"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new AuthoritativeSampleWriteAssociationRow(
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "EducationOrganization_DocumentId"
+                ),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(
+                    rows[0],
+                    "EducationOrganization_EducationOrganizationId"
+                ),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetBoolean(rows[0], "HispanicLatinoEthnicity")
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one association row for document id '{documentId}', but found {rows.Count}."
+            );
+    }
+
+    private async Task<PropagatedReferenceIdentityCascadeReferenceShape> ReadReferenceShapeAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                num_nonnulls(
+                    "EducationOrganization_DocumentId",
+                    "EducationOrganization_EducationOrganizationId"
+                ) AS "EducationOrganizationReferenceNonNullCount",
+                num_nonnulls("Student_DocumentId", "Student_StudentUniqueId") AS "StudentReferenceNonNullCount"
+            FROM "edfi"."StudentEducationOrganizationAssociation"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
+        return rows.Count == 1
+            ? new PropagatedReferenceIdentityCascadeReferenceShape(
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt32(
+                    rows[0],
+                    "EducationOrganizationReferenceNonNullCount"
+                ),
+                AuthoritativeSampleWriteIntegrationTestSupport.GetInt32(
+                    rows[0],
+                    "StudentReferenceNonNullCount"
+                )
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one association shape row for document id '{documentId}', but found {rows.Count}."
+            );
     }
 }
