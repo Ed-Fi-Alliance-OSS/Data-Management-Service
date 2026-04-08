@@ -310,8 +310,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         var identityElement = identityElements[identityBindingIndex];
-        var isDescriptorIdentity =
-            identityElement.IdentityJsonPath == DocumentIdentity.DescriptorIdentityJsonPath;
+        var isDescriptorIdentity = IsDescriptorIdentity(identityElement);
 
         if (isDescriptorIdentity == expectedDescriptorIdentity)
         {
@@ -327,6 +326,21 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 + $"{identityBindingIndex}, but compiled logical member '{referenceSource.ReferenceJsonPath.Canonical}' "
                 + $"requires {expectedKind} identity metadata."
         );
+    }
+
+    private static bool IsDescriptorIdentity(DocumentIdentityElement identityElement)
+    {
+        ArgumentNullException.ThrowIfNull(identityElement);
+
+        if (identityElement.IdentityJsonPath == DocumentIdentity.DescriptorIdentityJsonPath)
+        {
+            return true;
+        }
+
+        var canonicalPath = identityElement.IdentityJsonPath.Value;
+
+        return canonicalPath.EndsWith("Descriptor", StringComparison.Ordinal)
+            || canonicalPath.EndsWith("Descriptor]", StringComparison.Ordinal);
     }
 
     private DocumentReferenceBinding GetDocumentReferenceBinding(int bindingIndex)

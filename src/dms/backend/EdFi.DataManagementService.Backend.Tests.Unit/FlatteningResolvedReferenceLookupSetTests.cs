@@ -226,6 +226,18 @@ public class Given_FlatteningResolvedReferenceLookupSet
     }
 
     [Test]
+    public void It_accepts_descriptor_backed_reference_identity_values_using_target_identity_paths()
+    {
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            CreateResolvedReferenceSetWithTargetDescriptorIdentityPaths()
+        );
+
+        lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [0]).Should().Be(501L);
+        lookupSet.GetReferenceIdentityDescriptorId(CreateReferenceDerivedSource(1, 1), [1]).Should().Be(502L);
+    }
+
+    [Test]
     public void It_returns_descriptor_fks_from_resolved_concrete_paths_without_json_re_reads()
     {
         _sut.GetDescriptorId(_sectionPlan, _sectionDescriptorReference, [0]).Should().Be(401L);
@@ -413,6 +425,55 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         _schoolTypeDescriptorResourceInfo,
                         "$.sections[0].schoolReference.schoolTypeDescriptor",
                         501L
+                    ),
+            },
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+    }
+
+    private static ResolvedReferenceSet CreateResolvedReferenceSetWithTargetDescriptorIdentityPaths()
+    {
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            {
+                [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.schoolReference",
+                    101L,
+                    ("$.schoolId", "255901")
+                ),
+                [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[0].schoolReference",
+                    201L,
+                    ("$.schoolId", "255901"),
+                    ("$.schoolTypeDescriptor", "501")
+                ),
+                [new JsonPath("$.sections[1].schoolReference")] = CreateResolvedDocumentReference(
+                    _schoolResourceInfo,
+                    "$.sections[1].schoolReference",
+                    202L,
+                    ("$.schoolId", "255902"),
+                    ("$.schoolTypeDescriptor", "502")
+                ),
+            },
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            {
+                [new JsonPath("$.sections[0].schoolReference.schoolTypeDescriptor")] =
+                    CreateResolvedDescriptorReference(
+                        _schoolTypeDescriptorResourceInfo,
+                        "$.sections[0].schoolReference.schoolTypeDescriptor",
+                        501L
+                    ),
+                [new JsonPath("$.sections[1].schoolReference.schoolTypeDescriptor")] =
+                    CreateResolvedDescriptorReference(
+                        _schoolTypeDescriptorResourceInfo,
+                        "$.sections[1].schoolReference.schoolTypeDescriptor",
+                        502L
                     ),
             },
             LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),

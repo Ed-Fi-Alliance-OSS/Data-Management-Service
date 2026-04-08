@@ -69,7 +69,7 @@
       "Tighten the existing authoritative PostgreSQL sample assertions only where the new reference-derived behavior is not already covered on create and changed `PUT`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server DDL And Trigger Verification",
