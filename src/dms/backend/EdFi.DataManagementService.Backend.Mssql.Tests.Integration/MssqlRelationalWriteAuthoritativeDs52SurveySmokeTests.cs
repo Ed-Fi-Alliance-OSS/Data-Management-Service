@@ -208,6 +208,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     private const string UpdatedSurveyTitle = "Student Climate Survey Updated";
     private const string FallSessionName = "Fall";
     private const string SpringSessionName = "Spring";
+    private const string UpdatedSpringSessionName = "Spring Updated";
 
     private const string CreateRequestBodyJson = """
         {
@@ -377,6 +378,24 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         _stateAfterChangedUpdate.SessionDocumentId.Should().NotBe(_stateAfterCreate.SessionDocumentId);
         _stateAfterChangedUpdate.SessionSessionName.Should().NotBe(_stateAfterCreate.SessionSessionName);
         _stateAfterChangedUpdate.SurveyTitle.Should().NotBe(_stateAfterCreate.SurveyTitle);
+    }
+
+    [Test]
+    public async Task It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback()
+    {
+        var beforeCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
+
+        beforeCascade.Should().Be(_stateAfterChangedUpdate);
+
+        await UpdateSessionNameAsync(_seedData.SpringSessionDocumentId, UpdatedSpringSessionName);
+
+        var afterCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
+
+        afterCascade
+            .Should()
+            .Be(_stateAfterChangedUpdate with { SessionSessionName = UpdatedSpringSessionName });
+        afterCascade.SessionSessionName.Should().NotBe(beforeCascade.SessionSessionName);
+        afterCascade.SessionDocumentId.Should().Be(beforeCascade.SessionDocumentId);
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(
@@ -807,6 +826,19 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             new SqlParameter("@referentialId", referentialId.Value),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private async Task UpdateSessionNameAsync(long documentId, string sessionName)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Session]
+            SET [SessionName] = @sessionName
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@sessionName", sessionName),
+            new SqlParameter("@documentId", documentId)
         );
     }
 

@@ -166,6 +166,6 @@
       "After the runtime write, update the referenced identity and assert the referrer row's propagated identity columns change through SQL Server's trigger-based propagation fallback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity|FullyQualifiedName~Relational_Write\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
