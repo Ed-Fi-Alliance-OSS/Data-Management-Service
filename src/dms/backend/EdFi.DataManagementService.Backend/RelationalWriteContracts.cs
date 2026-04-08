@@ -469,7 +469,8 @@ public sealed record RelationalWriteExecutorRequest
         bool allowIdentityUpdates,
         TraceId traceId,
         ReferenceResolverRequest referenceResolutionRequest,
-        RelationalWriteTargetContext targetContext
+        RelationalWriteTargetContext targetContext,
+        BackendProfileWriteContext? profileWriteContext = null
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -535,6 +536,8 @@ public sealed record RelationalWriteExecutorRequest
                 nameof(referenceResolutionRequest)
             );
         }
+
+        ProfileWriteContext = profileWriteContext;
     }
 
     /// <summary>
@@ -586,6 +589,13 @@ public sealed record RelationalWriteExecutorRequest
     /// Reference-resolution inputs the executor must resolve inside the shared write session.
     /// </summary>
     public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
+
+    /// <summary>
+    /// Optional profile write context when a writable profile applies.
+    /// Null when no profile applies. Downstream stages use this to decide
+    /// whether to run the no-profile merge/persist path or fence for DMS-1124.
+    /// </summary>
+    public BackendProfileWriteContext? ProfileWriteContext { get; init; }
 }
 
 /// <summary>

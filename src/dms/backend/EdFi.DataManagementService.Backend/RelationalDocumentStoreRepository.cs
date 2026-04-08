@@ -20,9 +20,6 @@ public sealed class RelationalDocumentStoreRepository(
     IDescriptorWriteHandler descriptorWriteHandler
 ) : IDocumentStoreRepository, IQueryHandler
 {
-    private const string ProfileAwareRelationalWritesPendingMessage =
-        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
-
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IRelationalWriteExecutor _writeExecutor =
@@ -47,13 +44,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpsertRequest.TraceId.Value
         );
 
-        if (relationalUpsertRequest.BackendProfileWriteContext is not null)
-        {
-            return Task.FromResult<UpsertResult>(
-                new UpsertResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
-            );
-        }
-
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpsertRequest.ResourceInfo);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -70,8 +60,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
+        var selectedBody =
+            profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
+
         return ExecuteWriteGuardRails<UpsertResult>(
-            requestBody: relationalUpsertRequest.EdfiDoc,
+            requestBody: selectedBody,
             traceId: relationalUpsertRequest.TraceId,
             mappingSet,
             relationalUpsertRequest.ResourceInfo,
@@ -93,7 +87,8 @@ public sealed class RelationalDocumentStoreRepository(
                     _ => throw new InvalidOperationException(
                         $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
                     ),
-                }
+                },
+            profileWriteContext
         );
     }
 
@@ -128,13 +123,6 @@ public sealed class RelationalDocumentStoreRepository(
             relationalUpdateRequest.TraceId.Value
         );
 
-        if (relationalUpdateRequest.BackendProfileWriteContext is not null)
-        {
-            return Task.FromResult<UpdateResult>(
-                new UpdateResult.UnknownFailure(ProfileAwareRelationalWritesPendingMessage)
-            );
-        }
-
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalUpdateRequest.ResourceInfo);
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
@@ -151,8 +139,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
+        var selectedBody =
+            profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
+
         return ExecuteWriteGuardRails<UpdateResult>(
-            requestBody: relationalUpdateRequest.EdfiDoc,
+            requestBody: selectedBody,
             traceId: relationalUpdateRequest.TraceId,
             mappingSet,
             relationalUpdateRequest.ResourceInfo,
@@ -171,7 +163,8 @@ public sealed class RelationalDocumentStoreRepository(
                     _ => throw new InvalidOperationException(
                         $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
                     ),
-                }
+                },
+            profileWriteContext
         );
     }
 
@@ -225,7 +218,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<DocumentReference> documentReferences,
         IReadOnlyList<DescriptorReference> descriptorReferences,
         Func<string, TResult> failureFactory,
-        Func<RelationalWriteExecutorResult, TResult> executorResultProjector
+        Func<RelationalWriteExecutorResult, TResult> executorResultProjector,
+        BackendProfileWriteContext? profileWriteContext = null
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -296,7 +290,8 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
-                        targetContext: targetResolution.TargetContext!
+                        targetContext: targetResolution.TargetContext!,
+                        profileWriteContext: profileWriteContext
                     )
                 )
                 .ConfigureAwait(false);

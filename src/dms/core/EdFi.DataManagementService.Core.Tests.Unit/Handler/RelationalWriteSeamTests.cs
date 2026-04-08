@@ -30,8 +30,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class Given_Relational_Write_Seam
 {
-    private const string PendingProfileWriteMessage =
-        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
+    private const string ProfilePersistPendingMessage =
+        "Profile-aware relational merge/persist pending DMS-1124.";
 
     private RelationalWriteSeamFixture _fixture = null!;
 
@@ -138,13 +138,13 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public async Task It_maps_profiled_post_requests_to_the_temporary_fenced_500_response()
+    public async Task It_maps_profiled_post_requests_to_the_executor_level_fenced_500_response()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            writeResultFactory: _ => throw new AssertionException("Write executor should not be called."),
-            targetLookupResultFactory: _ =>
-                throw new AssertionException("Target lookup should not be called.")
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure(ProfilePersistPendingMessage)
+            )
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
@@ -160,19 +160,19 @@ public class Given_Relational_Write_Seam
         requestInfo.FrontendResponse.Body!["error"]!
             .GetValue<string>()
             .Should()
-            .Be(PendingProfileWriteMessage);
-        harness.WriteExecutor.Requests.Should().BeEmpty();
+            .Be(ProfilePersistPendingMessage);
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_maps_profiled_put_requests_to_the_temporary_fenced_500_response()
+    public async Task It_maps_profiled_put_requests_to_the_executor_level_fenced_500_response()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            writeResultFactory: _ => throw new AssertionException("Write executor should not be called."),
-            targetLookupResultFactory: _ =>
-                throw new AssertionException("Target lookup should not be called.")
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UnknownFailure(ProfilePersistPendingMessage)
+            )
         );
 
         var requestInfo = await harness.ExecuteUpdateAsync(
@@ -189,8 +189,8 @@ public class Given_Relational_Write_Seam
         requestInfo.FrontendResponse.Body!["error"]!
             .GetValue<string>()
             .Should()
-            .Be(PendingProfileWriteMessage);
-        harness.WriteExecutor.Requests.Should().BeEmpty();
+            .Be(ProfilePersistPendingMessage);
+        harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
     [TestCase(SqlDialect.Pgsql)]
