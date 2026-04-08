@@ -13,6 +13,10 @@ internal static class ReferenceDerivedWritePlanFixture
 {
     private static readonly QualifiedResourceName _defaultResource = new("Ed-Fi", "Program");
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _schoolCategoryDescriptorResource = new(
+        "Ed-Fi",
+        "SchoolCategoryDescriptor"
+    );
 
     public static RelationalResourceModel CreateModel(QualifiedResourceName? resource = null)
     {
@@ -207,6 +211,83 @@ internal static class ReferenceDerivedWritePlanFixture
                     ]
                 ),
             ]
+        );
+    }
+
+    public static RelationalResourceModel CreateDescriptorBackedModel(QualifiedResourceName? resource = null)
+    {
+        var resolvedResource = resource ?? _defaultResource;
+        var resourceNameToken = resolvedResource.ResourceName.Replace(
+            "-",
+            string.Empty,
+            StringComparison.Ordinal
+        );
+        var schoolReferencePath = Path("$.schoolReference");
+        var schoolCategoryDescriptorPath = Path("$.schoolReference.schoolCategoryDescriptor");
+        var table = new DbTableModel(
+            Table: new DbTableName(
+                new DbSchemaName("edfi"),
+                $"{resourceNameToken}DescriptorReferenceDerived"
+            ),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                ConstraintName: $"PK_{resourceNameToken}DescriptorReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolCategoryDescriptorPath,
+                    TargetResource: _schoolCategoryDescriptorResource
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: resolvedResource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: table,
+            TablesInDependencyOrder: [table],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: _schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: schoolCategoryDescriptorPath,
+                            Column: new DbColumnName("SchoolCategoryDescriptorId")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
         );
     }
 

@@ -51,9 +51,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SchoolId",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.schoolId",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.schoolId"
+                      }
                     }
                   },
                   {
@@ -61,9 +64,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SchoolYear",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.schoolYear",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.schoolYear"
+                      }
                     }
                   },
                   {
@@ -71,9 +77,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SessionName",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.sessionName",
-                      "scalar_kind": "string"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.sessionName"
+                      }
                     }
                   },
                   {
@@ -380,9 +389,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SchoolId",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.schoolId",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.schoolId"
+                      }
                     }
                   },
                   {
@@ -390,9 +402,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SchoolYear",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.schoolYear",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.schoolYear"
+                      }
                     }
                   },
                   {
@@ -400,9 +415,12 @@
                     "column_kind": "scalar",
                     "parameter_name": "sessionTerm_SessionName",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.sessionTermReference.sessionName",
-                      "scalar_kind": "string"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.sessionTermReference",
+                        "reference_json_path": "$.sessionTermReference.sessionName"
+                      }
                     }
                   },
                   {

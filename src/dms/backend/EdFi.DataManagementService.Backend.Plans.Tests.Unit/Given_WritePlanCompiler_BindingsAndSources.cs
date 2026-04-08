@@ -220,6 +220,72 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_compile_non_unified_propagated_reference_identity_columns_as_reference_derived_sources()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("School_RefSchoolYear"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.ReferenceDerived(
+                    new ReferenceDerivedValueSourceMetadata(
+                        BindingIndex: 0,
+                        ReferenceObjectPath: new JsonPathExpression(
+                            "$.schoolReference",
+                            [new JsonPathSegment.Property("schoolReference")]
+                        ),
+                        ReferenceJsonPath: new JsonPathExpression(
+                            "$.schoolReference.schoolYear",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear"),
+                            ]
+                        )
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_compile_descriptor_backed_propagated_reference_identity_columns_as_reference_derived_sources()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateDescriptorBackedModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("SchoolCategoryDescriptorId"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.ReferenceDerived(
+                    new ReferenceDerivedValueSourceMetadata(
+                        BindingIndex: 0,
+                        ReferenceObjectPath: new JsonPathExpression(
+                            "$.schoolReference",
+                            [new JsonPathSegment.Property("schoolReference")]
+                        ),
+                        ReferenceJsonPath: new JsonPathExpression(
+                            "$.schoolReference.schoolCategoryDescriptor",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolCategoryDescriptor"),
+                            ]
+                        )
+                    )
+                )
+            );
+    }
+
+    [Test]
     public void It_should_treat_document_suffixed_parent_key_parts_as_parent_key_part_sources()
     {
         var model = CreateRootOnlyModelWithDocumentSuffixedParentKeyPart();

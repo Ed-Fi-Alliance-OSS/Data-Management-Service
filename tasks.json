@@ -15,7 +15,7 @@
       "Extend `Given_WritePlanCompiler_BindingsAndSources` coverage for direct propagated reference identity columns and descriptor-backed reference identity members.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Key Unification",

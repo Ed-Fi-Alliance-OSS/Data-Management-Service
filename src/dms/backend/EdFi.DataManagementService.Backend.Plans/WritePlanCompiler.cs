@@ -33,12 +33,30 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// <param name="DocumentReferenceBindingIndexByKey">
     /// Maps a document FK column to the corresponding document-reference binding inventory index.
     /// </param>
+    /// <param name="ReferenceDerivedSourceByKey">
+    /// Maps a propagated reference-identity member column to the corresponding explicit reference-derived source
+    /// metadata.
+    /// </param>
     /// <param name="DescriptorEdgeSourceByKey">
     /// Maps a descriptor FK column to the corresponding descriptor edge source metadata.
     /// </param>
     private sealed record WriteSourceLookup(
         IReadOnlyDictionary<WriteSourceLookupKey, int> DocumentReferenceBindingIndexByKey,
+        IReadOnlyDictionary<
+            WriteSourceLookupKey,
+            ReferenceDerivedValueSourceMetadata
+        > ReferenceDerivedSourceByKey,
         IReadOnlyDictionary<WriteSourceLookupKey, DescriptorEdgeSource> DescriptorEdgeSourceByKey
+    );
+
+    /// <summary>
+    /// Flattened lookup entry for one propagated reference-identity member column.
+    /// </summary>
+    /// <param name="Key">The owning table and member column.</param>
+    /// <param name="ReferenceSource">The authoritative reference-derived metadata for the member.</param>
+    private readonly record struct ReferenceDerivedSourceLookupEntry(
+        WriteSourceLookupKey Key,
+        ReferenceDerivedValueSourceMetadata ReferenceSource
     );
 
     /// <summary>
@@ -92,12 +110,52 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 static binding => new WriteSourceLookupKey(binding.Table, binding.FkColumn),
                 static (_, index) => index
             ),
+            ReferenceDerivedSourceByKey: BuildWriteSourceLookupMap(
+                BuildReferenceDerivedSourceLookupEntries(resourceModel),
+                static entry => entry.Key,
+                static (entry, _) => entry.ReferenceSource
+            ),
             DescriptorEdgeSourceByKey: BuildWriteSourceLookupMap(
                 resourceModel.DescriptorEdgeSources,
                 static edgeSource => new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn),
                 static (edgeSource, _) => edgeSource
             )
         );
+    }
+
+    /// <summary>
+    /// Flattens the document-reference identity inventory into table/member keyed reference-derived source metadata.
+    /// </summary>
+    private static ReferenceDerivedSourceLookupEntry[] BuildReferenceDerivedSourceLookupEntries(
+        RelationalResourceModel resourceModel
+    )
+    {
+        List<ReferenceDerivedSourceLookupEntry> entries = [];
+
+        for (
+            var bindingIndex = 0;
+            bindingIndex < resourceModel.DocumentReferenceBindings.Count;
+            bindingIndex++
+        )
+        {
+            var binding = resourceModel.DocumentReferenceBindings[bindingIndex];
+
+            foreach (var identityBinding in binding.IdentityBindings)
+            {
+                entries.Add(
+                    new ReferenceDerivedSourceLookupEntry(
+                        Key: new WriteSourceLookupKey(binding.Table, identityBinding.Column),
+                        ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: bindingIndex,
+                            ReferenceObjectPath: binding.ReferenceObjectPath,
+                            ReferenceJsonPath: identityBinding.ReferenceJsonPath
+                        )
+                    )
+                );
+            }
+        }
+
+        return [.. entries];
     }
 
     /// <summary>
@@ -138,6 +196,12 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             resourceModel.DocumentReferenceBindings,
             static binding => new WriteSourceLookupKey(binding.Table, binding.FkColumn),
             "document-reference binding"
+        );
+        ValidateUniqueWriteSourceInventoryKeysOrThrow(
+            resourceModel,
+            BuildReferenceDerivedSourceLookupEntries(resourceModel),
+            static entry => entry.Key,
+            "reference-derived source"
         );
         ValidateUniqueWriteSourceInventoryKeysOrThrow(
             resourceModel,
@@ -947,6 +1011,16 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             );
         }
 
+        if (
+            writeSourceLookup.ReferenceDerivedSourceByKey.TryGetValue(
+                new WriteSourceLookupKey(tableModel.Table, column.ColumnName),
+                out var referenceDerivedSource
+            )
+        )
+        {
+            return CreateReferenceDerivedSource(tableModel.Table, column, referenceDerivedSource);
+        }
+
         return column.Kind switch
         {
             ColumnKind.CollectionKey => new WriteValueSource.Precomputed(),
@@ -1075,6 +1149,28 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 $"No document-reference binding matches '{key.Table}.{key.Column.Value}'."
             )
         );
+    }
+
+    /// <summary>
+    /// Creates a reference-derived write value source after validating the member path still matches table metadata.
+    /// </summary>
+    private static WriteValueSource CreateReferenceDerivedSource(
+        DbTableName table,
+        DbColumnModel column,
+        ReferenceDerivedValueSourceMetadata referenceDerivedSource
+    )
+    {
+        var sourcePath = column.SourceJsonPath?.Canonical ?? "<null>";
+
+        if (column.SourceJsonPath?.Canonical != referenceDerivedSource.ReferenceJsonPath.Canonical)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{table}': reference-derived source mismatch for column '{column.ColumnName.Value}'. "
+                    + $"DbColumnModel.SourceJsonPath '{sourcePath}' does not match ReferenceIdentityBinding.ReferenceJsonPath '{referenceDerivedSource.ReferenceJsonPath.Canonical}'."
+            );
+        }
+
+        return new WriteValueSource.ReferenceDerived(referenceDerivedSource);
     }
 
     /// <summary>
