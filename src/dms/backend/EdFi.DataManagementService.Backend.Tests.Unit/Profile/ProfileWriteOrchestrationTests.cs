@@ -26,6 +26,7 @@ public class Given_No_Profile_Relational_Post
     private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpsertResult _result = null!;
     private DocumentUuid _documentUuid;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
 
     [SetUp]
     public async Task Setup()
@@ -54,7 +55,15 @@ public class Given_No_Profile_Relational_Post
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Returns(new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(_documentUuid)));
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(_documentUuid)
+                    );
+                }
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
@@ -93,6 +102,128 @@ public class Given_No_Profile_Relational_Post
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_passes_edfi_doc_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.SelectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+    }
+
+    [Test]
+    public void It_does_not_set_profile_write_context()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_No_Profile_Relational_Put
+{
+    private RelationalDocumentStoreRepository _sut = null!;
+    private IRelationalWriteExecutor _writeExecutor = null!;
+    private IRelationalWriteTargetLookupService _targetLookupService = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
+    private UpdateResult _result = null!;
+    private DocumentUuid _documentUuid;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _writeExecutor = A.Fake<IRelationalWriteExecutor>();
+        _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
+
+        _documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
+        var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
+        var rootTable = writePlan.Model.Root;
+        var readPlan = new ResourceReadPlan(
+            writePlan.Model,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(rootTable, "select 1")],
+            [],
+            []
+        );
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
+        var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+
+        A.CallTo(() =>
+                _targetLookupService.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalWriteTargetLookupResult.ExistingDocument(123L, _documentUuid, 42L));
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(_documentUuid)
+                    );
+                }
+            );
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            _descriptorWriteHandler
+        );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(resourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(_documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("no-profile-put-trace"));
+        A.CallTo(() => updateRequest.BackendProfileWriteContext).Returns(null);
+
+        _result = await _sut.UpdateDocumentById(updateRequest);
+    }
+
+    [Test]
+    public void It_routes_through_the_executor()
+    {
+        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid));
+        A.CallTo(() =>
+                _targetLookupService.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_passes_edfi_doc_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.SelectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+    }
+
+    [Test]
+    public void It_does_not_set_profile_write_context()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().BeNull();
     }
 }
 
