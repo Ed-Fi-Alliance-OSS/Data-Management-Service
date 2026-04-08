@@ -51,7 +51,7 @@
       "Add a focused PostgreSQL integration fixture or test class dedicated to propagated reference identity columns so create and changed-`PUT` persisted-column behavior are asserted directly.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity_Runtime\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Cascade And Constraint Proof",

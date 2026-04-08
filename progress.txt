@@ -32,3 +32,10 @@ Decisions: reference-derived values are presence-gated by the compiled reference
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalWriteFlattenerTests.cs; tasks.json; progress.txt
 Verification: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter "FullyQualifiedName~Given_RelationalWriteFlattener"; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj
 Notes next: remaining work shifts to PostgreSQL runtime/cascade proofs, authoritative smoke tightening, and SQL Server trigger-surface verification.
+
+DMS-985 / reference/design/backend-redesign/epics/07-relational-write-path/04-propagated-reference-identity-columns.md
+Task: PostgreSQL Persisted-Column Runtime Proof. Added focused StudentSchoolAssociation PostgreSQL fixture for create + changed PUT persisted-column assertions.
+Decisions: kept proof intentionally narrow on root calendarReference repopulation plus descriptor-backed grade-level and membership members; reused authoritative sample bootstrap/seed path; left broader child-row assertions to later authoritative verification task so this fixture isolates runtime population from cascade/collection behavior.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs; tasks.json; progress.txt
+Verification: systemctl --user start docker-desktop; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter "FullyQualifiedName~Propagated_Reference_Identity_Runtime"
+Notes next: cascade proof still needs DB-level all-or-none + ON UPDATE CASCADE coverage on runtime-populated columns; authoritative follow-up can keep child alternativeGraduationPlan assertions there.
