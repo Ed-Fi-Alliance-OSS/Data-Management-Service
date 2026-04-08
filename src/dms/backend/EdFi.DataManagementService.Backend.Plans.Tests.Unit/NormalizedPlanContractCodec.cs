@@ -1173,11 +1173,7 @@ internal static class NormalizedPlanContractCodec
         ExternalPlans.ReferenceDerivedValueSourceMetadata source
     )
     {
-        return new ReferenceDerivedValueSourceDto(
-            BindingIndex: source.BindingIndex,
-            ReferenceObjectPath: source.ReferenceObjectPath.Canonical,
-            ReferenceJsonPath: source.ReferenceJsonPath.Canonical
-        );
+        return ReferenceDerivedValueSourceJson.Encode(source);
     }
 
     private static WriteValueSourceDto EncodeWriteValueSource(ExternalPlans.WriteValueSource source)

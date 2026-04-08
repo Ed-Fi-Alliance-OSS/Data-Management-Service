@@ -1105,6 +1105,50 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_reference_derived_scalar_values()
+    {
+        var writePlan = CreateReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.schoolYear", "not-a-number")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+
+        exception
+            .Message.Should()
+            .Contain(
+                "Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32'"
+            )
+            .And.Contain("path '$.schoolReference.schoolYear'")
+            .And.Contain("resolved reference-derived raw value 'not-a-number' could not be converted");
+    }
+
+    [Test]
     public void It_populates_descriptor_backed_reference_derived_bindings_on_create()
     {
         var writePlan = CreateDescriptorBackedReferenceDerivedWritePlan();

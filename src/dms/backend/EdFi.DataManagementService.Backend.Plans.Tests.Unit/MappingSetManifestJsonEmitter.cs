@@ -453,7 +453,7 @@ internal static class MappingSetManifestJsonEmitter
             case WriteValueSource.ReferenceDerived referenceDerived:
                 writer.WriteString("kind", "reference_derived");
                 writer.WritePropertyName("reference_source");
-                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
                 break;
 
             case WriteValueSource.DescriptorReference descriptorReference:
@@ -526,7 +526,7 @@ internal static class MappingSetManifestJsonEmitter
                 WriteNullableInt(writer, "presence_binding_index", referenceDerived.PresenceBindingIndex);
                 writer.WriteBoolean("presence_is_synthetic", referenceDerived.PresenceIsSynthetic);
                 writer.WritePropertyName("reference_source");
-                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
                 break;
 
             default:
@@ -537,18 +537,6 @@ internal static class MappingSetManifestJsonEmitter
                 );
         }
 
-        writer.WriteEndObject();
-    }
-
-    private static void WriteReferenceDerivedSource(
-        Utf8JsonWriter writer,
-        ReferenceDerivedValueSourceMetadata source
-    )
-    {
-        writer.WriteStartObject();
-        writer.WriteNumber("binding_index", source.BindingIndex);
-        writer.WriteString("reference_object_path", source.ReferenceObjectPath.Canonical);
-        writer.WriteString("reference_json_path", source.ReferenceJsonPath.Canonical);
         writer.WriteEndObject();
     }
 

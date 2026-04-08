@@ -387,7 +387,7 @@ internal static class NormalizedPlanDtoJson
             case WriteValueSourceDto.ReferenceDerived referenceDerived:
                 writer.WriteString("kind", "reference_derived");
                 writer.WritePropertyName("reference_source");
-                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
                 break;
 
             case WriteValueSourceDto.DescriptorReference descriptorReference:
@@ -496,7 +496,7 @@ internal static class NormalizedPlanDtoJson
                 WriteNullableInt(writer, "presence_binding_index", referenceDerived.PresenceBindingIndex);
                 writer.WriteBoolean("presence_is_synthetic", referenceDerived.PresenceIsSynthetic);
                 writer.WritePropertyName("reference_source");
-                WriteReferenceDerivedSource(writer, referenceDerived.ReferenceSource);
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
                 break;
 
             default:
@@ -507,18 +507,6 @@ internal static class NormalizedPlanDtoJson
                 );
         }
 
-        writer.WriteEndObject();
-    }
-
-    private static void WriteReferenceDerivedSource(
-        Utf8JsonWriter writer,
-        ReferenceDerivedValueSourceDto value
-    )
-    {
-        writer.WriteStartObject();
-        writer.WriteNumber("binding_index", value.BindingIndex);
-        writer.WriteString("reference_object_path", value.ReferenceObjectPath);
-        writer.WriteString("reference_json_path", value.ReferenceJsonPath);
         writer.WriteEndObject();
     }
 
