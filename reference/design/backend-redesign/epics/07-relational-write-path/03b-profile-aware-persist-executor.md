@@ -18,13 +18,13 @@ Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is th
 
 This story must extend the executor/no-op path introduced in `DMS-984`; it must not fork a separate profile-only persist path or rebuild collection merge behavior against a different metadata shape.
 
-In the rebased `DMS-984` branch, relational repository orchestration currently short-circuits any write carrying `BackendProfileWriteContext` with:
+After `DMS-1123`, profiled writes flow through the repository orchestration boundary (which selects `WritableRequestBody`), target lookup, reference resolution, and flattening. The executor then fences before merge/persist with:
 
 - `UnknownFailure`
 - HTTP `500`
-- `profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124`
+- `Profile-aware relational merge/persist pending DMS-1124.`
 
-This story owns removing that temporary fence once `DMS-1123` and `DMS-1105` are in place and routing valid profiled relational writes through the shared executor/no-op path.
+This story owns removing that executor-level fence and routing valid profiled relational writes through the shared merge/persist/no-op path.
 
 The hand-off is:
 
@@ -92,7 +92,7 @@ The profiled runtime executor follow-on and downstream test-migration stories sh
 
 ## Tasks
 
-1. Remove the temporary repository fence for valid profiled relational writes once `DMS-1123` body-source selection and `DMS-1105` current-document reconstitution are available, and route those requests into the shared `DMS-984` executor/no-op path.
+1. Remove the executor-level profile persist fence (in `DefaultRelationalWriteExecutor`, after flattening) and route valid profiled relational writes into the shared `DMS-984` merge/persist/no-op path.
 2. Extend the `DMS-984` executor/no-op path to consume `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` without forking a separate profile-only persist pipeline.
 3. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
 4. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.

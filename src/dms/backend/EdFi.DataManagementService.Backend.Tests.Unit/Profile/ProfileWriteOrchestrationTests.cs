@@ -26,6 +26,7 @@ public class Given_No_Profile_Relational_Post
     private IDescriptorWriteHandler _descriptorWriteHandler = null!;
     private UpsertResult _result = null!;
     private DocumentUuid _documentUuid;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
 
     [SetUp]
     public async Task Setup()
@@ -54,7 +55,15 @@ public class Given_No_Profile_Relational_Post
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Returns(new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(_documentUuid)));
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(_documentUuid)
+                    );
+                }
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
@@ -94,6 +103,128 @@ public class Given_No_Profile_Relational_Post
             )
             .MustHaveHappenedOnceExactly();
     }
+
+    [Test]
+    public void It_passes_edfi_doc_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.SelectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+    }
+
+    [Test]
+    public void It_does_not_set_profile_write_context()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_No_Profile_Relational_Put
+{
+    private RelationalDocumentStoreRepository _sut = null!;
+    private IRelationalWriteExecutor _writeExecutor = null!;
+    private IRelationalWriteTargetLookupService _targetLookupService = null!;
+    private IDescriptorWriteHandler _descriptorWriteHandler = null!;
+    private UpdateResult _result = null!;
+    private DocumentUuid _documentUuid;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _writeExecutor = A.Fake<IRelationalWriteExecutor>();
+        _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
+        _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
+
+        _documentUuid = new DocumentUuid(Guid.NewGuid());
+        var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
+        var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
+        var rootTable = writePlan.Model.Root;
+        var readPlan = new ResourceReadPlan(
+            writePlan.Model,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(rootTable, "select 1")],
+            [],
+            []
+        );
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
+        var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+
+        A.CallTo(() =>
+                _targetLookupService.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalWriteTargetLookupResult.ExistingDocument(123L, _documentUuid, 42L));
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(_documentUuid)
+                    );
+                }
+            );
+
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            _descriptorWriteHandler
+        );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(resourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(_documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("no-profile-put-trace"));
+        A.CallTo(() => updateRequest.BackendProfileWriteContext).Returns(null);
+
+        _result = await _sut.UpdateDocumentById(updateRequest);
+    }
+
+    [Test]
+    public void It_routes_through_the_executor()
+    {
+        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid));
+        A.CallTo(() =>
+                _targetLookupService.ResolveForPutAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_passes_edfi_doc_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.SelectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+    }
+
+    [Test]
+    public void It_does_not_set_profile_write_context()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().BeNull();
+    }
 }
 
 [TestFixture]
@@ -103,7 +234,7 @@ public class Given_A_Profiled_Relational_Post
     private IRelationalWriteExecutor _writeExecutor = null!;
     private IRelationalWriteTargetLookupService _targetLookupService = null!;
     private IDescriptorWriteHandler _descriptorWriteHandler = null!;
-    private UpsertResult _result = null!;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
 
     [SetUp]
     public async Task Setup()
@@ -116,7 +247,8 @@ public class Given_A_Profiled_Relational_Post
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
-        var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
+        var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
                 _targetLookupService.ResolveForPostAsync(
@@ -127,11 +259,22 @@ public class Given_A_Profiled_Relational_Post
                     A<CancellationToken>._
                 )
             )
-            .Throws(new AssertionException("Target lookup should not be called for profiled POST."));
+            .Returns(new RelationalWriteTargetLookupResult.CreateNew(documentUuid));
+
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Throws(new AssertionException("Write executor should not be called for profiled POST."));
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UnknownFailure(
+                            "Profile-aware relational merge/persist pending DMS-1124."
+                        )
+                    );
+                }
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
@@ -145,41 +288,44 @@ public class Given_A_Profiled_Relational_Post
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(edfiDoc);
         A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("profile-post-trace"));
         A.CallTo(() => upsertRequest.BackendProfileWriteContext)
-            .Returns(OrchestrationTestHelpers.CreateBackendProfileWriteContext(writePlan, requestBody));
-
-        _result = await _sut.UpsertDocument(upsertRequest);
-    }
-
-    [Test]
-    public void It_returns_the_pending_profile_write_fence()
-    {
-        _result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.UnknownFailure(OrchestrationTestHelpers.PendingProfileWriteMessage)
+            .Returns(
+                OrchestrationTestHelpers.CreateBackendProfileWriteContext(writePlan, writableRequestBody)
             );
+
+        _ = await _sut.UpsertDocument(upsertRequest);
     }
 
     [Test]
-    public void It_fences_before_target_lookup_and_executor_execution()
+    public void It_routes_through_the_executor()
     {
-        A.CallTo(() =>
-                _targetLookupService.ResolveForPostAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<ReferentialId>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .MustNotHaveHappened();
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_passes_writable_request_body_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        var selectedBody = _capturedExecutorRequest!.SelectedBody;
+        selectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+        selectedBody
+            .AsObject()
+            .ContainsKey("nameOfInstitution")
+            .Should()
+            .BeFalse("hidden members must not leak from the original EdfiDoc into the executor");
+    }
+
+    [Test]
+    public void It_threads_the_profile_write_context_to_the_executor()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().NotBeNull();
+        _capturedExecutorRequest.ProfileWriteContext!.ProfileName.Should().Be("test-profile");
     }
 }
 
@@ -190,7 +336,7 @@ public class Given_A_Profiled_Relational_Put
     private IRelationalWriteExecutor _writeExecutor = null!;
     private IRelationalWriteTargetLookupService _targetLookupService = null!;
     private IDescriptorWriteHandler _descriptorWriteHandler = null!;
-    private UpdateResult _result = null!;
+    private RelationalWriteExecutorRequest? _capturedExecutorRequest;
 
     [SetUp]
     public async Task Setup()
@@ -202,8 +348,17 @@ public class Given_A_Profiled_Relational_Put
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
-        var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootTable = writePlan.Model.Root;
+        var readPlan = new ResourceReadPlan(
+            writePlan.Model,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(rootTable, "select 1")],
+            [],
+            []
+        );
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
+        var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
+        var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
                 _targetLookupService.ResolveForPutAsync(
@@ -213,11 +368,22 @@ public class Given_A_Profiled_Relational_Put
                     A<CancellationToken>._
                 )
             )
-            .Throws(new AssertionException("Target lookup should not be called for profiled PUT."));
+            .Returns(new RelationalWriteTargetLookupResult.ExistingDocument(123L, documentUuid, 42L));
+
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .Throws(new AssertionException("Write executor should not be called for profiled PUT."));
+            .ReturnsLazily(
+                (RelationalWriteExecutorRequest req, CancellationToken _) =>
+                {
+                    _capturedExecutorRequest = req;
+                    return new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UnknownFailure(
+                            "Profile-aware relational merge/persist pending DMS-1124."
+                        )
+                    );
+                }
+            );
 
         _sut = new RelationalDocumentStoreRepository(
             NullLogger<RelationalDocumentStoreRepository>.Instance,
@@ -231,40 +397,44 @@ public class Given_A_Profiled_Relational_Put
         A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => updateRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
         A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
-        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(edfiDoc);
         A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("profile-put-trace"));
         A.CallTo(() => updateRequest.BackendProfileWriteContext)
-            .Returns(OrchestrationTestHelpers.CreateBackendProfileWriteContext(writePlan, requestBody));
-
-        _result = await _sut.UpdateDocumentById(updateRequest);
-    }
-
-    [Test]
-    public void It_returns_the_pending_profile_write_fence()
-    {
-        _result
-            .Should()
-            .BeEquivalentTo(
-                new UpdateResult.UnknownFailure(OrchestrationTestHelpers.PendingProfileWriteMessage)
+            .Returns(
+                OrchestrationTestHelpers.CreateBackendProfileWriteContext(writePlan, writableRequestBody)
             );
+
+        _ = await _sut.UpdateDocumentById(updateRequest);
     }
 
     [Test]
-    public void It_fences_before_target_lookup_and_executor_execution()
+    public void It_routes_through_the_executor()
     {
-        A.CallTo(() =>
-                _targetLookupService.ResolveForPutAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
-            .MustNotHaveHappened();
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_passes_writable_request_body_as_selected_body()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        var selectedBody = _capturedExecutorRequest!.SelectedBody;
+        selectedBody.ToJsonString().Should().Be("""{"schoolId":255901}""");
+        selectedBody
+            .AsObject()
+            .ContainsKey("nameOfInstitution")
+            .Should()
+            .BeFalse("hidden members must not leak from the original EdfiDoc into the executor");
+    }
+
+    [Test]
+    public void It_threads_the_profile_write_context_to_the_executor()
+    {
+        _capturedExecutorRequest.Should().NotBeNull();
+        _capturedExecutorRequest!.ProfileWriteContext.Should().NotBeNull();
+        _capturedExecutorRequest.ProfileWriteContext!.ProfileName.Should().Be("test-profile");
     }
 }
 
@@ -273,9 +443,6 @@ public class Given_A_Profiled_Relational_Put
 /// </summary>
 internal static class OrchestrationTestHelpers
 {
-    public const string PendingProfileWriteMessage =
-        "profile-aware relational writes pending DMS-1123/DMS-1105/DMS-1124";
-
     public static ResourceInfo CreateResourceInfo() =>
         new(
             ProjectName: new ProjectName("Ed-Fi"),
@@ -356,7 +523,11 @@ internal static class OrchestrationTestHelpers
         );
     }
 
-    public static MappingSet CreateMappingSet(ResourceInfo resourceInfo, ResourceWritePlan writePlan)
+    public static MappingSet CreateMappingSet(
+        ResourceInfo resourceInfo,
+        ResourceWritePlan writePlan,
+        ResourceReadPlan? readPlan = null
+    )
     {
         var resourceKey = new ResourceKeyEntry(
             ResourceKeyId: 1,
@@ -404,7 +575,12 @@ internal static class OrchestrationTestHelpers
             {
                 [resourceKey.Resource] = writePlan,
             },
-            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ReadPlansByResource: readPlan is not null
+                ? new Dictionary<QualifiedResourceName, ResourceReadPlan>
+                {
+                    [resourceKey.Resource] = readPlan,
+                }
+                : new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
             {
                 [resourceKey.Resource] = resourceKey.ResourceKeyId,
