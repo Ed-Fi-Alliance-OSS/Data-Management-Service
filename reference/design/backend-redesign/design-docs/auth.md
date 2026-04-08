@@ -1124,6 +1124,8 @@ In DMS, these views should output the DocumentId instead of the USI (for example
 
 Given that people types are rarely added or modified (in the DS or extensions) and their definitions are not easily generalizable (Staff joins against two association tables; Contact goes through Student), the view definitions should be *hard-coded*.
 
+The views are only emitted when all five dependent association resources (`StudentSchoolAssociation`, `StudentContactAssociation`, `StaffEducationOrganizationAssignmentAssociation`, `StaffEducationOrganizationEmploymentAssociation`, `StudentEducationOrganizationResponsibilityAssociation`) are present in the derived relational model. This guard exists because synthetic or partial test models may not include the association resources that the views join against. In any full DS 5.2 deployment these associations are always present, so the guard is never triggered in production.
+
 #### Indexes
 
 The following indexes are needed to run the authorization checks efficiently.
