@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -79,8 +80,8 @@ public static class HydrationReader
                     DocumentUuid: reader.GetGuid(1),
                     ContentVersion: reader.GetInt64(2),
                     IdentityVersion: reader.GetInt64(3),
-                    ContentLastModifiedAt: reader.GetFieldValue<DateTimeOffset>(4),
-                    IdentityLastModifiedAt: reader.GetFieldValue<DateTimeOffset>(5)
+                    ContentLastModifiedAt: ReadDateTimeOffset(reader, 4),
+                    IdentityLastModifiedAt: ReadDateTimeOffset(reader, 5)
                 )
             );
         }
@@ -129,5 +130,24 @@ public static class HydrationReader
         }
 
         return new HydratedTableRows(tablePlan.TableModel, rows);
+    }
+
+    private static DateTimeOffset ReadDateTimeOffset(DbDataReader reader, int ordinal)
+    {
+        var value = reader.GetValue(ordinal);
+
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Expected DateTimeOffset-compatible value at ordinal {ordinal}, but received '{value.GetType().Name}'."
+            ),
+        };
     }
 }

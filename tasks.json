@@ -99,7 +99,7 @@
       "If the fixture also covers identity propagation fallback after runtime creation, update the referenced identity after the write-path seed and assert the runtime-populated referrer row receives the expected propagated update through SQL Server's trigger fallback.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated|FullyQualifiedName~StudentSchoolAssociation|FullyQualifiedName~RelationalWrite\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "ReferenceDerived Cleanup",
