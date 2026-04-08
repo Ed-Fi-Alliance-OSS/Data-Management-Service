@@ -53,3 +53,10 @@ Decisions: keep authoritative smoke fixture/assertions as the end-to-end proof; 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/FlatteningResolvedReferenceLookupSetTests.cs; tasks.json; progress.txt
 Verification: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter "FullyQualifiedName~StudentSchoolAssociation"
 Notes next: only remaining story task is SQL Server DDL And Trigger Verification.
+
+DMS-985 / reference/design/backend-redesign/epics/07-relational-write-path/04-propagated-reference-identity-columns.md
+Task: SQL Server DDL And Trigger Verification. Tightened MSSQL authoritative smoke to assert propagated session storage/canonical columns on trigger fallback.
+Decisions: reused existing Session trigger-fallback scenario instead of adding new MSSQL runtime coverage; snapshot helper records cover CourseOffering + Survey propagated columns directly while keeping stamp assertions; renamed the test to match the documented FullyQualifiedName~Identity_propagation filter.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlGeneratedDdlAuthoritativeSmokeTests.cs; tasks.json; progress.txt
+Verification: docker run --name dms-mssql-test -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=abcdefgh1! -p 1434:1433 -d mcr.microsoft.com/mssql/server:2022-latest; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "FullyQualifiedName~Identity_propagation"
+Notes next: story task list complete.

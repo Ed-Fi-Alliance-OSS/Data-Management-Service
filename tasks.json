@@ -78,6 +78,6 @@
       "Add or adjust a narrow assertion in `MssqlGeneratedDdlAuthoritativeSmokeTests` so the existing trigger-fallback propagation proof explicitly covers the relevant canonical or storage columns for this story.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Identity_propagation\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
