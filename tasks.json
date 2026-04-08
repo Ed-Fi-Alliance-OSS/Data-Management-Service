@@ -167,5 +167,39 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Propagated_Reference_Identity|FullyQualifiedName~Relational_Write\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Relational Runtime Descriptor Resolution",
+    "description": "Fix the real relational request path so descriptor-valued propagated reference identity members are resolved without test-only augmentation. Acceptance: a normal Core-fronted POST or PUT that includes descriptor-valued members under `documentPathsMapping.referenceJsonPaths` supplies all descriptor lookup inputs needed by `ReferenceResolver`, `FlatteningResolvedReferenceLookupSet`, and `RelationalWriteFlattener` without any hand-built `DescriptorReference` additions in tests; descriptor-valued reference identity members under root and collection scopes resolve to the correct descriptor `DocumentId` and populate the expected propagated identity storage columns; whichever layer owns the fix (`ExtractDocumentInfoMiddleware`, Core extraction, or a relational-path adapter after write-plan selection) derives the descriptor resource type and concrete JSON path deterministically from authoritative schema or plan metadata rather than brittle path guessing; missing or incompatible descriptor values continue to surface as normal descriptor validation failures keyed to the concrete member path; and the authoritative `StudentSchoolAssociation` runtime scenario no longer relies on `CreateAlternativeGraduationPlanDescriptorReferences()` or any equivalent workaround to make the branch pass.",
+    "steps-to-verify": [
+      "Add focused Core or backend coverage for descriptor-valued reference identity members under `referenceJsonPaths`, including at least one collection-backed case with concrete indexed paths and expected descriptor resource typing.",
+      "Update the relational write seam or authoritative PostgreSQL runtime path to use only the production extraction and resolution flow, then remove the manual nested descriptor-reference injection helper from the authoritative `StudentSchoolAssociation` test support.",
+      "Add or update a real relational POST and PUT integration test proving descriptor-backed propagated reference identity members resolve and persist correctly when the request enters through the normal middleware or repository seam.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DescriptorExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware|FullyQualifiedName~ReferenceExtractor\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~ReferenceResolver\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation|FullyQualifiedName~Propagated_Reference_Identity\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Legacy Compatibility Preservation",
+    "description": "Restore the documented `UseRelationalBackend=false` behavior so DMS-985 does not change legacy document-store request semantics while still keeping relational-path validation intact. Acceptance: when `UseRelationalBackend=true`, malformed present reference objects and partial propagated-reference identities still fail deterministically as `400 Data Validation Failed` responses with concrete JSON-path keyed validation errors; when `UseRelationalBackend=false`, the runtime behavior for empty, partial, or malformed reference objects matches pre-DMS-985 behavior rather than silently dropping extracted references or changing the downstream request shape; the middleware boundary makes it explicit which extraction or validation rules belong only to the relational write path; new tests prove the flag-on relational behavior and the flag-off legacy behavior separately; and no legacy-path response or `DocumentInfo` regression remains locked in by branch-local tests that contradict the DMS-983 acceptance criteria.",
+    "steps-to-verify": [
+      "Refactor `ExtractDocumentInfoMiddleware` and any supporting extraction logic so relational request-shape validation is only applied when the relational backend seam is active, while the legacy path preserves the pre-branch extraction and failure semantics.",
+      "Replace or update the new legacy-compatibility tests that currently assert silent omission of malformed references, and add parity coverage that documents the intended pre-DMS-985 legacy behavior for empty and malformed reference objects.",
+      "Add one flag-on middleware test and one flag-off middleware or handler-path test for both a root reference and a nested reference so the scope boundary is explicit and protected against future regressions.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtractDocumentInfoMiddleware|FullyQualifiedName~ReferenceExtractor\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Compiler Validation Consolidation",
+    "description": "Consolidate duplicated reference-derived source-path validation so write-plan compilation and key-unification compilation use one authoritative helper and one stable diagnostic contract. Acceptance: the path-consistency check currently implemented in both `WritePlanCompiler.CreateReferenceDerivedSource` and `KeyUnificationWritePlanCompiler.ValidateReferenceDerivedSourcePath` is expressed once in shared code; both compiler stages continue to reject mismatches between `DbColumnModel.SourceJsonPath` and `ReferenceIdentityBinding.ReferenceJsonPath`; exception wording stays deterministic and intentionally aligned across both call sites; the shared helper remains narrow to this validation concern rather than broad compiler refactoring; and unit coverage proves both ordinary propagated bindings and key-unified reference-derived members still fail fast with the expected message when source metadata drifts.",
+    "steps-to-verify": [
+      "Extract the common reference-derived source-path validation into a shared compiler helper or support type used by both `WritePlanCompiler` and `KeyUnificationWritePlanCompiler`.",
+      "Add or update plan-compilation unit tests that mutate `SourceJsonPath` for a direct propagated binding and for a key-unified reference-derived member, asserting the shared diagnostic shape from both entry points.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources|FullyQualifiedName~Given_WritePlanCompiler_KeyUnification|FullyQualifiedName~NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
   }
 ]

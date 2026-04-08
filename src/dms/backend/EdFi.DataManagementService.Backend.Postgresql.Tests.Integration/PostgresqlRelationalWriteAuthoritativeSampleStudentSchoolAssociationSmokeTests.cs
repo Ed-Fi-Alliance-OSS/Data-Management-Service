@@ -148,7 +148,7 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         JsonNode requestBody,
         ResourceInfo resourceInfo,
         ResourceSchema baseResourceSchema,
-        ResourceSchema extensionResourceSchema,
+        MappingSet mappingSet,
         long graduationPlanTypeDescriptorId
     )
     {
@@ -163,11 +163,12 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         );
         var (alternativeGraduationPlanReferences, alternativeGraduationPlanReferenceArrays) =
             CreateAlternativeGraduationPlanDocumentReferences(requestBody, graduationPlanTypeDescriptorId);
-        var descriptorReferences = baseResourceSchema
-            .ExtractDescriptors(requestBody, NullLogger.Instance)
-            .Concat(extensionResourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance))
-            .Concat(CreateAlternativeGraduationPlanDescriptorReferences(requestBody))
-            .ToArray();
+        var descriptorReferences = baseResourceSchema.ExtractRelationalDescriptors(
+            resourceInfo,
+            mappingSet,
+            requestBody,
+            NullLogger.Instance
+        );
 
         return new(
             DocumentIdentity: documentIdentity,
@@ -350,61 +351,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
                 ),
             ]
         );
-    }
-
-    private static IReadOnlyList<DescriptorReference> CreateAlternativeGraduationPlanDescriptorReferences(
-        JsonNode requestBody
-    )
-    {
-        var alternativeGraduationPlans = requestBody["alternativeGraduationPlans"] as JsonArray;
-
-        if (alternativeGraduationPlans is null || alternativeGraduationPlans.Count == 0)
-        {
-            return [];
-        }
-
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("GraduationPlanTypeDescriptor"),
-            true
-        );
-        List<DescriptorReference> descriptorReferences = [];
-
-        for (var index = 0; index < alternativeGraduationPlans.Count; index++)
-        {
-            var descriptorUri = alternativeGraduationPlans[index]
-                ?["alternativeGraduationPlanReference"]?["graduationPlanTypeDescriptor"]?.GetValue<string>();
-
-            if (string.IsNullOrWhiteSpace(descriptorUri))
-            {
-                throw new InvalidOperationException(
-                    "Expected every alternativeGraduationPlanReference to contain graduationPlanTypeDescriptor."
-                );
-            }
-
-            var descriptorIdentity = new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ]);
-
-            descriptorReferences.Add(
-                new DescriptorReference(
-                    ResourceInfo: descriptorResourceInfo,
-                    DocumentIdentity: descriptorIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        descriptorResourceInfo,
-                        descriptorIdentity
-                    ),
-                    Path: new JsonPath(
-                        $"$.alternativeGraduationPlans[{index}].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
-                    )
-                )
-            );
-        }
-
-        return descriptorReferences;
     }
 }
 
@@ -632,7 +578,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
-    private ResourceSchema _extensionResourceSchema = null!;
     private AuthoritativeSampleStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
     private UpdateResult _changedUpdateResult = null!;
@@ -658,19 +603,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "ed-fi",
                 "StudentSchoolAssociation"
             );
-        var (_, extensionResourceSchema) =
-            AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetResourceSchema(
-                _fixture.EffectiveSchemaSet,
-                "sample",
-                "StudentSchoolAssociation"
-            );
-
         _resourceInfo = AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateResourceInfo(
             baseProjectSchema,
             baseResourceSchema
         );
         _baseResourceSchema = baseResourceSchema;
-        _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
@@ -978,7 +915,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _extensionResourceSchema,
+                _mappingSet,
                 _seedData.GraduationPlanTypeDescriptorId
             ),
             MappingSet: _mappingSet,
@@ -1009,7 +946,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _extensionResourceSchema,
+                _mappingSet,
                 _seedData.GraduationPlanTypeDescriptorId
             ),
             MappingSet: _mappingSet,
@@ -2120,7 +2057,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
-    private ResourceSchema _extensionResourceSchema = null!;
     private PropagatedReferenceIdentityRuntimeSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
     private UpdateResult _changedUpdateResult = null!;
@@ -2144,19 +2080,11 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 "ed-fi",
                 "StudentSchoolAssociation"
             );
-        var (_, extensionResourceSchema) =
-            AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetResourceSchema(
-                _fixture.EffectiveSchemaSet,
-                "sample",
-                "StudentSchoolAssociation"
-            );
-
         _resourceInfo = AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateResourceInfo(
             baseProjectSchema,
             baseResourceSchema
         );
         _baseResourceSchema = baseResourceSchema;
-        _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
@@ -2300,7 +2228,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _extensionResourceSchema,
+                _mappingSet,
                 _seedData.GraduationPlanTypeDescriptorId
             ),
             MappingSet: _mappingSet,
@@ -2331,7 +2259,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _extensionResourceSchema,
+                _mappingSet,
                 _seedData.GraduationPlanTypeDescriptorId
             ),
             MappingSet: _mappingSet,
@@ -3272,7 +3200,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
-    private ResourceSchema _extensionResourceSchema = null!;
     private AuthoritativeSampleStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _result = null!;
     private AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot _snapshotBefore = null!;
@@ -3295,19 +3222,11 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 "ed-fi",
                 "StudentSchoolAssociation"
             );
-        var (_, extensionResourceSchema) =
-            AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetResourceSchema(
-                _fixture.EffectiveSchemaSet,
-                "sample",
-                "StudentSchoolAssociation"
-            );
-
         _resourceInfo = AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateResourceInfo(
             baseProjectSchema,
             baseResourceSchema
         );
         _baseResourceSchema = baseResourceSchema;
-        _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
@@ -3388,7 +3307,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
-                _extensionResourceSchema,
+                _mappingSet,
                 _seedData.GraduationPlanTypeDescriptorId
             ),
             MappingSet: _mappingSet,

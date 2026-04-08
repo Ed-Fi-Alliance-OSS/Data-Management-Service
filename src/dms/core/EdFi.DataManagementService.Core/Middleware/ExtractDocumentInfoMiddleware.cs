@@ -71,13 +71,22 @@ internal class ExtractDocumentInfoMiddleware(IOptions<Configuration.AppSettings>
             );
         }
 
+        var descriptorReferences = appSettings.Value.UseRelationalBackend
+            ? requestInfo.ResourceSchema.ExtractRelationalDescriptors(
+                requestInfo.ResourceInfo,
+                requestInfo.MappingSet
+                    ?? throw new InvalidOperationException(
+                        "MappingSet must be resolved before ExtractDocumentInfoMiddleware when UseRelationalBackend is enabled."
+                    ),
+                requestInfo.ParsedBody,
+                _logger
+            )
+            : requestInfo.ResourceSchema.ExtractDescriptors(requestInfo.ParsedBody, _logger);
+
         requestInfo.DocumentInfo = new(
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: documentReferenceArrays,
-            DescriptorReferences: requestInfo.ResourceSchema.ExtractDescriptors(
-                requestInfo.ParsedBody,
-                _logger
-            ),
+            DescriptorReferences: descriptorReferences,
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(requestInfo.ResourceInfo, documentIdentity),
             SuperclassIdentity: superclassIdentity

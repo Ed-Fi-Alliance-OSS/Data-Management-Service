@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -59,7 +61,133 @@ public class ExtractDocumentInfoMiddlewareTests
         {
             ResourceSchema = resourceSchema,
             ParsedBody = JsonNode.Parse(body)!,
+            ResourceInfo = CreateResourceInfo(resourceSchema),
+            MappingSet = CreateMappingSet(CreateResourceInfo(resourceSchema)),
         };
+    }
+
+    internal static ResourceInfo CreateResourceInfo(ResourceSchema resourceSchema)
+    {
+        return new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: resourceSchema.ResourceName,
+            IsDescriptor: resourceSchema.IsDescriptor,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: resourceSchema.AllowIdentityUpdates,
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+            AuthorizationSecurableInfo: []
+        );
+    }
+
+    internal static MappingSet CreateMappingSet(
+        ResourceInfo resourceInfo,
+        params DescriptorEdgeSource[] descriptorEdgeSources
+    )
+    {
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
+        );
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: $"PK_{resourceInfo.ResourceName.Value}",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: null,
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+        var resourceModel = new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: descriptorEdgeSources
+        );
+        var writePlan = new ResourceWritePlan(
+            resourceModel,
+            [
+                new TableWritePlan(
+                    TableModel: rootTable,
+                    InsertSql: $"insert into edfi.\"{resourceInfo.ResourceName.Value}\" values (...)",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(100, 1, 1000),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            rootTable.Columns[0],
+                            new WriteValueSource.DocumentId(),
+                            "DocumentId"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
+        var modelSet = new DerivedRelationalModelSet(
+            EffectiveSchema: new EffectiveSchemaInfo(
+                "1.0",
+                "v1",
+                "extract-document-info-test",
+                0,
+                [],
+                [],
+                []
+            ),
+            Dialect: SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder: [],
+            ConcreteResourcesInNameOrder:
+            [
+                new ConcreteResourceModel(
+                    new ResourceKeyEntry(1, resource, resourceInfo.ResourceVersion.Value, false),
+                    resourceModel.StorageKind,
+                    resourceModel
+                ),
+            ],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+
+        return new MappingSet(
+            Key: new MappingSetKey("extract-document-info-test", SqlDialect.Pgsql, "v1"),
+            Model: modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
+            {
+                [resource] = writePlan,
+            },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
     }
 
     internal static ApiSchemaDocuments BuildReferenceValidationApiSchemaDocuments()
@@ -92,6 +220,70 @@ public class ExtractDocumentInfoMiddlewareTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildReferenceDescriptorApiSchemaDocuments()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("StudentProgramAssociation")
+            .WithIdentityJsonPaths(["$.associationIdentifier"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("AssociationIdentifier", "$.associationIdentifier")
+            .WithDocumentPathReference(
+                "Program",
+                [
+                    new("$.programName", "$.programs[*].programReference.programName"),
+                    new("$.programTypeDescriptor", "$.programs[*].programReference.programTypeDescriptor"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithStartResource("Program")
+            .WithIdentityJsonPaths(["$.programName", "$.programTypeDescriptor"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("ProgramName", "$.programName")
+            .WithDocumentPathDescriptor("ProgramTypeDescriptor", "$.programTypeDescriptor")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    internal static MappingSet CreateReferenceDescriptorMappingSet()
+    {
+        var resourceInfo = new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: new ResourceName("StudentProgramAssociation"),
+            IsDescriptor: false,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: false,
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+            AuthorizationSecurableInfo: []
+        );
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
+        var referenceDescriptorPath = CreatePath(
+            "$.programs[*].programReference.programTypeDescriptor",
+            new JsonPathSegment.Property("programs"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("programReference"),
+            new JsonPathSegment.Property("programTypeDescriptor")
+        );
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value);
+
+        return CreateMappingSet(
+            resourceInfo,
+            new DescriptorEdgeSource(
+                IsIdentityComponent: false,
+                DescriptorValuePath: referenceDescriptorPath,
+                Table: rootTable,
+                FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                DescriptorResource: descriptorResource
+            )
+        );
+    }
+
+    private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments) =>
+        new(canonical, segments);
+
     [TestFixture]
     [Parallelizable]
     public class Given_a_school_that_is_a_subclass_with_no_outbound_references
@@ -122,23 +314,7 @@ public class ExtractDocumentInfoMiddlewareTests
 
             string body = """{"schoolId": "123"}""";
 
-            requestInfo = new(
-                new(
-                    Body: body,
-                    Form: null,
-                    Headers: [],
-                    QueryParameters: [],
-                    Path: "/ed-fi/schools",
-                    TraceId: new TraceId("123"),
-                    RouteQualifiers: []
-                ),
-                RequestMethod.POST,
-                No.ServiceProvider
-            )
-            {
-                ResourceSchema = resourceSchema,
-                ParsedBody = JsonNode.Parse(body)!,
-            };
+            requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body, "/ed-fi/schools");
 
             await BuildMiddleware().Execute(requestInfo, NullNext);
         }
@@ -383,6 +559,104 @@ public class ExtractDocumentInfoMiddlewareTests
         {
             _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
             _requestInfo.DocumentInfo.DocumentReferenceArrays.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Relational_Post_Request_With_A_Collection_Reference_Descriptor_Identity_Member
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceDescriptorApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentProgramAssociations"
+            );
+            string body = """
+                {
+                    "associationIdentifier": "A-1",
+                    "programs": [
+                        {
+                            "programReference": {
+                                "programName": "STEM",
+                                "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#STEM"
+                            }
+                        },
+                        {
+                            "programReference": {
+                                "programName": "Arts",
+                                "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#FineArts"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                body,
+                "/ed-fi/studentProgramAssociations"
+            );
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("StudentProgramAssociation"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.MappingSet = CreateReferenceDescriptorMappingSet();
+
+            await BuildMiddleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_extracts_descriptor_references_for_the_collection_members()
+        {
+            _requestInfo.DocumentInfo.DescriptorReferences.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_extracts_the_first_collection_member_with_the_expected_resource_type_and_path()
+        {
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[0]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("ProgramTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[0]
+                .Path.Value.Should()
+                .Be("$.programs[0].programReference.programTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[0]
+                .DocumentIdentity.DocumentIdentityElements[0]
+                .IdentityValue.Should()
+                .Be("uri://ed-fi.org/programtypedescriptor#stem");
+        }
+
+        [Test]
+        public void It_extracts_the_second_collection_member_with_the_expected_resource_type_and_path()
+        {
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[1]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("ProgramTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[1]
+                .Path.Value.Should()
+                .Be("$.programs[1].programReference.programTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[1]
+                .DocumentIdentity.DocumentIdentityElements[0]
+                .IdentityValue.Should()
+                .Be("uri://ed-fi.org/programtypedescriptor#finearts");
         }
     }
 
