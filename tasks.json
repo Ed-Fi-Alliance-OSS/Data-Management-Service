@@ -21,7 +21,7 @@
     "category": "Key Unification",
     "description": "Extend `KeyUnificationWritePlanCompiler` so key-unified reference identity sites use reference-derived producers instead of the old JSON-bound scalar path. Acceptance: canonical storage columns for unified reference identity parts are computed from explicit reference-derived members; mixed classes can include both ordinary JSON-bound members and reference-derived members without contract churn; reference-derived members take deterministic precedence when both can feed the same canonical storage column; descriptor-backed unified members resolve to descriptor `DocumentId` values; optional or absent reference sites keep presence-gated aliases semantically absent; and reference-derived provenance remains discoverable by reference site plus member path for follow-on profile accounting in DMS-1124.",
     "steps-to-verify": [
-      "Add or update `Given_WritePlanCompiler_KeyUnification` tests for reference-derived canonical producers, descriptor-backed members, and one optional absent-site case.",
+      "Add or update `Given_WritePlanCompiler_KeyUnification` tests for reference-derived canonical producers, one mixed-source case proving reference-derived precedence over an ordinary JSON-bound member for the same canonical column, descriptor-backed members, and one optional absent-site case.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_KeyUnification\"`"
     ],
     "completed": false
@@ -63,19 +63,19 @@
     "completed": false
   },
   {
-    "category": "Authoritative PostgreSQL Regression",
-    "description": "Extend the authoritative PostgreSQL `StudentSchoolAssociation` runtime smoke to act as the story's authoritative sample proof. Acceptance: create assertions include persisted canonical or unified reference-derived columns on the root association row and the alternative-graduation-plan child rows; changed `PUT` assertions prove those reference-derived columns update correctly when the referenced alternative-graduation-plan target changes; repeat-`PUT` no-op behavior remains unchanged; and the authoritative sample remains the story's primary end-to-end runtime demonstration alongside the focused PostgreSQL fixture.",
+    "category": "Authoritative PostgreSQL Verification",
+    "description": "Keep the authoritative PostgreSQL `StudentSchoolAssociation` runtime smoke as the story's end-to-end sample, but scope this task to targeted verification or gap-filling rather than a broad new fixture. Acceptance: review the existing create and changed-`PUT` assertions and extend them only where the new reference-derived runtime source of truth is not already being asserted on the root association row or the alternative-graduation-plan child rows; repeat-`PUT` no-op behavior remains unchanged; and the authoritative sample stays a small follow-up proof beside the focused PostgreSQL runtime fixture rather than duplicating it.",
     "steps-to-verify": [
-      "Update the authoritative PostgreSQL sample test to assert the newly reference-derived persisted columns on create and changed `PUT`.",
+      "Tighten the existing authoritative PostgreSQL sample assertions only where the new reference-derived behavior is not already covered on create and changed `PUT`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
     "completed": false
   },
   {
-    "category": "SQL Server DDL Or Trigger Regression",
-    "description": "Keep SQL Server proof on the DDL or trigger surface and scope it independently from the PostgreSQL runtime work. Acceptance: existing SQL Server authoritative DDL or trigger tests continue to prove eligible propagation edges update canonical or storage columns through trigger fallback; add only narrow DDL or trigger assertions if the runtime or required model cleanup exposes a gap; and do not take on a separate SQL Server runtime scenario unless the implementation ends up touching dialect-specific executor behavior.",
+    "category": "SQL Server DDL And Trigger Verification",
+    "description": "Keep SQL Server proof on the DDL or trigger surface and make the story's SQL Server work a concrete authoritative-smoke task. Acceptance: update `MssqlGeneratedDdlAuthoritativeSmokeTests` so the existing trigger-fallback propagation scenario explicitly proves the canonical or storage columns relevant to DMS-985 are updated through SQL Server's trigger-maintained propagation shape; keep the work confined to authoritative DDL or trigger assertions in that surface area; and do not introduce a separate SQL Server runtime repository scenario unless the implementation ends up touching dialect-specific executor behavior.",
     "steps-to-verify": [
-      "Inspect existing `Identity_propagation` smoke coverage and add narrow SQL Server DDL or trigger assertions only if the runtime or model changes expose a missing guarantee.",
+      "Add or adjust a narrow assertion in `MssqlGeneratedDdlAuthoritativeSmokeTests` so the existing trigger-fallback propagation proof explicitly covers the relevant canonical or storage columns for this story.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Identity_propagation\"`"
     ],
     "completed": false
