@@ -733,6 +733,126 @@ public class ExtractDocumentReferencesTests
         }
     }
 
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Malformed_Root_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ExtractDocumentReferencesTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        $$"""
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {
+                                "localCourseCode": {{_invalidValueJson}},
+                                "schoolId": "23",
+                                "schoolYear": 1234,
+                                "sessionName": "aSessionName"
+                            }
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_invalid_member_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception
+                .ValidationFailures[0]
+                .Path.Value.Should()
+                .Be("$.courseOfferingReference.localCourseCode");
+        }
+
+        [Test]
+        public void It_reports_the_present_member_as_non_scalar()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
+
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Malformed_Nested_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ExtractDocumentReferencesTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        $$"""
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": {{_invalidValueJson}},
+                                        "schoolId": "111"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_invalid_nested_member_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception
+                .ValidationFailures[0]
+                .Path.Value.Should()
+                .Be("$.classPeriods[0].classPeriodReference.classPeriodName");
+        }
+
+        [Test]
+        public void It_reports_the_nested_present_member_as_non_scalar()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_No_References_In_Body

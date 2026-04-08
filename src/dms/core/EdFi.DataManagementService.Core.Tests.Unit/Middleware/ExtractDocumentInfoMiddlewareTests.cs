@@ -272,4 +272,120 @@ public class ExtractDocumentInfoMiddlewareTests
                 .Contain("$.classPeriods[0].classPeriodReference.schoolId");
         }
     }
+
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_A_Malformed_Root_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = $$"""
+                {
+                    "sectionIdentifier": "Bob",
+                    "courseOfferingReference": {
+                        "localCourseCode": {{_invalidValueJson}},
+                        "schoolId": "23",
+                        "schoolYear": 1234,
+                        "sessionName": "aSessionName"
+                    }
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
+
+            await BuildMiddleware()
+                .Execute(_requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public void It_returns_a_validation_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+        }
+
+        [Test]
+        public void It_reports_the_invalid_root_member_at_its_concrete_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]![
+                "$.courseOfferingReference.localCourseCode"
+            ]![0]!
+                .GetValue<string>()
+                .Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
+
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_A_Put_Request_With_A_Malformed_Nested_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = $$"""
+                {
+                    "sectionIdentifier": "Bob",
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": {{_invalidValueJson}},
+                                "schoolId": "111"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.PUT, body);
+
+            await BuildMiddleware()
+                .Execute(_requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public void It_returns_a_validation_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+        }
+
+        [Test]
+        public void It_reports_the_invalid_nested_member_at_its_concrete_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]![
+                "$.classPeriods[0].classPeriodReference.classPeriodName"
+            ]![0]!
+                .GetValue<string>()
+                .Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
 }

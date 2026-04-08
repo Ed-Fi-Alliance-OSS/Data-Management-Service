@@ -121,7 +121,7 @@
       "Add middleware coverage in `ExtractDocumentInfoMiddlewareTests` proving POST and PUT requests with malformed propagated reference identity members return `400` validation responses instead of uncaught `InvalidOperationException` behavior.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Duplicate ReferenceJsonPath Support",

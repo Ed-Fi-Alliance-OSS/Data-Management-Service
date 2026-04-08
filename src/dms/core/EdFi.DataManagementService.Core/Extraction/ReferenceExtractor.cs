@@ -18,6 +18,14 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// </summary>
 internal static class ReferenceExtractor
 {
+    private enum InvalidReferenceIdentityMemberValueKind
+    {
+        Null,
+        JsonObject,
+        JsonArray,
+        NonScalar,
+    }
+
     /// <summary>
     /// Strips the last dot-separated segment from a JSONPath string.
     /// e.g. "$.classPeriods[*].classPeriodReference.classPeriodName" -> "$.classPeriods[*].classPeriodReference"
@@ -80,6 +88,11 @@ internal static class ReferenceExtractor
                 _ => new DocumentIdentityElement?[identityElements.Length],
                 StringComparer.Ordinal
             );
+            var invalidIdentityElementsByReferencePath = referenceOccurrences.ToDictionary(
+                occurrence => occurrence.jsonPath,
+                _ => new bool[identityElements.Length],
+                StringComparer.Ordinal
+            );
             List<DocumentReference> documentReferencesForThisPath = [];
 
             foreach (JsonPathAndNode referenceOccurrence in referenceOccurrences)
@@ -104,14 +117,11 @@ internal static class ReferenceExtractor
             )
             {
                 var element = identityElements[identityElementIndex];
-                JsonPathAndValue[] pathValues = documentBody
-                    .SelectNodesAndLocationFromArrayPathCoerceToStrings(
-                        element.ReferenceJsonPath.Value,
-                        logger
-                    )
+                JsonPathAndNode[] pathValues = documentBody
+                    .SelectNodesAndLocationFromArrayPath(element.ReferenceJsonPath.Value, logger)
                     .ToArray();
 
-                foreach (JsonPathAndValue pathValue in pathValues)
+                foreach (JsonPathAndNode pathValue in pathValues)
                 {
                     string concreteParentPath = StripLastJsonPathSegment(pathValue.jsonPath);
 
@@ -127,9 +137,26 @@ internal static class ReferenceExtractor
                         );
                     }
 
-                    collectedIdentityElements[identityElementIndex] = new DocumentIdentityElement(
-                        element.IdentityJsonPath,
-                        pathValue.value
+                    bool[] invalidIdentityElements = invalidIdentityElementsByReferencePath[
+                        concreteParentPath
+                    ];
+
+                    if (TryGetScalarIdentityValue(pathValue.node, out string? identityValue))
+                    {
+                        collectedIdentityElements[identityElementIndex] = new DocumentIdentityElement(
+                            element.IdentityJsonPath,
+                            identityValue
+                        );
+                        continue;
+                    }
+
+                    invalidIdentityElements[identityElementIndex] = true;
+
+                    validationFailures.Add(
+                        new WriteValidationFailure(
+                            new JsonPath(pathValue.jsonPath),
+                            $"Reference identity member '{pathValue.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a scalar value when present, but was {DescribeInvalidReferenceIdentityMemberValue(pathValue.node)}."
+                        )
                     );
                 }
             }
@@ -145,9 +172,15 @@ internal static class ReferenceExtractor
                 DocumentIdentityElement?[] collectedIdentityElements = identityElementsByReferencePath[
                     referenceOccurrence.jsonPath
                 ];
+                bool[] invalidIdentityElements = invalidIdentityElementsByReferencePath[
+                    referenceOccurrence.jsonPath
+                ];
                 string[] missingReferencePaths = identityElements
                     .Select((element, index) => (element, index))
-                    .Where(entry => collectedIdentityElements[entry.index] is null)
+                    .Where(entry =>
+                        collectedIdentityElements[entry.index] is null
+                        && !invalidIdentityElements[entry.index]
+                    )
                     .Select(entry =>
                         BuildConcreteReferenceMemberPath(
                             referenceOccurrence.jsonPath,
@@ -165,6 +198,11 @@ internal static class ReferenceExtractor
                             $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must include all identifying values when present. Missing: {string.Join(", ", missingReferencePaths.Select(path => $"'{path}'"))}."
                         )
                     );
+                    continue;
+                }
+
+                if (Array.Exists(invalidIdentityElements, static invalid => invalid))
+                {
                     continue;
                 }
 
@@ -201,10 +239,49 @@ internal static class ReferenceExtractor
 
         if (validationFailures.Count > 0)
         {
-            throw new ReferenceExtractionValidationException([.. validationFailures]);
+            throw new ReferenceExtractionValidationException([.. validationFailures.Distinct()]);
         }
 
         return (documentReferences.ToArray(), documentReferenceArrays.ToArray());
+    }
+
+    private static bool TryGetScalarIdentityValue(JsonNode? node, out string identityValue)
+    {
+        if (node is JsonValue jsonValue)
+        {
+            identityValue = jsonValue.ToString();
+            return true;
+        }
+
+        identityValue = string.Empty;
+        return false;
+    }
+
+    private static string DescribeInvalidReferenceIdentityMemberValue(JsonNode? node)
+    {
+        return GetInvalidReferenceIdentityMemberValueKind(node) switch
+        {
+            InvalidReferenceIdentityMemberValueKind.Null => "null",
+            InvalidReferenceIdentityMemberValueKind.JsonObject => "a JSON object",
+            InvalidReferenceIdentityMemberValueKind.JsonArray => "a JSON array",
+            InvalidReferenceIdentityMemberValueKind.NonScalar => "a non-scalar JSON value",
+            _ => throw new InvalidOperationException(
+                "Unhandled invalid reference identity member value kind."
+            ),
+        };
+    }
+
+    private static InvalidReferenceIdentityMemberValueKind GetInvalidReferenceIdentityMemberValueKind(
+        JsonNode? node
+    )
+    {
+        return node switch
+        {
+            null => InvalidReferenceIdentityMemberValueKind.Null,
+            JsonObject => InvalidReferenceIdentityMemberValueKind.JsonObject,
+            JsonArray => InvalidReferenceIdentityMemberValueKind.JsonArray,
+            _ => InvalidReferenceIdentityMemberValueKind.NonScalar,
+        };
     }
 
     private static string BuildConcreteReferenceMemberPath(
