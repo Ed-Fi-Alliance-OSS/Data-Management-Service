@@ -1371,6 +1371,33 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_maps_flattener_validation_failures_for_post_requests()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var validationFailure = new WriteValidationFailure(
+            new JsonPath("$.schoolReference"),
+            "must include all identifying values when present"
+        );
+        _writeFlattener.ExceptionToThrow = new RelationalWriteRequestValidationException([validationFailure]);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureValidation([validationFailure])
+                )
+            );
+        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_maps_flattener_validation_failures_for_put_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
@@ -34,8 +35,24 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             _logger
         );
 
-        (DocumentReference[] documentReferences, DocumentReferenceArray[] documentReferenceArrays) =
-            requestInfo.ResourceSchema.ExtractReferences(requestInfo.ParsedBody, _logger);
+        DocumentReference[] documentReferences;
+        DocumentReferenceArray[] documentReferenceArrays;
+
+        try
+        {
+            (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
+                requestInfo.ParsedBody,
+                _logger
+            );
+        }
+        catch (ReferenceExtractionValidationException ex)
+        {
+            requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(ex.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
 
         requestInfo.DocumentInfo = new(
             DocumentReferences: documentReferences,

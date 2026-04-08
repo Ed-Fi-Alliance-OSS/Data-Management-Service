@@ -25,6 +25,62 @@ public class ExtractDocumentInfoMiddlewareTests
         return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
     }
 
+    internal static RequestInfo CreateRequestInfo(
+        ResourceSchema resourceSchema,
+        RequestMethod method,
+        string body,
+        string path = "/ed-fi/sections"
+    )
+    {
+        return new(
+            new(
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                Path: path,
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            ),
+            method,
+            No.ServiceProvider
+        )
+        {
+            ResourceSchema = resourceSchema,
+            ParsedBody = JsonNode.Parse(body)!,
+        };
+    }
+
+    internal static ApiSchemaDocuments BuildReferenceValidationApiSchemaDocuments()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Section")
+            .WithIdentityJsonPaths(["$.sectionIdentifier"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("SectionIdentifier", "$.sectionIdentifier")
+            .WithDocumentPathReference(
+                "CourseOffering",
+                [
+                    new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
+                    new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
+                    new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
+                    new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName"),
+                ]
+            )
+            .WithDocumentPathReference(
+                "ClassPeriod",
+                [
+                    new("$.classPeriodName", "$.classPeriods[*].classPeriodReference.classPeriodName"),
+                    new("$.schoolReference.schoolId", "$.classPeriods[*].classPeriodReference.schoolId"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_a_school_that_is_a_subclass_with_no_outbound_references
@@ -117,6 +173,103 @@ public class ExtractDocumentInfoMiddlewareTests
             superclassResourceInfo.IsDescriptor.Should().Be(false);
             superclassResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
             superclassResourceInfo.ResourceName.Value.Should().Be("EducationOrganization");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_Request_With_An_Empty_Reference_Object : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = """
+                {
+                    "sectionIdentifier": "Bob",
+                    "courseOfferingReference": {}
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
+
+            await BuildMiddleware()
+                .Execute(_requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public void It_returns_a_validation_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+        }
+
+        [Test]
+        public void It_reports_the_empty_reference_at_the_root_reference_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$.courseOfferingReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Contain("$.courseOfferingReference.localCourseCode");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Put_Request_With_A_Partial_Nested_Reference_Object
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = """
+                {
+                    "sectionIdentifier": "Bob",
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "Class Period 1"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.PUT, body);
+
+            await BuildMiddleware()
+                .Execute(_requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public void It_returns_a_validation_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+        }
+
+        [Test]
+        public void It_reports_the_partial_reference_at_the_nested_reference_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]![
+                "$.classPeriods[0].classPeriodReference"
+            ]![0]!
+                .GetValue<string>()
+                .Should()
+                .Contain("$.classPeriods[0].classPeriodReference.schoolId");
         }
     }
 }

@@ -133,6 +133,31 @@ internal static class JsonHelpers
     }
 
     /// <summary>
+    /// Helper to go from an array JSONPath selection directly to a collection of JsonNode values and concrete paths.
+    /// Returns an empty collection if the values do not exist.
+    /// </summary>
+    public static IEnumerable<JsonPathAndNode> SelectNodesAndLocationFromArrayPath(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        var nodeValueWithPath = new List<JsonPathAndNode>();
+        var result = SelectPathResult(jsonNode, jsonPathString, logger);
+        IEnumerable<Node?> jsonNodes = result.Matches.Select(x => x);
+
+        foreach (Node? node in jsonNodes)
+        {
+            if (node is not null && node.Location is not null)
+            {
+                nodeValueWithPath.Add(new JsonPathAndNode(ConvertPath(node.Location.Segments), node.Value));
+            }
+        }
+
+        return nodeValueWithPath;
+    }
+
+    /// <summary>
     /// Helper to go from an array JSONPath selection directly to a collection of string value and path regardless of the JSON type
     /// Returns empty dictionary if the values do not exist.
     /// </summary>
@@ -145,41 +170,17 @@ internal static class JsonHelpers
         var nodeValueWithPath = new List<JsonPathAndValue>();
         var result = SelectPathResult(jsonNode, jsonPathString, logger);
         IEnumerable<Node?> jsonNodes = result.Matches.Select(x => x);
+
         foreach (Node? node in jsonNodes)
         {
-            if (node != null && node.Location != null)
+            if (node is not null && node.Location is not null)
             {
-                var path = ConvertPath(node.Location.Segments);
                 var value =
                     node.Value?.AsValue()
                     ?? throw new InvalidOperationException("Unexpected JSONPath value error");
-                nodeValueWithPath.Add(new JsonPathAndValue(path, value.ToString()));
-            }
-        }
-
-        // Converts $['eduCategories'][0]['eduCategoryDescriptor'] to $.eduCategories[0].eduCategoryDescriptor
-        static string ConvertPath(PathSegment[] pathSegments)
-        {
-            StringBuilder path = new("$");
-            foreach (PathSegment pathSegment in pathSegments)
-            {
-                var name = string.Join(
-                    ".",
-                    pathSegment.Selectors.Select(x => x != null ? ToJsonPathString(x) : string.Empty)
+                nodeValueWithPath.Add(
+                    new JsonPathAndValue(ConvertPath(node.Location.Segments), value.ToString())
                 );
-                path.Append(name);
-            }
-            var parsedPath = JsonPath.Parse(path.ToString());
-            return parsedPath.ToString();
-
-            static string? ToJsonPathString(ISelector input)
-            {
-                var trimmedValue = $".{input.ToString()?.Trim('\'')}";
-                if (int.TryParse(trimmedValue.TrimStart('.'), out var parsedValue))
-                {
-                    trimmedValue = $"[{parsedValue}]";
-                }
-                return trimmedValue;
             }
         }
 
@@ -477,7 +478,41 @@ internal static class JsonHelpers
         }
         return (null, -1);
     }
+
+    private static string ConvertPath(PathSegment[] pathSegments)
+    {
+        StringBuilder path = new("$");
+
+        foreach (PathSegment pathSegment in pathSegments)
+        {
+            var name = string.Join(
+                ".",
+                pathSegment.Selectors.Select(x => x is not null ? ToJsonPathString(x) : string.Empty)
+            );
+            path.Append(name);
+        }
+
+        var parsedPath = JsonPath.Parse(path.ToString());
+        return parsedPath.ToString();
+
+        static string? ToJsonPathString(ISelector input)
+        {
+            var trimmedValue = $".{input.ToString()?.Trim('\'')}";
+
+            if (int.TryParse(trimmedValue.TrimStart('.'), out var parsedValue))
+            {
+                trimmedValue = $"[{parsedValue}]";
+            }
+
+            return trimmedValue;
+        }
+    }
 }
+
+/// <summary>
+/// Contains Json path and Json node value
+/// </summary>
+public record JsonPathAndNode(string jsonPath, JsonNode? node);
 
 /// <summary>
 /// Contains Json path and Json node value

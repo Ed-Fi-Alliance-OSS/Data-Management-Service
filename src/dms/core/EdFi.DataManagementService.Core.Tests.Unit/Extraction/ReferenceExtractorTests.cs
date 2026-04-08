@@ -556,6 +556,107 @@ public class ExtractDocumentReferencesTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Extracting_Document_References_With_An_Empty_Reference_Object_In_Body
+        : ExtractDocumentReferencesTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {}
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_reference_object_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception.ValidationFailures[0].Path.Value.Should().Be("$.courseOfferingReference");
+        }
+
+        [Test]
+        public void It_reports_each_missing_identity_member_in_the_validation_message()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("$.courseOfferingReference.localCourseCode")
+                .And.Contain("$.courseOfferingReference.schoolId")
+                .And.Contain("$.courseOfferingReference.schoolYear")
+                .And.Contain("$.courseOfferingReference.sessionName");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Partial_Nested_Reference_Object_In_Body
+        : ExtractDocumentReferencesTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": "Class Period 1"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_nested_reference_object_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception.ValidationFailures[0].Path.Value.Should().Be("$.classPeriods[0].classPeriodReference");
+        }
+
+        [Test]
+        public void It_reports_the_missing_nested_identity_member()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("$.classPeriods[0].classPeriodReference.schoolId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_No_References_In_Body
         : ExtractDocumentReferencesTests
     {

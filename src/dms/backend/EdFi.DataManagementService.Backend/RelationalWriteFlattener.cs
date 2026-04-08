@@ -2031,7 +2031,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return RelationalWriteRequestValidationException.ForPath(path, message);
     }
 
-    private static InvalidOperationException CreateMissingDocumentReferenceLookupException(
+    private static RelationalWriteRequestValidationException CreateMissingDocumentReferenceLookupException(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
         string wildcardPath,
@@ -2041,11 +2041,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var concretePath = MaterializeConcretePath(wildcardPath, ordinalPath);
 
-        return new InvalidOperationException(
-            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' had a document reference value at path "
-                + $"'{concretePath}', but the resolved lookup set did not contain a matching "
-                + $"'{RelationalWriteSupport.FormatResource(targetResource)}' entry for ordinal path "
-                + $"{FormatOrdinalPath(ordinalPath)}."
+        return CreateRequestShapeValidationException(
+            concretePath,
+            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' could not materialize document reference "
+                + $"'{RelationalWriteSupport.FormatResource(targetResource)}' at path '{concretePath}' because the write request did not produce a matching resolved reference occurrence."
         );
     }
 
@@ -2067,17 +2066,26 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static InvalidOperationException CreateMissingReferenceDerivedLookupException(
+    private static RelationalWriteRequestValidationException CreateMissingReferenceDerivedLookupException(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
         ReferenceDerivedValueSourceMetadata referenceSource,
         ReadOnlySpan<int> ordinalPath
     )
     {
-        return new InvalidOperationException(
-            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' depended on resolved reference-derived value at path "
-                + $"'{MaterializeConcretePath(referenceSource.ReferenceJsonPath.Canonical, ordinalPath)}', but the resolved lookup set did not contain a matching occurrence for reference site "
-                + $"'{MaterializeConcretePath(referenceSource.ReferenceObjectPath.Canonical, ordinalPath)}' at ordinal path {FormatOrdinalPath(ordinalPath)}."
+        var concreteReferenceValuePath = MaterializeConcretePath(
+            referenceSource.ReferenceJsonPath.Canonical,
+            ordinalPath
+        );
+        var concreteReferenceObjectPath = MaterializeConcretePath(
+            referenceSource.ReferenceObjectPath.Canonical,
+            ordinalPath
+        );
+
+        return CreateRequestShapeValidationException(
+            concreteReferenceValuePath,
+            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' could not materialize reference-derived value at path "
+                + $"'{concreteReferenceValuePath}' because reference object '{concreteReferenceObjectPath}' did not produce a matching resolved reference occurrence."
         );
     }
 

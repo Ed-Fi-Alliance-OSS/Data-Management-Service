@@ -700,7 +700,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_fails_when_a_root_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    public void It_returns_a_validation_failure_when_a_root_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -718,15 +718,18 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Column 'School_DocumentId' on table 'edfi.Student' had a document reference value at path '$.schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path []*"
-            );
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("could not materialize document reference 'Ed-Fi.School' at path '$.schoolReference'");
     }
 
     [Test]
-    public void It_fails_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    public void It_returns_a_validation_failure_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -754,10 +757,15 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Column 'School_DocumentId' on table 'edfi.StudentAddressPeriod' had a document reference value at path '$.addresses[0].periods[0].schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path [0, 0]*"
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[0].periods[0].schoolReference");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "could not materialize document reference 'Ed-Fi.School' at path '$.addresses[0].periods[0].schoolReference'"
             );
     }
 
@@ -1063,6 +1071,40 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_returns_a_validation_failure_when_a_reference_derived_member_is_present_but_missing_from_the_resolved_lookup_set()
+    {
+        var writePlan = CreateReferenceDerivedValueOnlyWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("could not materialize reference-derived value at path '$.schoolReference.schoolYear'")
+            .And.Contain("reference object '$.schoolReference'");
+    }
+
+    [Test]
     public void It_populates_descriptor_backed_reference_derived_bindings_on_create()
     {
         var writePlan = CreateDescriptorBackedReferenceDerivedWritePlan();
@@ -1351,6 +1393,64 @@ public class Given_RelationalWriteFlattener
     private static ResourceWritePlan CreateReferenceDerivedWritePlan()
     {
         return CreateReferenceDerivedWritePlan(CreateReferenceDerivedModel());
+    }
+
+    private static ResourceWritePlan CreateReferenceDerivedValueOnlyWritePlan()
+    {
+        var model = CreateReferenceDerivedModel();
+        var table = model.Root;
+
+        DbColumnModel Column(string name)
+        {
+            return table.Columns.Single(column =>
+                string.Equals(column.ColumnName.Value, name, StringComparison.Ordinal)
+            );
+        }
+
+        return new ResourceWritePlan(
+            Model: model,
+            TablePlansInDependencyOrder:
+            [
+                new TableWritePlan(
+                    TableModel: table,
+                    InsertSql: "INSERT INTO [edfi].[ProgramReferenceDerived] ([DocumentId], [School_RefSchoolYear]) VALUES (@documentId, @schoolRefSchoolYear);",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(
+                        MaxRowsPerBatch: 525,
+                        ParametersPerRow: 2,
+                        MaxParametersPerCommand: 2100
+                    ),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: Column("DocumentId"),
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: Column("School_RefSchoolYear"),
+                            Source: new WriteValueSource.ReferenceDerived(
+                                ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                                    BindingIndex: 0,
+                                    ReferenceObjectPath: CreateTestPath(
+                                        "$.schoolReference",
+                                        new JsonPathSegment.Property("schoolReference")
+                                    ),
+                                    ReferenceJsonPath: CreateTestPath(
+                                        "$.schoolReference.schoolYear",
+                                        new JsonPathSegment.Property("schoolReference"),
+                                        new JsonPathSegment.Property("schoolYear")
+                                    )
+                                )
+                            ),
+                            ParameterName: "schoolRefSchoolYear"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
     }
 
     private static ResourceWritePlan CreateMixedSourceReferenceDerivedWritePlan()

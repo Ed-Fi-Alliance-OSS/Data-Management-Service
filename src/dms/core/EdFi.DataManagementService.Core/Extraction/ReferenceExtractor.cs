@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
@@ -40,6 +41,7 @@ internal static class ReferenceExtractor
 
         List<DocumentReference> documentReferences = [];
         List<DocumentReferenceArray> documentReferenceArrays = [];
+        List<WriteValidationFailure> validationFailures = [];
 
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
@@ -62,86 +64,152 @@ internal static class ReferenceExtractor
                 );
             }
 
-            // Group identity values by their concrete reference-object path.
-            var referenceGroups =
-                new List<(string parentPath, List<DocumentIdentityElement> identityElements)>();
-            var pathToGroupIndex = new Dictionary<string, int>();
+            string wildcardParentPath = StripLastJsonPathSegment(identityElements[0].ReferenceJsonPath.Value);
+            JsonPathAndNode[] referenceOccurrences = documentBody
+                .SelectNodesAndLocationFromArrayPath(wildcardParentPath, logger)
+                .ToArray();
+
+            // If no matches, assume an optional reference wasn't there
+            if (referenceOccurrences.Length == 0)
+            {
+                continue;
+            }
+
+            var identityElementsByReferencePath = referenceOccurrences.ToDictionary(
+                occurrence => occurrence.jsonPath,
+                _ => new Dictionary<string, DocumentIdentityElement>(StringComparer.Ordinal),
+                StringComparer.Ordinal
+            );
+            List<DocumentReference> documentReferencesForThisPath = [];
+
+            foreach (JsonPathAndNode referenceOccurrence in referenceOccurrences)
+            {
+                if (referenceOccurrence.node is JsonObject)
+                {
+                    continue;
+                }
+
+                validationFailures.Add(
+                    new WriteValidationFailure(
+                        new JsonPath(referenceOccurrence.jsonPath),
+                        $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must be a JSON object."
+                    )
+                );
+            }
 
             foreach (var element in identityElements)
             {
-                var pathValues = documentBody
+                JsonPathAndValue[] pathValues = documentBody
                     .SelectNodesAndLocationFromArrayPathCoerceToStrings(
                         element.ReferenceJsonPath.Value,
                         logger
                     )
                     .ToArray();
 
-                foreach (var pv in pathValues)
+                foreach (JsonPathAndValue pathValue in pathValues)
                 {
-                    string concreteParentPath = StripLastJsonPathSegment(pv.jsonPath);
+                    string concreteParentPath = StripLastJsonPathSegment(pathValue.jsonPath);
 
-                    if (!pathToGroupIndex.TryGetValue(concreteParentPath, out int groupIndex))
+                    if (
+                        !identityElementsByReferencePath.TryGetValue(
+                            concreteParentPath,
+                            out Dictionary<string, DocumentIdentityElement>? collectedIdentityElements
+                        )
+                    )
                     {
-                        groupIndex = referenceGroups.Count;
-                        pathToGroupIndex[concreteParentPath] = groupIndex;
-                        referenceGroups.Add((concreteParentPath, []));
+                        throw new InvalidOperationException(
+                            $"Reference identity path '{pathValue.jsonPath}' did not match a concrete reference object for resource '{documentPath.ResourceName.Value}'."
+                        );
                     }
 
-                    referenceGroups[groupIndex]
-                        .identityElements.Add(
-                            new DocumentIdentityElement(element.IdentityJsonPath, pv.value)
-                        );
-                }
-            }
-
-            // If no matches, assume an optional reference wasn't there
-            if (referenceGroups.Count == 0)
-            {
-                continue;
-            }
-
-            // Each reference group must have exactly one value per identity element
-            foreach (var (path, elements) in referenceGroups)
-            {
-                if (elements.Count != identityElements.Length)
-                {
-                    throw new InvalidOperationException(
-                        $"Reference '{documentPath.ResourceName.Value}' at '{path}': "
-                            + $"expected {identityElements.Length} identity elements but found {elements.Count}"
+                    collectedIdentityElements[element.ReferenceJsonPath.Value] = new DocumentIdentityElement(
+                        element.IdentityJsonPath,
+                        pathValue.value
                     );
                 }
             }
 
-            BaseResourceInfo resourceInfo = new(
-                documentPath.ProjectName,
-                documentPath.ResourceName,
-                documentPath.IsDescriptor
-            );
-
-            List<DocumentReference> documentReferencesForThisArray = [];
-
-            foreach (var (parentPath, identityParts) in referenceGroups)
+            // Each reference group must have exactly one value per identity element
+            foreach (JsonPathAndNode referenceOccurrence in referenceOccurrences)
             {
-                DocumentIdentity documentIdentity = new(identityParts.ToArray());
-                documentReferencesForThisArray.Add(
-                    new(
-                        resourceInfo,
-                        documentIdentity,
-                        ReferentialIdFrom(resourceInfo, documentIdentity),
-                        new JsonPath(parentPath)
+                if (referenceOccurrence.node is not JsonObject)
+                {
+                    continue;
+                }
+
+                Dictionary<string, DocumentIdentityElement> collectedIdentityElements =
+                    identityElementsByReferencePath[referenceOccurrence.jsonPath];
+                string[] missingReferencePaths = identityElements
+                    .Where(element => !collectedIdentityElements.ContainsKey(element.ReferenceJsonPath.Value))
+                    .Select(element =>
+                        BuildConcreteReferenceMemberPath(
+                            referenceOccurrence.jsonPath,
+                            wildcardParentPath,
+                            element.ReferenceJsonPath.Value
+                        )
                     )
+                    .ToArray();
+
+                if (missingReferencePaths.Length > 0)
+                {
+                    validationFailures.Add(
+                        new WriteValidationFailure(
+                            new JsonPath(referenceOccurrence.jsonPath),
+                            $"Reference object '{referenceOccurrence.jsonPath}' for resource '{documentPath.ResourceName.Value}' must include all identifying values when present. Missing: {string.Join(", ", missingReferencePaths.Select(path => $"'{path}'"))}."
+                        )
+                    );
+                    continue;
+                }
+
+                BaseResourceInfo resourceInfo = new(
+                    documentPath.ProjectName,
+                    documentPath.ResourceName,
+                    documentPath.IsDescriptor
                 );
+
+                DocumentIdentity documentIdentity = new(
+                    identityElements
+                        .Select(element => collectedIdentityElements[element.ReferenceJsonPath.Value])
+                        .ToArray()
+                );
+                var documentReference = new DocumentReference(
+                    resourceInfo,
+                    documentIdentity,
+                    ReferentialIdFrom(resourceInfo, documentIdentity),
+                    new JsonPath(referenceOccurrence.jsonPath)
+                );
+
+                documentReferences.Add(documentReference);
+                documentReferencesForThisPath.Add(documentReference);
             }
 
-            // Derive the wildcard parent path by stripping the last segment from the first identity element's path
-            string wildcardParentPath = StripLastJsonPathSegment(identityElements[0].ReferenceJsonPath.Value);
+            if (documentReferencesForThisPath.Count > 0)
+            {
+                documentReferenceArrays.Add(new(new(wildcardParentPath), [.. documentReferencesForThisPath]));
+            }
+        }
 
-            documentReferences.AddRange(documentReferencesForThisArray);
-            documentReferenceArrays.Add(
-                new(new(wildcardParentPath), documentReferencesForThisArray.ToArray())
-            );
+        if (validationFailures.Count > 0)
+        {
+            throw new ReferenceExtractionValidationException([.. validationFailures]);
         }
 
         return (documentReferences.ToArray(), documentReferenceArrays.ToArray());
+    }
+
+    private static string BuildConcreteReferenceMemberPath(
+        string concreteReferenceObjectPath,
+        string wildcardReferenceObjectPath,
+        string wildcardReferenceMemberPath
+    )
+    {
+        if (!wildcardReferenceMemberPath.StartsWith(wildcardReferenceObjectPath, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Reference member path '{wildcardReferenceMemberPath}' is not under reference object path '{wildcardReferenceObjectPath}'."
+            );
+        }
+
+        return $"{concreteReferenceObjectPath}{wildcardReferenceMemberPath[wildcardReferenceObjectPath.Length..]}";
     }
 }
