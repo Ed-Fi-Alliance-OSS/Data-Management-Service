@@ -286,6 +286,23 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_fail_fast_when_reference_derived_column_source_path_drifts_from_binding_metadata()
+    {
+        var model = ReferenceDerivedWritePlanFixture.WithColumnSourceJsonPath(
+            ReferenceDerivedWritePlanFixture.CreateModel(),
+            "School_RefSchoolYear",
+            "$.schoolReference.localSchoolYear"
+        );
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.ProgramReferenceDerived': reference-derived source mismatch for column 'School_RefSchoolYear'. DbColumnModel.SourceJsonPath '$.schoolReference.localSchoolYear' does not match ReferenceIdentityBinding.ReferenceJsonPath '$.schoolReference.schoolYear'."
+            );
+    }
+
+    [Test]
     public void It_should_treat_document_suffixed_parent_key_parts_as_parent_key_part_sources()
     {
         var model = CreateRootOnlyModelWithDocumentSuffixedParentKeyPart();

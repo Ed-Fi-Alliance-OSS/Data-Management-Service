@@ -242,6 +242,23 @@ public class Given_WritePlanCompiler_KeyUnification : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_reference_derived_key_unification_member_source_path_drifts_from_binding_metadata()
+    {
+        var model = ReferenceDerivedWritePlanFixture.WithColumnSourceJsonPath(
+            ReferenceDerivedWritePlanFixture.CreateModel(),
+            "School_RefSchoolIdAlias",
+            "$.schoolReference.localSchoolId"
+        );
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.ProgramReferenceDerived': reference-derived source mismatch for member path column 'School_RefSchoolIdAlias'. DbColumnModel.SourceJsonPath '$.schoolReference.localSchoolId' does not match ReferenceIdentityBinding.ReferenceJsonPath '$.schoolReference.schoolId'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_synthetic_presence_column_is_missing_null_or_true_constraint()
     {
         var unsupportedModel = CreateRootOnlyModelWithMissingSyntheticPresenceConstraint();

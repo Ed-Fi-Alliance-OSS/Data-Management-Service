@@ -1169,15 +1169,13 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         ReferenceDerivedValueSourceMetadata referenceDerivedSource
     )
     {
-        var sourcePath = column.SourceJsonPath?.Canonical ?? "<null>";
-
-        if (column.SourceJsonPath?.Canonical != referenceDerivedSource.ReferenceJsonPath.Canonical)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{table}': reference-derived source mismatch for column '{column.ColumnName.Value}'. "
-                    + $"DbColumnModel.SourceJsonPath '{sourcePath}' does not match ReferenceIdentityBinding.ReferenceJsonPath '{referenceDerivedSource.ReferenceJsonPath.Canonical}'."
-            );
-        }
+        ReferenceDerivedSourcePathValidator.ValidateOrThrow(
+            "write plan",
+            table,
+            column,
+            "column",
+            referenceDerivedSource
+        );
 
         return new WriteValueSource.ReferenceDerived(referenceDerivedSource);
     }

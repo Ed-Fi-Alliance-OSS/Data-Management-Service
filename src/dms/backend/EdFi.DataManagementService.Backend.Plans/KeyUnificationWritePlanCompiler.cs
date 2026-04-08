@@ -413,7 +413,13 @@ internal static class KeyUnificationWritePlanCompiler
     {
         if (referenceDerivedSource is not null)
         {
-            ValidateReferenceDerivedSourcePath(tableModel, memberPathColumn, referenceDerivedSource);
+            ReferenceDerivedSourcePathValidator.ValidateOrThrow(
+                "key-unification plan",
+                tableModel.Table,
+                memberPathColumn,
+                "member path column",
+                referenceDerivedSource
+            );
 
             return new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
                 MemberPathColumn: memberPathColumn.ColumnName,
@@ -458,25 +464,6 @@ internal static class KeyUnificationWritePlanCompiler
             PresenceColumn: presenceColumn,
             PresenceBindingIndex: presenceBindingIndex,
             PresenceIsSynthetic: presenceIsSynthetic
-        );
-    }
-
-    private static void ValidateReferenceDerivedSourcePath(
-        DbTableModel tableModel,
-        DbColumnModel memberPathColumn,
-        ReferenceDerivedValueSourceMetadata referenceDerivedSource
-    )
-    {
-        var sourcePath = memberPathColumn.SourceJsonPath?.Canonical ?? "<null>";
-
-        if (memberPathColumn.SourceJsonPath?.Canonical == referenceDerivedSource.ReferenceJsonPath.Canonical)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile key-unification plan for '{tableModel.Table}': reference-derived source mismatch for member path column '{memberPathColumn.ColumnName.Value}'. "
-                + $"DbColumnModel.SourceJsonPath '{sourcePath}' does not match ReferenceIdentityBinding.ReferenceJsonPath '{referenceDerivedSource.ReferenceJsonPath.Canonical}'."
         );
     }
 }

@@ -200,6 +200,6 @@
       "Add or update plan-compilation unit tests that mutate `SourceJsonPath` for a direct propagated binding and for a key-unified reference-derived member, asserting the shared diagnostic shape from both entry points.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources|FullyQualifiedName~Given_WritePlanCompiler_KeyUnification|FullyQualifiedName~NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

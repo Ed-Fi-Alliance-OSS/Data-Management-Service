@@ -255,6 +255,47 @@ internal static class ReferenceDerivedWritePlanFixture
         );
     }
 
+    public static RelationalResourceModel WithColumnSourceJsonPath(
+        RelationalResourceModel model,
+        string columnName,
+        string sourceJsonPath
+    )
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceJsonPath);
+
+        var targetColumnName = new DbColumnName(columnName);
+
+        if (model.Root.Columns.All(column => !column.ColumnName.Equals(targetColumnName)))
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName}' does not exist on table '{model.Root.Table}'."
+            );
+        }
+
+        var updatedRoot = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns.Select(column =>
+                    column.ColumnName.Equals(targetColumnName)
+                        ? column with
+                        {
+                            SourceJsonPath = Path(sourceJsonPath),
+                        }
+                        : column
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = [updatedRoot],
+        };
+    }
+
     public static RelationalResourceModel CreateDescriptorBackedModel(QualifiedResourceName? resource = null)
     {
         var resolvedResource = resource ?? _defaultResource;
