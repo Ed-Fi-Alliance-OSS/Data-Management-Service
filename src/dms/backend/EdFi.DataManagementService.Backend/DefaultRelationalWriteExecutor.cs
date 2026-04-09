@@ -199,10 +199,32 @@ internal sealed class DefaultRelationalWriteExecutor(
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return BuildValidationFailureResult(request.OperationKind, ex.ValidationFailures);
         }
-        catch (DbException ex) when (TryBuildWriteFailureResult(executionRequest, ex, out writeFailureResult))
+        catch (DbException ex)
         {
+            bool isMappedWriteFailure;
+
+            try
+            {
+                isMappedWriteFailure = TryBuildWriteFailureResult(
+                    executionRequest,
+                    ex,
+                    out writeFailureResult
+                );
+            }
+            catch
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return writeFailureResult!;
+
+            if (isMappedWriteFailure)
+            {
+                return writeFailureResult!;
+            }
+
+            throw;
         }
         catch
         {

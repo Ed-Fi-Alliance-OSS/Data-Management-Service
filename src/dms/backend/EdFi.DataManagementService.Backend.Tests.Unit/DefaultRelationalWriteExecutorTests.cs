@@ -1214,6 +1214,54 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_rethrows_exception_classifier_failures_during_db_exception_mapping()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("provider write failure");
+        _writeExceptionClassifier.ExceptionToThrow = new InvalidOperationException("classifier bug");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("classifier bug");
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rethrows_constraint_resolution_failures_during_db_exception_mapping()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("foreign key violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_InternalParent"
+            );
+        _writeConstraintResolver.ExceptionToThrow = new InvalidOperationException("resolver bug");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resolver bug");
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_immutable_identity_failure_when_existing_document_identity_changes_and_updates_are_disallowed()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
@@ -2266,6 +2314,8 @@ public class Given_Default_Relational_Write_Executor
 
         public DbException? CapturedException { get; private set; }
 
+        public Exception? ExceptionToThrow { get; set; }
+
         public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
 
         public bool TryClassify(
@@ -2275,6 +2325,12 @@ public class Given_Default_Relational_Write_Executor
         {
             TryClassifyCallCount++;
             CapturedException = exception;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
             classification = ClassificationToReturn;
             return classification is not null;
         }
@@ -2286,6 +2342,8 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteConstraintResolutionRequest? CapturedRequest { get; private set; }
 
+        public Exception? ExceptionToThrow { get; set; }
+
         public RelationalWriteConstraintResolution ResolutionToReturn { get; set; } =
             new RelationalWriteConstraintResolution.Unresolved("UNCONFIGURED");
 
@@ -2293,6 +2351,12 @@ public class Given_Default_Relational_Write_Executor
         {
             ResolveCallCount++;
             CapturedRequest = request;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
             return ResolutionToReturn;
         }
     }
