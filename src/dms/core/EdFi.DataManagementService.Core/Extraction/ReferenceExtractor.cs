@@ -147,10 +147,11 @@ internal static class ReferenceExtractor
 
                     if (TryGetScalarIdentityValue(pathValue.node, out string? identityValue))
                     {
-                        collectedIdentityElements[identityElementIndex] = new DocumentIdentityElement(
-                            element.IdentityJsonPath,
-                            NormalizeReferenceIdentityValue(element.IdentityJsonPath, identityValue)
-                        );
+                        collectedIdentityElements[identityElementIndex] =
+                            IdentityValueCanonicalizer.CreateDocumentIdentityElement(
+                                element.IdentityJsonPath,
+                                identityValue
+                            );
                         continue;
                     }
 
@@ -283,16 +284,6 @@ internal static class ReferenceExtractor
 
         identityValue = string.Empty;
         return false;
-    }
-
-    private static string NormalizeReferenceIdentityValue(JsonPath identityJsonPath, string identityValue)
-    {
-        return IsDescriptorIdentityPath(identityJsonPath) ? identityValue.ToLowerInvariant() : identityValue;
-    }
-
-    private static bool IsDescriptorIdentityPath(JsonPath identityJsonPath)
-    {
-        return identityJsonPath.Value.EndsWith("Descriptor", StringComparison.Ordinal);
     }
 
     private static string DescribeInvalidReferenceIdentityMemberValue(JsonNode? node)

@@ -156,7 +156,7 @@ public class ExtractDocumentIdentityTests
             documentIdentity!
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/StaffClassificationDescriptor#Kindergarten Teacher");
+                .Be("uri://ed-fi.org/staffclassificationdescriptor#kindergarten teacher");
         }
     }
 

@@ -41,10 +41,12 @@ internal static class IdentityExtractor
 
         // Build up documentIdentity in order
         IEnumerable<DocumentIdentityElement> documentIdentityElements =
-            resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
-                identityJsonPath,
-                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
-            ));
+            resourceSchema.IdentityJsonPaths.Select(identityJsonPath =>
+                IdentityValueCanonicalizer.CreateDocumentIdentityElement(
+                    identityJsonPath,
+                    documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
+                )
+            );
 
         return new DocumentIdentity(documentIdentityElements.ToArray());
     }
