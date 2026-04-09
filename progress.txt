@@ -1,0 +1,4 @@
+DMS-985 task complete: Repair relational middleware unit harness for ReferenceArrayUniquenessValidationMiddlewareTests.
+Decision: reuse ExtractDocumentInfoMiddlewareTests.CreateMappingSet after BuildResourceInfo populates ResourceInfo; matches relational setup pattern, no prod code change.
+Files: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ReferenceArrayUniquenessValidationMiddlewareTests.cs, tasks.json, progress.txt
+Notes: fixed MappingSet must be resolved failure under UseRelationalBackend=true. Verified dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~IdentityExtractorTests|FullyQualifiedName~ReferenceExtractorTests|FullyQualifiedName~ReferenceArrayUniquenessValidationMiddlewareTests|FullyQualifiedName~ExtractDocumentInfoMiddlewareTests" => 95 passed. Next likely Identity Canonicalization task.

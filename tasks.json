@@ -6,7 +6,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceArrayUniquenessValidationMiddlewareTests\"`",
       "Confirm the test output shows the duplicate-reference assertions passing and no `InvalidOperationException` from `ExtractDocumentInfoMiddleware`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Identity Canonicalization",
