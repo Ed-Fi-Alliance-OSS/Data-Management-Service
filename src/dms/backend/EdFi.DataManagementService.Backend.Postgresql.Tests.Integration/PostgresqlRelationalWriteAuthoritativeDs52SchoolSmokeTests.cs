@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -142,31 +143,15 @@ file static class AuthoritativeDs52WriteIntegrationTestSupport
     public static DocumentInfo CreateDocumentInfo(
         JsonNode requestBody,
         ResourceInfo resourceInfo,
-        ResourceSchema resourceSchema
-    )
-    {
-        var (documentIdentity, superclassIdentity) = resourceSchema.ExtractIdentities(
+        ResourceSchema resourceSchema,
+        MappingSet mappingSet
+    ) =>
+        RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
-            NullLogger.Instance
+            resourceInfo,
+            resourceSchema,
+            mappingSet
         );
-        var (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
-        var descriptorReferences = resourceSchema
-            .ExtractDescriptors(requestBody, NullLogger.Instance)
-            .ToArray();
-
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity),
-            DocumentReferences: [.. documentReferences],
-            DocumentReferenceArrays: [.. documentReferenceArrays],
-            DescriptorReferences: descriptorReferences,
-            SuperclassIdentity: superclassIdentity
-        );
-    }
 
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt16(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
@@ -635,7 +620,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             DocumentInfo: AuthoritativeDs52WriteIntegrationTestSupport.CreateDocumentInfo(
                 requestBody,
                 _resourceInfo,
-                _resourceSchema
+                _resourceSchema,
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -664,7 +650,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             DocumentInfo: AuthoritativeDs52WriteIntegrationTestSupport.CreateDocumentInfo(
                 requestBody,
                 _resourceInfo,
-                _resourceSchema
+                _resourceSchema,
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,

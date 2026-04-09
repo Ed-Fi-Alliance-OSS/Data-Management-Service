@@ -11,12 +11,12 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -130,29 +130,15 @@ file static class MssqlSurveyRuntimeIntegrationTestSupport
     public static DocumentInfo CreateDocumentInfo(
         JsonNode requestBody,
         ResourceInfo resourceInfo,
-        ResourceSchema resourceSchema
-    )
-    {
-        var (documentIdentity, superclassIdentity) = resourceSchema.ExtractIdentities(
+        ResourceSchema resourceSchema,
+        MappingSet mappingSet
+    ) =>
+        RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
-            NullLogger.Instance
+            resourceInfo,
+            resourceSchema,
+            mappingSet
         );
-        var (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
-        var descriptorReferences = resourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance);
-
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity),
-            DocumentReferences: [.. documentReferences],
-            DocumentReferenceArrays: [.. documentReferenceArrays],
-            DescriptorReferences: [.. descriptorReferences],
-            SuperclassIdentity: superclassIdentity
-        );
-    }
 
     public static string FormatReferenceFailure(UpsertResult.UpsertFailureReference failure) =>
         FormatReferenceFailure(failure.InvalidDocumentReferences, failure.InvalidDescriptorReferences);
@@ -413,7 +399,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentInfo: MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
                 requestBody,
                 _resourceInfo,
-                _resourceSchema
+                _resourceSchema,
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -442,7 +429,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             DocumentInfo: MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
                 requestBody,
                 _resourceInfo,
-                _resourceSchema
+                _resourceSchema,
+                _mappingSet
             ),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
@@ -563,7 +551,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var createDocumentInfo = MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
             createRequestBody,
             _resourceInfo,
-            _resourceSchema
+            _resourceSchema,
+            _mappingSet
         );
 
         await UpsertReferentialIdentityAsync(
@@ -585,7 +574,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var changedUpdateDocumentInfo = MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
             changedUpdateRequestBody,
             _resourceInfo,
-            _resourceSchema
+            _resourceSchema,
+            _mappingSet
         );
 
         await UpsertReferentialIdentityAsync(

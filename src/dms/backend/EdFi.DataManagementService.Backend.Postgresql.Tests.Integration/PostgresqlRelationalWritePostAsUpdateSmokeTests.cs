@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -681,6 +682,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
+    private ResourceInfo _extensionResourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
     private ResourceSchema _extensionResourceSchema = null!;
     private AuthoritativeStudentAcademicRecordSeedData _seedData = null!;
@@ -706,13 +708,14 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             "ed-fi",
             "StudentAcademicRecord"
         );
-        var (_, extensionResourceSchema) = GetResourceSchema(
+        var (extensionProjectSchema, extensionResourceSchema) = GetResourceSchema(
             _fixture.EffectiveSchemaSet,
             "sample",
             "StudentAcademicRecord"
         );
 
         _resourceInfo = CreateResourceInfo(baseProjectSchema, baseResourceSchema);
+        _extensionResourceInfo = CreateResourceInfo(extensionProjectSchema, extensionResourceSchema);
         _baseResourceSchema = baseResourceSchema;
         _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
@@ -1229,36 +1232,20 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
     private DocumentInfo CreateDocumentInfo(JsonNode requestBody)
     {
-        var (documentIdentity, superclassIdentity) = _baseResourceSchema.ExtractIdentities(
+        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
-            NullLogger.Instance
-        );
-
-        var (baseDocumentReferences, baseDocumentReferenceArrays) = _baseResourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
-
-        var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
-            _extensionResourceSchema.ExtractReferences(
-                requestBody,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
-            );
-
-        var descriptorReferences = _baseResourceSchema
-            .ExtractDescriptors(requestBody, NullLogger.Instance)
-            .Concat(_extensionResourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance))
-            .ToArray();
-
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(_resourceInfo, documentIdentity),
-            DocumentReferences: [.. baseDocumentReferences, .. extensionDocumentReferences],
-            DocumentReferenceArrays: [.. baseDocumentReferenceArrays, .. extensionDocumentReferenceArrays],
-            DescriptorReferences: descriptorReferences,
-            SuperclassIdentity: superclassIdentity
+            _resourceInfo,
+            _baseResourceSchema,
+            _mappingSet,
+            additionalSources:
+            [
+                new RelationalDocumentInfoExtractionSource(
+                    _extensionResourceInfo,
+                    _extensionResourceSchema,
+                    UseRelationalDescriptorExtraction: false
+                ),
+            ],
+            logger: NullLogger.Instance
         );
     }
 
@@ -3740,6 +3727,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
+    private ResourceInfo _extensionResourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
     private ResourceSchema _extensionResourceSchema = null!;
     private AuthoritativeStudentAcademicRecordSeedData _seedData = null!;
@@ -3766,13 +3754,14 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             "ed-fi",
             "StudentAcademicRecord"
         );
-        var (_, extensionResourceSchema) = GetResourceSchema(
+        var (extensionProjectSchema, extensionResourceSchema) = GetResourceSchema(
             _fixture.EffectiveSchemaSet,
             "sample",
             "StudentAcademicRecord"
         );
 
         _resourceInfo = CreateResourceInfo(baseProjectSchema, baseResourceSchema);
+        _extensionResourceInfo = CreateResourceInfo(extensionProjectSchema, extensionResourceSchema);
         _baseResourceSchema = baseResourceSchema;
         _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
@@ -4094,37 +4083,21 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
     private DocumentInfo CreateDocumentInfo(JsonNode requestBody, ReferentialId? referentialId = null)
     {
-        var (documentIdentity, superclassIdentity) = _baseResourceSchema.ExtractIdentities(
+        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
-            NullLogger.Instance
-        );
-
-        var (baseDocumentReferences, baseDocumentReferenceArrays) = _baseResourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
-
-        var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
-            _extensionResourceSchema.ExtractReferences(
-                requestBody,
-                NullLogger.Instance,
-                ReferenceExtractionMode.RelationalWriteValidation
-            );
-
-        var descriptorReferences = _baseResourceSchema
-            .ExtractDescriptors(requestBody, NullLogger.Instance)
-            .Concat(_extensionResourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance))
-            .ToArray();
-
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(_resourceInfo, documentIdentity),
-            DocumentReferences: [.. baseDocumentReferences, .. extensionDocumentReferences],
-            DocumentReferenceArrays: [.. baseDocumentReferenceArrays, .. extensionDocumentReferenceArrays],
-            DescriptorReferences: descriptorReferences,
-            SuperclassIdentity: superclassIdentity
+            _resourceInfo,
+            _baseResourceSchema,
+            _mappingSet,
+            additionalSources:
+            [
+                new RelationalDocumentInfoExtractionSource(
+                    _extensionResourceInfo,
+                    _extensionResourceSchema,
+                    UseRelationalDescriptorExtraction: false
+                ),
+            ],
+            referentialIdOverride: referentialId,
+            logger: NullLogger.Instance
         );
     }
 

@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -148,35 +149,34 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
         JsonNode requestBody,
         ResourceInfo resourceInfo,
         ResourceSchema baseResourceSchema,
+        ResourceInfo extensionResourceInfo,
         ResourceSchema extensionResourceSchema,
+        MappingSet mappingSet,
         long programTypeDescriptorId
     )
     {
-        var (documentIdentity, superclassIdentity) = baseResourceSchema.ExtractIdentities(
-            requestBody,
-            NullLogger.Instance
-        );
-        var (baseDocumentReferences, baseDocumentReferenceArrays) = baseResourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
         var (extensionDocumentReferences, extensionDocumentReferenceArrays) =
             CreateExtensionDocumentReferences(requestBody, programTypeDescriptorId);
-
-        var descriptorReferences = baseResourceSchema
-            .ExtractDescriptors(requestBody, NullLogger.Instance)
-            .Concat(extensionResourceSchema.ExtractDescriptors(requestBody, NullLogger.Instance))
-            .Concat(CreateExtensionDescriptorReferences(requestBody))
-            .ToArray();
-
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity),
-            DocumentReferences: [.. baseDocumentReferences, .. extensionDocumentReferences],
-            DocumentReferenceArrays: [.. baseDocumentReferenceArrays, .. extensionDocumentReferenceArrays],
-            DescriptorReferences: descriptorReferences,
-            SuperclassIdentity: superclassIdentity
+        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+            requestBody,
+            resourceInfo,
+            baseResourceSchema,
+            mappingSet,
+            additionalSources:
+            [
+                new RelationalDocumentInfoExtractionSource(
+                    extensionResourceInfo,
+                    extensionResourceSchema,
+                    UseReferenceExtraction: false,
+                    UseRelationalDescriptorExtraction: false
+                ),
+            ],
+            supplement: new RelationalDocumentInfoSupplement(
+                DocumentReferences: extensionDocumentReferences,
+                DocumentReferenceArrays: extensionDocumentReferenceArrays,
+                DescriptorReferences: CreateExtensionDescriptorReferences(requestBody)
+            ),
+            logger: NullLogger.Instance
         );
     }
 
@@ -591,6 +591,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private ResourceInfo _resourceInfo = null!;
+    private ResourceInfo _extensionResourceInfo = null!;
     private ResourceSchema _baseResourceSchema = null!;
     private ResourceSchema _extensionResourceSchema = null!;
     private AuthoritativeSampleStudentSectionAssociationSeedData _seedData = null!;
@@ -627,7 +628,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "ed-fi",
                 "StudentSectionAssociation"
             );
-        var (_, extensionResourceSchema) =
+        var (extensionProjectSchema, extensionResourceSchema) =
             AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.GetResourceSchema(
                 _fixture.EffectiveSchemaSet,
                 "sample",
@@ -638,6 +639,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             baseProjectSchema,
             baseResourceSchema
         );
+        _extensionResourceInfo =
+            AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.CreateResourceInfo(
+                extensionProjectSchema,
+                extensionResourceSchema
+            );
         _baseResourceSchema = baseResourceSchema;
         _extensionResourceSchema = extensionResourceSchema;
         _seedData = await SeedReferenceDataAsync();
@@ -877,7 +883,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
+                _extensionResourceInfo,
                 _extensionResourceSchema,
+                _mappingSet,
                 _seedData.ProgramTypeDescriptorDocumentId
             ),
             MappingSet: _mappingSet,
@@ -919,7 +927,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
+                _extensionResourceInfo,
                 _extensionResourceSchema,
+                _mappingSet,
                 _seedData.ProgramTypeDescriptorDocumentId
             ),
             MappingSet: _mappingSet,
@@ -961,7 +971,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 requestBody,
                 _resourceInfo,
                 _baseResourceSchema,
+                _extensionResourceInfo,
                 _extensionResourceSchema,
+                _mappingSet,
                 _seedData.ProgramTypeDescriptorDocumentId
             ),
             MappingSet: _mappingSet,

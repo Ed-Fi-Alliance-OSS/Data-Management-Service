@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -152,30 +153,21 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         long graduationPlanTypeDescriptorId
     )
     {
-        var (documentIdentity, superclassIdentity) = baseResourceSchema.ExtractIdentities(
-            requestBody,
-            NullLogger.Instance
-        );
-        var (baseDocumentReferences, baseDocumentReferenceArrays) = baseResourceSchema.ExtractReferences(
-            requestBody,
-            NullLogger.Instance,
-            ReferenceExtractionMode.RelationalWriteValidation
-        );
         var (alternativeGraduationPlanReferences, alternativeGraduationPlanReferenceArrays) =
             CreateAlternativeGraduationPlanDocumentReferences(requestBody, graduationPlanTypeDescriptorId);
-        var descriptorReferences = baseResourceSchema.ExtractRelationalDescriptors(
-            resourceInfo,
-            mappingSet,
+        var documentInfo = RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
-            NullLogger.Instance
+            resourceInfo,
+            baseResourceSchema,
+            mappingSet,
+            logger: NullLogger.Instance
         );
 
-        return new(
-            DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity),
-            DocumentReferences:
+        return documentInfo with
+        {
+            DocumentReferences =
             [
-                .. baseDocumentReferences.Where(reference =>
+                .. documentInfo.DocumentReferences.Where(reference =>
                     !reference.Path.Value.StartsWith(
                         "$.alternativeGraduationPlans[",
                         StringComparison.Ordinal
@@ -183,17 +175,15 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
                 ),
                 .. alternativeGraduationPlanReferences,
             ],
-            DocumentReferenceArrays:
+            DocumentReferenceArrays =
             [
-                .. baseDocumentReferenceArrays.Where(referenceArray =>
+                .. documentInfo.DocumentReferenceArrays.Where(referenceArray =>
                     referenceArray.arrayPath
                     != new JsonPath("$.alternativeGraduationPlans[*].alternativeGraduationPlanReference")
                 ),
                 .. alternativeGraduationPlanReferenceArrays,
             ],
-            DescriptorReferences: descriptorReferences,
-            SuperclassIdentity: superclassIdentity
-        );
+        };
     }
 
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
