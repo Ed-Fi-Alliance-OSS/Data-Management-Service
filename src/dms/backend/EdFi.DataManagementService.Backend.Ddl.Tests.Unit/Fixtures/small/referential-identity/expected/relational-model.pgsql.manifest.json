@@ -1235,10 +1235,12 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.edOrgDependentResourceId",
               "reference_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
               "column": "EdOrgDependentResourceReference_EdOrgDependentResourceId"
             },
             {
+              "identity_json_path": "$.educationOrganizationReference.educationOrganizationId",
               "reference_json_path": "$.edOrgDependentResourceReference.educationOrganizationId",
               "column": "EdOrgDependentResourceReference_EducationOrganizationId"
             }
@@ -1415,6 +1417,7 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.educationOrganizationId",
               "reference_json_path": "$.educationOrganizationReference.educationOrganizationId",
               "column": "EducationOrganization_EducationOrganizationId"
             }
@@ -1704,10 +1707,12 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.resourceAId",
               "reference_json_path": "$.resourceAReference.resourceAId",
               "column": "ResourceAReference_ResourceAId"
             },
             {
+              "identity_json_path": "$.studentReference.studentUniqueId",
               "reference_json_path": "$.resourceAReference.studentUniqueId",
               "column": "ResourceAReference_StudentUniqueId"
             }
@@ -1727,10 +1732,12 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.resourceBId",
               "reference_json_path": "$.resourceBReference.resourceBId",
               "column": "ResourceBReference_ResourceBId"
             },
             {
+              "identity_json_path": "$.studentReference.studentUniqueId",
               "reference_json_path": "$.resourceBReference.studentUniqueId",
               "column": "ResourceBReference_StudentUniqueId"
             }
@@ -1908,6 +1915,7 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.studentUniqueId",
               "reference_json_path": "$.studentReference.studentUniqueId",
               "column": "StudentReference_StudentUniqueId"
             }
@@ -2085,6 +2093,7 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.studentUniqueId",
               "reference_json_path": "$.studentReference.studentUniqueId",
               "column": "StudentReference_StudentUniqueId"
             }
@@ -2497,6 +2506,7 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.schoolId",
               "reference_json_path": "$.schoolReference.schoolId",
               "column": "SchoolReference_SchoolId"
             }
