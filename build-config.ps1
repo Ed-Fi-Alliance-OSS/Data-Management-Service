@@ -80,6 +80,10 @@ param(
     [switch]
     $IsLocalBuild,
 
+    # Only required with E2E testing.
+    [switch]
+    $SkipDockerBuild,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -218,13 +222,21 @@ function RunE2E {
 
 function E2ETests {
     param (
+        [switch]
+        $SkipDockerBuild,
+
         [string]
         $IdentityProvider
     )
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
+            if ($SkipDockerBuild) {
+                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -IdentityProvider $IdentityProvider
+            }
+            else {
+                ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
+            }
         }
         finally {
             Pop-Location
@@ -296,11 +308,15 @@ function Invoke-TestExecution {
         # File search filter
         [string]
         $Filter,
+
+        [switch]
+        $SkipDockerBuild,
+
         [string]
         $IdentityProvider
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -IdentityProvider $IdentityProvider } }
+        E2ETests { Invoke-Step { E2ETests -SkipDockerBuild:$SkipDockerBuild -IdentityProvider $IdentityProvider } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -386,7 +402,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -IdentityProvider $IdentityProvider }
+        E2ETest { Invoke-TestExecution E2ETests -SkipDockerBuild:$SkipDockerBuild -IdentityProvider $IdentityProvider }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

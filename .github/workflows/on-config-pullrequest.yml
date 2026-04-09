@@ -39,6 +39,54 @@ env:
 permissions: read-all
 
 jobs:
+  detect-fresh-build-changes:
+    name: Detect Fresh Build Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      fresh_build_required: ${{ steps.detect.outputs.fresh_build_required }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Detect files that require a fresh rebuild
+        id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "fresh_build_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            changed_files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")"
+          else
+            before="${{ github.event.before }}"
+
+            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
+              changed_files="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+            else
+              changed_files="$(git diff --name-only "$before" "${{ github.sha }}")"
+            fi
+          fi
+
+          fresh_build_required=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              src/Directory.Packages.props|src/config/Dockerfile|eng/docker-compose/*)
+                fresh_build_required=true
+                break
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "fresh_build_required=$fresh_build_required" >> "$GITHUB_OUTPUT"
+
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
     uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
@@ -164,6 +212,30 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Config Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: cs-local-config:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
       - name: Cache Nuget packages
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
@@ -182,7 +254,7 @@ jobs:
 
       - name: Run End to End Tests - IdentityProvider (${{matrix.identityprovider}})
         if: success()
-        run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Upload Logs
         if: failure()
@@ -202,10 +274,30 @@ jobs:
           path: |
             **/*.trx
 
+  fresh-rebuild-docker-image:
+    name: Fresh Rebuild Config Docker Image
+    needs: detect-fresh-build-changes
+    if: needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Fresh rebuild Config Docker image
+        working-directory: eng/docker-compose
+        run: |
+          docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml --env-file "./.env.config.e2e" -p cs-local build --no-cache
+
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [run-unit-tests, run-e2e-tests, run-integration-tests]
+    needs: [run-unit-tests, run-e2e-tests, run-integration-tests, fresh-rebuild-docker-image]
     if: always()
     steps:
     - name: Upload
