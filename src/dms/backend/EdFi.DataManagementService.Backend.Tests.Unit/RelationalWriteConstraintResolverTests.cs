@@ -132,6 +132,34 @@ public class Given_Relational_Write_Constraint_Resolver
             .Be(new RelationalWriteConstraintResolution.Unresolved(fixture.CollectionUniqueConstraintName));
     }
 
+    [Test]
+    public void It_preserves_the_missing_trigger_metadata_diagnostic_when_identity_trigger_inventory_is_missing()
+    {
+        var fixture = CreateFixture();
+        var mappingSetWithoutReferentialIdentityTrigger = fixture.ReferenceResolverRequest.MappingSet with
+        {
+            Model = fixture.ReferenceResolverRequest.MappingSet.Model with { TriggersInCreateOrder = [] },
+        };
+        var request = new RelationalWriteConstraintResolutionRequest(
+            fixture.WritePlan,
+            fixture.ReferenceResolverRequest with
+            {
+                MappingSet = mappingSetWithoutReferentialIdentityTrigger,
+            },
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                fixture.RootNaturalKeyConstraintName
+            )
+        );
+
+        var act = () => _sut.Resolve(request);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Mapping set 'schema-hash/Pgsql/v1' is missing referential-identity trigger metadata for resource 'Ed-Fi.Section'."
+            );
+    }
+
     private static ResolverFixture CreateFixture()
     {
         var sectionRootTable = new DbTableModel(

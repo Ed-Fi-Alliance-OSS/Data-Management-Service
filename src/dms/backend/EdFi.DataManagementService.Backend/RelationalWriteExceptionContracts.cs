@@ -28,7 +28,7 @@ internal abstract record RelationalWriteExceptionClassification
             ConstraintName = constraintName;
         }
 
-        public string ConstraintName { get; init; }
+        public string ConstraintName { get; }
     }
 
     public sealed record UniqueConstraintViolation : ConstraintViolation
@@ -80,11 +80,11 @@ internal sealed record RelationalWriteConstraintResolutionRequest
         }
     }
 
-    public ResourceWritePlan WritePlan { get; init; }
+    public ResourceWritePlan WritePlan { get; }
 
-    public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
+    public ReferenceResolverRequest ReferenceResolutionRequest { get; }
 
-    public RelationalWriteExceptionClassification.ConstraintViolation Violation { get; init; }
+    public RelationalWriteExceptionClassification.ConstraintViolation Violation { get; }
 }
 
 internal interface IRelationalWriteConstraintResolver
@@ -102,7 +102,7 @@ internal abstract record RelationalWriteConstraintResolution
             ConstraintName = constraintName;
         }
 
-        public string ConstraintName { get; init; }
+        public string ConstraintName { get; }
     }
 
     public sealed record RootNaturalKeyUnique : ConstraintMatch
@@ -127,11 +127,11 @@ internal abstract record RelationalWriteConstraintResolution
             TargetResource = targetResource;
         }
 
-        public RelationalWriteReferenceKind ReferenceKind { get; init; }
+        public RelationalWriteReferenceKind ReferenceKind { get; }
 
-        public JsonPathExpression ReferencePath { get; init; }
+        public JsonPathExpression ReferencePath { get; }
 
-        public QualifiedResourceName TargetResource { get; init; }
+        public QualifiedResourceName TargetResource { get; }
     }
 
     public sealed record Unresolved : ConstraintMatch

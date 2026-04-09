@@ -44,6 +44,43 @@ public class Given_RelationalWriteExceptionContracts
     }
 
     [Test]
+    public void It_exposes_constructor_validated_contract_properties_as_read_only()
+    {
+        typeof(RelationalWriteExceptionClassification.UniqueConstraintViolation)
+            .GetProperty(nameof(RelationalWriteExceptionClassification.ConstraintViolation.ConstraintName))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolutionRequest)
+            .GetProperty(nameof(RelationalWriteConstraintResolutionRequest.WritePlan))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolutionRequest)
+            .GetProperty(nameof(RelationalWriteConstraintResolutionRequest.ReferenceResolutionRequest))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolutionRequest)
+            .GetProperty(nameof(RelationalWriteConstraintResolutionRequest.Violation))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolution.RequestReference)
+            .GetProperty(nameof(RelationalWriteConstraintResolution.ConstraintMatch.ConstraintName))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolution.RequestReference)
+            .GetProperty(nameof(RelationalWriteConstraintResolution.RequestReference.ReferenceKind))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolution.RequestReference)
+            .GetProperty(nameof(RelationalWriteConstraintResolution.RequestReference.ReferencePath))!
+            .CanWrite.Should()
+            .BeFalse();
+        typeof(RelationalWriteConstraintResolution.RequestReference)
+            .GetProperty(nameof(RelationalWriteConstraintResolution.RequestReference.TargetResource))!
+            .CanWrite.Should()
+            .BeFalse();
+    }
+
+    [Test]
     public void It_requires_constraint_resolution_requests_to_match_the_write_plan_resource()
     {
         var mappingSet = CreateMappingSet(StudentResource);

@@ -81,33 +81,11 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     )
     {
         var rootTable = request.WritePlan.Model.Root;
-        var referentialIdentityTrigger =
-            request.ReferenceResolutionRequest.MappingSet.Model.TriggersInCreateOrder.SingleOrDefault(
-                trigger =>
-                    trigger.Table.Equals(rootTable.Table)
-                    && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
-                    && string.Equals(
-                        parameters.ProjectName,
-                        request.WritePlan.Model.Resource.ProjectName,
-                        StringComparison.Ordinal
-                    )
-                    && string.Equals(
-                        parameters.ResourceName,
-                        request.WritePlan.Model.Resource.ResourceName,
-                        StringComparison.Ordinal
-                    )
-            );
-
-        if (
-            referentialIdentityTrigger?.Parameters
-            is not TriggerKindParameters.ReferentialIdentityMaintenance referentialIdentityParameters
-        )
-        {
-            throw new InvalidOperationException(
-                $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(request.ReferenceResolutionRequest.MappingSet.Key)}' "
-                    + $"is missing referential-identity trigger metadata for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}'."
-            );
-        }
+        var referentialIdentityParameters = RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
+            request.ReferenceResolutionRequest.MappingSet,
+            request.WritePlan.Model.Resource,
+            rootTable.Table
+        );
 
         Dictionary<string, DocumentReferenceBinding> identityBindingsByPath = new(StringComparer.Ordinal);
 

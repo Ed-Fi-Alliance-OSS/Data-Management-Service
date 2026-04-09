@@ -756,37 +756,12 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
         RelationalWriteExecutorRequest request
-    )
-    {
-        var referentialIdentityTrigger = request.MappingSet.Model.TriggersInCreateOrder.SingleOrDefault(
-            trigger =>
-                trigger.Table.Equals(request.WritePlan.Model.Root.Table)
-                && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
-                && string.Equals(
-                    parameters.ProjectName,
-                    request.WritePlan.Model.Resource.ProjectName,
-                    StringComparison.Ordinal
-                )
-                && string.Equals(
-                    parameters.ResourceName,
-                    request.WritePlan.Model.Resource.ResourceName,
-                    StringComparison.Ordinal
-                )
+    ) =>
+        RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
+            request.MappingSet,
+            request.WritePlan.Model.Resource,
+            request.WritePlan.Model.Root.Table
         );
-
-        if (
-            referentialIdentityTrigger?.Parameters
-            is TriggerKindParameters.ReferentialIdentityMaintenance referentialIdentityParameters
-        )
-        {
-            return referentialIdentityParameters;
-        }
-
-        throw new InvalidOperationException(
-            $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(request.MappingSet.Key)}' "
-                + $"is missing referential-identity trigger metadata for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}'."
-        );
-    }
 
     private static bool TryResolveIdentityValue(
         JsonNode selectedBody,
