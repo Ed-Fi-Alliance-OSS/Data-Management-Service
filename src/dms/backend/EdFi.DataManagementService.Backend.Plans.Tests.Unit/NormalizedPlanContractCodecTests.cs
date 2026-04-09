@@ -155,6 +155,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         canonicalJson.Should().Contain("\"kind\": \"reference_derived\"");
         canonicalJson.Should().Contain("\"reference_object_path\": \"$.schoolReference\"");
+        canonicalJson.Should().Contain("\"identity_json_path\": \"$.schoolYear\"");
+        canonicalJson.Should().Contain("\"identity_json_path\": \"$.schoolId\"");
         canonicalJson.Should().Contain("\"reference_json_path\": \"$.schoolReference.schoolYear\"");
         canonicalJson.Should().Contain("\"reference_json_path\": \"$.schoolReference.schoolId\"");
 
@@ -169,6 +171,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         decodedReferenceDerivedSource
             .ReferenceSource.ReferenceObjectPath.Canonical.Should()
             .Be("$.schoolReference");
+        decodedReferenceDerivedSource.ReferenceSource.IdentityJsonPath.Canonical.Should().Be("$.schoolYear");
         decodedReferenceDerivedSource
             .ReferenceSource.ReferenceJsonPath.Canonical.Should()
             .Be("$.schoolReference.schoolYear");
@@ -185,6 +188,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         decodedReferenceDerivedMember
             .ReferenceSource.ReferenceObjectPath.Canonical.Should()
             .Be("$.schoolReference");
+        decodedReferenceDerivedMember.ReferenceSource.IdentityJsonPath.Canonical.Should().Be("$.schoolId");
         decodedReferenceDerivedMember
             .ReferenceSource.ReferenceJsonPath.Canonical.Should()
             .Be("$.schoolReference.schoolId");
@@ -229,6 +233,45 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_reference_derived_write_source_identity_json_path_mismatches_a_duplicate_logical_member()
+    {
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(
+            ReferenceDerivedWritePlanFixture.CreateDuplicateReferenceJsonPathModel()
+        );
+        var encoded = NormalizedPlanContractCodec.Encode(writePlan);
+        var tablePlan = encoded.TablePlansInDependencyOrder[0];
+        var bindings = tablePlan.ColumnBindings.ToArray();
+        var referenceDerivedSource = bindings[2]
+            .Source.Should()
+            .BeOfType<WriteValueSourceDto.ReferenceDerived>()
+            .Subject;
+
+        bindings[2] = bindings[2] with
+        {
+            Source = referenceDerivedSource with
+            {
+                ReferenceSource = referenceDerivedSource.ReferenceSource with
+                {
+                    IdentityJsonPath = "$.localEducationAgencyId",
+                },
+            },
+        };
+
+        var mutated = encoded with
+        {
+            TablePlansInDependencyOrder = [tablePlan with { ColumnBindings = [.. bindings] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, writePlan.Model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*identity path '$.localEducationAgencyId'*logical field '$.educationOrganizationReference.educationOrganizationId'*binds column 'LocalEducationAgencyId'*"
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_reference_derived_key_unification_member_targets_the_wrong_logical_field()
     {
         var writePlan = ReferenceDerivedWritePlanFixture.CreateWritePlan();
@@ -259,8 +302,9 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var act = () => NormalizedPlanContractCodec.Decode(mutated, writePlan.Model);
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception.Message.Should().Contain("targets logical field '$.schoolReference.schoolYear'");
-        exception.Message.Should().Contain("column 'School_RefSchoolIdAlias'");
+        exception.Message.Should().Contain("logical member '$.schoolReference.schoolYear'");
+        exception.Message.Should().Contain("identity path '$.schoolId'");
+        exception.Message.Should().Contain("$.schoolYear");
     }
 
     [Test]

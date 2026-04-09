@@ -240,6 +240,10 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
                             "$.schoolReference",
                             [new JsonPathSegment.Property("schoolReference")]
                         ),
+                        IdentityJsonPath: new JsonPathExpression(
+                            "$.schoolYear",
+                            [new JsonPathSegment.Property("schoolYear")]
+                        ),
                         ReferenceJsonPath: new JsonPathExpression(
                             "$.schoolReference.schoolYear",
                             [
@@ -273,6 +277,10 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
                             "$.schoolReference",
                             [new JsonPathSegment.Property("schoolReference")]
                         ),
+                        IdentityJsonPath: new JsonPathExpression(
+                            "$.schoolCategoryDescriptor",
+                            [new JsonPathSegment.Property("schoolCategoryDescriptor")]
+                        ),
                         ReferenceJsonPath: new JsonPathExpression(
                             "$.schoolReference.schoolCategoryDescriptor",
                             [
@@ -281,6 +289,46 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
                             ]
                         )
                     )
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_preserve_distinct_identity_json_paths_for_duplicate_reference_json_paths()
+    {
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(ReferenceDerivedWritePlanFixture.CreateDuplicateReferenceJsonPathModel())
+            .TablePlansInDependencyOrder.Single();
+
+        var referenceDerivedSources = tablePlan
+            .ColumnBindings.Where(binding => binding.Source is WriteValueSource.ReferenceDerived)
+            .Select(binding =>
+                (
+                    ColumnName: binding.Column.ColumnName.Value,
+                    ReferenceSource: ((WriteValueSource.ReferenceDerived)binding.Source).ReferenceSource
+                )
+            )
+            .ToArray();
+
+        referenceDerivedSources
+            .Select(source =>
+                (
+                    source.ColumnName,
+                    source.ReferenceSource.IdentityJsonPath.Canonical,
+                    source.ReferenceSource.ReferenceJsonPath.Canonical
+                )
+            )
+            .Should()
+            .Equal(
+                (
+                    "EducationOrganizationId",
+                    "$.educationOrganizationId",
+                    "$.educationOrganizationReference.educationOrganizationId"
+                ),
+                (
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyId",
+                    "$.educationOrganizationReference.educationOrganizationId"
                 )
             );
     }

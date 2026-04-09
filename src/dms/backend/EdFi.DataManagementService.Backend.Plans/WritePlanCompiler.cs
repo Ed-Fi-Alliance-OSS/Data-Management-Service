@@ -148,6 +148,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                         ReferenceSource: new ReferenceDerivedValueSourceMetadata(
                             BindingIndex: bindingIndex,
                             ReferenceObjectPath: binding.ReferenceObjectPath,
+                            IdentityJsonPath: identityBinding.IdentityJsonPath,
                             ReferenceJsonPath: identityBinding.ReferenceJsonPath
                         )
                     )

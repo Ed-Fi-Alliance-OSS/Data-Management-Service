@@ -431,6 +431,7 @@ public class Given_MappingSetManifestJsonEmitter
                 .Should()
                 .Be(0);
             RequireString(referenceSource, "reference_object_path").Should().Be("$.schoolReference");
+            RequireString(referenceSource, "identity_json_path").Should().Be("$.schoolYear");
             RequireString(referenceSource, "reference_json_path").Should().Be("$.schoolReference.schoolYear");
 
             var keyUnificationPlan = RequireObject(
@@ -457,6 +458,7 @@ public class Given_MappingSetManifestJsonEmitter
                 .Should()
                 .Be(0);
             RequireString(memberReferenceSource, "reference_object_path").Should().Be("$.schoolReference");
+            RequireString(memberReferenceSource, "identity_json_path").Should().Be("$.schoolId");
             RequireString(memberReferenceSource, "reference_json_path")
                 .Should()
                 .Be("$.schoolReference.schoolId");

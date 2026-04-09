@@ -27,7 +27,9 @@ internal static class ReferenceDerivedWritePlanFixture
             StringComparison.Ordinal
         );
         var schoolReferencePath = Path("$.schoolReference");
+        var targetSchoolIdPath = Path("$.schoolId");
         var schoolIdPath = Path("$.schoolReference.schoolId");
+        var targetSchoolYearPath = Path("$.schoolYear");
         var schoolYearPath = Path("$.schoolReference.schoolYear");
         var table = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), $"{resourceNameToken}ReferenceDerived"),
@@ -112,10 +114,12 @@ internal static class ReferenceDerivedWritePlanFixture
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetSchoolIdPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdAlias")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetSchoolYearPath,
                             ReferenceJsonPath: schoolYearPath,
                             Column: new DbColumnName("School_RefSchoolYear")
                         ),
@@ -217,6 +221,7 @@ internal static class ReferenceDerivedWritePlanFixture
                                 ReferenceSource: new ReferenceDerivedValueSourceMetadata(
                                     BindingIndex: 0,
                                     ReferenceObjectPath: Path("$.schoolReference"),
+                                    IdentityJsonPath: Path("$.schoolYear"),
                                     ReferenceJsonPath: Path("$.schoolReference.schoolYear")
                                 )
                             ),
@@ -241,6 +246,7 @@ internal static class ReferenceDerivedWritePlanFixture
                                     ReferenceSource: new ReferenceDerivedValueSourceMetadata(
                                         BindingIndex: 0,
                                         ReferenceObjectPath: Path("$.schoolReference"),
+                                        IdentityJsonPath: Path("$.schoolId"),
                                         ReferenceJsonPath: Path("$.schoolReference.schoolId")
                                     ),
                                     PresenceColumn: new DbColumnName("School_DocumentId"),
@@ -305,6 +311,7 @@ internal static class ReferenceDerivedWritePlanFixture
             StringComparison.Ordinal
         );
         var schoolReferencePath = Path("$.schoolReference");
+        var targetSchoolCategoryDescriptorPath = Path("$.schoolCategoryDescriptor");
         var schoolCategoryDescriptorPath = Path("$.schoolReference.schoolCategoryDescriptor");
         var table = new DbTableModel(
             Table: new DbTableName(
@@ -363,6 +370,7 @@ internal static class ReferenceDerivedWritePlanFixture
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetSchoolCategoryDescriptorPath,
                             ReferenceJsonPath: schoolCategoryDescriptorPath,
                             Column: new DbColumnName("SchoolCategoryDescriptorId")
                         ),
@@ -384,6 +392,7 @@ internal static class ReferenceDerivedWritePlanFixture
             StringComparison.Ordinal
         );
         var schoolReferencePath = Path("$.schoolReference");
+        var targetSchoolCategoryDescriptorPath = Path("$.schoolCategoryDescriptor");
         var schoolCategoryDescriptorPath = Path("$.schoolReference.schoolCategoryDescriptor");
         var table = new DbTableModel(
             Table: new DbTableName(
@@ -463,8 +472,105 @@ internal static class ReferenceDerivedWritePlanFixture
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetSchoolCategoryDescriptorPath,
                             ReferenceJsonPath: schoolCategoryDescriptorPath,
                             Column: new DbColumnName("SchoolCategoryDescriptorId_Alias")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    public static RelationalResourceModel CreateDuplicateReferenceJsonPathModel(
+        QualifiedResourceName? resource = null
+    )
+    {
+        var resolvedResource = resource ?? _defaultResource;
+        var resourceNameToken = resolvedResource.ResourceName.Replace(
+            "-",
+            string.Empty,
+            StringComparison.Ordinal
+        );
+        var educationOrganizationReferencePath = Path("$.educationOrganizationReference");
+        var targetEducationOrganizationIdPath = Path("$.educationOrganizationId");
+        var targetLocalEducationAgencyIdPath = Path("$.localEducationAgencyId");
+        var sharedReferenceValuePath = Path("$.educationOrganizationReference.educationOrganizationId");
+        var educationOrganizationResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
+        var table = new DbTableModel(
+            Table: new DbTableName(
+                new DbSchemaName("edfi"),
+                $"{resourceNameToken}DuplicateReferenceJsonPath"
+            ),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                ConstraintName: $"PK_{resourceNameToken}DuplicateReferenceJsonPath",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("EducationOrganization_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: educationOrganizationReferencePath,
+                    TargetResource: educationOrganizationResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("EducationOrganizationId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: sharedReferenceValuePath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("LocalEducationAgencyId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: sharedReferenceValuePath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: resolvedResource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: table,
+            TablesInDependencyOrder: [table],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: educationOrganizationReferencePath,
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("EducationOrganization_DocumentId"),
+                    TargetResource: educationOrganizationResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetEducationOrganizationIdPath,
+                            ReferenceJsonPath: sharedReferenceValuePath,
+                            Column: new DbColumnName("EducationOrganizationId")
+                        ),
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: targetLocalEducationAgencyIdPath,
+                            ReferenceJsonPath: sharedReferenceValuePath,
+                            Column: new DbColumnName("LocalEducationAgencyId")
                         ),
                     ]
                 ),

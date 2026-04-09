@@ -955,13 +955,19 @@ internal static class NormalizedPlanContractCodec
         string argumentName
     )
     {
-        var (referenceSource, logicalFieldGroup) = DecodeReferenceDerivedSource(
+        var (referenceSource, logicalFieldGroup, identityBinding) = DecodeReferenceDerivedSource(
             source.ReferenceSource,
             model,
             argumentName
         );
 
-        ValidateReferenceDerivedBindingColumn(logicalFieldGroup, tableModel, columnModel, argumentName);
+        ValidateReferenceDerivedBindingColumn(
+            identityBinding,
+            logicalFieldGroup,
+            tableModel,
+            columnModel,
+            argumentName
+        );
 
         return new ExternalPlans.WriteValueSource.ReferenceDerived(referenceSource);
     }
@@ -978,13 +984,14 @@ internal static class NormalizedPlanContractCodec
         string argumentName
     )
     {
-        var (referenceSource, logicalFieldGroup) = DecodeReferenceDerivedSource(
+        var (referenceSource, logicalFieldGroup, identityBinding) = DecodeReferenceDerivedSource(
             memberDto.ReferenceSource,
             model,
             $"{argumentName}.{nameof(KeyUnificationMemberWritePlanDto.ReferenceDerivedMember.ReferenceSource)}"
         );
 
         ValidateReferenceDerivedMemberColumn(
+            identityBinding,
             logicalFieldGroup,
             tableModel,
             memberPathColumnModel,
@@ -1004,7 +1011,8 @@ internal static class NormalizedPlanContractCodec
 
     private static (
         ExternalPlans.ReferenceDerivedValueSourceMetadata ReferenceSource,
-        DocumentReferenceFieldGroup LogicalFieldGroup
+        DocumentReferenceFieldGroup LogicalFieldGroup,
+        ReferenceIdentityBinding IdentityBinding
     ) DecodeReferenceDerivedSource(
         ReferenceDerivedValueSourceDto sourceDto,
         RelationalResourceModel model,
@@ -1038,26 +1046,26 @@ internal static class NormalizedPlanContractCodec
             );
         }
 
+        var identityJsonPathArgument =
+            $"{argumentName}.{nameof(ReferenceDerivedValueSourceDto.IdentityJsonPath)}";
+        var identityJsonPath = CompileJsonPath(sourceDto.IdentityJsonPath, identityJsonPathArgument);
         var referenceJsonPathArgument =
             $"{argumentName}.{nameof(ReferenceDerivedValueSourceDto.ReferenceJsonPath)}";
         var referenceJsonPath = CompileJsonPath(sourceDto.ReferenceJsonPath, referenceJsonPathArgument);
-        var logicalFieldGroup = binding
-            .GetLogicalFieldGroups()
-            .SingleOrDefault(group =>
-                string.Equals(
-                    group.ReferenceJsonPath.Canonical,
-                    referenceJsonPath.Canonical,
-                    StringComparison.Ordinal
-                )
-            );
+        var logicalFieldGroups = binding.GetLogicalFieldGroups();
+        var logicalFieldGroup = logicalFieldGroups.SingleOrDefault(group =>
+            string.Equals(
+                group.ReferenceJsonPath.Canonical,
+                referenceJsonPath.Canonical,
+                StringComparison.Ordinal
+            )
+        );
 
         if (logicalFieldGroup is null)
         {
             var logicalFields = string.Join(
                 ", ",
-                binding
-                    .GetLogicalFieldGroups()
-                    .Select(static group => $"'{group.ReferenceJsonPath.Canonical}'")
+                logicalFieldGroups.Select(static group => $"'{group.ReferenceJsonPath.Canonical}'")
             );
 
             throw new InvalidOperationException(
@@ -1068,17 +1076,56 @@ internal static class NormalizedPlanContractCodec
             );
         }
 
+        var identityBinding = binding.IdentityBindings.SingleOrDefault(identityBinding =>
+            string.Equals(
+                identityBinding.ReferenceJsonPath.Canonical,
+                referenceJsonPath.Canonical,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                identityBinding.IdentityJsonPath.Canonical,
+                identityJsonPath.Canonical,
+                StringComparison.Ordinal
+            )
+        );
+
+        if (identityBinding is null)
+        {
+            var identityPaths = binding
+                .IdentityBindings.Where(identityBinding =>
+                    string.Equals(
+                        identityBinding.ReferenceJsonPath.Canonical,
+                        referenceJsonPath.Canonical,
+                        StringComparison.Ordinal
+                    )
+                )
+                .Select(identityBinding => $"'{identityBinding.IdentityJsonPath.Canonical}'")
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            throw new InvalidOperationException(
+                $"Reference-derived source binding index '{sourceDto.BindingIndex}' for reference "
+                    + $"'{binding.ReferenceObjectPath.Canonical}' logical member "
+                    + $"'{referenceJsonPath.Canonical}' does not contain identity path "
+                    + $"'{identityJsonPath.Canonical}'. Available identity path(s): "
+                    + $"{(identityPaths.Length == 0 ? "<none>" : string.Join(", ", identityPaths))}."
+            );
+        }
+
         return (
             new ExternalPlans.ReferenceDerivedValueSourceMetadata(
                 BindingIndex: sourceDto.BindingIndex,
                 ReferenceObjectPath: referenceObjectPath,
+                IdentityJsonPath: identityJsonPath,
                 ReferenceJsonPath: referenceJsonPath
             ),
-            logicalFieldGroup
+            logicalFieldGroup,
+            identityBinding
         );
     }
 
     private static void ValidateReferenceDerivedBindingColumn(
+        ReferenceIdentityBinding identityBinding,
         DocumentReferenceFieldGroup logicalFieldGroup,
         DbTableModel tableModel,
         DbColumnModel columnModel,
@@ -1100,19 +1147,21 @@ internal static class NormalizedPlanContractCodec
             argumentName
         );
 
-        if (!logicalFieldGroup.MemberColumns.Contains(columnModel.ColumnName))
+        if (!identityBinding.Column.Equals(columnModel.ColumnName))
         {
             throw new InvalidOperationException(
                 $"Reference-derived source '{argumentName}' targets column '{columnModel.ColumnName.Value}' on "
-                    + $"table '{FormatTableName(tableModel.Table)}', but logical field "
-                    + $"'{logicalFieldGroup.ReferenceJsonPath.Canonical}' for reference "
-                    + $"'{logicalFieldGroup.ReferenceObjectPath.Canonical}' binds columns "
-                    + $"{FormatColumnList(logicalFieldGroup.MemberColumns)}."
+                    + $"table '{FormatTableName(tableModel.Table)}', but identity path "
+                    + $"'{identityBinding.IdentityJsonPath.Canonical}' for logical field "
+                    + $"'{logicalFieldGroup.ReferenceJsonPath.Canonical}' on reference "
+                    + $"'{logicalFieldGroup.ReferenceObjectPath.Canonical}' binds column "
+                    + $"'{identityBinding.Column.Value}'."
             );
         }
     }
 
     private static void ValidateReferenceDerivedMemberColumn(
+        ReferenceIdentityBinding identityBinding,
         DocumentReferenceFieldGroup logicalFieldGroup,
         DbTableModel tableModel,
         DbColumnModel memberPathColumnModel,
@@ -1121,6 +1170,7 @@ internal static class NormalizedPlanContractCodec
     )
     {
         ValidateReferenceDerivedBindingColumn(
+            identityBinding,
             logicalFieldGroup,
             tableModel,
             memberPathColumnModel,
@@ -1680,11 +1730,6 @@ internal static class NormalizedPlanContractCodec
     private static string FormatTableName(DbTableName tableName)
     {
         return $"{tableName.Schema.Value}.{tableName.Name}";
-    }
-
-    private static string FormatColumnList(IEnumerable<DbColumnName> columns)
-    {
-        return $"[{string.Join(", ", columns.Select(static column => $"'{column.Value}'"))}]";
     }
 
     private static string FormatResourceName(QualifiedResourceName resourceName)

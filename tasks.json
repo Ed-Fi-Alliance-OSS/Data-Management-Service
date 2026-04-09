@@ -201,5 +201,72 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources|FullyQualifiedName~Given_WritePlanCompiler_KeyUnification|FullyQualifiedName~NormalizedPlanContractCodec\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "ReferenceDerived Scalar Validation Classification",
+    "description": "Restore deterministic request-validation behavior for type-incompatible propagated reference identity values. Acceptance: when a resolved propagated reference identity literal cannot be converted to the compiled relational scalar type, `RelationalWriteFlattener` emits `RelationalWriteRequestValidationException` keyed to the concrete reference-member path instead of `InvalidOperationException`; `DefaultRelationalWriteExecutor` returns a validation-failure result rather than rethrowing; root and nested reference sites behave the same way on create and existing-document flows; and only true metadata or plan invariant breaches such as unsupported column kinds or missing scalar-type metadata remain internal exceptions.",
+    "steps-to-verify": [
+      "Refactor `RelationalWriteFlattener.ResolveReferenceDerivedScalarValue` so resolved reference-derived scalar conversion uses the request-validation pathway rather than `CreateInvalidReferenceDerivedScalarException`, while preserving the concrete path and column-specific diagnostic text.",
+      "Replace the current `RelationalWriteFlattenerTests` expectation that bad propagated scalar values throw `InvalidOperationException` with assertions on `RelationalWriteRequestValidationException` and concrete `WriteValidationFailure` path or message output for both a root reference site and a nested collection reference site.",
+      "Add or update `DefaultRelationalWriteExecutorTests` so invalid propagated reference identity scalars on create and update return validation-failure results instead of escaping as uncaught exceptions.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Request-Derived Conversion Policy Consolidation",
+    "description": "Remove the structural source of repeated 400-versus-500 regressions by making request-derived scalar conversion classification a shared backend policy instead of a call-site choice. Acceptance: `RelationalWriteFlattener` has one authoritative helper for request-derived scalar conversion failures that is reused by ordinary JSON-bound scalar reads, propagated reference-derived scalar reads, and any key-unification request-derived scalar members; request-derived parse failures consistently map to `RelationalWriteRequestValidationException`; message wording stays intentionally aligned across source kinds; and new request-derived producers cannot silently reintroduce `InvalidOperationException` behavior by supplying bespoke error factories.",
+    "steps-to-verify": [
+      "Collapse the separate request-derived scalar error-factory paths in `RelationalWriteFlattener` so caller-specific reason text is still possible but exception classification is owned centrally rather than by each conversion call site.",
+      "Audit every `ConvertScalarLiteral` or equivalent request-derived scalar conversion entry point in `RelationalWriteFlattener`, including reference-derived and key-unification flows, and route all request-derived parse failures through the shared helper while leaving non-request invariant breaches untouched.",
+      "Add backend unit coverage proving the shared helper preserves expected diagnostics for one ordinary JSON scalar, one propagated reference-derived scalar, and one key-unification scalar member while standardizing exception type.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "ReferenceDerived Error-Classification Regression Net",
+    "description": "Add seam-level regression coverage and explicit classification boundaries so propagated-reference scalar-validation bugs do not recur when implementation details move between Core extraction, reference resolution, and backend flattening. Acceptance: tests assert final validation behavior, not just local exception types, for invalid propagated scalar values across create and update flows; coverage includes multiple scalar kinds and both root and nested reference sites; at least one explicit invariant-breach test proves true metadata failures still throw internal exceptions; and the code documents the intended boundary between request-validation failures and invariant breaches for reference-derived materialization.",
+    "steps-to-verify": [
+      "Add executor- or seam-level regression tests covering invalid propagated reference-derived `int`, `bool`, or date/time values so final `WriteValidationFailure` path and message shape are asserted at the user-visible backend boundary.",
+      "Add one focused backend test for a true invariant breach in the reference-derived path, such as missing scalar-type metadata or an unsupported column kind, asserting that it remains an internal exception rather than being misclassified as request validation.",
+      "Document the classification matrix near the reference-derived error helpers in `RelationalWriteFlattener` so future changes have an explicit request-data versus invariant policy to follow.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Identity Binding Metadata Hardening",
+    "description": "Replace the current order-only bridge between Core-extracted `DocumentIdentity` elements and compiled propagated-reference bindings with explicit target-identity metadata. Acceptance: `DocumentReferenceBinding.IdentityBindings[*]` carries both the logical request-member path (`ReferenceJsonPath`) and the authoritative target identity path (`IdentityJsonPath`) taken from ApiSchema `referenceJsonPaths[]`; `ReferenceBindingPass`, external relational-model contracts, manifest emission, normalized-plan codecs, and any write-plan fixtures preserve both paths without reordering them; same-site duplicate `ReferenceJsonPath` groups remain supported because the compiled binding now retains the distinct target identity path for each upstream identity binding; and malformed or stale compiled metadata that omits or mismatches `IdentityJsonPath` fails fast during compilation or contract decoding instead of leaving runtime materialization to infer intent from ordinal position alone.",
+    "steps-to-verify": [
+      "Extend the relational-model and plan-contract types so `ReferenceIdentityBinding` round-trips both `identity_json_path` and `reference_json_path`, then update manifest and normalized-plan golden or round-trip coverage to assert both fields are preserved in-order for ordinary bindings and same-site duplicate logical-member groups.",
+      "Add or update compiler tests proving duplicate `ReferenceJsonPath` bindings on one reference site remain legal only when they retain distinct `IdentityJsonPath` values from ApiSchema, and that malformed contract or DTO mutations involving missing or inconsistent `IdentityJsonPath` fail deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources|FullyQualifiedName~NormalizedPlanContractCodec|FullyQualifiedName~MappingSetManifestJsonEmitter\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reference-Derived Identity-Path Resolution",
+    "description": "Make propagated-reference runtime materialization resolve the expected identity element by compiled target identity path rather than trusting positional alignment alone. Acceptance: `FlatteningResolvedReferenceLookupSet` resolves `column -> compiled identity binding -> expected IdentityJsonPath -> resolved DocumentIdentityElement`, while still using the compiled column or binding identity to support same-site duplicate `ReferenceJsonPath` groups; scalar-vs-scalar or descriptor-vs-descriptor permutations that previously could swap values silently now fail deterministically with diagnostics naming the expected and actual identity paths; descriptor-backed members continue to work for both synthetic descriptor identity paths and target-identity-path variants, but only when they correspond to the compiled binding's expected identity path; and `RelationalWriteFlattener` can no longer populate the wrong propagated column solely because two same-kind identity elements arrived in a different order.",
+    "steps-to-verify": [
+      "Refactor `FlatteningResolvedReferenceLookupSet` so binding-column resolution yields the full compiled `ReferenceIdentityBinding`, then use its `IdentityJsonPath` to select or validate the resolved identity element instead of indexing directly into `DocumentIdentityElements` by ordinal alone.",
+      "Add focused unit coverage for same-kind order drift, missing expected identity paths, duplicate logical-member groups with distinct `IdentityJsonPath` values, and descriptor-backed propagated members so silent value swaps are replaced with deterministic invariant failures or correct materialization.",
+      "Add or update `RelationalWriteFlattenerTests` so a misordered resolved identity payload cannot silently populate persisted propagated columns on create or existing-document flows.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cross-Layer Reference Identity Drift Regression Net",
+    "description": "Add explicit regression coverage for the fragile Core-to-backend reference identity ordering contract so future refactors cannot reintroduce silent propagated-column corruption. Acceptance: there is at least one paired Core plus backend test case, or one seam-level fixture, that uses a reference site with multiple same-kind identity members whose `referenceJsonPaths[]` order is intentionally permuted to prove the system either resolves by `IdentityJsonPath` or fails deterministically rather than swapping values; another case proves supported same-site duplicate `ReferenceJsonPath` groups still materialize all intended propagated columns after the hardening work; and the tests document the true contract clearly enough that future changes to ApiSchema extraction, mapping-set compilation, or serialized plan codecs cannot accidentally collapse back to the old order-only assumption without breaking coverage.",
+    "steps-to-verify": [
+      "Add Core extraction coverage that locks in the authoritative `referenceJsonPaths[]` order and preserved `IdentityJsonPath` values for multi-part references and same-site duplicate logical-member groups.",
+      "Add backend seam or runtime tests that build a resolved reference payload with the same logical members in a different same-kind order and assert deterministic failure or correct `IdentityJsonPath`-based materialization rather than silent column swaps.",
+      "Document the superseded assumption from the original DMS-985 reference-lookup work in test names or comments so future maintainers understand why positional matching alone is unsafe.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ReferenceExtractor\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~ReferenceResolver\"`"
+    ],
+    "completed": false
   }
 ]

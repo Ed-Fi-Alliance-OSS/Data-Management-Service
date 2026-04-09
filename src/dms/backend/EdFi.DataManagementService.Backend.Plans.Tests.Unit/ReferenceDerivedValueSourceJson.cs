@@ -17,6 +17,7 @@ internal static class ReferenceDerivedValueSourceJson
         return new ReferenceDerivedValueSourceDto(
             BindingIndex: source.BindingIndex,
             ReferenceObjectPath: source.ReferenceObjectPath.Canonical,
+            IdentityJsonPath: source.IdentityJsonPath.Canonical,
             ReferenceJsonPath: source.ReferenceJsonPath.Canonical
         );
     }
@@ -29,6 +30,7 @@ internal static class ReferenceDerivedValueSourceJson
         writer.WriteStartObject();
         writer.WriteNumber("binding_index", value.BindingIndex);
         writer.WriteString("reference_object_path", value.ReferenceObjectPath);
+        writer.WriteString("identity_json_path", value.IdentityJsonPath);
         writer.WriteString("reference_json_path", value.ReferenceJsonPath);
         writer.WriteEndObject();
     }

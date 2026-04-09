@@ -502,12 +502,38 @@ public sealed record CollectionKeyPreallocationPlan(DbColumnName ColumnName, int
 /// site.
 /// </param>
 /// <param name="ReferenceObjectPath">The canonical reference-object path for the site.</param>
+/// <param name="IdentityJsonPath">The authoritative target-identity path for the derived logical value.</param>
 /// <param name="ReferenceJsonPath">The canonical logical member path under the reference site.</param>
-public sealed record ReferenceDerivedValueSourceMetadata(
-    int BindingIndex,
-    JsonPathExpression ReferenceObjectPath,
-    JsonPathExpression ReferenceJsonPath
-);
+public sealed record ReferenceDerivedValueSourceMetadata
+{
+    public ReferenceDerivedValueSourceMetadata(
+        int BindingIndex,
+        JsonPathExpression ReferenceObjectPath,
+        JsonPathExpression IdentityJsonPath,
+        JsonPathExpression ReferenceJsonPath
+    )
+    {
+        this.BindingIndex = BindingIndex;
+        this.ReferenceObjectPath = ReferenceObjectPath;
+        this.IdentityJsonPath = IdentityJsonPath;
+        this.ReferenceJsonPath = ReferenceJsonPath;
+    }
+
+    public ReferenceDerivedValueSourceMetadata(
+        int BindingIndex,
+        JsonPathExpression ReferenceObjectPath,
+        JsonPathExpression ReferenceJsonPath
+    )
+        : this(BindingIndex, ReferenceObjectPath, ReferenceJsonPath, ReferenceJsonPath) { }
+
+    public int BindingIndex { get; init; }
+
+    public JsonPathExpression ReferenceObjectPath { get; init; }
+
+    public JsonPathExpression IdentityJsonPath { get; init; }
+
+    public JsonPathExpression ReferenceJsonPath { get; init; }
+}
 
 /// <summary>
 /// Discriminated union describing where a write-time column value comes from.

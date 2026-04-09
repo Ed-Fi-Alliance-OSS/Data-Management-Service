@@ -120,6 +120,7 @@ internal sealed record CollectionKeyPreallocationPlanDto(string ColumnName, int 
 internal sealed record ReferenceDerivedValueSourceDto(
     int BindingIndex,
     string ReferenceObjectPath,
+    string IdentityJsonPath,
     string ReferenceJsonPath
 );
 

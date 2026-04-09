@@ -675,9 +675,31 @@ public sealed record DocumentReferenceBinding(
 /// <summary>
 /// Binds a referenced identity JSONPath under a reference object to its stored local column.
 /// </summary>
+/// <param name="IdentityJsonPath">The authoritative identity JSONPath on the target resource.</param>
 /// <param name="ReferenceJsonPath">The JSONPath to the identity value under the reference object.</param>
 /// <param name="Column">The local column that stores the referenced identity value.</param>
-public sealed record ReferenceIdentityBinding(JsonPathExpression ReferenceJsonPath, DbColumnName Column);
+public sealed record ReferenceIdentityBinding
+{
+    public ReferenceIdentityBinding(
+        JsonPathExpression IdentityJsonPath,
+        JsonPathExpression ReferenceJsonPath,
+        DbColumnName Column
+    )
+    {
+        this.IdentityJsonPath = IdentityJsonPath;
+        this.ReferenceJsonPath = ReferenceJsonPath;
+        this.Column = Column;
+    }
+
+    public ReferenceIdentityBinding(JsonPathExpression ReferenceJsonPath, DbColumnName Column)
+        : this(ReferenceJsonPath, ReferenceJsonPath, Column) { }
+
+    public JsonPathExpression IdentityJsonPath { get; init; }
+
+    public JsonPathExpression ReferenceJsonPath { get; init; }
+
+    public DbColumnName Column { get; init; }
+}
 
 /// <summary>
 /// Records a descriptor value JSONPath and its corresponding FK column for resolution and read-time

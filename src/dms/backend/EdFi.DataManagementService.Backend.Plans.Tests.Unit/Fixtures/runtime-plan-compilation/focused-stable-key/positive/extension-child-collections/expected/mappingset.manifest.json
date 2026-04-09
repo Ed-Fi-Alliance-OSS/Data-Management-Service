@@ -425,6 +425,7 @@
                       "reference_source": {
                         "binding_index": 0,
                         "reference_object_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference",
+                        "identity_json_path": "$.programName",
                         "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName"
                       }
                     }
@@ -1196,6 +1197,7 @@
                       "reference_source": {
                         "binding_index": 0,
                         "reference_object_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference",
+                        "identity_json_path": "$.programName",
                         "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName"
                       }
                     }

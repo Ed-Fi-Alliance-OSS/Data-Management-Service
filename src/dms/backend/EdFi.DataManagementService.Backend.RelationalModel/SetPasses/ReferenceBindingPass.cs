@@ -218,7 +218,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     );
 
                     identityBindings.Add(
-                        new ReferenceIdentityBinding(identityBinding.ReferenceJsonPath, descriptorColumnName)
+                        new ReferenceIdentityBinding(
+                            identityBinding.IdentityJsonPath,
+                            identityBinding.ReferenceJsonPath,
+                            descriptorColumnName
+                        )
                     );
 
                     continue;
@@ -264,7 +268,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
                 tableBuilder.AddColumn(scalarColumn, originalColumnName.Value);
                 identityBindings.Add(
-                    new ReferenceIdentityBinding(identityBinding.ReferenceJsonPath, columnName)
+                    new ReferenceIdentityBinding(
+                        identityBinding.IdentityJsonPath,
+                        identityBinding.ReferenceJsonPath,
+                        columnName
+                    )
                 );
             }
 
