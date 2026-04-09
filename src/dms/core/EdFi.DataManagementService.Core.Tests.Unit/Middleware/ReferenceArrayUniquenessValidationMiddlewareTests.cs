@@ -126,6 +126,9 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         requestInfo.ParsedBody = JsonNode.Parse(jsonBody)!;
 
         await BuildResourceInfo().Execute(requestInfo, NullNext);
+        requestInfo.MappingSet = ExtractDocumentInfoMiddlewareTests.CreateMappingSet(
+            requestInfo.ResourceInfo
+        );
         await ExtractDocument().Execute(requestInfo, NullNext);
 
         var nextCalled = false;
