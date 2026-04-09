@@ -291,7 +291,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Core Middleware Regression Coverage",

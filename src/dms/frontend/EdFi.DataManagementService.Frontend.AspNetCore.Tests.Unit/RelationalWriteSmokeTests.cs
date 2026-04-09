@@ -280,6 +280,42 @@ public class Given_A_Host_Using_The_Relational_Backend
         writeExecutor.Requests.Should().ContainSingle();
     }
 
+    [Test]
+    public async Task It_returns_internal_server_error_when_the_mapping_set_omits_the_widget_write_plan()
+    {
+        var flattener = new CapturingRelationalWriteFlattener();
+        var writeExecutor = new CapturingRelationalWriteExecutor(
+            flattener,
+            RelationalWriteSmokeSupport.CreateEmptyResolvedReferences()
+        );
+
+        using var factory = CreateFactory(
+            new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetMissingWritePlanMappingSet),
+            writeExecutor
+        );
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+
+        using var response = await client.PostAsync(
+            "/data/testproject/widgets",
+            new StringContent(
+                """{"widgetId":103,"widgetName":"Missing Plan Widget"}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var body = JsonNode.Parse(responseBody)!.AsObject();
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, responseBody);
+        body["error"]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Write plan lookup failed for resource 'TestProject.Widget'");
+        writeExecutor.Requests.Should().BeEmpty();
+        flattener.Inputs.Should().BeEmpty();
+    }
+
     private WebApplicationFactory<Program> CreateFactory(
         IMappingSetProvider mappingSetProvider,
         CapturingRelationalWriteExecutor writeExecutor
@@ -598,6 +634,14 @@ public class Given_A_Host_Using_The_Relational_Backend
             var resourceModel = CreateWidgetResourceModel(resource, rootPlan);
 
             return CreateMappingSet(key, resource, resourceKey, resourceModel, rootPlan);
+        }
+
+        public static MappingSet CreateWidgetMissingWritePlanMappingSet(MappingSetKey key)
+        {
+            return CreateWidgetMappingSet(key) with
+            {
+                WritePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            };
         }
 
         private static RelationalResourceModel CreateWidgetResourceModel(

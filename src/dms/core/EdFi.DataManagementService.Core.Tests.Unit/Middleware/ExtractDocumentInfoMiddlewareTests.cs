@@ -190,6 +190,17 @@ public class ExtractDocumentInfoMiddlewareTests
         );
     }
 
+    internal static MappingSet CreateMappingSetWithoutWritePlan(
+        ResourceInfo resourceInfo,
+        params DescriptorEdgeSource[] descriptorEdgeSources
+    )
+    {
+        return CreateMappingSet(resourceInfo, descriptorEdgeSources) with
+        {
+            WritePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+        };
+    }
+
     internal static ApiSchemaDocuments BuildReferenceValidationApiSchemaDocuments()
     {
         return new ApiSchemaBuilder()
@@ -360,6 +371,74 @@ public class ExtractDocumentInfoMiddlewareTests
             superclassResourceInfo.IsDescriptor.Should().Be(false);
             superclassResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
             superclassResourceInfo.ResourceName.Value.Should().Be("EducationOrganization");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Relational_Post_Request_With_A_Missing_Write_Plan_Mapping_Set
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithIdentityJsonPaths(["$.schoolId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithDocumentPathScalar("NameOfInstitution", "$.nameOfInstitution")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
+
+            _requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                """{"schoolId":255901,"nameOfInstitution":"Central High"}""",
+                "/ed-fi/schools"
+            );
+            _requestInfo.MappingSet = CreateMappingSetWithoutWritePlan(CreateResourceInfo(resourceSchema));
+
+            _nextCalled = false;
+
+            await BuildMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_calls_next_instead_of_throwing_from_descriptor_extraction()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_frontend_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_still_populates_document_info_for_repository_owned_guard_rail_handling()
+        {
+            _requestInfo.DocumentInfo.ReferentialId.Should().NotBe(No.ReferentialId);
+            _requestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Should().ContainSingle();
+            _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
+            _requestInfo.DocumentInfo.DescriptorReferences.Should().BeEmpty();
         }
     }
 
