@@ -161,7 +161,8 @@ public class ReferenceExtractorTests
     {
         var (documentReferences, _) = resourceSchema.ExtractReferences(
             JsonNode.Parse(documentBody)!,
-            NullLogger.Instance
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
         );
 
         return documentReferences.Should().ContainSingle().Subject;
@@ -190,7 +191,8 @@ public class ReferenceExtractorTests
                     }
                     """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
 
             _documentReference = documentReferences.Should().ContainSingle().Subject;
@@ -407,7 +409,8 @@ public class ReferenceExtractorTests
                     }
                     """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
 
             _documentReference = documentReferences.Should().ContainSingle().Subject;
@@ -480,7 +483,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -643,7 +647,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -757,7 +762,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -837,7 +843,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -876,7 +883,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -961,7 +969,8 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1016,7 +1025,8 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1071,7 +1081,8 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1132,7 +1143,8 @@ public class ReferenceExtractorTests
                         }
                         """
                     )!,
-                    NullLogger.Instance
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
                 );
 
             _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
@@ -1265,7 +1277,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -1357,7 +1370,8 @@ public class ReferenceExtractorTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 

@@ -1082,7 +1082,8 @@ public class UpsertTests : DatabaseTest
 
             (DocumentReference[] documentReferences, _) = referencingResourceSchema.ExtractReferences(
                 referencingResourceBody,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.LegacyCompatibility
             );
 
             _documentReference = documentReferences.Should().ContainSingle().Subject;

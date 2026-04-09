@@ -43,7 +43,7 @@ internal static class ReferenceExtractor
         this ResourceSchema resourceSchema,
         JsonNode documentBody,
         ILogger logger,
-        ReferenceExtractionMode extractionMode = ReferenceExtractionMode.RelationalWriteValidation
+        ReferenceExtractionMode extractionMode
     )
     {
         logger.LogDebug("ReferenceExtractor.Extract");

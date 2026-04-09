@@ -619,6 +619,66 @@ public class ExtractDocumentInfoMiddlewareTests
         }
     }
 
+    [TestFixture(true)]
+    [TestFixture(false)]
+    [Parallelizable]
+    public class Given_UseRelationalBackend_Toggle_For_Reference_Extraction(bool _useRelationalBackend)
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private InvalidOperationException _exception = null!;
+        private bool _completedWithoutException;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceValidationApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            string body = """
+                {
+                    "sectionIdentifier": "Bob",
+                    "courseOfferingReference": {}
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(resourceSchema, RequestMethod.POST, body);
+
+            try
+            {
+                await BuildMiddleware(useRelationalBackend: _useRelationalBackend)
+                    .Execute(_requestInfo, NullNext);
+                _completedWithoutException = true;
+            }
+            catch (InvalidOperationException ex)
+            {
+                _exception = ex;
+            }
+        }
+
+        [Test]
+        public void It_uses_the_expected_reference_extraction_behavior()
+        {
+            if (_useRelationalBackend)
+            {
+                _completedWithoutException.Should().BeTrue();
+                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo.FrontendResponse.Body!["validationErrors"]!["$.courseOfferingReference"]![0]!
+                    .GetValue<string>()
+                    .Should()
+                    .Contain("$.courseOfferingReference.localCourseCode");
+                return;
+            }
+
+            _completedWithoutException.Should().BeFalse();
+            _exception
+                .Message.Should()
+                .Be(
+                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
+                );
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Legacy_Post_Request_With_An_Empty_Reference_Object
