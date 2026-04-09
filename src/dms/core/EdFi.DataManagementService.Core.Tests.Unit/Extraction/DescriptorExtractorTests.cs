@@ -71,6 +71,21 @@ public class DescriptorExtractorTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildDescriptorResourceApiSchemaDocuments()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("ProgramTypeDescriptor", isDescriptor: true)
+            .WithIdentityJsonPaths(["$.codeValue"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("CodeValue", "$.codeValue")
+            .WithDocumentPathDescriptor("AcademicSubjectDescriptor", "$.academicSubjectDescriptor")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
     internal static ResourceInfo CreateResourceInfo(string resourceName, bool isDescriptor = false)
     {
         return new ResourceInfo(
@@ -84,19 +99,15 @@ public class DescriptorExtractorTests
         );
     }
 
-    internal static MappingSet CreateRelationalReferenceDescriptorMappingSet(bool includeWritePlan)
+    internal static MappingSet CreateRelationalMappingSet(
+        ResourceInfo resourceInfo,
+        bool includeWritePlan,
+        params DescriptorEdgeSource[] descriptorEdgeSources
+    )
     {
-        var resourceInfo = CreateResourceInfo("StudentProgramAssociation");
         var resource = new QualifiedResourceName(
             resourceInfo.ProjectName.Value,
             resourceInfo.ResourceName.Value
-        );
-        var referenceDescriptorPath = CreatePath(
-            "$.programs[*].programReference.programTypeDescriptor",
-            new JsonPathSegment.Property("programs"),
-            new JsonPathSegment.AnyArrayElement(),
-            new JsonPathSegment.Property("programReference"),
-            new JsonPathSegment.Property("programTypeDescriptor")
         );
         var rootTableName = new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value);
         var rootTable = new DbTableModel(
@@ -135,16 +146,7 @@ public class DescriptorExtractorTests
             Root: rootTable,
             TablesInDependencyOrder: [rootTable],
             DocumentReferenceBindings: [],
-            DescriptorEdgeSources:
-            [
-                new DescriptorEdgeSource(
-                    IsIdentityComponent: false,
-                    DescriptorValuePath: referenceDescriptorPath,
-                    Table: rootTableName,
-                    FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
-                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
-                ),
-            ]
+            DescriptorEdgeSources: descriptorEdgeSources
         );
         var writePlan = new ResourceWritePlan(
             resourceModel,
@@ -203,6 +205,51 @@ public class DescriptorExtractorTests
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
+        );
+    }
+
+    internal static MappingSet CreateRelationalReferenceDescriptorMappingSet(bool includeWritePlan)
+    {
+        var resourceInfo = CreateResourceInfo("StudentProgramAssociation");
+        var referenceDescriptorPath = CreatePath(
+            "$.programs[*].programReference.programTypeDescriptor",
+            new JsonPathSegment.Property("programs"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("programReference"),
+            new JsonPathSegment.Property("programTypeDescriptor")
+        );
+
+        return CreateRelationalMappingSet(
+            resourceInfo,
+            includeWritePlan,
+            new DescriptorEdgeSource(
+                IsIdentityComponent: false,
+                DescriptorValuePath: referenceDescriptorPath,
+                Table: new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value),
+                FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+            )
+        );
+    }
+
+    internal static MappingSet CreateConflictingDescriptorPathMappingSet()
+    {
+        var resourceInfo = CreateResourceInfo("SlimCourse");
+        var conflictingDescriptorPath = CreatePath(
+            "$.careerPathwayDescriptor",
+            new JsonPathSegment.Property("careerPathwayDescriptor")
+        );
+
+        return CreateRelationalMappingSet(
+            resourceInfo,
+            includeWritePlan: true,
+            new DescriptorEdgeSource(
+                IsIdentityComponent: false,
+                DescriptorValuePath: conflictingDescriptorPath,
+                Table: new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value),
+                FkColumn: new DbColumnName("CareerPathwayDescriptorId"),
+                DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor")
+            )
         );
     }
 
@@ -747,6 +794,83 @@ public class DescriptorExtractorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Extracting_Relational_Descriptor_References_For_A_Non_Descriptor_Resource
+        : DescriptorExtractorTests
+    {
+        private DescriptorReference[] _descriptorReferences = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildRelationalReferenceDescriptorApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentProgramAssociations"
+            );
+
+            _descriptorReferences = resourceSchema.ExtractRelationalDescriptors(
+                CreateResourceInfo("StudentProgramAssociation"),
+                CreateRelationalReferenceDescriptorMappingSet(includeWritePlan: true),
+                JsonNode.Parse(
+                    """
+                    {
+                        "associationIdentifier": "A-1",
+                        "programs": [
+                            {
+                                "programReference": {
+                                    "programName": "STEM",
+                                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#STEM"
+                                }
+                            },
+                            {
+                                "programReference": {
+                                    "programName": "Arts",
+                                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#FineArts"
+                                }
+                            }
+                        ]
+                    }
+                    """
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_extracted_the_descriptor_references()
+        {
+            _descriptorReferences.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_has_extracted_the_first_collection_member_with_the_expected_resource_type_and_path()
+        {
+            _descriptorReferences[0].ResourceInfo.ResourceName.Value.Should().Be("ProgramTypeDescriptor");
+            _descriptorReferences[0]
+                .Path.Value.Should()
+                .Be("$.programs[0].programReference.programTypeDescriptor");
+            _descriptorReferences[0]
+                .DocumentIdentity.DocumentIdentityElements[0]
+                .IdentityValue.Should()
+                .Be("uri://ed-fi.org/programtypedescriptor#stem");
+        }
+
+        [Test]
+        public void It_has_extracted_the_second_collection_member_with_the_expected_resource_type_and_path()
+        {
+            _descriptorReferences[1].ResourceInfo.ResourceName.Value.Should().Be("ProgramTypeDescriptor");
+            _descriptorReferences[1]
+                .Path.Value.Should()
+                .Be("$.programs[1].programReference.programTypeDescriptor");
+            _descriptorReferences[1]
+                .DocumentIdentity.DocumentIdentityElements[0]
+                .IdentityValue.Should()
+                .Be("uri://ed-fi.org/programtypedescriptor#finearts");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Relational_Descriptor_References_Without_A_Compiled_Write_Plan
         : DescriptorExtractorTests
     {
@@ -819,6 +943,94 @@ public class DescriptorExtractorTests
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
                 .Be("uri://ed-fi.org/programtypedescriptor#finearts");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Relational_Descriptor_References_For_A_Descriptor_Resource
+        : DescriptorExtractorTests
+    {
+        private DescriptorReference[] _descriptorReferences = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildDescriptorResourceApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "programTypeDescriptors");
+
+            _descriptorReferences = resourceSchema.ExtractRelationalDescriptors(
+                CreateResourceInfo("ProgramTypeDescriptor", isDescriptor: true),
+                CreateRelationalReferenceDescriptorMappingSet(includeWritePlan: false),
+                JsonNode.Parse(
+                    """
+                    {
+                        "codeValue": "STEM",
+                        "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics"
+                    }
+                    """
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_short_circuits_to_schema_based_descriptor_extraction()
+        {
+            _descriptorReferences.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_has_extracted_the_descriptor_reference_with_the_expected_resource_type_and_path()
+        {
+            _descriptorReferences[0].ResourceInfo.ResourceName.Value.Should().Be("AcademicSubjectDescriptor");
+            _descriptorReferences[0].Path.Value.Should().Be("$.academicSubjectDescriptor");
+            _descriptorReferences[0]
+                .DocumentIdentity.DocumentIdentityElements[0]
+                .IdentityValue.Should()
+                .Be("uri://ed-fi.org/academicsubjectdescriptor#mathematics");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Relational_Descriptor_References_With_A_Conflicting_Concrete_Path
+        : DescriptorExtractorTests
+    {
+        private InvalidOperationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
+
+            Action act = () =>
+                resourceSchema.ExtractRelationalDescriptors(
+                    CreateResourceInfo("SlimCourse"),
+                    CreateConflictingDescriptorPathMappingSet(),
+                    JsonNode.Parse(
+                        """
+                        {
+                            "courseTitle": "Math",
+                            "careerPathwayDescriptor": "uri://ed-fi.org/CareerPathwayDescriptor#Other"
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<InvalidOperationException>().Which;
+        }
+
+        [Test]
+        public void It_fails_with_a_deterministic_conflict_message()
+        {
+            _exception
+                .Message.Should()
+                .Be(
+                    "Descriptor path '$.careerPathwayDescriptor' resolved to conflicting descriptor references."
+                );
         }
     }
 }

@@ -292,6 +292,39 @@ public class ExtractDocumentInfoMiddlewareTests
         );
     }
 
+    internal static MappingSet CreateReferenceDescriptorMappingSetWithoutWritePlan()
+    {
+        var resourceInfo = new ResourceInfo(
+            ProjectName: new ProjectName("Ed-Fi"),
+            ResourceName: new ResourceName("StudentProgramAssociation"),
+            IsDescriptor: false,
+            ResourceVersion: new SemVer("1.0.0"),
+            AllowIdentityUpdates: false,
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+            AuthorizationSecurableInfo: []
+        );
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
+        var referenceDescriptorPath = CreatePath(
+            "$.programs[*].programReference.programTypeDescriptor",
+            new JsonPathSegment.Property("programs"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("programReference"),
+            new JsonPathSegment.Property("programTypeDescriptor")
+        );
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), resourceInfo.ResourceName.Value);
+
+        return CreateMappingSetWithoutWritePlan(
+            resourceInfo,
+            new DescriptorEdgeSource(
+                IsIdentityComponent: false,
+                DescriptorValuePath: referenceDescriptorPath,
+                Table: rootTable,
+                FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                DescriptorResource: descriptorResource
+            )
+        );
+    }
+
     private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments) =>
         new(canonical, segments);
 
@@ -439,6 +472,106 @@ public class ExtractDocumentInfoMiddlewareTests
             _requestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Should().ContainSingle();
             _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
             _requestInfo.DocumentInfo.DescriptorReferences.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Relational_Post_Request_With_Descriptor_Edges_And_A_Missing_Write_Plan_Mapping_Set
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildReferenceDescriptorApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentProgramAssociations"
+            );
+            string body = """
+                {
+                    "associationIdentifier": "A-1",
+                    "programs": [
+                        {
+                            "programReference": {
+                                "programName": "STEM",
+                                "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#STEM"
+                            }
+                        },
+                        {
+                            "programReference": {
+                                "programName": "Arts",
+                                "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#FineArts"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                body,
+                "/ed-fi/studentProgramAssociations"
+            );
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("StudentProgramAssociation"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false,
+                EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+                AuthorizationSecurableInfo: []
+            );
+            _requestInfo.MappingSet = CreateReferenceDescriptorMappingSetWithoutWritePlan();
+            _nextCalled = false;
+
+            await BuildMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_calls_next_instead_of_throwing()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_frontend_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_extracts_descriptor_references_from_concrete_resource_model_metadata()
+        {
+            _requestInfo.DocumentInfo.DescriptorReferences.Should().HaveCount(2);
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[0]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("ProgramTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[0]
+                .Path.Value.Should()
+                .Be("$.programs[0].programReference.programTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[1]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("ProgramTypeDescriptor");
+            _requestInfo
+                .DocumentInfo.DescriptorReferences[1]
+                .Path.Value.Should()
+                .Be("$.programs[1].programReference.programTypeDescriptor");
         }
     }
 

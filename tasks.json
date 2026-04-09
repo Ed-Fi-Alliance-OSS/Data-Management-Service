@@ -301,7 +301,7 @@
       "Extend `ExtractDocumentInfoMiddlewareTests` to cover a missing-write-plan mapping set that still contains the concrete resource model metadata needed for descriptor extraction and to assert the middleware completes without throwing.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DescriptorExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Shared Relational DocumentInfo Test Helper",
