@@ -3,26 +3,33 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Mssql;
+using System.Data;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
+public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 {
     [Test]
-    public void It_registers_the_mssql_reference_resolution_composition_surface()
+    public void It_registers_the_postgresql_reference_resolution_composition_surface()
     {
         var services = new ServiceCollection();
 
         services.AddLogging();
+        services.AddSingleton<IHostApplicationLifetime, NoOpHostApplicationLifetime>();
+        services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
-        services.AddMssqlReferenceResolver();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddPostgresqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);
         using var scope = serviceProvider.CreateScope();
@@ -60,11 +67,11 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
-        writeSessionFactory.Should().BeOfType<MssqlRelationalWriteSessionFactory>();
-        factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
-        commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
-        writeExceptionClassifier.Should().BeOfType<MssqlRelationalWriteExceptionClassifier>();
+        writeSessionFactory.Should().BeOfType<PostgresqlRelationalWriteSessionFactory>();
+        factory.Should().BeOfType<PostgresqlReferenceResolverAdapterFactory>();
+        adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
+        commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
+        writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
     }
 
@@ -73,5 +80,14 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private sealed class NoOpHostApplicationLifetime : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication() { }
     }
 }

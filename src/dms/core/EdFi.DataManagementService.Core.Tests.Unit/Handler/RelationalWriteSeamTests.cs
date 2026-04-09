@@ -221,8 +221,11 @@ public class Given_Relational_Write_Seam
         harness.WriteExecutor.Requests.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_surfaces_executor_owned_reference_failures_through_the_handler()
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_unresolved_document_reference_problem_details_for_executor_owned_failures(
+        SqlDialect dialect
+    )
     {
         var invalidReference = DocumentReferenceFailure.From(
             _fixture.CreateRootSchoolReference(),
@@ -246,7 +249,7 @@ public class Given_Relational_Write_Seam
                 }
                 """
             )!,
-            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateSupportedMappingSet(dialect),
             _fixture.CreateDocumentInfo(
                 includeRootSchoolReference: true,
                 includeNestedPeriodReferences: false,
@@ -255,7 +258,20 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(409);
-        requestInfo.FrontendResponse.Body!.ToJsonString().Should().Contain("$.schoolReference");
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+        body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+        body["status"]!.GetValue<int>().Should().Be(409);
+        body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
+        body["validationErrors"]!["$.schoolReference"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Be("The referenced School item does not exist.");
+        body["errors"]!.AsArray().Should().BeEmpty();
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
@@ -296,6 +312,239 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Contain("expected scalar kind 'Int32'");
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_identity_conflict_problem_details_for_executor_owned_failures(
+        SqlDialect dialect
+    )
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureIdentityConflict(
+                    new ResourceName("Student"),
+                    [new KeyValuePair<string, string>("studentUniqueId", "1000")]
+                )
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "studentUniqueId": "1000"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The identifying value(s) of the item are the same as another item that already exists.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:identity-conflict");
+        body["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+        body["status"]!.GetValue<int>().Should().Be(409);
+        body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+        body["errors"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("A natural key conflict occurred when attempting to create a new resource Student");
+        body["errors"]![0]!.GetValue<string>().Should().Contain("(studentUniqueId = 1000)");
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_descriptor_reference_validation_problem_details_for_executor_owned_failures(
+        SqlDialect dialect
+    )
+    {
+        var invalidDescriptorReference = DescriptorReferenceFailure.From(
+            _fixture
+                .CreateDocumentInfo(
+                    includeRootSchoolReference: false,
+                    includeNestedPeriodReferences: false,
+                    includeProgramTypeDescriptor: true
+                )
+                .DescriptorReferences.Single(),
+            DescriptorReferenceFailureReason.Missing
+        );
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureReference([], [invalidDescriptorReference])
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpdateAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "programTypeDescriptor": "uri://ed-fi.org/programtypedescriptor#stem"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: true
+            ),
+            existingDocumentUuid
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
+        body["validationErrors"]!["$.programTypeDescriptor"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Be("ProgramTypeDescriptor value 'uri://ed-fi.org/programtypedescriptor#stem' does not exist.");
+        body["errors"]!.AsArray().Should().BeEmpty();
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_unknown_failure_payloads_for_executor_owned_failures(SqlDialect dialect)
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure("Unexpected write-executor test fallback.")
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "studentUniqueId": "1000"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+
+        var expected = """
+{
+  "error": "Unexpected write-executor test fallback.",
+  "correlationId": "relational-write-seam"
+}
+""";
+
+        JsonNode
+            .DeepEquals(requestInfo.FrontendResponse.Body, JsonNode.Parse(expected))
+            .Should()
+            .BeTrue(
+                $"""
+expected: {expected}
+
+actual: {requestInfo.FrontendResponse.Body}
+"""
+            );
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_keeps_retryable_post_write_conflicts_outside_dms_986_mapping(SqlDialect dialect)
+    {
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "studentUniqueId": "1000"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        body["title"]!.GetValue<string>().Should().Be("System Error");
+        body["detail"]!.GetValue<string>().Should().Be("An unexpected problem has occurred.");
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_keeps_retryable_put_write_conflicts_outside_dms_986_mapping(SqlDialect dialect)
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict()
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpdateAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "studentUniqueId": "1000"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            ),
+            existingDocumentUuid
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        body["title"]!.GetValue<string>().Should().Be("System Error");
+        body["detail"]!.GetValue<string>().Should().Be("An unexpected problem has occurred.");
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 

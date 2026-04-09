@@ -10,6 +10,34 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteSupport
 {
+    public static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DbTableName rootTable
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var referentialIdentityTrigger = mappingSet.Model.TriggersInCreateOrder.SingleOrDefault(trigger =>
+            trigger.Table.Equals(rootTable)
+            && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
+            && string.Equals(parameters.ProjectName, resource.ProjectName, StringComparison.Ordinal)
+            && string.Equals(parameters.ResourceName, resource.ResourceName, StringComparison.Ordinal)
+        );
+
+        if (
+            referentialIdentityTrigger?.Parameters
+            is TriggerKindParameters.ReferentialIdentityMaintenance referentialIdentityParameters
+        )
+        {
+            return referentialIdentityParameters;
+        }
+
+        throw new InvalidOperationException(
+            BuildMissingReferentialIdentityTriggerMetadataMessage(mappingSet.Key, resource)
+        );
+    }
+
     public static RelationalWriteTargetContext? TryTranslateTargetContext(
         RelationalWriteTargetLookupResult targetLookupResult
     )
@@ -67,6 +95,13 @@ internal static class RelationalWriteSupport
     public static string BuildIdentityUpdatesNotYetSupportedMessage(QualifiedResourceName resource) =>
         $"Relational existing-document writes do not yet support identity-changing operations for resource '{FormatResource(resource)}' when allowIdentityUpdates=true. "
         + "Keep the identity projection stable until the strict identity-maintenance work lands.";
+
+    public static string BuildMissingReferentialIdentityTriggerMetadataMessage(
+        MappingSetKey mappingSetKey,
+        QualifiedResourceName resource
+    ) =>
+        $"Mapping set '{FormatMappingSetKey(mappingSetKey)}' "
+        + $"is missing referential-identity trigger metadata for resource '{FormatResource(resource)}'.";
 
     public static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";

@@ -65,6 +65,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteNoProfilePersister, RelationalWriteNoProfilePersister>()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteExceptionClassifier,
+                NoOpRelationalWriteExceptionClassifier
+            >()
+        );
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
         services.TryAdd(
             ServiceDescriptor.Scoped<
@@ -77,6 +83,9 @@ public static class ReferenceResolverServiceCollectionExtensions
                 IRelationalWriteTargetLookupResolver,
                 RelationalWriteTargetLookupResolver
             >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteConstraintResolver, RelationalWriteConstraintResolver>()
         );
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
 

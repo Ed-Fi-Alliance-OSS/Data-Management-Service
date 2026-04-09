@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
+[Parallelizable]
 public class Given_RelationalDocumentStoreRepositoryTests
 {
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
@@ -753,6 +754,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Descriptor POST write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
     }
 
     [Test]
@@ -774,6 +777,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Descriptor PUT write is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
                 )
             );
+        _capturedExecutorRequests.Should().BeEmpty();
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]
@@ -789,6 +794,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result
             .Should()
             .BeEquivalentTo(new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented."));
+        _capturedExecutorRequests.Should().BeEmpty();
     }
 
     [Test]

@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -17,6 +18,13 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
     public static IServiceCollection AddMssqlReferenceResolver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteExceptionClassifier,
+                MssqlRelationalWriteExceptionClassifier
+            >()
+        );
 
         return services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,

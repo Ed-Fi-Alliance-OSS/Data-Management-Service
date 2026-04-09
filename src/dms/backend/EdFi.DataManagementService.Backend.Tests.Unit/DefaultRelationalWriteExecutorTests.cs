@@ -31,6 +31,8 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
     private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+    private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+    private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -44,6 +46,8 @@ public class Given_Default_Relational_Write_Executor
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
         _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+        _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
+        _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
@@ -52,7 +56,9 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
-            _noProfilePersister
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver
         );
     }
 
@@ -550,7 +556,9 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             new RelationalWriteNoProfileMergeSynthesizer(),
-            _noProfilePersister
+            _noProfilePersister,
+            _writeExceptionClassifier,
+            _writeConstraintResolver
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -885,6 +893,375 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_maps_root_natural_key_unique_violations_to_upsert_identity_conflicts()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255901")]
+                    )
+                )
+            );
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_root_natural_key_unique_violations_raised_on_commit_to_update_identity_conflicts()
+    {
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException("duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255901")]
+                    )
+                )
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_known_document_reference_foreign_key_violations_to_reference_failures()
+    {
+        var invalidReference = RelationalAccessTestData.CreateDocumentReference(
+            new ReferentialId(Guid.NewGuid()),
+            "$.schoolReference"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [invalidReference]
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("foreign key violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_SchoolReference"
+            );
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RequestReference(
+                "FK_School_SchoolReference",
+                RelationalWriteReferenceKind.Document,
+                new JsonPathExpression(
+                    "$.schoolReference",
+                    [new JsonPathSegment.Property("schoolReference")]
+                ),
+                new QualifiedResourceName(
+                    invalidReference.ResourceInfo.ProjectName.Value,
+                    invalidReference.ResourceInfo.ResourceName.Value
+                )
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureReference(
+                        [
+                            DocumentReferenceFailure.From(
+                                invalidReference,
+                                DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
+                )
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_known_descriptor_reference_foreign_key_violations_to_reference_failures()
+    {
+        var invalidReference = RelationalAccessTestData.CreateDescriptorReference(
+            new ReferentialId(Guid.NewGuid()),
+            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            "$.schoolTypeDescriptor"
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            descriptorReferences: [invalidReference]
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("foreign key violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_SchoolTypeDescriptor"
+            );
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RequestReference(
+                "FK_School_SchoolTypeDescriptor",
+                RelationalWriteReferenceKind.Descriptor,
+                new JsonPathExpression(
+                    "$.schoolTypeDescriptor",
+                    [new JsonPathSegment.Property("schoolTypeDescriptor")]
+                ),
+                new QualifiedResourceName(
+                    invalidReference.ResourceInfo.ProjectName.Value,
+                    invalidReference.ResourceInfo.ResourceName.Value
+                )
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureReference(
+                        [],
+                        [DescriptorReferenceFailureClassifier.Missing(invalidReference)]
+                    )
+                )
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_resolved_request_reference_with_no_matching_request_reference_to_unknown_failure()
+    {
+        // The compiled model resolves the FK to a named request-facing reference path, but the
+        // ReferenceResolutionRequest carries no reference at that path (e.g. a race or an assembly
+        // mismatch at the middleware tier). The executor cannot produce a reference failure without
+        // a concrete DocumentReference/DescriptorReference to attach it to, so it falls through to
+        // the Unresolved arm and emits a deterministic UnknownFailure.
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("foreign key violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_SchoolRef_2ba9f31f84"
+            );
+        // Resolver says this FK maps to "$.schoolReference" on School, but the request carries
+        // no document references at that path.
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RequestReference(
+                "FK_School_SchoolRef_2ba9f31f84",
+                RelationalWriteReferenceKind.Document,
+                new JsonPathExpression(
+                    "$.schoolReference",
+                    [new JsonPathSegment.Property("schoolReference")]
+                ),
+                new QualifiedResourceName("Ed-Fi", "School")
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UnknownFailure(
+                        "Relational write failed for resource 'Ed-Fi.School' because the database reported a non-user-facing constraint violation."
+                    )
+                )
+            );
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_unresolved_constraint_violations_to_unknown_failures()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("structural constraint violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_InternalParent"
+            );
+        _writeConstraintResolver.ResolutionToReturn = new RelationalWriteConstraintResolution.Unresolved(
+            "FK_School_InternalParent"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UnknownFailure(
+                        "Relational write failed for resource 'Ed-Fi.School' because the database reported a non-user-facing constraint violation."
+                    )
+                )
+            );
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_maps_unrecognized_final_db_write_failures_to_unknown_failures()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("provider write failure");
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .UnrecognizedWriteFailure
+            .Instance;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UnknownFailure(
+                        "Relational write failed for resource 'Ed-Fi.School' because the database reported an unrecognized final write failure."
+                    )
+                )
+            );
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rethrows_db_exceptions_that_the_classifier_does_not_claim()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("deadlock");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("deadlock");
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rethrows_exception_classifier_failures_during_db_exception_mapping()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("provider write failure");
+        _writeExceptionClassifier.ExceptionToThrow = new InvalidOperationException("classifier bug");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("classifier bug");
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rethrows_constraint_resolution_failures_during_db_exception_mapping()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("foreign key violation");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_School_InternalParent"
+            );
+        _writeConstraintResolver.ExceptionToThrow = new InvalidOperationException("resolver bug");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resolver bug");
+        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_immutable_identity_failure_when_existing_document_identity_changes_and_updates_are_disallowed()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
@@ -1168,9 +1545,8 @@ public class Given_Default_Relational_Write_Executor
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
         var descriptorKey = new ResourceKeyEntry(13, descriptorResource, "1.0.0", true);
-        var identityProjectionColumns = resourceModel
+        var identityColumns = resourceModel
             .Root.Columns.Where(columnModel => columnModel.Kind == ColumnKind.Scalar)
-            .Select(columnModel => columnModel.ColumnName)
             .Take(1)
             .ToArray();
 
@@ -1211,8 +1587,32 @@ public class Given_Default_Relational_Write_Executor
                         new DbTriggerName("TR_School_DocumentStamping"),
                         resourceModel.Root.Table,
                         [new DbColumnName("DocumentId")],
-                        identityProjectionColumns,
+                        identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
                         new TriggerKindParameters.DocumentStamping()
+                    ),
+                    new DbTriggerInfo(
+                        new DbTriggerName("TR_School_ReferentialIdentity"),
+                        resourceModel.Root.Table,
+                        [new DbColumnName("DocumentId")],
+                        identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
+                        new TriggerKindParameters.ReferentialIdentityMaintenance(
+                            resourceKey.ResourceKeyId,
+                            resource.ProjectName,
+                            resource.ResourceName,
+                            identityColumns
+                                .Select(columnModel => new IdentityElementMapping(
+                                    columnModel.ColumnName,
+                                    columnModel.SourceJsonPath?.Canonical
+                                        ?? throw new InvalidOperationException(
+                                            "Expected a root identity source path."
+                                        ),
+                                    columnModel.ScalarType
+                                        ?? throw new InvalidOperationException(
+                                            "Expected a root identity scalar type."
+                                        )
+                                ))
+                                .ToArray()
+                        )
                     ),
                 ]
             ),
@@ -1841,12 +2241,20 @@ public class Given_Default_Relational_Write_Executor
 
         public int DisposeCallCount { get; private set; }
 
+        public Exception? CommitExceptionToThrow { get; set; }
+
         public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CommitCallCount++;
+
+            if (CommitExceptionToThrow is not null)
+            {
+                throw CommitExceptionToThrow;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -1899,4 +2307,59 @@ public class Given_Default_Relational_Write_Executor
 
         public override void Rollback() => throw new NotSupportedException();
     }
+
+    private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
+    {
+        public int TryClassifyCallCount { get; private set; }
+
+        public DbException? CapturedException { get; private set; }
+
+        public Exception? ExceptionToThrow { get; set; }
+
+        public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
+
+        public bool TryClassify(
+            DbException exception,
+            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
+        )
+        {
+            TryClassifyCallCount++;
+            CapturedException = exception;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            classification = ClassificationToReturn;
+            return classification is not null;
+        }
+    }
+
+    private sealed class RecordingRelationalWriteConstraintResolver : IRelationalWriteConstraintResolver
+    {
+        public int ResolveCallCount { get; private set; }
+
+        public RelationalWriteConstraintResolutionRequest? CapturedRequest { get; private set; }
+
+        public Exception? ExceptionToThrow { get; set; }
+
+        public RelationalWriteConstraintResolution ResolutionToReturn { get; set; } =
+            new RelationalWriteConstraintResolution.Unresolved("UNCONFIGURED");
+
+        public RelationalWriteConstraintResolution Resolve(RelationalWriteConstraintResolutionRequest request)
+        {
+            ResolveCallCount++;
+            CapturedRequest = request;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return ResolutionToReturn;
+        }
+    }
+
+    private sealed class StubDbException(string message) : DbException(message);
 }
