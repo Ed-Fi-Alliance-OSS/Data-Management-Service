@@ -244,8 +244,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     private SurveyRuntimePersistedState _stateAfterCreate = null!;
     private SurveyRuntimePersistedState _stateAfterChangedUpdate = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -307,8 +307,8 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         _stateAfterChangedUpdate = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

@@ -10,10 +10,22 @@ on:
     # Running on push to main to support CodeQL on C#
     branches:
       - main
+    paths:
+      - ".github/workflows/**"
+      - "build-config.ps1"
+      - "eng/**"
+      - "src/Directory.Packages.props"
+      - "src/config/**"
 
   pull_request:
     branches:
       - main
+    paths:
+      - ".github/workflows/**"
+      - "build-config.ps1"
+      - "eng/**"
+      - "src/Directory.Packages.props"
+      - "src/config/**"
 
   workflow_dispatch:
 

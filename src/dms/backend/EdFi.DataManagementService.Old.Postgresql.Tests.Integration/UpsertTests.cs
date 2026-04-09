@@ -1043,73 +1043,95 @@ public class UpsertTests : DatabaseTest
             );
         }
 
-        [SetUp]
-        public async Task Setup()
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
         {
-            ResourceSchema referencedResourceSchema = CreateDescriptorValuedReferencedResourceSchema();
-            JsonNode referencedResourceBody = ParseJsonNode(_referencedResourceEdFiDocString);
-
-            (DocumentIdentity referencedDocumentIdentity, _) = referencedResourceSchema.ExtractIdentities(
-                referencedResourceBody,
-                NullLogger.Instance
-            );
-
-            _referencedResourceReferentialId = ReferentialIdFrom(
-                CreateResourceInfo(_descriptorValuedReferencedResourceName),
-                referencedDocumentIdentity
-            );
-
-            IUpsertRequest referencedResourceUpsertRequest = CreateUpsertRequest(
-                _descriptorValuedReferencedResourceName,
-                _referencedDocumentUuidGuid,
-                _referencedResourceReferentialId.Value,
-                _referencedResourceEdFiDocString,
-                documentIdentityElements: referencedDocumentIdentity.DocumentIdentityElements
-            );
-
-            UpsertResult referencedResourceUpsertResult = await CreateUpsert()
-                .Upsert(referencedResourceUpsertRequest, Connection!, Transaction!);
-
-            referencedResourceUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-
-            ResourceSchema referencingResourceSchema = CreateDescriptorValuedReferencingResourceSchema();
-            JsonNode referencingResourceBody = ParseJsonNode(_referencingResourceEdFiDocString);
-
-            (DocumentIdentity referencingDocumentIdentity, _) = referencingResourceSchema.ExtractIdentities(
-                referencingResourceBody,
-                NullLogger.Instance
-            );
-
-            (DocumentReference[] documentReferences, _) = referencingResourceSchema.ExtractReferences(
-                referencingResourceBody,
-                NullLogger.Instance,
-                ReferenceExtractionMode.LegacyCompatibility
-            );
-
-            _documentReference = documentReferences.Should().ContainSingle().Subject;
-            _referenceReferentialId = _documentReference.ReferentialId;
-
-            IUpsertRequest referencingResourceUpsertRequest = CreateUpsertRequest(
-                _descriptorValuedReferencingResourceName,
-                _referencingDocumentUuidGuid,
-                ReferentialIdFrom(
-                    CreateResourceInfo(_descriptorValuedReferencingResourceName),
-                    referencingDocumentIdentity
-                ).Value,
-                _referencingResourceEdFiDocString,
-                documentReferences,
-                documentIdentityElements: referencingDocumentIdentity.DocumentIdentityElements
-            );
-
-            _upsertResult = await CreateUpsert()
-                .Upsert(referencingResourceUpsertRequest, Connection!, Transaction!);
-
-            _getResult = await CreateGetById()
-                .GetById(
-                    CreateGetRequest(_descriptorValuedReferencingResourceName, _referencingDocumentUuidGuid),
-                    Connection!,
-                    Transaction!
+            var connectionString =
+                Configuration.DatabaseConnectionString
+                ?? throw new InvalidOperationException(
+                    "Expected a PostgreSQL connection string for test setup."
                 );
+
+            await using var dataSource = NpgsqlDataSource.Create(connectionString);
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(ConfiguredIsolationLevel);
+
+            Connection = connection;
+            Transaction = transaction;
+
+            try
+            {
+                ResourceSchema referencedResourceSchema = CreateDescriptorValuedReferencedResourceSchema();
+                JsonNode referencedResourceBody = ParseJsonNode(_referencedResourceEdFiDocString);
+
+                (DocumentIdentity referencedDocumentIdentity, _) = referencedResourceSchema.ExtractIdentities(
+                    referencedResourceBody,
+                    NullLogger.Instance
+                );
+
+                _referencedResourceReferentialId = ReferentialIdFrom(
+                    CreateResourceInfo(_descriptorValuedReferencedResourceName),
+                    referencedDocumentIdentity
+                );
+
+                IUpsertRequest referencedResourceUpsertRequest = CreateUpsertRequest(
+                    _descriptorValuedReferencedResourceName,
+                    _referencedDocumentUuidGuid,
+                    _referencedResourceReferentialId.Value,
+                    _referencedResourceEdFiDocString,
+                    documentIdentityElements: referencedDocumentIdentity.DocumentIdentityElements
+                );
+
+                UpsertResult referencedResourceUpsertResult = await CreateUpsert()
+                    .Upsert(referencedResourceUpsertRequest, Connection!, Transaction!);
+
+                referencedResourceUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+                ResourceSchema referencingResourceSchema = CreateDescriptorValuedReferencingResourceSchema();
+                JsonNode referencingResourceBody = ParseJsonNode(_referencingResourceEdFiDocString);
+
+                (DocumentIdentity referencingDocumentIdentity, _) =
+                    referencingResourceSchema.ExtractIdentities(referencingResourceBody, NullLogger.Instance);
+
+                (DocumentReference[] documentReferences, _) = referencingResourceSchema.ExtractReferences(
+                    referencingResourceBody,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.LegacyCompatibility
+                );
+
+                _documentReference = documentReferences.Should().ContainSingle().Subject;
+                _referenceReferentialId = _documentReference.ReferentialId;
+
+                IUpsertRequest referencingResourceUpsertRequest = CreateUpsertRequest(
+                    _descriptorValuedReferencingResourceName,
+                    _referencingDocumentUuidGuid,
+                    ReferentialIdFrom(
+                        CreateResourceInfo(_descriptorValuedReferencingResourceName),
+                        referencingDocumentIdentity
+                    ).Value,
+                    _referencingResourceEdFiDocString,
+                    documentReferences,
+                    documentIdentityElements: referencingDocumentIdentity.DocumentIdentityElements
+                );
+
+                _upsertResult = await CreateUpsert()
+                    .Upsert(referencingResourceUpsertRequest, Connection!, Transaction!);
+
+                _getResult = await CreateGetById()
+                    .GetById(
+                        CreateGetRequest(
+                            _descriptorValuedReferencingResourceName,
+                            _referencingDocumentUuidGuid
+                        ),
+                        Connection!,
+                        Transaction!
+                    );
+            }
+            finally
+            {
+                Connection = null;
+                Transaction = null;
+            }
         }
 
         [Test]

@@ -1563,8 +1563,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
     private PropagatedReferenceIdentityCascadePersistedState _stateAfterCreate = null!;
     private PropagatedReferenceIdentityCascadeReferenceShape _shapeAfterCreate = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeSampleWriteIntegrationTestSupport.FixtureRelativePath
@@ -1612,8 +1612,8 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
         _shapeAfterCreate = await ReadReferenceShapeAsync(_stateAfterCreate.Document.DocumentId);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

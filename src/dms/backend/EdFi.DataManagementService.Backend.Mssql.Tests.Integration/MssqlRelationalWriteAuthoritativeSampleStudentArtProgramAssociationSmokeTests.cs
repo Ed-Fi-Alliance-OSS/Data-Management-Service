@@ -357,8 +357,8 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     private UpsertResult _createResult = null!;
     private MssqlStudentArtProgramAssociationPersistedState _stateAfterCreate = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -415,8 +415,8 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         _stateAfterCreate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
