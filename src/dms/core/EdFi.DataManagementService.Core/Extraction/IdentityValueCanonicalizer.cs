@@ -19,13 +19,8 @@ internal static class IdentityValueCanonicalizer
 
     private static string Canonicalize(JsonPath identityJsonPath, string identityValue)
     {
-        return IsDescriptorValuedIdentityMember(identityJsonPath)
+        return DocumentIdentity.IsDescriptorIdentityPath(identityJsonPath)
             ? identityValue.ToLowerInvariant()
             : identityValue;
-    }
-
-    private static bool IsDescriptorValuedIdentityMember(JsonPath identityJsonPath)
-    {
-        return identityJsonPath.Value.EndsWith("Descriptor", StringComparison.Ordinal);
     }
 }

@@ -1,0 +1,4 @@
+2026-04-09 task: Descriptor Identity Detection story: DMS-985 / 04-propagated-reference-identity-columns
+decision: centralized descriptor identity classification on DocumentIdentity; reused in Core canonicalization, backend lookup matching, relational model descriptor binding check; preserved $.descriptor and concrete Descriptor suffix handling
+files: src/dms/core/EdFi.DataManagementService.Core.External/Model/DocumentIdentity.cs; src/dms/core/EdFi.DataManagementService.Core/Extraction/IdentityValueCanonicalizer.cs; src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Model/DocumentIdentityTests.cs
+notes: dotnet tests first run in parallel hit pdb/dll file locks; reran sequentially. verified: Core.Tests.Unit, Backend.Tests.Unit, Backend.RelationalModel.Tests.Unit

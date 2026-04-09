@@ -429,20 +429,12 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     {
         ArgumentNullException.ThrowIfNull(identityElement);
 
-        return IsDescriptorIdentityPath(identityElement.IdentityJsonPath.Value);
+        return DocumentIdentity.IsDescriptorIdentityPath(identityElement.IdentityJsonPath);
     }
 
     private static bool IsDescriptorIdentityPath(string canonicalPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
-
-        return string.Equals(
-                canonicalPath,
-                DocumentIdentity.DescriptorIdentityJsonPath.Value,
-                StringComparison.Ordinal
-            )
-            || canonicalPath.EndsWith("Descriptor", StringComparison.Ordinal)
-            || canonicalPath.EndsWith("Descriptor]", StringComparison.Ordinal);
+        return DocumentIdentity.IsDescriptorIdentityPath(canonicalPath);
     }
 
     private static string FormatIdentityPathList(IReadOnlyList<DocumentIdentityElement> identityElements)

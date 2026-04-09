@@ -17,4 +17,18 @@ public record DocumentIdentity(DocumentIdentityElement[] DocumentIdentityElement
 {
     // Use this synthetic, hardcoded identity JsonPath for all descriptors
     public static readonly JsonPath DescriptorIdentityJsonPath = new("$.descriptor");
+
+    public static bool IsDescriptorIdentityPath(JsonPath identityJsonPath)
+    {
+        return IsDescriptorIdentityPath(identityJsonPath.Value);
+    }
+
+    public static bool IsDescriptorIdentityPath(string canonicalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
+
+        return string.Equals(canonicalPath, DescriptorIdentityJsonPath.Value, StringComparison.Ordinal)
+            || canonicalPath.EndsWith("Descriptor", StringComparison.Ordinal)
+            || canonicalPath.EndsWith("Descriptor]", StringComparison.Ordinal);
+    }
 }

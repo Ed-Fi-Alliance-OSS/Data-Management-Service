@@ -1,0 +1,59 @@
+[
+  {
+    "category": "Path Utilities",
+    "description": "Deduplicate the character-for-character identical `MaterializeConcretePath` implementations currently in `src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs` and `src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteFlattener.cs` by moving the shared logic into a single utility in the backend path-support layer, preferably `RelationalJsonPathSupport`. Acceptance: only one production implementation of `MaterializeConcretePath` remains; both callers use the shared helper; behavior for wildcard substitution is unchanged; the earlier false-positive note about `OrdinalPathMap<T>` is not acted on because only `MaterializeConcretePath` is duplicated.",
+    "steps-to-verify": [
+      "Run `rg -n \"private static string MaterializeConcretePath|public static string MaterializeConcretePath|internal static string MaterializeConcretePath\" src/dms/backend/EdFi.DataManagementService.Backend` and confirm there is a single shared implementation instead of one copy in each of the two original files.",
+      "Add or update unit tests that cover successful wildcard materialization plus the error cases for too few and too many ordinal components.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Extraction API",
+    "description": "Remove the default `ReferenceExtractionMode extractionMode = ReferenceExtractionMode.RelationalWriteValidation` parameter from `src/dms/core/EdFi.DataManagementService.Core/Extraction/ReferenceExtractor.cs` so every caller must state whether it wants `LegacyCompatibility` or `RelationalWriteValidation`. Acceptance: `ExtractReferences` has no defaulted mode parameter; all production callers pass the mode explicitly; all test callers are updated to be explicit instead of relying on the default; production behavior is unchanged because `UseRelationalBackend` already selects the mode in `ExtractDocumentInfoMiddleware`.",
+    "steps-to-verify": [
+      "Run `rg -n \"ExtractReferences\\(\" src/dms` and confirm every call site now passes an explicit `ReferenceExtractionMode` argument.",
+      "Add or update middleware-level coverage to prove `UseRelationalBackend=true` uses `RelationalWriteValidation` and `UseRelationalBackend=false` uses `LegacyCompatibility`.",
+      "Run `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format ./src/dms/core/EdFi.DataManagementService.Core`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Contracts",
+    "description": "Remove the unused 3-parameter convenience constructor on `ReferenceDerivedValueSourceMetadata` in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs`. That overload currently aliases `ReferenceJsonPath` as both `IdentityJsonPath` and `ReferenceJsonPath`, but the current branch has zero production or test callers and the shorter overload is dead code. Acceptance: the 3-parameter constructor is removed; no callers remain; all surviving construction sites use the 4-parameter form with both the authoritative target `IdentityJsonPath` and the request-facing `ReferenceJsonPath` supplied explicitly.",
+    "steps-to-verify": [
+      "Run `rg -n \"new ReferenceDerivedValueSourceMetadata\\(\" src/dms` and confirm all call sites use the explicit 4-parameter constructor shape.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.External ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational Model Contracts",
+    "description": "Remove the 2-parameter convenience constructor on `ReferenceIdentityBinding` in `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` and make all call sites specify both `IdentityJsonPath` and `ReferenceJsonPath` explicitly. The short form currently aliases the two paths, which is a real Ed-Fi pattern in some tests but obscures the distinction this branch just hardened between target identity metadata and request member paths. Acceptance: the short constructor is removed; production code continues to use the explicit 3-parameter constructor; all test code is updated to pass both paths intentionally, using the same path twice only where that equality is truly intended and visible in source.",
+    "steps-to-verify": [
+      "Run `rg -n \"new ReferenceIdentityBinding\\(\" src/dms` and confirm every call site now provides both `IdentityJsonPath` and `ReferenceJsonPath` explicitly before the column argument.",
+      "Preserve or extend the hardening coverage around duplicate `ReferenceJsonPath` values and distinct `IdentityJsonPath` values so the explicit metadata distinction remains tested.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format ./src/dms/backend/EdFi.DataManagementService.Backend.External ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Identity Detection",
+    "description": "Reconcile the divergent descriptor identity detection heuristics between `IdentityValueCanonicalizer.IsDescriptorValuedIdentityMember` in `src/dms/core/EdFi.DataManagementService.Core/Extraction/IdentityValueCanonicalizer.cs` and `FlatteningResolvedReferenceLookupSet.IsDescriptorIdentityPath` in `src/dms/backend/EdFi.DataManagementService.Backend/FlatteningResolvedReferenceLookupSet.cs`. The backend logic currently handles the synthetic `DocumentIdentity.DescriptorIdentityJsonPath` sentinel (`$.descriptor`) and array/concrete suffix cases such as paths ending in `Descriptor]`, while the Core canonicalizer only checks `EndsWith(\"Descriptor\")`. Acceptance: descriptor identity classification is centralized or clearly shared so Core and Backend no longer drift silently; the chosen helper preserves the current backend behavior for synthetic descriptor identity metadata and concrete array-element paths; existing descriptor-backed reference materialization scenarios continue to pass.",
+    "steps-to-verify": [
+      "Add or update tests to cover all relevant cases: the synthetic descriptor sentinel `$.descriptor`, a normal descriptor identity path such as `$.schoolTypeDescriptor`, and concrete or array-derived paths that need descriptor classification in backend matching.",
+      "Run `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`.",
+      "Run `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format ./src/dms/core/EdFi.DataManagementService.Core ./src/dms/backend/EdFi.DataManagementService.Backend`."
+    ],
+    "completed": true
+  }
+]
