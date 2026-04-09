@@ -24,7 +24,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~IdentityExtractorTests|FullyQualifiedName~ReferenceExtractorTests|FullyQualifiedName~ExtractDocumentInfoMiddlewareTests\"`",
       "Review the added tests and confirm they explicitly compare both `DocumentIdentity` values and `ReferentialId` values for equivalent mixed-case descriptor inputs."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Legacy PostgreSQL Compatibility",

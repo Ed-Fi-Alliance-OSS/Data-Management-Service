@@ -124,6 +124,49 @@ public class ReferenceExtractorTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDescriptorValuedResourceAndReferenceIdentity()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("GraduationPlan")
+            .WithIdentityJsonPaths([
+                "$.educationOrganizationId",
+                "$.graduationPlanTypeDescriptor",
+                "$.graduationSchoolYear",
+            ])
+            .WithEndResource()
+            .WithStartResource("StudentSchoolAssociation")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "GraduationPlan",
+                [
+                    new("$.educationOrganizationId", "$.graduationPlanReference.educationOrganizationId"),
+                    new(
+                        "$.graduationPlanTypeDescriptor",
+                        "$.graduationPlanReference.graduationPlanTypeDescriptor"
+                    ),
+                    new("$.graduationSchoolYear", "$.graduationPlanReference.graduationSchoolYear"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    private static DocumentReference ExtractSingleReference(
+        ResourceSchema resourceSchema,
+        string documentBody
+    )
+    {
+        var (documentReferences, _) = resourceSchema.ExtractReferences(
+            JsonNode.Parse(documentBody)!,
+            NullLogger.Instance
+        );
+
+        return documentReferences.Should().ContainSingle().Subject;
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Duplicate_Reference_Json_Paths
@@ -244,18 +287,96 @@ public class ReferenceExtractorTests
         {
             _mixedCaseDocumentReference.ReferentialId.Should().Be(_lowercaseDocumentReference.ReferentialId);
         }
+    }
 
-        private static DocumentReference ExtractSingleReference(
-            ResourceSchema resourceSchema,
-            string documentBody
-        )
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_The_Same_Descriptor_Valued_Identity_From_Resource_And_Reference_Payloads
+        : ReferenceExtractorTests
+    {
+        private DocumentIdentity _resourceDocumentIdentity = null!;
+        private DocumentReference _referenceDocumentReference = null!;
+        private ReferentialId _resourceReferentialId;
+
+        [SetUp]
+        public void Setup()
         {
-            var (documentReferences, _) = resourceSchema.ExtractReferences(
-                JsonNode.Parse(documentBody)!,
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithDescriptorValuedResourceAndReferenceIdentity();
+            ResourceSchema graduationPlanResourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "graduationPlans"
+            );
+            ResourceSchema studentSchoolAssociationResourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentSchoolAssociations"
+            );
+
+            (_resourceDocumentIdentity, _) = graduationPlanResourceSchema.ExtractIdentities(
+                JsonNode.Parse(
+                    """
+                    {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                    """
+                )!,
                 NullLogger.Instance
             );
 
-            return documentReferences.Should().ContainSingle().Subject;
+            _referenceDocumentReference = ExtractSingleReference(
+                studentSchoolAssociationResourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#FOUNDATION",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+
+            _resourceReferentialId = ReferentialIdFrom(
+                _referenceDocumentReference.ResourceInfo,
+                _resourceDocumentIdentity
+            );
+        }
+
+        [Test]
+        public void It_builds_the_same_canonical_document_identity_from_resource_and_reference_payloads()
+        {
+            var expectedIdentityElements = new[]
+            {
+                ("$.educationOrganizationId", "255901"),
+                ("$.graduationPlanTypeDescriptor", "uri://ed-fi.org/graduationplantypedescriptor#foundation"),
+                ("$.graduationSchoolYear", "2030"),
+            };
+
+            _resourceDocumentIdentity
+                .DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(expectedIdentityElements);
+
+            _referenceDocumentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(expectedIdentityElements);
+
+            _resourceDocumentIdentity
+                .DocumentIdentityElements.Should()
+                .Equal(_referenceDocumentReference.DocumentIdentity.DocumentIdentityElements);
+        }
+
+        [Test]
+        public void It_builds_the_same_referential_id_from_resource_and_reference_payloads()
+        {
+            _resourceReferentialId.Should().Be(_referenceDocumentReference.ReferentialId);
         }
     }
 

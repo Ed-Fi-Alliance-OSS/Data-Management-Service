@@ -12,3 +12,8 @@ DMS-985 task complete: Add old PostgreSQL regression for descriptor-valued refer
 Decision: expose core internals to old PostgreSQL integration tests and derive resource/reference referential ids via ResourceSchema.ExtractIdentities + ExtractReferences in the regression fixture; this proves legacy alias lookup sees the same canonical lowercase descriptor identity from both entry points.
 Files: src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/UpsertTests.cs, src/dms/core/EdFi.DataManagementService.Core/EdFi.DataManagementService.Core.csproj, tasks.json, progress.txt
 Notes: verified dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj --filter "descriptor|reference|referential" => 16 passed. Next likely regression parity coverage or targeted verification task.
+
+DMS-985 task complete: Add unit regression for descriptor-valued identity parity across resource/reference extraction.
+Decision: add a GraduationPlan + StudentSchoolAssociation fixture in ReferenceExtractorTests and compare canonical DocumentIdentity elements plus ReferentialId across differently mixed-case descriptor URIs; keeps parity proof in one focused scenario.
+Files: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Extraction/ReferenceExtractorTests.cs, tasks.json, progress.txt
+Notes: verified dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~IdentityExtractorTests|FullyQualifiedName~ReferenceExtractorTests|FullyQualifiedName~ExtractDocumentInfoMiddlewareTests" => 92 passed. Next likely targeted verification task.
