@@ -1225,15 +1225,52 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference.schoolYear");
         exception
+            .ValidationFailures[0]
             .Message.Should()
             .Contain(
                 "Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32'"
             )
             .And.Contain("path '$.schoolReference.schoolYear'")
             .And.Contain("resolved reference-derived raw value 'not-a-number' could not be converted");
+    }
+
+    [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_key_unification_scalar_members()
+    {
+        var writePlan = CreateMixedSourceReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "localSchoolId": "not-a-number"
+                }
+                """
+            )!,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.localSchoolId");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Key-unification member 'SchoolId_LocalAlias' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32'"
+            )
+            .And.Contain("path '$.localSchoolId'")
+            .And.Contain("encountered JSON value kind 'String' with raw value \"not-a-number\"");
     }
 
     [Test]

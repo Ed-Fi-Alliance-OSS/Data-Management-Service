@@ -675,24 +675,23 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return KeyUnificationMemberEvaluation.Absent;
         }
 
+        var conversionContext = CreateKeyUnificationScalarConversionContext(
+            tableWritePlan,
+            member,
+            absolutePath
+        );
+
         if (memberNode is not JsonValue jsonValue)
         {
-            throw CreateInvalidKeyUnificationScalarReadException(
-                tableWritePlan,
-                member,
-                absolutePath,
+            throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
+                member.ScalarType,
                 $"encountered non-scalar JSON node type '{memberNode.GetType().Name}'"
             );
         }
 
         return KeyUnificationMemberEvaluation.Present(
-            ConvertScalarValue(
-                jsonValue,
-                member.ScalarType,
-                tableWritePlan,
-                member.MemberPathColumn,
-                absolutePath
-            )
+            ConvertRequestDerivedJsonValue(jsonValue, member.ScalarType, conversionContext)
         );
     }
 
@@ -1062,19 +1061,23 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return new FlattenedWriteValue.Literal(null);
         }
 
+        var conversionContext = CreateColumnScalarConversionContext(
+            tableWritePlan,
+            columnBinding.Column.ColumnName,
+            absolutePath
+        );
+
         if (scalarNode is not JsonValue jsonValue)
         {
-            throw CreateInvalidScalarReadException(
-                tableWritePlan,
-                columnBinding,
-                absolutePath,
+            throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
                 scalar.Type,
                 $"encountered non-scalar JSON node type '{scalarNode.GetType().Name}'"
             );
         }
 
         return new FlattenedWriteValue.Literal(
-            ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
+            ConvertRequestDerivedJsonValue(jsonValue, scalar.Type, conversionContext)
         );
     }
 
@@ -1521,53 +1524,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return ordinalPath;
     }
 
-    private static object ConvertScalarValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        string absolutePath
-    )
-    {
-        return ConvertScalarValue(
-            jsonValue,
-            scalarType,
-            tableWritePlan,
-            columnBinding.Column.ColumnName,
-            absolutePath
-        );
-    }
-
-    private static object ConvertScalarValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
-    )
-    {
-        var scalarLiteral = ReadRequiredJsonScalarLiteral(
-            jsonValue,
-            scalarType,
-            tableWritePlan,
-            columnName,
-            absolutePath
-        );
-
-        return ConvertScalarLiteral(
-            scalarLiteral,
-            scalarType,
-            rawValue =>
-                CreateInvalidScalarReadException(
-                    tableWritePlan,
-                    columnName,
-                    absolutePath,
-                    scalarType,
-                    $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
-                )
-        );
-    }
-
     private static object ResolveReferenceDerivedLiteralValue(
         TableWritePlan tableWritePlan,
         DbColumnModel column,
@@ -1635,17 +1591,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             );
         }
 
-        return ConvertScalarLiteral(
+        return ConvertRequestDerivedScalarLiteral(
             referenceIdentityValue,
             scalarType,
-            rawValue =>
-                CreateInvalidReferenceDerivedScalarReadException(
-                    tableWritePlan,
-                    columnName,
-                    absolutePath,
-                    scalarType,
-                    rawValue
-                )
+            CreateColumnScalarConversionContext(tableWritePlan, columnName, absolutePath),
+            rawValue => $"resolved reference-derived raw value '{rawValue}' could not be converted"
         );
     }
 
@@ -1676,62 +1626,49 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static string ReadRequiredJsonScalarLiteral(
+    private static object ConvertRequestDerivedJsonValue(
         JsonValue jsonValue,
         RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
+        RequestDerivedScalarConversionContext conversionContext
+    )
+    {
+        var scalarLiteral = ReadRequiredRequestDerivedJsonScalarLiteral(
+            jsonValue,
+            scalarType,
+            conversionContext
+        );
+
+        return ConvertRequestDerivedScalarLiteral(
+            scalarLiteral,
+            scalarType,
+            conversionContext,
+            _ =>
+                $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
+        );
+    }
+
+    private static string ReadRequiredRequestDerivedJsonScalarLiteral(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext
     )
     {
         return scalarType.Kind switch
         {
-            ScalarKind.String => ReadRequiredJsonValue<string>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Int32 => ReadRequiredJsonValue<int>(
-                    jsonValue,
-                    scalarType,
-                    tableWritePlan,
-                    columnName,
-                    absolutePath
-                )
+            ScalarKind.String => ReadRequiredJsonValue<string>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Int32 => ReadRequiredJsonValue<int>(jsonValue, scalarType, conversionContext)
                 .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Int64 => ReadRequiredJsonValue<long>(
-                    jsonValue,
-                    scalarType,
-                    tableWritePlan,
-                    columnName,
-                    absolutePath
-                )
+            ScalarKind.Int64 => ReadRequiredJsonValue<long>(jsonValue, scalarType, conversionContext)
                 .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(
-                    jsonValue,
-                    scalarType,
-                    tableWritePlan,
-                    columnName,
-                    absolutePath
-                )
+            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(jsonValue, scalarType, conversionContext)
                 .ToString(CultureInfo.InvariantCulture),
-            ScalarKind.Boolean => ReadRequiredJsonValue<bool>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            )
+            ScalarKind.Boolean => ReadRequiredJsonValue<bool>(jsonValue, scalarType, conversionContext)
                 ? bool.TrueString.ToLowerInvariant()
                 : bool.FalseString.ToLowerInvariant(),
             ScalarKind.Date or ScalarKind.DateTime or ScalarKind.Time => ReadRequiredJsonValue<string>(
                 jsonValue,
                 scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
+                conversionContext
             ),
             _ => throw new InvalidOperationException(
                 $"Scalar kind '{scalarType.Kind}' is not supported by the relational write flattener."
@@ -1739,15 +1676,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         };
     }
 
-    private static object ConvertScalarLiteral(
+    private static object ConvertRequestDerivedScalarLiteral(
         string scalarLiteral,
         RelationalScalarType scalarType,
-        Func<string, Exception> createInvalidException
+        RequestDerivedScalarConversionContext conversionContext,
+        Func<string, string> createInvalidLiteralReason
     )
     {
         ArgumentNullException.ThrowIfNull(scalarLiteral);
         ArgumentNullException.ThrowIfNull(scalarType);
-        ArgumentNullException.ThrowIfNull(createInvalidException);
+        ArgumentNullException.ThrowIfNull(conversionContext);
+        ArgumentNullException.ThrowIfNull(createInvalidLiteralReason);
 
         return scalarType.Kind switch
         {
@@ -1792,47 +1731,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     DateTimeStyles.None,
                     out var timeOnlyValue
                 ) => timeOnlyValue,
-            _ => throw createInvalidException(scalarLiteral),
+            _ => throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
+                scalarType,
+                createInvalidLiteralReason(scalarLiteral)
+            ),
         };
-    }
-
-    private static Exception CreateInvalidReferenceDerivedScalarException(
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath,
-        RelationalScalarType scalarType,
-        string reason
-    )
-    {
-        return new InvalidOperationException(
-            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind "
-                + $"'{scalarType.Kind}' at path '{absolutePath}', but {reason}."
-        );
-    }
-
-    private static Exception CreateInvalidReferenceDerivedScalarReadException(
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath,
-        RelationalScalarType scalarType,
-        string rawValue
-    )
-    {
-        return CreateInvalidReferenceDerivedScalarException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
-            scalarType,
-            $"resolved reference-derived raw value '{rawValue}' could not be converted"
-        );
     }
 
     private static T ReadRequiredJsonValue<T>(
         JsonValue jsonValue,
         RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
+        RequestDerivedScalarConversionContext conversionContext
     )
         where T : notnull
     {
@@ -1841,10 +1751,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return value;
         }
 
-        throw CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
+        throw CreateInvalidRequestDerivedScalarException(
+            conversionContext,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
         );
@@ -1932,48 +1840,40 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        string absolutePath,
-        RelationalScalarType scalarType,
-        string reason
-    )
-    {
-        return CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnBinding.Column.ColumnName,
-            absolutePath,
-            scalarType,
-            reason
-        );
-    }
-
-    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
+    private static RequestDerivedScalarConversionContext CreateColumnScalarConversionContext(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
-        string absolutePath,
+        string absolutePath
+    )
+    {
+        return new RequestDerivedScalarConversionContext(
+            AbsolutePath: absolutePath,
+            SubjectDescription: $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}'"
+        );
+    }
+
+    private static RequestDerivedScalarConversionContext CreateKeyUnificationScalarConversionContext(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ScalarMember member,
+        string absolutePath
+    )
+    {
+        return new RequestDerivedScalarConversionContext(
+            AbsolutePath: absolutePath,
+            SubjectDescription: $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}'"
+        );
+    }
+
+    private static RelationalWriteRequestValidationException CreateInvalidRequestDerivedScalarException(
+        RequestDerivedScalarConversionContext conversionContext,
         RelationalScalarType scalarType,
         string reason
     )
     {
         return CreateRequestShapeValidationException(
-            absolutePath,
-            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind '{scalarType.Kind}' at path '{absolutePath}', but {reason}."
-        );
-    }
-
-    private static RelationalWriteRequestValidationException CreateInvalidKeyUnificationScalarReadException(
-        TableWritePlan tableWritePlan,
-        KeyUnificationMemberWritePlan.ScalarMember member,
-        string absolutePath,
-        string reason
-    )
-    {
-        return CreateRequestShapeValidationException(
-            absolutePath,
-            $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
-                + $"expected scalar kind '{member.ScalarType.Kind}' at path '{absolutePath}', but {reason}."
+            conversionContext.AbsolutePath,
+            $"{conversionContext.SubjectDescription} expected scalar kind '{scalarType.Kind}' at path "
+                + $"'{conversionContext.AbsolutePath}', but {reason}."
         );
     }
 
@@ -2163,6 +2063,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         return concretePath.ToString();
     }
+
+    private sealed record RequestDerivedScalarConversionContext(
+        string AbsolutePath,
+        string SubjectDescription
+    );
 
     private sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
     {
