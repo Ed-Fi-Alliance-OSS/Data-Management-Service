@@ -31,7 +31,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var abstractIdentityTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
         );
-        var resourceContextsByResource = BuildResourceContextLookup(context);
+        var resourceContextsByResource = SetPassHelpers.BuildResourceContextLookup(context);
         Dictionary<QualifiedResourceName, TargetIdentityInfo> targetIdentityCache = new();
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
 
@@ -911,34 +911,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         }
 
         return identityColumns.ToArray();
-    }
-
-    /// <summary>
-    /// Builds a lookup from qualified resource name to its concrete schema context (excluding extensions).
-    /// </summary>
-    private static IReadOnlyDictionary<
-        QualifiedResourceName,
-        ConcreteResourceSchemaContext
-    > BuildResourceContextLookup(RelationalModelSetBuilderContext context)
-    {
-        Dictionary<QualifiedResourceName, ConcreteResourceSchemaContext> lookup = new();
-
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
-        {
-            if (IsResourceExtension(resourceContext))
-            {
-                continue;
-            }
-
-            var resource = new QualifiedResourceName(
-                resourceContext.Project.ProjectSchema.ProjectName,
-                resourceContext.ResourceName
-            );
-
-            lookup[resource] = resourceContext;
-        }
-
-        return lookup;
     }
 
     /// <summary>
