@@ -383,6 +383,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
     [Test]
     public void It_resolves_duplicate_scalar_reference_json_paths_by_identity_path_when_resolved_order_drifts()
     {
+        // Positional matching was the original bridge between Core extraction and backend materialization.
+        // Same-kind identity members make that unsafe, so runtime lookup must select by IdentityJsonPath.
         var (writePlan, _, firstScalarColumn, secondScalarColumn, referenceSource) =
             CreateDuplicateReferenceJsonPathScalarFixture();
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(

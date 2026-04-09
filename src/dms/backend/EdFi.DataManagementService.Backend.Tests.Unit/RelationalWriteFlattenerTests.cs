@@ -1119,6 +1119,8 @@ public class Given_RelationalWriteFlattener
     [Test]
     public void It_does_not_silently_swap_duplicate_reference_derived_columns_when_resolved_identity_order_drifts()
     {
+        // The flattening seam guards the old order-only assumption end to end: same-kind identities
+        // may arrive in a different resolved order, but propagated columns still have to bind by IdentityJsonPath.
         var writePlan = CreateDuplicateScalarReferenceDerivedWritePlan();
         var flatteningInput = new FlatteningInput(
             RelationalWriteOperationKind.Post,

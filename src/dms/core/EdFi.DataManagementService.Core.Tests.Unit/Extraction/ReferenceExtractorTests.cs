@@ -80,6 +80,27 @@ public class ReferenceExtractorTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithPermutedMultiPartReferenceJsonPaths()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Section")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "CourseOffering",
+                [
+                    new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName"),
+                    new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
+                    new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
+                    new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
     internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDescriptorValuedReferenceIdentity()
     {
         return new ApiSchemaBuilder()
@@ -235,6 +256,64 @@ public class ReferenceExtractorTests
             );
 
             return documentReferences.Should().ContainSingle().Subject;
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_Permuted_Multi_Part_Reference_Json_Paths
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithPermutedMultiPartReferenceJsonPaths();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var (documentReferences, _) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "courseOfferingReference": {
+                            "localCourseCode": "ELA-1",
+                            "schoolId": 255901,
+                            "schoolYear": 2030,
+                            "sessionName": "Fall Semester"
+                        }
+                    }
+                    """
+                )!,
+                NullLogger.Instance
+            );
+
+            _documentReference = documentReferences.Should().ContainSingle().Subject;
+        }
+
+        [Test]
+        public void It_preserves_the_authoritative_reference_json_path_order_in_document_identity()
+        {
+            _documentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.sessionReference.sessionName", "Fall Semester"),
+                    ("$.localCourseCode", "ELA-1"),
+                    ("$.sessionReference.schoolYear", "2030"),
+                    ("$.schoolReference.schoolId", "255901")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_referential_id_from_the_authoritative_reference_json_path_order()
+        {
+            _documentReference
+                .ReferentialId.Should()
+                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
         }
     }
 
