@@ -1613,6 +1613,7 @@
           },
           "identity_bindings": [
             {
+              "identity_json_path": "$.programName",
               "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
               "column": "Program_ProgramName"
             }
