@@ -279,7 +279,7 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
     {
         var sql = string.Join(
             "\n",
-            "INSERT INTO foo VALUES ('$$.schoolId=');",
+            "INSERT INTO foo VALUES ('$.schoolId=');",
             "INSERT INTO bar VALUES (1);",
             ""
         );

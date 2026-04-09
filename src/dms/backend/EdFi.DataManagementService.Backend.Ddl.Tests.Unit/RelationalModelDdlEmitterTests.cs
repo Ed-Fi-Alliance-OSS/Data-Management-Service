@@ -897,7 +897,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             );
         _ddl.Should()
             .Contain(
-                "WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[StreetNumberName] <> del.[StreetNumberName] OR (i.[StreetNumberName] IS NULL AND del.[StreetNumberName] IS NOT NULL) OR (i.[StreetNumberName] IS NOT NULL AND del.[StreetNumberName] IS NULL))"
+                "WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[StreetNumberName] AS varbinary(max)) <> CAST(del.[StreetNumberName] AS varbinary(max)) OR (i.[StreetNumberName] IS NULL AND del.[StreetNumberName] IS NOT NULL) OR (i.[StreetNumberName] IS NOT NULL AND del.[StreetNumberName] IS NULL))"
             );
     }
 }

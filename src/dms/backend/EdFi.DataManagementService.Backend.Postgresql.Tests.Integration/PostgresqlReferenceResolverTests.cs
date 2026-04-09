@@ -121,7 +121,7 @@ public class Given_PostgresqlReferenceResolver
             .Which.Message.Should()
             .Contain(_database.Fixture.LocalEducationAgencyReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -159,7 +159,7 @@ public class Given_PostgresqlReferenceResolver
             .Which.Message.Should()
             .Contain(_database.Fixture.EducationOrganizationAliasReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.localEducationAgencyReference");
-        exception.Which.Message.Should().Contain("$$.localEducationAgencyId=255901");
+        exception.Which.Message.Should().Contain("$.localEducationAgencyId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -183,7 +183,7 @@ public class Given_PostgresqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -274,8 +274,8 @@ public class Given_PostgresqlReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
-        exception.Which.Message.Should().Contain("$$.schoolId=255902");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255902");
     }
 
     [Test]
@@ -297,8 +297,8 @@ public class Given_PostgresqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
-        exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
     }
 
     [Test]
@@ -316,7 +316,7 @@ public class Given_PostgresqlReferenceResolver
         exception.Which.Message.Should().Contain("Reference lookup corruption detected");
         exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
         exception.Which.Message.Should().Contain("$.schoolReference");
-        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$.schoolId=255901");
         exception.Which.Message.Should().Contain("'<null>'");
     }
 
@@ -339,10 +339,10 @@ public class Given_PostgresqlReferenceResolver
         exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+            .Contain("$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english");
+            .Contain("$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#mathematics");
     }
 
     [Test]
@@ -675,13 +675,27 @@ public class Given_PostgresqlReferenceResolver
 
         return seedData with
         {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    707,
+                    Guid.Parse("70000000-0000-0000-0000-000000000707"),
+                    localEducationAgencyResourceKeyId
+                ),
+            ],
+            LocalEducationAgencies =
+            [
+                .. seedData.LocalEducationAgencies,
+                new ReferenceResolverLocalEducationAgencySeed(707, 255902),
+            ],
             ReferentialIdentities =
             [
                 .. seedData.ReferentialIdentities.Select(referentialIdentity =>
                     referentialIdentity.ReferentialId == _database.Fixture.SchoolReferentialId
                         ? referentialIdentity with
                         {
-                            DocumentId = 202,
+                            DocumentId = 707,
                             ResourceKeyId = localEducationAgencyResourceKeyId,
                         }
                         : referentialIdentity
@@ -699,13 +713,34 @@ public class Given_PostgresqlReferenceResolver
 
         return seedData with
         {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    808,
+                    Guid.Parse("80000000-0000-0000-0000-000000000808"),
+                    academicSubjectDescriptorResourceKeyId
+                ),
+            ],
+            Descriptors =
+            [
+                .. seedData.Descriptors,
+                new ReferenceResolverDescriptorSeed(
+                    808,
+                    "uri://ed-fi.org",
+                    "Mathematics",
+                    "Mathematics",
+                    "AcademicSubjectDescriptor",
+                    "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics"
+                ),
+            ],
             ReferentialIdentities =
             [
                 .. seedData.ReferentialIdentities.Select(referentialIdentity =>
                     referentialIdentity.ReferentialId == _database.Fixture.SchoolTypeDescriptorReferentialId
                         ? referentialIdentity with
                         {
-                            DocumentId = 404,
+                            DocumentId = 808,
                             ResourceKeyId = academicSubjectDescriptorResourceKeyId,
                         }
                         : referentialIdentity

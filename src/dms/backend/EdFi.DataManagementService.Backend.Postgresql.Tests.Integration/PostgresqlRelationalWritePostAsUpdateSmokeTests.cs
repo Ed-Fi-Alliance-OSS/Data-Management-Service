@@ -3099,7 +3099,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             """
             SELECT "dms"."uuidv5"(
                 'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
-                'Ed-FiSchool' || '$$.schoolId=' || @schoolId
+                'Ed-FiSchool' || '$.schoolId=' || @schoolId
             ) AS "ReferentialId";
             """,
             new NpgsqlParameter("schoolId", "255901")

@@ -242,7 +242,8 @@ CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
     "ReferentialId" uuid NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
-    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId")
+    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"),
+    CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
 );
 
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
@@ -486,7 +487,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$$.personId=' || NEW."PersonId"::text), NEW."DocumentId", 1);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text), NEW."DocumentId", 1);
     END IF;
     RETURN NEW;
 END;
@@ -494,7 +495,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Person_ReferentialIdentity" ON "edfi"."Person";
 CREATE TRIGGER "TR_Person_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Person"
+AFTER INSERT OR UPDATE ON "edfi"."Person"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
 

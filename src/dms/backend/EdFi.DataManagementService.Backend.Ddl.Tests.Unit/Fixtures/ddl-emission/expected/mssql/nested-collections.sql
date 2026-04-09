@@ -62,7 +62,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolId]))
@@ -75,7 +75,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -124,12 +124,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId] AND del.[AddressOrdinal] = i.[AddressOrdinal]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (CAST(i.[Street] AS varbinary(max)) <> CAST(del.[Street] AS varbinary(max)) OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId] AND i.[AddressOrdinal] = del.[AddressOrdinal]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[Street] <> del.[Street] OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (CAST(i.[Street] AS varbinary(max)) <> CAST(del.[Street] AS varbinary(max)) OR (i.[Street] IS NULL AND del.[Street] IS NOT NULL) OR (i.[Street] IS NOT NULL AND del.[Street] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -148,12 +148,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId] AND del.[AddressOrdinal] = i.[AddressOrdinal] AND del.[PhoneNumberOrdinal] = i.[PhoneNumberOrdinal]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[PhoneNumberOrdinal] <> del.[PhoneNumberOrdinal] OR (i.[PhoneNumberOrdinal] IS NULL AND del.[PhoneNumberOrdinal] IS NOT NULL) OR (i.[PhoneNumberOrdinal] IS NOT NULL AND del.[PhoneNumberOrdinal] IS NULL)) OR (i.[PhoneNumber] <> del.[PhoneNumber] OR (i.[PhoneNumber] IS NULL AND del.[PhoneNumber] IS NOT NULL) OR (i.[PhoneNumber] IS NOT NULL AND del.[PhoneNumber] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[PhoneNumberOrdinal] <> del.[PhoneNumberOrdinal] OR (i.[PhoneNumberOrdinal] IS NULL AND del.[PhoneNumberOrdinal] IS NOT NULL) OR (i.[PhoneNumberOrdinal] IS NOT NULL AND del.[PhoneNumberOrdinal] IS NULL)) OR (CAST(i.[PhoneNumber] AS varbinary(max)) <> CAST(del.[PhoneNumber] AS varbinary(max)) OR (i.[PhoneNumber] IS NULL AND del.[PhoneNumber] IS NOT NULL) OR (i.[PhoneNumber] IS NOT NULL AND del.[PhoneNumber] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId] AND i.[AddressOrdinal] = del.[AddressOrdinal] AND i.[PhoneNumberOrdinal] = del.[PhoneNumberOrdinal]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[PhoneNumberOrdinal] <> del.[PhoneNumberOrdinal] OR (i.[PhoneNumberOrdinal] IS NULL AND del.[PhoneNumberOrdinal] IS NOT NULL) OR (i.[PhoneNumberOrdinal] IS NOT NULL AND del.[PhoneNumberOrdinal] IS NULL)) OR (i.[PhoneNumber] <> del.[PhoneNumber] OR (i.[PhoneNumber] IS NULL AND del.[PhoneNumber] IS NOT NULL) OR (i.[PhoneNumber] IS NOT NULL AND del.[PhoneNumber] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[AddressOrdinal] <> del.[AddressOrdinal] OR (i.[AddressOrdinal] IS NULL AND del.[AddressOrdinal] IS NOT NULL) OR (i.[AddressOrdinal] IS NOT NULL AND del.[AddressOrdinal] IS NULL)) OR (i.[PhoneNumberOrdinal] <> del.[PhoneNumberOrdinal] OR (i.[PhoneNumberOrdinal] IS NULL AND del.[PhoneNumberOrdinal] IS NOT NULL) OR (i.[PhoneNumberOrdinal] IS NOT NULL AND del.[PhoneNumberOrdinal] IS NULL)) OR (CAST(i.[PhoneNumber] AS varbinary(max)) <> CAST(del.[PhoneNumber] AS varbinary(max)) OR (i.[PhoneNumber] IS NULL AND del.[PhoneNumber] IS NOT NULL) OR (i.[PhoneNumber] IS NOT NULL AND del.[PhoneNumber] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()

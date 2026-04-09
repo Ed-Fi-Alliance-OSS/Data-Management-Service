@@ -57,7 +57,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([RegistrationDate]))
@@ -66,11 +66,11 @@ BEGIN
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> d.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> d.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND d.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND d.[RegistrationDate] IS NULL));
+        WHERE (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> d.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND d.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND d.[RegistrationDate] IS NULL));
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseRegistration' AS nvarchar(max)) + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.registrationDate=' + CONVERT(nvarchar(10), i.[RegistrationDate], 23)), i.[DocumentId], 2
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
@@ -86,12 +86,12 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i
         LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CourseOffering_DocumentId] <> del.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND del.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND del.[CourseOffering_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> del.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
+        WHERE del.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CourseOffering_DocumentId] <> del.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND del.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND del.[CourseOffering_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
         UNION
         SELECT del.[DocumentId]
         FROM deleted del
         LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CourseOffering_DocumentId] <> del.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND del.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND del.[CourseOffering_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> del.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
+        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[CourseOffering_DocumentId] <> del.[CourseOffering_DocumentId] OR (i.[CourseOffering_DocumentId] IS NULL AND del.[CourseOffering_DocumentId] IS NOT NULL) OR (i.[CourseOffering_DocumentId] IS NOT NULL AND del.[CourseOffering_DocumentId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
     )
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -104,7 +104,7 @@ BEGIN
         FROM [dms].[Document] d
         INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> del.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL));
+        WHERE (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL));
     END
 END;
 GO
@@ -122,7 +122,7 @@ BEGIN
         FROM [edfi].[CourseRegistration] r
         INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]
         INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL))
+        WHERE ((i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL)))
         AND ((r.[SchoolId_Unified] = d.[SchoolId]) OR (r.[SchoolId_Unified] IS NULL AND d.[SchoolId] IS NULL));
 
     END
@@ -145,7 +145,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolId]))
@@ -158,7 +158,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;

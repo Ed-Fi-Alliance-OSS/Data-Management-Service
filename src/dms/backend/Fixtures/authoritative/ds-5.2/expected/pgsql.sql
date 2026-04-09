@@ -242,7 +242,8 @@ CREATE TABLE IF NOT EXISTS "dms"."ReferentialIdentity"
     "ReferentialId" uuid NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
-    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId")
+    CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"),
+    CONSTRAINT "UX_ReferentialIdentity_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId")
 );
 
 CREATE TABLE IF NOT EXISTS "dms"."ResourceKey"
@@ -8431,7 +8432,7 @@ BEGIN
         FOREIGN KEY ("SectionOrProgramChoiceProgram_DocumentId", "SectionOrProgramChoiceProgram_EducationOrganizationId", "SectionOrProgramChoiceProgram_ProgramName", "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -8626,16 +8627,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_49e9b9ac86'
+        WHERE conname = 'FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e'
         AND conrelid = to_regclass('"edfi"."AssessmentAdministrationParticipation"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentAdministrationParticipation"
-        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_49e9b9ac86"
+        ADD CONSTRAINT "FK_AssessmentAdministrationParticipation_AssessmentA_5e9b96380e"
         FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
         REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -9723,7 +9724,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -11423,7 +11424,7 @@ BEGIN
         FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -11627,7 +11628,7 @@ BEGIN
         FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -11746,7 +11747,7 @@ BEGIN
         FOREIGN KEY ("StudentAcademicRecord_DocumentId", "StudentAcademicRecord_EducationOrganizationId", "StudentAcademicRecord_SchoolYear", "StudentAcademicRecord_StudentUniqueId", "StudentAcademicRecord_TermDescriptor_DescriptorId")
         REFERENCES "edfi"."StudentAcademicRecord" ("DocumentId", "EducationOrganization_EducationOrganizationId", "SchoolYear_SchoolYear", "Student_StudentUniqueId", "TermDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -11882,7 +11883,7 @@ BEGIN
         FOREIGN KEY ("CourseProgram_DocumentId", "CourseProgram_EducationOrganizationId", "CourseProgram_ProgramName", "CourseProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -12978,6 +12979,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112'
+        AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
+        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_9445aa8112"
+        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
+        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
     )
@@ -12987,23 +13005,6 @@ BEGIN
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationInterventionPrescriptionAsso_b3652c0b53'
-        AND conrelid = to_regclass('"edfi"."EducationOrganizationInterventionPrescriptionAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
-        ADD CONSTRAINT "FK_EducationOrganizationInterventionPrescriptionAsso_b3652c0b53"
-        FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
-        REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -13956,7 +13957,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluationElement_DocumentId", "ProgramEvaluationElement_ProgramEvaluationElementTitle", "ProgramEvaluationElement_ProgramEducationOrganizationId", "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706", "ProgramEvaluationElement_ProgramEvaluationTitle", "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71", "ProgramEvaluationElement_ProgramName", "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -14789,7 +14790,7 @@ BEGIN
         FOREIGN KEY ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -15086,16 +15087,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_2734101a98'
+        WHERE conname = 'FK_InterventionInterventionPrescription_Intervention_0d4b603fcc'
         AND conrelid = to_regclass('"edfi"."InterventionInterventionPrescription"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionInterventionPrescription"
-        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_2734101a98"
+        ADD CONSTRAINT "FK_InterventionInterventionPrescription_Intervention_0d4b603fcc"
         FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
         REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -15562,16 +15563,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_17c2c6097e'
+        WHERE conname = 'FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef'
         AND conrelid = to_regclass('"edfi"."InterventionStudy"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudy"
-        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_17c2c6097e"
+        ADD CONSTRAINT "FK_InterventionStudy_InterventionPrescriptionInterve_210def5eef"
         FOREIGN KEY ("InterventionPrescriptionInterventionPrescription_DocumentId", "InterventionPrescriptionInterventionPrescription_Edu_532babb247", "InterventionPrescriptionInterventionPrescription_Int_409fc39d28")
         REFERENCES "edfi"."InterventionPrescription" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionPrescriptionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16149,7 +16150,7 @@ BEGIN
         FOREIGN KEY ("ChartOfAccountChartOfAccount_DocumentId", "ChartOfAccountChartOfAccount_AccountIdentifier", "ChartOfAccountChartOfAccount_EducationOrganizationId", "FiscalYear_Unified")
         REFERENCES "edfi"."ChartOfAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16268,7 +16269,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16319,7 +16320,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16370,7 +16371,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -16965,7 +16966,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -17016,7 +17017,7 @@ BEGIN
         FOREIGN KEY ("LocalAccount_DocumentId", "LocalAccount_AccountIdentifier", "LocalAccount_EducationOrganizationId", "LocalAccount_FiscalYear")
         REFERENCES "edfi"."LocalAccount" ("DocumentId", "AccountIdentifier", "EducationOrganization_EducationOrganizationId", "FiscalYear_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -18801,7 +18802,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -18869,7 +18870,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluationObjective_DocumentId", "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -18920,7 +18921,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramEducationOrganizationId_Unified", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19056,7 +19057,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19370,16 +19371,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_9ad4d519c6'
+        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70'
         AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
-        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_9ad4d519c6"
+        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_9eb1b82f70"
         FOREIGN KEY ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId", "StudentCompetencyObjective_GradingPeriodName", "StudentCompetencyObjective_GradingPeriodSchoolId", "StudentCompetencyObjective_GradingPeriodSchoolYear", "StudentCompetencyObjective_ObjectiveEducationOrganizationId", "StudentCompetencyObjective_Objective", "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d", "StudentCompetencyObjective_StudentUniqueId")
         REFERENCES "edfi"."StudentCompetencyObjective" ("DocumentId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -19515,7 +19516,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -20195,7 +20196,7 @@ BEGIN
         FOREIGN KEY ("CourseOffering_DocumentId", "CourseOffering_LocalCourseCode", "SchoolId_Unified", "CourseOffering_SchoolYear", "CourseOffering_SessionName")
         REFERENCES "edfi"."CourseOffering" ("DocumentId", "LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -20501,7 +20502,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -21674,7 +21675,7 @@ BEGIN
         FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -21852,16 +21853,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_57012f9256'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_57012f9256"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_3eff5631df"
         FOREIGN KEY ("EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b", "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de", "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56", "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337", "StaffUniqueId_Unified")
         REFERENCES "edfi"."StaffEducationOrganizationEmploymentAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "EmploymentStatusDescriptor_DescriptorId", "HireDate", "Staff_StaffUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -22337,7 +22338,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -23714,7 +23715,7 @@ BEGIN
         FOREIGN KEY ("ReportCard_DocumentId", "ReportCard_EducationOrganizationId", "ReportCard_GradingPeriodDescriptor_DescriptorId", "ReportCard_GradingPeriodName", "ReportCard_GradingPeriodSchoolId", "ReportCard_GradingPeriodSchoolYear", "ReportCard_StudentUniqueId")
         REFERENCES "edfi"."ReportCard" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId", "GradingPeriodGradingPeriod_GradingPeriodName", "GradingPeriodGradingPeriod_SchoolId", "GradingPeriodGradingPeriod_SchoolYear", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24385,16 +24386,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd'
+        WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f"
         FOREIGN KEY ("AssessmentAdministration_DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId")
         REFERENCES "edfi"."AssessmentAdministration" ("DocumentId", "AdministrationIdentifier", "Assessment_AssessmentIdentifier", "Assessment_Namespace", "AssigningEducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24470,16 +24471,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2'
+        WHERE conname = 'FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663"
         FOREIGN KEY ("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea", "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c", "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1")
         REFERENCES "edfi"."StudentEducationOrganizationAssessmentAccommodation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24487,16 +24488,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0'
+        WHERE conname = 'FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20"
         FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
         REFERENCES "edfi"."StudentEducationOrganizationAssociation" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Student_StudentUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24606,16 +24607,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_78e6b86746'
+        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationBatteryPartAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_78e6b86746"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_dd37ce8ecc"
         FOREIGN KEY ("StudentAssessmentRegistration_DocumentId", "StudentAssessmentRegistration_AdministrationIdentifier", "AssessmentIdentifier_Unified", "StudentAssessmentRegistration_AssigningEducationOrganizationId", "Namespace_Unified", "StudentAssessmentRegistration_EducationOrganizationId", "StudentAssessmentRegistration_StudentUniqueId")
         REFERENCES "edfi"."StudentAssessmentRegistration" ("DocumentId", "AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24734,7 +24735,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -24870,7 +24871,7 @@ BEGIN
         FOREIGN KEY ("Cohort_DocumentId", "Cohort_CohortIdentifier", "Cohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -25014,6 +25015,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41'
+        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentCompetencyObjective"
+        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_1aeb67ed41"
+        FOREIGN KEY ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
+        REFERENCES "edfi"."CompetencyObjective" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
     )
@@ -25022,23 +25040,6 @@ BEGIN
         ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355"
         FOREIGN KEY ("ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
         REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_7ed8529b29'
-        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentCompetencyObjective"
-        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_7ed8529b29"
-        FOREIGN KEY ("ObjectiveCompetencyObjective_DocumentId", "ObjectiveCompetencyObjective_EducationOrganizationId", "ObjectiveCompetencyObjective_Objective", "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
-        REFERENCES "edfi"."CompetencyObjective" ("DocumentId", "EducationOrganization_EducationOrganizationId", "Objective", "ObjectiveGradeLevelDescriptor_DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26808,7 +26809,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26944,7 +26945,7 @@ BEGIN
         FOREIGN KEY ("CohortCohort_DocumentId", "CohortCohort_CohortIdentifier", "CohortCohort_EducationOrganizationId")
         REFERENCES "edfi"."Cohort" ("DocumentId", "CohortIdentifier", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -26978,7 +26979,7 @@ BEGIN
         FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
         REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27148,7 +27149,7 @@ BEGIN
         FOREIGN KEY ("Intervention_DocumentId", "Intervention_EducationOrganizationId", "Intervention_InterventionIdentificationCode")
         REFERENCES "edfi"."Intervention" ("DocumentId", "EducationOrganization_EducationOrganizationId", "InterventionIdentificationCode")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27224,16 +27225,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_459a3913d6'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_459a3913d6"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_61702cbb4e"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27496,16 +27497,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_9c59b3174a'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_9c59b3174a"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_99eaa8bb8e"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27717,16 +27718,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_72a38d286a'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_72a38d286a"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_13ff63b237"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -27913,7 +27914,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28117,7 +28118,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28236,7 +28237,7 @@ BEGIN
         FOREIGN KEY ("ProgramEvaluation_DocumentId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."ProgramEvaluation" ("DocumentId", "ProgramEvaluationPeriodDescriptor_DescriptorId", "ProgramEvaluationTitle", "ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28312,23 +28313,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__45f36dc00e'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__45f36dc00e"
-        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
-        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__58a3090861'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
@@ -28373,6 +28357,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__c12ce01a26"
+        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_DocumentId", "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb", "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd", "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f", "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8", "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178", "StudentEvaluationElementProgramEvaluationElement_ProgramName", "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
+        REFERENCES "edfi"."ProgramEvaluationElement" ("DocumentId", "ProgramEvaluationElementTitle", "ProgramEducationOrganizationId_Unified", "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId", "ProgramEvaluationTitle_Unified", "ProgramEvaluationTypeDescriptor_Unified_DescriptorId", "ProgramName_Unified", "ProgramTypeDescriptor_Unified_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28482,23 +28483,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_6571f443d0'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_6571f443d0"
-        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
-        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
@@ -28509,6 +28493,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_f069d7b435"
+        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982", "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950", "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23", "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726", "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84", "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0", "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
+        REFERENCES "edfi"."ProgramEvaluationObjective" ("DocumentId", "ProgramEvaluationObjectiveTitle", "ProgramEvaluation_ProgramEducationOrganizationId", "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e", "ProgramEvaluation_ProgramEvaluationTitle", "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId", "ProgramEvaluation_ProgramName", "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28678,7 +28679,7 @@ BEGIN
         FOREIGN KEY ("GraduationPlan_DocumentId", "GraduationPlan_EducationOrganizationId", "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId", "GraduationPlan_GraduationSchoolYear")
         REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -28839,16 +28840,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306'
+        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociationAlternativeGraduationPlan"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
-        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306"
+        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238"
         FOREIGN KEY ("AlternativeGraduationPlan_DocumentId", "AlternativeGraduationPlan_EducationOrganizationId", "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181", "AlternativeGraduationPlan_GraduationSchoolYear")
         REFERENCES "edfi"."GraduationPlan" ("DocumentId", "EducationOrganization_EducationOrganizationId", "GraduationPlanTypeDescriptor_DescriptorId", "GraduationSchoolYear_GraduationSchoolYear")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29043,16 +29044,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_dad7d0e991'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_dad7d0e991"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_e3763708df"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29222,7 +29223,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29477,7 +29478,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29672,16 +29673,16 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_dd22e89a0b'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_dd22e89a0b"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_e8254097c1"
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -29995,23 +29996,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_49aba18441'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_49aba18441"
-        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
@@ -30022,6 +30006,23 @@ BEGIN
         REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_5405a07f9c"
+        FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30191,7 +30192,7 @@ BEGIN
         FOREIGN KEY ("ProgramProgram_DocumentId", "ProgramProgram_EducationOrganizationId", "ProgramProgram_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30582,7 +30583,7 @@ BEGIN
         FOREIGN KEY ("Course_DocumentId", "Course_CourseCode", "Course_EducationOrganizationId")
         REFERENCES "edfi"."Course" ("DocumentId", "CourseCode", "EducationOrganization_EducationOrganizationId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -30667,7 +30668,7 @@ BEGIN
         FOREIGN KEY ("Program_DocumentId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId")
         REFERENCES "edfi"."Program" ("DocumentId", "EducationOrganization_EducationOrganizationId", "ProgramName", "ProgramTypeDescriptor_DescriptorId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
+        ON UPDATE CASCADE;
     END IF;
 END $$;
 
@@ -33347,7 +33348,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 4;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAcademicWeek' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.weekIdentifier=' || NEW."WeekIdentifier"::text), NEW."DocumentId", 4);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAcademicWeek' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.weekIdentifier=' || NEW."WeekIdentifier"::text), NEW."DocumentId", 4);
     END IF;
     RETURN NEW;
 END;
@@ -33355,7 +33356,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AcademicWeek_ReferentialIdentity" ON "edfi"."AcademicWeek";
 CREATE TRIGGER "TR_AcademicWeek_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AcademicWeek"
+AFTER INSERT OR UPDATE ON "edfi"."AcademicWeek"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AcademicWeek_ReferentialIdentity"();
 
@@ -33398,7 +33399,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 7;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAccountabilityRating' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.ratingTitle=' || NEW."RatingTitle"::text || '#' || '$$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 7);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAccountabilityRating' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.ratingTitle=' || NEW."RatingTitle"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 7);
     END IF;
     RETURN NEW;
 END;
@@ -33406,7 +33407,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AccountabilityRating_ReferentialIdentity" ON "edfi"."AccountabilityRating";
 CREATE TRIGGER "TR_AccountabilityRating_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AccountabilityRating"
+AFTER INSERT OR UPDATE ON "edfi"."AccountabilityRating"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AccountabilityRating_ReferentialIdentity"();
 
@@ -33449,7 +33450,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 14;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessment' || '$$.assessmentIdentifier=' || NEW."AssessmentIdentifier"::text || '#' || '$$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 14);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessment' || '$.assessmentIdentifier=' || NEW."AssessmentIdentifier"::text || '#' || '$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 14);
     END IF;
     RETURN NEW;
 END;
@@ -33457,7 +33458,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Assessment_ReferentialIdentity" ON "edfi"."Assessment";
 CREATE TRIGGER "TR_Assessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Assessment"
+AFTER INSERT OR UPDATE ON "edfi"."Assessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Assessment_ReferentialIdentity"();
 
@@ -33525,7 +33526,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 15;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministration' || '$$.administrationIdentifier=' || NEW."AdministrationIdentifier"::text || '#' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$$.assigningEducationOrganizationReference.educationOrganizationId=' || NEW."AssigningEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 15);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministration' || '$.administrationIdentifier=' || NEW."AdministrationIdentifier"::text || '#' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.assigningEducationOrganizationReference.educationOrganizationId=' || NEW."AssigningEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 15);
     END IF;
     RETURN NEW;
 END;
@@ -33533,7 +33534,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentAdministration_ReferentialIdentity" ON "edfi"."AssessmentAdministration";
 CREATE TRIGGER "TR_AssessmentAdministration_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentAdministration"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministration_ReferentialIdentity"();
 
@@ -33601,7 +33602,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 16;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministrationParticipation' || '$$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$$.participatingEducationOrganizationReference.educationOrganizationId=' || NEW."ParticipatingEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 16);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentAdministrationParticipation' || '$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$.participatingEducationOrganizationReference.educationOrganizationId=' || NEW."ParticipatingEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 16);
     END IF;
     RETURN NEW;
 END;
@@ -33609,7 +33610,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentAdministrationParticipation_ReferentialIdentity" ON "edfi"."AssessmentAdministrationParticipation";
 CREATE TRIGGER "TR_AssessmentAdministrationParticipation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentAdministrationParticipation"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentAdministrationParticipation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentAdministrationParticipation_ReferentialIdentity"();
 
@@ -33752,7 +33753,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 17;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentBatteryPart' || '$$.assessmentBatteryPartName=' || NEW."AssessmentBatteryPartName"::text || '#' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text), NEW."DocumentId", 17);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentBatteryPart' || '$.assessmentBatteryPartName=' || NEW."AssessmentBatteryPartName"::text || '#' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text), NEW."DocumentId", 17);
     END IF;
     RETURN NEW;
 END;
@@ -33760,7 +33761,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentBatteryPart_ReferentialIdentity" ON "edfi"."AssessmentBatteryPart";
 CREATE TRIGGER "TR_AssessmentBatteryPart_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentBatteryPart"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentBatteryPart"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentBatteryPart_ReferentialIdentity"();
 
@@ -33853,7 +33854,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 20;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentItem' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 20);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentItem' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 20);
     END IF;
     RETURN NEW;
 END;
@@ -33861,7 +33862,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentItem_ReferentialIdentity" ON "edfi"."AssessmentItem";
 CREATE TRIGGER "TR_AssessmentItem_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentItem"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentItem"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentItem_ReferentialIdentity"();
 
@@ -34104,7 +34105,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 25;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentScoreRangeLearningStandard' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$$.scoreRangeId=' || NEW."ScoreRangeId"::text), NEW."DocumentId", 25);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiAssessmentScoreRangeLearningStandard' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.scoreRangeId=' || NEW."ScoreRangeId"::text), NEW."DocumentId", 25);
     END IF;
     RETURN NEW;
 END;
@@ -34112,7 +34113,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity" ON "edfi"."AssessmentScoreRangeLearningStandard";
 CREATE TRIGGER "TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."AssessmentScoreRangeLearningStandard"
+AFTER INSERT OR UPDATE ON "edfi"."AssessmentScoreRangeLearningStandard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity"();
 
@@ -34205,7 +34206,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 29;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBalanceSheetDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 29);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBalanceSheetDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 29);
     END IF;
     RETURN NEW;
 END;
@@ -34213,7 +34214,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_BalanceSheetDimension_ReferentialIdentity" ON "edfi"."BalanceSheetDimension";
 CREATE TRIGGER "TR_BalanceSheetDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."BalanceSheetDimension"
+AFTER INSERT OR UPDATE ON "edfi"."BalanceSheetDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BalanceSheetDimension_ReferentialIdentity"();
 
@@ -34281,7 +34282,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 32;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBellSchedule' || '$$.bellScheduleName=' || NEW."BellScheduleName"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 32);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiBellSchedule' || '$.bellScheduleName=' || NEW."BellScheduleName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 32);
     END IF;
     RETURN NEW;
 END;
@@ -34289,7 +34290,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_BellSchedule_ReferentialIdentity" ON "edfi"."BellSchedule";
 CREATE TRIGGER "TR_BellSchedule_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."BellSchedule"
+AFTER INSERT OR UPDATE ON "edfi"."BellSchedule"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_BellSchedule_ReferentialIdentity"();
 
@@ -34407,7 +34408,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 35;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendar' || '$$.calendarCode=' || NEW."CalendarCode"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 35);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendar' || '$.calendarCode=' || NEW."CalendarCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 35);
     END IF;
     RETURN NEW;
 END;
@@ -34415,7 +34416,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Calendar_ReferentialIdentity" ON "edfi"."Calendar";
 CREATE TRIGGER "TR_Calendar_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Calendar"
+AFTER INSERT OR UPDATE ON "edfi"."Calendar"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Calendar_ReferentialIdentity"();
 
@@ -34458,7 +34459,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 36;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendarDate' || '$$.calendarReference.calendarCode=' || NEW."Calendar_CalendarCode"::text || '#' || '$$.calendarReference.schoolId=' || NEW."Calendar_SchoolId"::text || '#' || '$$.calendarReference.schoolYear=' || NEW."Calendar_SchoolYear"::text || '#' || '$$.date=' || NEW."Date"::text), NEW."DocumentId", 36);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCalendarDate' || '$.calendarReference.calendarCode=' || NEW."Calendar_CalendarCode"::text || '#' || '$.calendarReference.schoolId=' || NEW."Calendar_SchoolId"::text || '#' || '$.calendarReference.schoolYear=' || NEW."Calendar_SchoolYear"::text || '#' || '$.date=' || NEW."Date"::text), NEW."DocumentId", 36);
     END IF;
     RETURN NEW;
 END;
@@ -34466,7 +34467,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CalendarDate_ReferentialIdentity" ON "edfi"."CalendarDate";
 CREATE TRIGGER "TR_CalendarDate_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CalendarDate"
+AFTER INSERT OR UPDATE ON "edfi"."CalendarDate"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CalendarDate_ReferentialIdentity"();
 
@@ -34559,7 +34560,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 40;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiChartOfAccount' || '$$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 40);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiChartOfAccount' || '$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 40);
     END IF;
     RETURN NEW;
 END;
@@ -34567,7 +34568,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ChartOfAccount_ReferentialIdentity" ON "edfi"."ChartOfAccount";
 CREATE TRIGGER "TR_ChartOfAccount_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ChartOfAccount"
+AFTER INSERT OR UPDATE ON "edfi"."ChartOfAccount"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ChartOfAccount_ReferentialIdentity"();
 
@@ -34635,7 +34636,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 44;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiClassPeriod' || '$$.classPeriodName=' || NEW."ClassPeriodName"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 44);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiClassPeriod' || '$.classPeriodName=' || NEW."ClassPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 44);
     END IF;
     RETURN NEW;
 END;
@@ -34643,7 +34644,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ClassPeriod_ReferentialIdentity" ON "edfi"."ClassPeriod";
 CREATE TRIGGER "TR_ClassPeriod_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ClassPeriod"
+AFTER INSERT OR UPDATE ON "edfi"."ClassPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ClassPeriod_ReferentialIdentity"();
 
@@ -34711,7 +34712,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 46;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCohort' || '$$.cohortIdentifier=' || NEW."CohortIdentifier"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 46);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCohort' || '$.cohortIdentifier=' || NEW."CohortIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 46);
     END IF;
     RETURN NEW;
 END;
@@ -34719,7 +34720,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Cohort_ReferentialIdentity" ON "edfi"."Cohort";
 CREATE TRIGGER "TR_Cohort_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Cohort"
+AFTER INSERT OR UPDATE ON "edfi"."Cohort"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Cohort_ReferentialIdentity"();
 
@@ -34836,11 +34837,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 50;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityOrganization' || '$$.communityOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 50);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityOrganization' || '$.communityOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 50);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."CommunityOrganizationId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -34848,7 +34849,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityOrganization_ReferentialIdentity" ON "edfi"."CommunityOrganization";
 CREATE TRIGGER "TR_CommunityOrganization_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityOrganization"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityOrganization"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"();
 
@@ -35224,11 +35225,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 51;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProvider' || '$$.communityProviderId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 51);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProvider' || '$.communityProviderId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 51);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."CommunityProviderId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -35236,7 +35237,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityProvider_ReferentialIdentity" ON "edfi"."CommunityProvider";
 CREATE TRIGGER "TR_CommunityProvider_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityProvider"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityProvider"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"();
 
@@ -35479,7 +35480,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 52;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProviderLicense' || '$$.communityProviderReference.communityProviderId=' || NEW."CommunityProvider_CommunityProviderId"::text || '#' || '$$.licenseIdentifier=' || NEW."LicenseIdentifier"::text || '#' || '$$.licensingOrganization=' || NEW."LicensingOrganization"::text), NEW."DocumentId", 52);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCommunityProviderLicense' || '$.communityProviderReference.communityProviderId=' || NEW."CommunityProvider_CommunityProviderId"::text || '#' || '$.licenseIdentifier=' || NEW."LicenseIdentifier"::text || '#' || '$.licensingOrganization=' || NEW."LicensingOrganization"::text), NEW."DocumentId", 52);
     END IF;
     RETURN NEW;
 END;
@@ -35487,7 +35488,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CommunityProviderLicense_ReferentialIdentity" ON "edfi"."CommunityProviderLicense";
 CREATE TRIGGER "TR_CommunityProviderLicense_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CommunityProviderLicense"
+AFTER INSERT OR UPDATE ON "edfi"."CommunityProviderLicense"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProviderLicense_ReferentialIdentity"();
 
@@ -35530,7 +35531,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 54;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCompetencyObjective' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.objective=' || NEW."Objective"::text || '#' || '$$.objectiveGradeLevelDescriptor=' || NEW."ObjectiveGradeLevelDescriptor_DescriptorId"::text), NEW."DocumentId", 54);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCompetencyObjective' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.objective=' || NEW."Objective"::text || '#' || '$.objectiveGradeLevelDescriptor=' || NEW."ObjectiveGradeLevelDescriptor_DescriptorId"::text), NEW."DocumentId", 54);
     END IF;
     RETURN NEW;
 END;
@@ -35538,7 +35539,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CompetencyObjective_ReferentialIdentity" ON "edfi"."CompetencyObjective";
 CREATE TRIGGER "TR_CompetencyObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CompetencyObjective"
+AFTER INSERT OR UPDATE ON "edfi"."CompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CompetencyObjective_ReferentialIdentity"();
 
@@ -35581,7 +35582,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 55;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiContact' || '$$.contactUniqueId=' || NEW."ContactUniqueId"::text), NEW."DocumentId", 55);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiContact' || '$.contactUniqueId=' || NEW."ContactUniqueId"::text), NEW."DocumentId", 55);
     END IF;
     RETURN NEW;
 END;
@@ -35589,7 +35590,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Contact_ReferentialIdentity" ON "edfi"."Contact";
 CREATE TRIGGER "TR_Contact_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Contact"
+AFTER INSERT OR UPDATE ON "edfi"."Contact"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Contact_ReferentialIdentity"();
 
@@ -35857,7 +35858,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 61;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourse' || '$$.courseCode=' || NEW."CourseCode"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 61);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourse' || '$.courseCode=' || NEW."CourseCode"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 61);
     END IF;
     RETURN NEW;
 END;
@@ -35865,7 +35866,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Course_ReferentialIdentity" ON "edfi"."Course";
 CREATE TRIGGER "TR_Course_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Course"
+AFTER INSERT OR UPDATE ON "edfi"."Course"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Course_ReferentialIdentity"();
 
@@ -36058,7 +36059,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 67;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseOffering' || '$$.localCourseCode=' || NEW."LocalCourseCode"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$$.sessionReference.sessionName=' || NEW."Session_SessionName"::text), NEW."DocumentId", 67);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseOffering' || '$.localCourseCode=' || NEW."LocalCourseCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text), NEW."DocumentId", 67);
     END IF;
     RETURN NEW;
 END;
@@ -36066,7 +36067,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CourseOffering_ReferentialIdentity" ON "edfi"."CourseOffering";
 CREATE TRIGGER "TR_CourseOffering_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CourseOffering"
+AFTER INSERT OR UPDATE ON "edfi"."CourseOffering"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseOffering_ReferentialIdentity"();
 
@@ -36184,7 +36185,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 69;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseTranscript' || '$$.courseAttemptResultDescriptor=' || NEW."CourseAttemptResultDescriptor_DescriptorId"::text || '#' || '$$.courseReference.courseCode=' || NEW."CourseCourse_CourseCode"::text || '#' || '$$.courseReference.educationOrganizationId=' || NEW."CourseCourse_EducationOrganizationId"::text || '#' || '$$.studentAcademicRecordReference.educationOrganizationId=' || NEW."StudentAcademicRecord_EducationOrganizationId"::text || '#' || '$$.studentAcademicRecordReference.schoolYear=' || NEW."StudentAcademicRecord_SchoolYear"::text || '#' || '$$.studentAcademicRecordReference.studentUniqueId=' || NEW."StudentAcademicRecord_StudentUniqueId"::text || '#' || '$$.studentAcademicRecordReference.termDescriptor=' || NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"::text), NEW."DocumentId", 69);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseTranscript' || '$.courseAttemptResultDescriptor=' || NEW."CourseAttemptResultDescriptor_DescriptorId"::text || '#' || '$.courseReference.courseCode=' || NEW."CourseCourse_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."CourseCourse_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.educationOrganizationId=' || NEW."StudentAcademicRecord_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.schoolYear=' || NEW."StudentAcademicRecord_SchoolYear"::text || '#' || '$.studentAcademicRecordReference.studentUniqueId=' || NEW."StudentAcademicRecord_StudentUniqueId"::text || '#' || '$.studentAcademicRecordReference.termDescriptor=' || NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"::text), NEW."DocumentId", 69);
     END IF;
     RETURN NEW;
 END;
@@ -36192,7 +36193,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CourseTranscript_ReferentialIdentity" ON "edfi"."CourseTranscript";
 CREATE TRIGGER "TR_CourseTranscript_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CourseTranscript"
+AFTER INSERT OR UPDATE ON "edfi"."CourseTranscript"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseTranscript_ReferentialIdentity"();
 
@@ -36410,7 +36411,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 70;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCredential' || '$$.credentialIdentifier=' || NEW."CredentialIdentifier"::text || '#' || '$$.stateOfIssueStateAbbreviationDescriptor=' || NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"::text), NEW."DocumentId", 70);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCredential' || '$.credentialIdentifier=' || NEW."CredentialIdentifier"::text || '#' || '$.stateOfIssueStateAbbreviationDescriptor=' || NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"::text), NEW."DocumentId", 70);
     END IF;
     RETURN NEW;
 END;
@@ -36418,7 +36419,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Credential_ReferentialIdentity" ON "edfi"."Credential";
 CREATE TRIGGER "TR_Credential_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Credential"
+AFTER INSERT OR UPDATE ON "edfi"."Credential"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Credential_ReferentialIdentity"();
 
@@ -36536,7 +36537,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 75;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCrisisEvent' || '$$.crisisEventName=' || NEW."CrisisEventName"::text), NEW."DocumentId", 75);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCrisisEvent' || '$.crisisEventName=' || NEW."CrisisEventName"::text), NEW."DocumentId", 75);
     END IF;
     RETURN NEW;
 END;
@@ -36544,7 +36545,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_CrisisEvent_ReferentialIdentity" ON "edfi"."CrisisEvent";
 CREATE TRIGGER "TR_CrisisEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."CrisisEvent"
+AFTER INSERT OR UPDATE ON "edfi"."CrisisEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CrisisEvent_ReferentialIdentity"();
 
@@ -36587,7 +36588,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 79;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDescriptorMapping' || '$$.mappedNamespace=' || NEW."MappedNamespace"::text || '#' || '$$.mappedValue=' || NEW."MappedValue"::text || '#' || '$$.namespace=' || NEW."Namespace"::text || '#' || '$$.value=' || NEW."Value"::text), NEW."DocumentId", 79);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDescriptorMapping' || '$.mappedNamespace=' || NEW."MappedNamespace"::text || '#' || '$.mappedValue=' || NEW."MappedValue"::text || '#' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.value=' || NEW."Value"::text), NEW."DocumentId", 79);
     END IF;
     RETURN NEW;
 END;
@@ -36595,7 +36596,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DescriptorMapping_ReferentialIdentity" ON "edfi"."DescriptorMapping";
 CREATE TRIGGER "TR_DescriptorMapping_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DescriptorMapping"
+AFTER INSERT OR UPDATE ON "edfi"."DescriptorMapping"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DescriptorMapping_ReferentialIdentity"();
 
@@ -36663,7 +36664,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 86;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineAction' || '$$.disciplineActionIdentifier=' || NEW."DisciplineActionIdentifier"::text || '#' || '$$.disciplineDate=' || NEW."DisciplineDate"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 86);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineAction' || '$.disciplineActionIdentifier=' || NEW."DisciplineActionIdentifier"::text || '#' || '$.disciplineDate=' || NEW."DisciplineDate"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 86);
     END IF;
     RETURN NEW;
 END;
@@ -36671,7 +36672,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DisciplineAction_ReferentialIdentity" ON "edfi"."DisciplineAction";
 CREATE TRIGGER "TR_DisciplineAction_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DisciplineAction"
+AFTER INSERT OR UPDATE ON "edfi"."DisciplineAction"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineAction_ReferentialIdentity"();
 
@@ -36789,7 +36790,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 89;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineIncident' || '$$.incidentIdentifier=' || NEW."IncidentIdentifier"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 89);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiDisciplineIncident' || '$.incidentIdentifier=' || NEW."IncidentIdentifier"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 89);
     END IF;
     RETURN NEW;
 END;
@@ -36797,7 +36798,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_DisciplineIncident_ReferentialIdentity" ON "edfi"."DisciplineIncident";
 CREATE TRIGGER "TR_DisciplineIncident_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."DisciplineIncident"
+AFTER INSERT OR UPDATE ON "edfi"."DisciplineIncident"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_DisciplineIncident_ReferentialIdentity"();
 
@@ -36915,7 +36916,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 94;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationContent' || '$$.contentIdentifier=' || NEW."ContentIdentifier"::text), NEW."DocumentId", 94);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationContent' || '$.contentIdentifier=' || NEW."ContentIdentifier"::text), NEW."DocumentId", 94);
     END IF;
     RETURN NEW;
 END;
@@ -36923,7 +36924,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationContent_ReferentialIdentity" ON "edfi"."EducationContent";
 CREATE TRIGGER "TR_EducationContent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationContent"
+AFTER INSERT OR UPDATE ON "edfi"."EducationContent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationContent_ReferentialIdentity"();
 
@@ -37173,7 +37174,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 99;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.interventionPrescriptionReference.educationOrganizationId=' || NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247"::text || '#' || '$$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28"::text), NEW."DocumentId", 99);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionPrescriptionReference.educationOrganizationId=' || NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247"::text || '#' || '$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28"::text), NEW."DocumentId", 99);
     END IF;
     RETURN NEW;
 END;
@@ -37181,7 +37182,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8" ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation";
 CREATE TRIGGER "TR_EducationOrganizationInterventionPrescriptionAsso_9a89859fb8"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationInterventionPrescriptionA_8c531548a2"();
 
@@ -37241,11 +37242,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 100;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetwork' || '$$.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 100);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetwork' || '$.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 100);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationOrganizationNetworkId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -37253,7 +37254,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_ReferentialIdentity" ON "edfi"."EducationOrganizationNetwork";
 CREATE TRIGGER "TR_EducationOrganizationNetwork_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"();
 
@@ -37346,7 +37347,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 101;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetworkAssociation' || '$$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId"::text || '#' || '$$.memberEducationOrganizationReference.educationOrganizationId=' || NEW."MemberEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 101);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationNetworkAssociation' || '$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' || NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId"::text || '#' || '$.memberEducationOrganizationReference.educationOrganizationId=' || NEW."MemberEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 101);
     END IF;
     RETURN NEW;
 END;
@@ -37354,7 +37355,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationNetworkAssociation";
 CREATE TRIGGER "TR_EducationOrganizationNetworkAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetworkAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationNetworkAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetworkAssociation_Refere_7f5a8e95ea"();
 
@@ -37547,7 +37548,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 102;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationPeerAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.peerEducationOrganizationReference.educationOrganizationId=' || NEW."PeerEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 102);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganizationPeerAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.peerEducationOrganizationReference.educationOrganizationId=' || NEW."PeerEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 102);
     END IF;
     RETURN NEW;
 END;
@@ -37555,7 +37556,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationOrganizationPeerAssociation_ReferentialIdentity" ON "edfi"."EducationOrganizationPeerAssociation";
 CREATE TRIGGER "TR_EducationOrganizationPeerAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationPeerAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."EducationOrganizationPeerAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationPeerAssociation_ReferentialIdentity"();
 
@@ -37731,11 +37732,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 104;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationServiceCenter' || '$$.educationServiceCenterId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 104);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationServiceCenter' || '$.educationServiceCenterId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 104);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationServiceCenterId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -37743,7 +37744,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_ReferentialIdentity" ON "edfi"."EducationServiceCenter";
 CREATE TRIGGER "TR_EducationServiceCenter_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
+AFTER INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"();
 
@@ -37986,7 +37987,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 114;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEvaluationRubricDimension' || '$$.evaluationRubricRating=' || NEW."EvaluationRubricRating"::text || '#' || '$$.programEvaluationElementReference.programEducationOrganizationId=' || NEW."ProgramEvaluationElement_ProgramEducationOrganizationId"::text || '#' || '$$.programEvaluationElementReference.programEvaluationElementTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle"::text || '#' || '$$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"::text || '#' || '$$.programEvaluationElementReference.programEvaluationTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationTitle"::text || '#' || '$$.programEvaluationElementReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"::text || '#' || '$$.programEvaluationElementReference.programName=' || NEW."ProgramEvaluationElement_ProgramName"::text || '#' || '$$.programEvaluationElementReference.programTypeDescriptor=' || NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 114);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEvaluationRubricDimension' || '$.evaluationRubricRating=' || NEW."EvaluationRubricRating"::text || '#' || '$.programEvaluationElementReference.programEducationOrganizationId=' || NEW."ProgramEvaluationElement_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationElementReference.programEvaluationElementTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"::text || '#' || '$.programEvaluationElementReference.programEvaluationTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"::text || '#' || '$.programEvaluationElementReference.programName=' || NEW."ProgramEvaluationElement_ProgramName"::text || '#' || '$.programEvaluationElementReference.programTypeDescriptor=' || NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 114);
     END IF;
     RETURN NEW;
 END;
@@ -37994,7 +37995,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_EvaluationRubricDimension_ReferentialIdentity" ON "edfi"."EvaluationRubricDimension";
 CREATE TRIGGER "TR_EvaluationRubricDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."EvaluationRubricDimension"
+AFTER INSERT OR UPDATE ON "edfi"."EvaluationRubricDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EvaluationRubricDimension_ReferentialIdentity"();
 
@@ -38037,7 +38038,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 117;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFeederSchoolAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.feederSchoolReference.schoolId=' || NEW."FeederSchool_SchoolId"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 117);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFeederSchoolAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.feederSchoolReference.schoolId=' || NEW."FeederSchool_SchoolId"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 117);
     END IF;
     RETURN NEW;
 END;
@@ -38045,7 +38046,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FeederSchoolAssociation_ReferentialIdentity" ON "edfi"."FeederSchoolAssociation";
 CREATE TRIGGER "TR_FeederSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FeederSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."FeederSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FeederSchoolAssociation_ReferentialIdentity"();
 
@@ -38088,7 +38089,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 119;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFunctionDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 119);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFunctionDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 119);
     END IF;
     RETURN NEW;
 END;
@@ -38096,7 +38097,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FunctionDimension_ReferentialIdentity" ON "edfi"."FunctionDimension";
 CREATE TRIGGER "TR_FunctionDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FunctionDimension"
+AFTER INSERT OR UPDATE ON "edfi"."FunctionDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FunctionDimension_ReferentialIdentity"();
 
@@ -38164,7 +38165,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 120;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFundDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 120);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiFundDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 120);
     END IF;
     RETURN NEW;
 END;
@@ -38172,7 +38173,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_FundDimension_ReferentialIdentity" ON "edfi"."FundDimension";
 CREATE TRIGGER "TR_FundDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."FundDimension"
+AFTER INSERT OR UPDATE ON "edfi"."FundDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_FundDimension_ReferentialIdentity"();
 
@@ -38240,7 +38241,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 122;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGrade' || '$$.gradeTypeDescriptor=' || NEW."GradeTypeDescriptor_DescriptorId"::text || '#' || '$$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$$.studentSectionAssociationReference.beginDate=' || NEW."StudentSectionAssociation_BeginDate"::text || '#' || '$$.studentSectionAssociationReference.localCourseCode=' || NEW."StudentSectionAssociation_LocalCourseCode"::text || '#' || '$$.studentSectionAssociationReference.schoolId=' || NEW."StudentSectionAssociation_SchoolId"::text || '#' || '$$.studentSectionAssociationReference.schoolYear=' || NEW."StudentSectionAssociation_SchoolYear"::text || '#' || '$$.studentSectionAssociationReference.sectionIdentifier=' || NEW."StudentSectionAssociation_SectionIdentifier"::text || '#' || '$$.studentSectionAssociationReference.sessionName=' || NEW."StudentSectionAssociation_SessionName"::text || '#' || '$$.studentSectionAssociationReference.studentUniqueId=' || NEW."StudentSectionAssociation_StudentUniqueId"::text), NEW."DocumentId", 122);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGrade' || '$.gradeTypeDescriptor=' || NEW."GradeTypeDescriptor_DescriptorId"::text || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.beginDate=' || NEW."StudentSectionAssociation_BeginDate"::text || '#' || '$.studentSectionAssociationReference.localCourseCode=' || NEW."StudentSectionAssociation_LocalCourseCode"::text || '#' || '$.studentSectionAssociationReference.schoolId=' || NEW."StudentSectionAssociation_SchoolId"::text || '#' || '$.studentSectionAssociationReference.schoolYear=' || NEW."StudentSectionAssociation_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.sectionIdentifier=' || NEW."StudentSectionAssociation_SectionIdentifier"::text || '#' || '$.studentSectionAssociationReference.sessionName=' || NEW."StudentSectionAssociation_SessionName"::text || '#' || '$.studentSectionAssociationReference.studentUniqueId=' || NEW."StudentSectionAssociation_StudentUniqueId"::text), NEW."DocumentId", 122);
     END IF;
     RETURN NEW;
 END;
@@ -38248,7 +38249,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Grade_ReferentialIdentity" ON "edfi"."Grade";
 CREATE TRIGGER "TR_Grade_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Grade"
+AFTER INSERT OR UPDATE ON "edfi"."Grade"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Grade_ReferentialIdentity"();
 
@@ -38316,7 +38317,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 126;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradebookEntry' || '$$.gradebookEntryIdentifier=' || NEW."GradebookEntryIdentifier"::text || '#' || '$$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 126);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradebookEntry' || '$.gradebookEntryIdentifier=' || NEW."GradebookEntryIdentifier"::text || '#' || '$.namespace=' || NEW."Namespace"::text), NEW."DocumentId", 126);
     END IF;
     RETURN NEW;
 END;
@@ -38324,7 +38325,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GradebookEntry_ReferentialIdentity" ON "edfi"."GradebookEntry";
 CREATE TRIGGER "TR_GradebookEntry_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GradebookEntry"
+AFTER INSERT OR UPDATE ON "edfi"."GradebookEntry"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradebookEntry_ReferentialIdentity"();
 
@@ -38392,7 +38393,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 128;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradingPeriod' || '$$.gradingPeriodDescriptor=' || NEW."GradingPeriodDescriptor_DescriptorId"::text || '#' || '$$.gradingPeriodName=' || NEW."GradingPeriodName"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 128);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradingPeriod' || '$.gradingPeriodDescriptor=' || NEW."GradingPeriodDescriptor_DescriptorId"::text || '#' || '$.gradingPeriodName=' || NEW."GradingPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 128);
     END IF;
     RETURN NEW;
 END;
@@ -38400,7 +38401,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GradingPeriod_ReferentialIdentity" ON "edfi"."GradingPeriod";
 CREATE TRIGGER "TR_GradingPeriod_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GradingPeriod"
+AFTER INSERT OR UPDATE ON "edfi"."GradingPeriod"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GradingPeriod_ReferentialIdentity"();
 
@@ -38443,7 +38444,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 130;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGraduationPlan' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.graduationPlanTypeDescriptor=' || NEW."GraduationPlanTypeDescriptor_DescriptorId"::text || '#' || '$$.graduationSchoolYearTypeReference.schoolYear=' || NEW."GraduationSchoolYear_GraduationSchoolYear"::text), NEW."DocumentId", 130);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGraduationPlan' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.graduationPlanTypeDescriptor=' || NEW."GraduationPlanTypeDescriptor_DescriptorId"::text || '#' || '$.graduationSchoolYearTypeReference.schoolYear=' || NEW."GraduationSchoolYear_GraduationSchoolYear"::text), NEW."DocumentId", 130);
     END IF;
     RETURN NEW;
 END;
@@ -38451,7 +38452,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_GraduationPlan_ReferentialIdentity" ON "edfi"."GraduationPlan";
 CREATE TRIGGER "TR_GraduationPlan_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."GraduationPlan"
+AFTER INSERT OR UPDATE ON "edfi"."GraduationPlan"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_GraduationPlan_ReferentialIdentity"();
 
@@ -38644,7 +38645,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 147;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiIntervention' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.interventionIdentificationCode=' || NEW."InterventionIdentificationCode"::text), NEW."DocumentId", 147);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiIntervention' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionIdentificationCode=' || NEW."InterventionIdentificationCode"::text), NEW."DocumentId", 147);
     END IF;
     RETURN NEW;
 END;
@@ -38652,7 +38653,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Intervention_ReferentialIdentity" ON "edfi"."Intervention";
 CREATE TRIGGER "TR_Intervention_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Intervention"
+AFTER INSERT OR UPDATE ON "edfi"."Intervention"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Intervention_ReferentialIdentity"();
 
@@ -38895,7 +38896,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 150;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionPrescription' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionIdentificationCode"::text), NEW."DocumentId", 150);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionPrescription' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionPrescriptionIdentificationCode=' || NEW."InterventionPrescriptionIdentificationCode"::text), NEW."DocumentId", 150);
     END IF;
     RETURN NEW;
 END;
@@ -38903,7 +38904,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_InterventionPrescription_ReferentialIdentity" ON "edfi"."InterventionPrescription";
 CREATE TRIGGER "TR_InterventionPrescription_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."InterventionPrescription"
+AFTER INSERT OR UPDATE ON "edfi"."InterventionPrescription"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionPrescription_ReferentialIdentity"();
 
@@ -39146,7 +39147,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 151;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionStudy' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.interventionStudyIdentificationCode=' || NEW."InterventionStudyIdentificationCode"::text), NEW."DocumentId", 151);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiInterventionStudy' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.interventionStudyIdentificationCode=' || NEW."InterventionStudyIdentificationCode"::text), NEW."DocumentId", 151);
     END IF;
     RETURN NEW;
 END;
@@ -39154,7 +39155,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_InterventionStudy_ReferentialIdentity" ON "edfi"."InterventionStudy";
 CREATE TRIGGER "TR_InterventionStudy_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."InterventionStudy"
+AFTER INSERT OR UPDATE ON "edfi"."InterventionStudy"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_InterventionStudy_ReferentialIdentity"();
 
@@ -39422,7 +39423,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 155;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandard' || '$$.learningStandardId=' || NEW."LearningStandardId"::text), NEW."DocumentId", 155);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandard' || '$.learningStandardId=' || NEW."LearningStandardId"::text), NEW."DocumentId", 155);
     END IF;
     RETURN NEW;
 END;
@@ -39430,7 +39431,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LearningStandard_ReferentialIdentity" ON "edfi"."LearningStandard";
 CREATE TRIGGER "TR_LearningStandard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LearningStandard"
+AFTER INSERT OR UPDATE ON "edfi"."LearningStandard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandard_ReferentialIdentity"();
 
@@ -39523,7 +39524,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 157;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandardEquivalenceAssociation' || '$$.namespace=' || NEW."Namespace"::text || '#' || '$$.sourceLearningStandardReference.learningStandardId=' || NEW."SourceLearningStandard_LearningStandardId"::text || '#' || '$$.targetLearningStandardReference.learningStandardId=' || NEW."TargetLearningStandard_LearningStandardId"::text), NEW."DocumentId", 157);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLearningStandardEquivalenceAssociation' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.sourceLearningStandardReference.learningStandardId=' || NEW."SourceLearningStandard_LearningStandardId"::text || '#' || '$.targetLearningStandardReference.learningStandardId=' || NEW."TargetLearningStandard_LearningStandardId"::text), NEW."DocumentId", 157);
     END IF;
     RETURN NEW;
 END;
@@ -39531,7 +39532,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity" ON "edfi"."LearningStandardEquivalenceAssociation";
 CREATE TRIGGER "TR_LearningStandardEquivalenceAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LearningStandardEquivalenceAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."LearningStandardEquivalenceAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LearningStandardEquivalenceAssociation_Referen_56e0b938ed"();
 
@@ -39624,7 +39625,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 164;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalAccount' || '$$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 164);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalAccount' || '$.accountIdentifier=' || NEW."AccountIdentifier"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 164);
     END IF;
     RETURN NEW;
 END;
@@ -39632,7 +39633,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalAccount_ReferentialIdentity" ON "edfi"."LocalAccount";
 CREATE TRIGGER "TR_LocalAccount_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalAccount"
+AFTER INSERT OR UPDATE ON "edfi"."LocalAccount"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalAccount_ReferentialIdentity"();
 
@@ -39700,7 +39701,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 165;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalActual' || '$$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 165);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalActual' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 165);
     END IF;
     RETURN NEW;
 END;
@@ -39708,7 +39709,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalActual_ReferentialIdentity" ON "edfi"."LocalActual";
 CREATE TRIGGER "TR_LocalActual_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalActual"
+AFTER INSERT OR UPDATE ON "edfi"."LocalActual"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalActual_ReferentialIdentity"();
 
@@ -39751,7 +39752,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 166;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalBudget' || '$$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 166);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalBudget' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 166);
     END IF;
     RETURN NEW;
 END;
@@ -39759,7 +39760,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalBudget_ReferentialIdentity" ON "edfi"."LocalBudget";
 CREATE TRIGGER "TR_LocalBudget_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalBudget"
+AFTER INSERT OR UPDATE ON "edfi"."LocalBudget"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalBudget_ReferentialIdentity"();
 
@@ -39802,7 +39803,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 167;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalContractedStaff' || '$$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 167);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalContractedStaff' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 167);
     END IF;
     RETURN NEW;
 END;
@@ -39810,7 +39811,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalContractedStaff_ReferentialIdentity" ON "edfi"."LocalContractedStaff";
 CREATE TRIGGER "TR_LocalContractedStaff_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalContractedStaff"
+AFTER INSERT OR UPDATE ON "edfi"."LocalContractedStaff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalContractedStaff_ReferentialIdentity"();
 
@@ -40056,11 +40057,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 168;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$$.localEducationAgencyId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 168);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$.localEducationAgencyId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 168);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."LocalEducationAgencyId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -40068,7 +40069,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
@@ -40361,7 +40362,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 170;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEncumbrance' || '$$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 170);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEncumbrance' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text), NEW."DocumentId", 170);
     END IF;
     RETURN NEW;
 END;
@@ -40369,7 +40370,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEncumbrance_ReferentialIdentity" ON "edfi"."LocalEncumbrance";
 CREATE TRIGGER "TR_LocalEncumbrance_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEncumbrance"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEncumbrance"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEncumbrance_ReferentialIdentity"();
 
@@ -40412,7 +40413,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 171;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalPayroll' || '$$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 171);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalPayroll' || '$.asOfDate=' || NEW."AsOfDate"::text || '#' || '$.localAccountReference.accountIdentifier=' || NEW."LocalAccount_AccountIdentifier"::text || '#' || '$.localAccountReference.educationOrganizationId=' || NEW."LocalAccount_EducationOrganizationId"::text || '#' || '$.localAccountReference.fiscalYear=' || NEW."LocalAccount_FiscalYear"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 171);
     END IF;
     RETURN NEW;
 END;
@@ -40420,7 +40421,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalPayroll_ReferentialIdentity" ON "edfi"."LocalPayroll";
 CREATE TRIGGER "TR_LocalPayroll_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalPayroll"
+AFTER INSERT OR UPDATE ON "edfi"."LocalPayroll"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalPayroll_ReferentialIdentity"();
 
@@ -40463,7 +40464,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 173;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocation' || '$$.classroomIdentificationCode=' || NEW."ClassroomIdentificationCode"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 173);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocation' || '$.classroomIdentificationCode=' || NEW."ClassroomIdentificationCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text), NEW."DocumentId", 173);
     END IF;
     RETURN NEW;
 END;
@@ -40471,7 +40472,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Location_ReferentialIdentity" ON "edfi"."Location";
 CREATE TRIGGER "TR_Location_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Location"
+AFTER INSERT OR UPDATE ON "edfi"."Location"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Location_ReferentialIdentity"();
 
@@ -40514,7 +40515,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 184;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 184);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 184);
     END IF;
     RETURN NEW;
 END;
@@ -40522,7 +40523,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ObjectDimension_ReferentialIdentity" ON "edfi"."ObjectDimension";
 CREATE TRIGGER "TR_ObjectDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ObjectDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ObjectDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectDimension_ReferentialIdentity"();
 
@@ -40590,7 +40591,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 185;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectiveAssessment' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 185);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiObjectiveAssessment' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.identificationCode=' || NEW."IdentificationCode"::text), NEW."DocumentId", 185);
     END IF;
     RETURN NEW;
 END;
@@ -40598,7 +40599,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ObjectiveAssessment_ReferentialIdentity" ON "edfi"."ObjectiveAssessment";
 CREATE TRIGGER "TR_ObjectiveAssessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ObjectiveAssessment"
+AFTER INSERT OR UPDATE ON "edfi"."ObjectiveAssessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ObjectiveAssessment_ReferentialIdentity"();
 
@@ -40741,7 +40742,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 186;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOpenStaffPosition' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.requisitionNumber=' || NEW."RequisitionNumber"::text), NEW."DocumentId", 186);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOpenStaffPosition' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.requisitionNumber=' || NEW."RequisitionNumber"::text), NEW."DocumentId", 186);
     END IF;
     RETURN NEW;
 END;
@@ -40749,7 +40750,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OpenStaffPosition_ReferentialIdentity" ON "edfi"."OpenStaffPosition";
 CREATE TRIGGER "TR_OpenStaffPosition_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OpenStaffPosition"
+AFTER INSERT OR UPDATE ON "edfi"."OpenStaffPosition"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OpenStaffPosition_ReferentialIdentity"();
 
@@ -40842,7 +40843,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 188;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOperationalUnitDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 188);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOperationalUnitDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 188);
     END IF;
     RETURN NEW;
 END;
@@ -40850,7 +40851,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OperationalUnitDimension_ReferentialIdentity" ON "edfi"."OperationalUnitDimension";
 CREATE TRIGGER "TR_OperationalUnitDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OperationalUnitDimension"
+AFTER INSERT OR UPDATE ON "edfi"."OperationalUnitDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OperationalUnitDimension_ReferentialIdentity"();
 
@@ -41051,11 +41052,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 189;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOrganizationDepartment' || '$$.organizationDepartmentId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 189);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiOrganizationDepartment' || '$.organizationDepartmentId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 189);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."OrganizationDepartmentId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -41063,7 +41064,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_ReferentialIdentity" ON "edfi"."OrganizationDepartment";
 CREATE TRIGGER "TR_OrganizationDepartment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
+AFTER INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"();
 
@@ -41306,7 +41307,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 195;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$$.personId=' || NEW."PersonId"::text || '#' || '$$.sourceSystemDescriptor=' || NEW."SourceSystemDescriptor_DescriptorId"::text), NEW."DocumentId", 195);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text || '#' || '$.sourceSystemDescriptor=' || NEW."SourceSystemDescriptor_DescriptorId"::text), NEW."DocumentId", 195);
     END IF;
     RETURN NEW;
 END;
@@ -41314,7 +41315,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Person_ReferentialIdentity" ON "edfi"."Person";
 CREATE TRIGGER "TR_Person_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Person"
+AFTER INSERT OR UPDATE ON "edfi"."Person"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Person_ReferentialIdentity"();
 
@@ -41357,7 +41358,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 199;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryEvent' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.postSecondaryEventCategoryDescriptor=' || NEW."PostSecondaryEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 199);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryEvent' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.postSecondaryEventCategoryDescriptor=' || NEW."PostSecondaryEventCategoryDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 199);
     END IF;
     RETURN NEW;
 END;
@@ -41365,7 +41366,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_PostSecondaryEvent_ReferentialIdentity" ON "edfi"."PostSecondaryEvent";
 CREATE TRIGGER "TR_PostSecondaryEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryEvent"
+AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryEvent_ReferentialIdentity"();
 
@@ -41457,11 +41458,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 201;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryInstitution' || '$$.postSecondaryInstitutionId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 201);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryInstitution' || '$.postSecondaryInstitutionId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 201);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."PostSecondaryInstitutionId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -41469,7 +41470,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_ReferentialIdentity" ON "edfi"."PostSecondaryInstitution";
 CREATE TRIGGER "TR_PostSecondaryInstitution_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
+AFTER INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"();
 
@@ -41737,7 +41738,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 208;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programName=' || NEW."ProgramName"::text || '#' || '$$.programTypeDescriptor=' || NEW."ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 208);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programName=' || NEW."ProgramName"::text || '#' || '$.programTypeDescriptor=' || NEW."ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 208);
     END IF;
     RETURN NEW;
 END;
@@ -41745,7 +41746,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Program_ReferentialIdentity" ON "edfi"."Program";
 CREATE TRIGGER "TR_Program_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Program"
+AFTER INSERT OR UPDATE ON "edfi"."Program"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Program_ReferentialIdentity"();
 
@@ -41813,7 +41814,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 211;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 211);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 211);
     END IF;
     RETURN NEW;
 END;
@@ -41821,7 +41822,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramDimension_ReferentialIdentity" ON "edfi"."ProgramDimension";
 CREATE TRIGGER "TR_ProgramDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramDimension_ReferentialIdentity"();
 
@@ -41889,7 +41890,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 212;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluation' || '$$.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluationPeriodDescriptor_DescriptorId"::text || '#' || '$$.programEvaluationTitle=' || NEW."ProgramEvaluationTitle"::text || '#' || '$$.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 212);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluation' || '$.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluationPeriodDescriptor_DescriptorId"::text || '#' || '$.programEvaluationTitle=' || NEW."ProgramEvaluationTitle"::text || '#' || '$.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 212);
     END IF;
     RETURN NEW;
 END;
@@ -41897,7 +41898,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluation_ReferentialIdentity" ON "edfi"."ProgramEvaluation";
 CREATE TRIGGER "TR_ProgramEvaluation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluation"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluation_ReferentialIdentity"();
 
@@ -41940,7 +41941,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 213;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationElement' || '$$.programEvaluationElementTitle=' || NEW."ProgramEvaluationElementTitle"::text || '#' || '$$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 213);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationElement' || '$.programEvaluationElementTitle=' || NEW."ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 213);
     END IF;
     RETURN NEW;
 END;
@@ -41948,7 +41949,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluationElement_ReferentialIdentity" ON "edfi"."ProgramEvaluationElement";
 CREATE TRIGGER "TR_ProgramEvaluationElement_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluationElement"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationElement"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationElement_ReferentialIdentity"();
 
@@ -42041,7 +42042,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 214;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationObjective' || '$$.programEvaluationObjectiveTitle=' || NEW."ProgramEvaluationObjectiveTitle"::text || '#' || '$$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 214);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationObjective' || '$.programEvaluationObjectiveTitle=' || NEW."ProgramEvaluationObjectiveTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text), NEW."DocumentId", 214);
     END IF;
     RETURN NEW;
 END;
@@ -42049,7 +42050,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProgramEvaluationObjective_ReferentialIdentity" ON "edfi"."ProgramEvaluationObjective";
 CREATE TRIGGER "TR_ProgramEvaluationObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProgramEvaluationObjective"
+AFTER INSERT OR UPDATE ON "edfi"."ProgramEvaluationObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProgramEvaluationObjective_ReferentialIdentity"();
 
@@ -42167,7 +42168,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 221;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProjectDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 221);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProjectDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 221);
     END IF;
     RETURN NEW;
 END;
@@ -42175,7 +42176,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ProjectDimension_ReferentialIdentity" ON "edfi"."ProjectDimension";
 CREATE TRIGGER "TR_ProjectDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ProjectDimension"
+AFTER INSERT OR UPDATE ON "edfi"."ProjectDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ProjectDimension_ReferentialIdentity"();
 
@@ -42243,7 +42244,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 234;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiReportCard' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 234);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiReportCard' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 234);
     END IF;
     RETURN NEW;
 END;
@@ -42251,7 +42252,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_ReportCard_ReferentialIdentity" ON "edfi"."ReportCard";
 CREATE TRIGGER "TR_ReportCard_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."ReportCard"
+AFTER INSERT OR UPDATE ON "edfi"."ReportCard"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_ReportCard_ReferentialIdentity"();
 
@@ -42369,7 +42370,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 240;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiRestraintEvent' || '$$.restraintEventIdentifier=' || NEW."RestraintEventIdentifier"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 240);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiRestraintEvent' || '$.restraintEventIdentifier=' || NEW."RestraintEventIdentifier"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 240);
     END IF;
     RETURN NEW;
 END;
@@ -42377,7 +42378,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_RestraintEvent_ReferentialIdentity" ON "edfi"."RestraintEvent";
 CREATE TRIGGER "TR_RestraintEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."RestraintEvent"
+AFTER INSERT OR UPDATE ON "edfi"."RestraintEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_RestraintEvent_ReferentialIdentity"();
 
@@ -42603,11 +42604,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 244;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 244);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 244);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."SchoolId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."SchoolId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -42615,7 +42616,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
 CREATE TRIGGER "TR_School_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+AFTER INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
 
@@ -42908,7 +42909,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 250;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchoolYearType' || '$$.schoolYear=' || NEW."SchoolYear"::text), NEW."DocumentId", 250);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchoolYearType' || '$.schoolYear=' || NEW."SchoolYear"::text), NEW."DocumentId", 250);
     END IF;
     RETURN NEW;
 END;
@@ -42916,7 +42917,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolYearType_ReferentialIdentity" ON "edfi"."SchoolYearType";
 CREATE TRIGGER "TR_SchoolYearType_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SchoolYearType"
+AFTER INSERT OR UPDATE ON "edfi"."SchoolYearType"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolYearType_ReferentialIdentity"();
 
@@ -42959,7 +42960,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 251;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSection' || '$$.courseOfferingReference.localCourseCode=' || NEW."CourseOffering_LocalCourseCode"::text || '#' || '$$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SchoolReferenceSchoolId"::text || '#' || '$$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SessionReferenceSchoolId"::text || '#' || '$$.courseOfferingReference.schoolYear=' || NEW."CourseOffering_SchoolYear"::text || '#' || '$$.courseOfferingReference.sessionName=' || NEW."CourseOffering_SessionName"::text || '#' || '$$.sectionIdentifier=' || NEW."SectionIdentifier"::text), NEW."DocumentId", 251);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSection' || '$.courseOfferingReference.localCourseCode=' || NEW."CourseOffering_LocalCourseCode"::text || '#' || '$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SchoolReferenceSchoolId"::text || '#' || '$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SessionReferenceSchoolId"::text || '#' || '$.courseOfferingReference.schoolYear=' || NEW."CourseOffering_SchoolYear"::text || '#' || '$.courseOfferingReference.sessionName=' || NEW."CourseOffering_SessionName"::text || '#' || '$.sectionIdentifier=' || NEW."SectionIdentifier"::text), NEW."DocumentId", 251);
     END IF;
     RETURN NEW;
 END;
@@ -42967,7 +42968,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Section_ReferentialIdentity" ON "edfi"."Section";
 CREATE TRIGGER "TR_Section_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Section"
+AFTER INSERT OR UPDATE ON "edfi"."Section"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Section_ReferentialIdentity"();
 
@@ -43010,7 +43011,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 253;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSectionAttendanceTakenEvent' || '$$.calendarDateReference.calendarCode=' || NEW."CalendarDate_CalendarCode"::text || '#' || '$$.calendarDateReference.date=' || NEW."CalendarDate_Date"::text || '#' || '$$.calendarDateReference.schoolId=' || NEW."CalendarDate_SchoolId"::text || '#' || '$$.calendarDateReference.schoolYear=' || NEW."CalendarDate_SchoolYear"::text || '#' || '$$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$$.sectionReference.sessionName=' || NEW."Section_SessionName"::text), NEW."DocumentId", 253);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSectionAttendanceTakenEvent' || '$.calendarDateReference.calendarCode=' || NEW."CalendarDate_CalendarCode"::text || '#' || '$.calendarDateReference.date=' || NEW."CalendarDate_Date"::text || '#' || '$.calendarDateReference.schoolId=' || NEW."CalendarDate_SchoolId"::text || '#' || '$.calendarDateReference.schoolYear=' || NEW."CalendarDate_SchoolYear"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text), NEW."DocumentId", 253);
     END IF;
     RETURN NEW;
 END;
@@ -43018,7 +43019,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SectionAttendanceTakenEvent_ReferentialIdentity" ON "edfi"."SectionAttendanceTakenEvent";
 CREATE TRIGGER "TR_SectionAttendanceTakenEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SectionAttendanceTakenEvent"
+AFTER INSERT OR UPDATE ON "edfi"."SectionAttendanceTakenEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SectionAttendanceTakenEvent_ReferentialIdentity"();
 
@@ -43186,7 +43187,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 259;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSession' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$$.sessionName=' || NEW."SessionName"::text), NEW."DocumentId", 259);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSession' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.sessionName=' || NEW."SessionName"::text), NEW."DocumentId", 259);
     END IF;
     RETURN NEW;
 END;
@@ -43194,7 +43195,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Session_ReferentialIdentity" ON "edfi"."Session";
 CREATE TRIGGER "TR_Session_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Session"
+AFTER INSERT OR UPDATE ON "edfi"."Session"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Session_ReferentialIdentity"();
 
@@ -43287,7 +43288,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 261;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSourceDimension' || '$$.code=' || NEW."Code"::text || '#' || '$$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 261);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSourceDimension' || '$.code=' || NEW."Code"::text || '#' || '$.fiscalYear=' || NEW."FiscalYear"::text), NEW."DocumentId", 261);
     END IF;
     RETURN NEW;
 END;
@@ -43295,7 +43296,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SourceDimension_ReferentialIdentity" ON "edfi"."SourceDimension";
 CREATE TRIGGER "TR_SourceDimension_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SourceDimension"
+AFTER INSERT OR UPDATE ON "edfi"."SourceDimension"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SourceDimension_ReferentialIdentity"();
 
@@ -43363,7 +43364,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 266;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaff' || '$$.staffUniqueId=' || NEW."StaffUniqueId"::text), NEW."DocumentId", 266);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaff' || '$.staffUniqueId=' || NEW."StaffUniqueId"::text), NEW."DocumentId", 266);
     END IF;
     RETURN NEW;
 END;
@@ -43371,7 +43372,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Staff_ReferentialIdentity" ON "edfi"."Staff";
 CREATE TRIGGER "TR_Staff_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Staff"
+AFTER INSERT OR UPDATE ON "edfi"."Staff"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Staff_ReferentialIdentity"();
 
@@ -43414,7 +43415,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 267;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffAbsenceEvent' || '$$.absenceEventCategoryDescriptor=' || NEW."AbsenceEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 267);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffAbsenceEvent' || '$.absenceEventCategoryDescriptor=' || NEW."AbsenceEventCategoryDescriptor_DescriptorId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 267);
     END IF;
     RETURN NEW;
 END;
@@ -43422,7 +43423,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffAbsenceEvent_ReferentialIdentity" ON "edfi"."StaffAbsenceEvent";
 CREATE TRIGGER "TR_StaffAbsenceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffAbsenceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StaffAbsenceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffAbsenceEvent_ReferentialIdentity"();
 
@@ -43540,7 +43541,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 269;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffCohortAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 269);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffCohortAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 269);
     END IF;
     RETURN NEW;
 END;
@@ -43548,7 +43549,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffCohortAssociation_ReferentialIdentity" ON "edfi"."StaffCohortAssociation";
 CREATE TRIGGER "TR_StaffCohortAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffCohortAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffCohortAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffCohortAssociation_ReferentialIdentity"();
 
@@ -43616,7 +43617,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 270;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffDisciplineIncidentAssociation' || '$$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 270);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffDisciplineIncidentAssociation' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 270);
     END IF;
     RETURN NEW;
 END;
@@ -43624,7 +43625,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity" ON "edfi"."StaffDisciplineIncidentAssociation";
 CREATE TRIGGER "TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffDisciplineIncidentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffDisciplineIncidentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffDisciplineIncidentAssociation_ReferentialIdentity"();
 
@@ -43692,7 +43693,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 271;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationAssignmentAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.staffClassificationDescriptor=' || NEW."StaffClassificationDescriptor_DescriptorId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 271);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationAssignmentAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffClassificationDescriptor=' || NEW."StaffClassificationDescriptor_DescriptorId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 271);
     END IF;
     RETURN NEW;
 END;
@@ -43700,7 +43701,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8" ON "edfi"."StaffEducationOrganizationAssignmentAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationAssignmentAssociation_R_fd7f29aaf8"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationAssignmentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationAssignmentAssociatio_81498b323e"();
 
@@ -43743,7 +43744,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 272;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationContactAssociation' || '$$.contactTitle=' || NEW."ContactTitle"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 272);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationContactAssociation' || '$.contactTitle=' || NEW."ContactTitle"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 272);
     END IF;
     RETURN NEW;
 END;
@@ -43751,7 +43752,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433" ON "edfi"."StaffEducationOrganizationContactAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationContactAssociation_Refe_a37b09c433"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationContactAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationContactAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationContactAssociation_R_9d575d4552"();
 
@@ -43844,7 +43845,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 273;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationEmploymentAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.employmentStatusDescriptor=' || NEW."EmploymentStatusDescriptor_DescriptorId"::text || '#' || '$$.hireDate=' || NEW."HireDate"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 273);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationEmploymentAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.employmentStatusDescriptor=' || NEW."EmploymentStatusDescriptor_DescriptorId"::text || '#' || '$.hireDate=' || NEW."HireDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 273);
     END IF;
     RETURN NEW;
 END;
@@ -43852,7 +43853,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc" ON "edfi"."StaffEducationOrganizationEmploymentAssociation";
 CREATE TRIGGER "TR_StaffEducationOrganizationEmploymentAssociation_R_e30fca76bc"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationEmploymentAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffEducationOrganizationEmploymentAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffEducationOrganizationEmploymentAssociatio_051c566a5d"();
 
@@ -44045,7 +44046,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 275;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffLeave' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.staffLeaveEventCategoryDescriptor=' || NEW."StaffLeaveEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 275);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffLeave' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.staffLeaveEventCategoryDescriptor=' || NEW."StaffLeaveEventCategoryDescriptor_DescriptorId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 275);
     END IF;
     RETURN NEW;
 END;
@@ -44053,7 +44054,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffLeave_ReferentialIdentity" ON "edfi"."StaffLeave";
 CREATE TRIGGER "TR_StaffLeave_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffLeave"
+AFTER INSERT OR UPDATE ON "edfi"."StaffLeave"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffLeave_ReferentialIdentity"();
 
@@ -44146,7 +44147,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 277;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 277);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 277);
     END IF;
     RETURN NEW;
 END;
@@ -44154,7 +44155,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffProgramAssociation_ReferentialIdentity" ON "edfi"."StaffProgramAssociation";
 CREATE TRIGGER "TR_StaffProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffProgramAssociation_ReferentialIdentity"();
 
@@ -44247,7 +44248,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 278;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSchoolAssociation' || '$$.programAssignmentDescriptor=' || NEW."ProgramAssignmentDescriptor_DescriptorId"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 278);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSchoolAssociation' || '$.programAssignmentDescriptor=' || NEW."ProgramAssignmentDescriptor_DescriptorId"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 278);
     END IF;
     RETURN NEW;
 END;
@@ -44255,7 +44256,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffSchoolAssociation_ReferentialIdentity" ON "edfi"."StaffSchoolAssociation";
 CREATE TRIGGER "TR_StaffSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffSchoolAssociation_ReferentialIdentity"();
 
@@ -44348,7 +44349,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 279;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSectionAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 279);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSectionAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 279);
     END IF;
     RETURN NEW;
 END;
@@ -44356,7 +44357,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StaffSectionAssociation_ReferentialIdentity" ON "edfi"."StaffSectionAssociation";
 CREATE TRIGGER "TR_StaffSectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StaffSectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StaffSectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StaffSectionAssociation_ReferentialIdentity"();
 
@@ -44523,11 +44524,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 281;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStateEducationAgency' || '$$.stateEducationAgencyId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 281);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStateEducationAgency' || '$.stateEducationAgencyId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 281);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 95;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 95);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."StateEducationAgencyId"::text), NEW."DocumentId", 95);
     END IF;
     RETURN NEW;
 END;
@@ -44535,7 +44536,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_ReferentialIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 
@@ -44828,7 +44829,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 282;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 282);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudent' || '$.studentUniqueId=' || NEW."StudentUniqueId"::text), NEW."DocumentId", 282);
     END IF;
     RETURN NEW;
 END;
@@ -44836,7 +44837,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Student_ReferentialIdentity" ON "edfi"."Student";
 CREATE TRIGGER "TR_Student_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Student"
+AFTER INSERT OR UPDATE ON "edfi"."Student"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Student_ReferentialIdentity"();
 
@@ -44879,7 +44880,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 283;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAcademicRecord' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$$.termDescriptor=' || NEW."TermDescriptor_DescriptorId"::text), NEW."DocumentId", 283);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAcademicRecord' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.termDescriptor=' || NEW."TermDescriptor_DescriptorId"::text), NEW."DocumentId", 283);
     END IF;
     RETURN NEW;
 END;
@@ -44887,7 +44888,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAcademicRecord_ReferentialIdentity" ON "edfi"."StudentAcademicRecord";
 CREATE TRIGGER "TR_StudentAcademicRecord_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAcademicRecord"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAcademicRecord"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAcademicRecord_ReferentialIdentity"();
 
@@ -45055,7 +45056,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 284;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessment' || '$$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$$.studentAssessmentIdentifier=' || NEW."StudentAssessmentIdentifier"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 284);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessment' || '$.assessmentReference.assessmentIdentifier=' || NEW."Assessment_AssessmentIdentifier"::text || '#' || '$.assessmentReference.namespace=' || NEW."Assessment_Namespace"::text || '#' || '$.studentAssessmentIdentifier=' || NEW."StudentAssessmentIdentifier"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 284);
     END IF;
     RETURN NEW;
 END;
@@ -45063,7 +45064,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessment_ReferentialIdentity" ON "edfi"."StudentAssessment";
 CREATE TRIGGER "TR_StudentAssessment_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessment"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessment_ReferentialIdentity"();
 
@@ -45131,7 +45132,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 285;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentEducationOrganizationAssociation' || '$$.educationOrganizationAssociationTypeDescriptor=' || NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.studentAssessmentReference.assessmentIdentifier=' || NEW."StudentAssessment_AssessmentIdentifier"::text || '#' || '$$.studentAssessmentReference.namespace=' || NEW."StudentAssessment_Namespace"::text || '#' || '$$.studentAssessmentReference.studentAssessmentIdentifier=' || NEW."StudentAssessment_StudentAssessmentIdentifier"::text || '#' || '$$.studentAssessmentReference.studentUniqueId=' || NEW."StudentAssessment_StudentUniqueId"::text), NEW."DocumentId", 285);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentEducationOrganizationAssociation' || '$.educationOrganizationAssociationTypeDescriptor=' || NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentAssessmentReference.assessmentIdentifier=' || NEW."StudentAssessment_AssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.namespace=' || NEW."StudentAssessment_Namespace"::text || '#' || '$.studentAssessmentReference.studentAssessmentIdentifier=' || NEW."StudentAssessment_StudentAssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.studentUniqueId=' || NEW."StudentAssessment_StudentUniqueId"::text), NEW."DocumentId", 285);
     END IF;
     RETURN NEW;
 END;
@@ -45139,7 +45140,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08" ON "edfi"."StudentAssessmentEducationOrganizationAssociation";
 CREATE TRIGGER "TR_StudentAssessmentEducationOrganizationAssociation_502c206e08"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentEducationOrganizationAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentEducationOrganizationAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentEducationOrganizationAssociat_01d00e85ae"();
 
@@ -45232,7 +45233,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 286;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistration' || '$$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$$.studentEducationOrganizationAssociationReference.educationOrganizationId=' || NEW."StudentEducationOrganizationAssociation_EducationOrganizationId"::text || '#' || '$$.studentEducationOrganizationAssociationReference.studentUniqueId=' || NEW."StudentEducationOrganizationAssociation_StudentUniqueId"::text), NEW."DocumentId", 286);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistration' || '$.assessmentAdministrationReference.administrationIdentifier=' || NEW."AssessmentAdministration_AdministrationIdentifier"::text || '#' || '$.assessmentAdministrationReference.assessmentIdentifier=' || NEW."AssessmentAdministration_AssessmentIdentifier"::text || '#' || '$.assessmentAdministrationReference.assigningEducationOrganizationId=' || NEW."AssessmentAdministration_AssigningEducationOrganizationId"::text || '#' || '$.assessmentAdministrationReference.namespace=' || NEW."AssessmentAdministration_Namespace"::text || '#' || '$.studentEducationOrganizationAssociationReference.educationOrganizationId=' || NEW."StudentEducationOrganizationAssociation_EducationOrganizationId"::text || '#' || '$.studentEducationOrganizationAssociationReference.studentUniqueId=' || NEW."StudentEducationOrganizationAssociation_StudentUniqueId"::text), NEW."DocumentId", 286);
     END IF;
     RETURN NEW;
 END;
@@ -45240,7 +45241,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistration_ReferentialIdentity" ON "edfi"."StudentAssessmentRegistration";
 CREATE TRIGGER "TR_StudentAssessmentRegistration_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistration"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistration_ReferentialIdentity"();
 
@@ -45333,7 +45334,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 287;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' || '$$.assessmentBatteryPartReference.assessmentBatteryPartName=' || NEW."AssessmentBatteryPart_AssessmentBatteryPartName"::text || '#' || '$$.assessmentBatteryPartReference.assessmentIdentifier=' || NEW."AssessmentBatteryPart_AssessmentIdentifier"::text || '#' || '$$.assessmentBatteryPartReference.namespace=' || NEW."AssessmentBatteryPart_Namespace"::text || '#' || '$$.studentAssessmentRegistrationReference.administrationIdentifier=' || NEW."StudentAssessmentRegistration_AdministrationIdentifier"::text || '#' || '$$.studentAssessmentRegistrationReference.assessmentIdentifier=' || NEW."StudentAssessmentRegistration_AssessmentIdentifier"::text || '#' || '$$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' || NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId"::text || '#' || '$$.studentAssessmentRegistrationReference.educationOrganizationId=' || NEW."StudentAssessmentRegistration_EducationOrganizationId"::text || '#' || '$$.studentAssessmentRegistrationReference.namespace=' || NEW."StudentAssessmentRegistration_Namespace"::text || '#' || '$$.studentAssessmentRegistrationReference.studentUniqueId=' || NEW."StudentAssessmentRegistration_StudentUniqueId"::text), NEW."DocumentId", 287);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' || '$.assessmentBatteryPartReference.assessmentBatteryPartName=' || NEW."AssessmentBatteryPart_AssessmentBatteryPartName"::text || '#' || '$.assessmentBatteryPartReference.assessmentIdentifier=' || NEW."AssessmentBatteryPart_AssessmentIdentifier"::text || '#' || '$.assessmentBatteryPartReference.namespace=' || NEW."AssessmentBatteryPart_Namespace"::text || '#' || '$.studentAssessmentRegistrationReference.administrationIdentifier=' || NEW."StudentAssessmentRegistration_AdministrationIdentifier"::text || '#' || '$.studentAssessmentRegistrationReference.assessmentIdentifier=' || NEW."StudentAssessmentRegistration_AssessmentIdentifier"::text || '#' || '$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' || NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId"::text || '#' || '$.studentAssessmentRegistrationReference.educationOrganizationId=' || NEW."StudentAssessmentRegistration_EducationOrganizationId"::text || '#' || '$.studentAssessmentRegistrationReference.namespace=' || NEW."StudentAssessmentRegistration_Namespace"::text || '#' || '$.studentAssessmentRegistrationReference.studentUniqueId=' || NEW."StudentAssessmentRegistration_StudentUniqueId"::text), NEW."DocumentId", 287);
     END IF;
     RETURN NEW;
 END;
@@ -45341,7 +45342,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614" ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation";
 CREATE TRIGGER "TR_StudentAssessmentRegistrationBatteryPartAssociati_8a2cfdb614"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentAssessmentRegistrationBatteryPartAssoci_e43562976f"();
 
@@ -45528,11 +45529,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 288;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCTEProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 288);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCTEProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 288);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -45540,7 +45541,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCTEProgramAssociation_ReferentialIdentity" ON "edfi"."StudentCTEProgramAssociation";
 CREATE TRIGGER "TR_StudentCTEProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCTEProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_ReferentialIdentity"();
 
@@ -45633,7 +45634,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 290;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCohortAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 290);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCohortAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.cohortReference.cohortIdentifier=' || NEW."Cohort_CohortIdentifier"::text || '#' || '$.cohortReference.educationOrganizationId=' || NEW."Cohort_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 290);
     END IF;
     RETURN NEW;
 END;
@@ -45641,7 +45642,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCohortAssociation_ReferentialIdentity" ON "edfi"."StudentCohortAssociation";
 CREATE TRIGGER "TR_StudentCohortAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCohortAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCohortAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCohortAssociation_ReferentialIdentity"();
 
@@ -45709,7 +45710,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 291;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCompetencyObjective' || '$$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$$.objectiveCompetencyObjectiveReference.educationOrganizationId=' || NEW."ObjectiveCompetencyObjective_EducationOrganizationId"::text || '#' || '$$.objectiveCompetencyObjectiveReference.objective=' || NEW."ObjectiveCompetencyObjective_Objective"::text || '#' || '$$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' || NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 291);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCompetencyObjective' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"::text || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.objectiveCompetencyObjectiveReference.educationOrganizationId=' || NEW."ObjectiveCompetencyObjective_EducationOrganizationId"::text || '#' || '$.objectiveCompetencyObjectiveReference.objective=' || NEW."ObjectiveCompetencyObjective_Objective"::text || '#' || '$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' || NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 291);
     END IF;
     RETURN NEW;
 END;
@@ -45717,7 +45718,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentCompetencyObjective_ReferentialIdentity" ON "edfi"."StudentCompetencyObjective";
 CREATE TRIGGER "TR_StudentCompetencyObjective_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentCompetencyObjective"
+AFTER INSERT OR UPDATE ON "edfi"."StudentCompetencyObjective"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentCompetencyObjective_ReferentialIdentity"();
 
@@ -45810,7 +45811,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 292;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentContactAssociation' || '$$.contactReference.contactUniqueId=' || NEW."Contact_ContactUniqueId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 292);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentContactAssociation' || '$.contactReference.contactUniqueId=' || NEW."Contact_ContactUniqueId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 292);
     END IF;
     RETURN NEW;
 END;
@@ -45818,7 +45819,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentContactAssociation_ReferentialIdentity" ON "edfi"."StudentContactAssociation";
 CREATE TRIGGER "TR_StudentContactAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentContactAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentContactAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentContactAssociation_ReferentialIdentity"();
 
@@ -45861,7 +45862,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 293;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentBehaviorAssociation' || '$$.behaviorDescriptor=' || NEW."BehaviorDescriptor_DescriptorId"::text || '#' || '$$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 293);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentBehaviorAssociation' || '$.behaviorDescriptor=' || NEW."BehaviorDescriptor_DescriptorId"::text || '#' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 293);
     END IF;
     RETURN NEW;
 END;
@@ -45869,7 +45870,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190" ON "edfi"."StudentDisciplineIncidentBehaviorAssociation";
 CREATE TRIGGER "TR_StudentDisciplineIncidentBehaviorAssociation_Refe_1c447e3190"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentBehaviorAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentBehaviorAssociation_R_062e47dda0"();
 
@@ -45962,7 +45963,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 294;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' || '$$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 294);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 294);
     END IF;
     RETURN NEW;
 END;
@@ -45970,7 +45971,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e" ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation";
 CREATE TRIGGER "TR_StudentDisciplineIncidentNonOffenderAssociation_R_d76c2c802e"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentDisciplineIncidentNonOffenderAssociatio_6adebbb91b"();
 
@@ -46038,7 +46039,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 295;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssessmentAccommodation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 295);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssessmentAccommodation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 295);
     END IF;
     RETURN NEW;
 END;
@@ -46046,7 +46047,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2" ON "edfi"."StudentEducationOrganizationAssessmentAccommodation";
 CREATE TRIGGER "TR_StudentEducationOrganizationAssessmentAccommodati_761f828fb2"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssessmentAccommodation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssessmentAccommodation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssessmentAccommod_de70fa5c7a"();
 
@@ -46114,7 +46115,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 296;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 296);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 296);
     END IF;
     RETURN NEW;
 END;
@@ -46122,7 +46123,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationAssociation_ReferentialIdentity" ON "edfi"."StudentEducationOrganizationAssociation";
 CREATE TRIGGER "TR_StudentEducationOrganizationAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationAssociation_Refere_354f494b67"();
 
@@ -46640,7 +46641,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 297;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationResponsibilityAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.responsibilityDescriptor=' || NEW."ResponsibilityDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 297);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationResponsibilityAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.responsibilityDescriptor=' || NEW."ResponsibilityDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 297);
     END IF;
     RETURN NEW;
 END;
@@ -46648,7 +46649,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b" ON "edfi"."StudentEducationOrganizationResponsibilityAssociation";
 CREATE TRIGGER "TR_StudentEducationOrganizationResponsibilityAssocia_4c079ed73b"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationResponsibilityAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentEducationOrganizationResponsibilityAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentEducationOrganizationResponsibilityAsso_0181c8be0e"();
 
@@ -46691,7 +46692,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 298;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentGradebookEntry' || '$$.gradebookEntryReference.gradebookEntryIdentifier=' || NEW."GradebookEntry_GradebookEntryIdentifier"::text || '#' || '$$.gradebookEntryReference.namespace=' || NEW."GradebookEntry_Namespace"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 298);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentGradebookEntry' || '$.gradebookEntryReference.gradebookEntryIdentifier=' || NEW."GradebookEntry_GradebookEntryIdentifier"::text || '#' || '$.gradebookEntryReference.namespace=' || NEW."GradebookEntry_Namespace"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 298);
     END IF;
     RETURN NEW;
 END;
@@ -46699,7 +46700,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentGradebookEntry_ReferentialIdentity" ON "edfi"."StudentGradebookEntry";
 CREATE TRIGGER "TR_StudentGradebookEntry_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentGradebookEntry"
+AFTER INSERT OR UPDATE ON "edfi"."StudentGradebookEntry"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentGradebookEntry_ReferentialIdentity"();
 
@@ -46742,7 +46743,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 299;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHealth' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 299);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHealth' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 299);
     END IF;
     RETURN NEW;
 END;
@@ -46750,7 +46751,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentHealth_ReferentialIdentity" ON "edfi"."StudentHealth";
 CREATE TRIGGER "TR_StudentHealth_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentHealth"
+AFTER INSERT OR UPDATE ON "edfi"."StudentHealth"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHealth_ReferentialIdentity"();
 
@@ -46912,11 +46913,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 300;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHomelessProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 300);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHomelessProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 300);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -46924,7 +46925,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentHomelessProgramAssociation_ReferentialIdentity" ON "edfi"."StudentHomelessProgramAssociation";
 CREATE TRIGGER "TR_StudentHomelessProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentHomelessProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_ReferentialIdentity"();
 
@@ -47042,7 +47043,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 302;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAssociation' || '$$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 302);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAssociation' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 302);
     END IF;
     RETURN NEW;
 END;
@@ -47050,7 +47051,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentInterventionAssociation_ReferentialIdentity" ON "edfi"."StudentInterventionAssociation";
 CREATE TRIGGER "TR_StudentInterventionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentInterventionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAssociation_ReferentialIdentity"();
 
@@ -47118,7 +47119,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 303;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAttendanceEvent' || '$$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 303);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 303);
     END IF;
     RETURN NEW;
 END;
@@ -47126,7 +47127,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentInterventionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentInterventionAttendanceEvent";
 CREATE TRIGGER "TR_StudentInterventionAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentInterventionAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentInterventionAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentInterventionAttendanceEvent_ReferentialIdentity"();
 
@@ -47188,11 +47189,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 304;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentLanguageInstructionProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 304);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentLanguageInstructionProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 304);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -47200,7 +47201,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3" ON "edfi"."StudentLanguageInstructionProgramAssociation";
 CREATE TRIGGER "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentLanguageInstructionProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssociation_R_df835db007"();
 
@@ -47337,11 +47338,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 305;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentMigrantEducationProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 305);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentMigrantEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 305);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -47349,7 +47350,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb" ON "edfi"."StudentMigrantEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentMigrantEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociation_Refe_6d2fba1afc"();
 
@@ -47461,11 +47462,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 306;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 306);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 306);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -47473,7 +47474,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c" ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation";
 CREATE TRIGGER "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAssociation_d45f1f5f4d"();
 
@@ -47635,11 +47636,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 307;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 307);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 307);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -47647,7 +47648,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramAssociation_ReferentialIdentity" ON "edfi"."StudentProgramAssociation";
 CREATE TRIGGER "TR_StudentProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_ReferentialIdentity"();
 
@@ -47740,7 +47741,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 308;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAttendanceEvent' || '$$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 308);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 308);
     END IF;
     RETURN NEW;
 END;
@@ -47748,7 +47749,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentProgramAttendanceEvent";
 CREATE TRIGGER "TR_StudentProgramAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramAttendanceEvent_ReferentialIdentity"();
 
@@ -47791,7 +47792,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 309;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramEvaluation' || '$$.evaluationDate=' || NEW."EvaluationDate"::text || '#' || '$$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 309);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramEvaluation' || '$.evaluationDate=' || NEW."EvaluationDate"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"::text || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"::text || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 309);
     END IF;
     RETURN NEW;
 END;
@@ -47799,7 +47800,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentProgramEvaluation_ReferentialIdentity" ON "edfi"."StudentProgramEvaluation";
 CREATE TRIGGER "TR_StudentProgramEvaluation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentProgramEvaluation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentProgramEvaluation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentProgramEvaluation_ReferentialIdentity"();
 
@@ -47917,7 +47918,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 310;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.entryDate=' || NEW."EntryDate"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 310);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$.entryDate=' || NEW."EntryDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 310);
     END IF;
     RETURN NEW;
 END;
@@ -47925,7 +47926,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_ReferentialIdentity" ON "edfi"."StudentSchoolAssociation";
 CREATE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();
 
@@ -48018,7 +48019,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 311;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAttendanceEvent' || '$$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$$.sessionReference.sessionName=' || NEW."Session_SessionName"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 311);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 311);
     END IF;
     RETURN NEW;
 END;
@@ -48026,7 +48027,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSchoolAttendanceEvent";
 CREATE TRIGGER "TR_StudentSchoolAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAttendanceEvent_ReferentialIdentity"();
 
@@ -48088,11 +48089,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 312;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolFoodServiceProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 312);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolFoodServiceProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 312);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -48100,7 +48101,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b" ON "edfi"."StudentSchoolFoodServiceProgramAssociation";
 CREATE TRIGGER "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSchoolFoodServiceProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociation_Ref_6bb8851122"();
 
@@ -48212,11 +48213,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 313;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSection504ProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 313);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSection504ProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 313);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -48224,7 +48225,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSection504ProgramAssociation_ReferentialIdentity" ON "edfi"."StudentSection504ProgramAssociation";
 CREATE TRIGGER "TR_StudentSection504ProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSection504ProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_ReferentialIdentity"();
 
@@ -48292,7 +48293,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 314;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 314);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 314);
     END IF;
     RETURN NEW;
 END;
@@ -48300,7 +48301,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSectionAssociation_ReferentialIdentity" ON "edfi"."StudentSectionAssociation";
 CREATE TRIGGER "TR_StudentSectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAssociation_ReferentialIdentity"();
 
@@ -48368,7 +48369,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 315;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAttendanceEvent' || '$$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$$.eventDate=' || NEW."EventDate"::text || '#' || '$$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 315);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || NEW."AttendanceEventCategoryDescriptor_DescriptorId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 315);
     END IF;
     RETURN NEW;
 END;
@@ -48376,7 +48377,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSectionAttendanceEvent_ReferentialIdentity" ON "edfi"."StudentSectionAttendanceEvent";
 CREATE TRIGGER "TR_StudentSectionAttendanceEvent_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSectionAttendanceEvent"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSectionAttendanceEvent"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSectionAttendanceEvent_ReferentialIdentity"();
 
@@ -48463,11 +48464,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 316;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 316);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 316);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -48475,7 +48476,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9" ON "edfi"."StudentSpecialEducationProgramAssociation";
 CREATE TRIGGER "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociation_Refe_db329b6f45"();
 
@@ -48668,7 +48669,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 317;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' || '$$.consentToEvaluationReceivedDate=' || NEW."ConsentToEvaluationReceivedDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 317);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' || '$.consentToEvaluationReceivedDate=' || NEW."ConsentToEvaluationReceivedDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 317);
     END IF;
     RETURN NEW;
 END;
@@ -48676,7 +48677,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f" ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation";
 CREATE TRIGGER "TR_StudentSpecialEducationProgramEligibilityAssociat_ec4993374f"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramEligibilityAssoc_89bc083174"();
 
@@ -48738,11 +48739,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 318;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTitleIPartAProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 318);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTitleIPartAProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 318);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$$.beginDate=' || NEW."BeginDate"::text || '#' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -48750,7 +48751,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity" ON "edfi"."StudentTitleIPartAProgramAssociation";
 CREATE TRIGGER "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentTitleIPartAProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity"();
 
@@ -48843,7 +48844,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 319;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTransportation' || '$$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$$.transportationEducationOrganizationReference.educationOrganizationId=' || NEW."TransportationEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 319);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTransportation' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.transportationEducationOrganizationReference.educationOrganizationId=' || NEW."TransportationEducationOrganization_EducationOrganizationId"::text), NEW."DocumentId", 319);
     END IF;
     RETURN NEW;
 END;
@@ -48851,7 +48852,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StudentTransportation_ReferentialIdentity" ON "edfi"."StudentTransportation";
 CREATE TRIGGER "TR_StudentTransportation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StudentTransportation"
+AFTER INSERT OR UPDATE ON "edfi"."StudentTransportation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentTransportation_ReferentialIdentity"();
 
@@ -48969,7 +48970,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 322;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurvey' || '$$.namespace=' || NEW."Namespace"::text || '#' || '$$.surveyIdentifier=' || NEW."SurveyIdentifier"::text), NEW."DocumentId", 322);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurvey' || '$.namespace=' || NEW."Namespace"::text || '#' || '$.surveyIdentifier=' || NEW."SurveyIdentifier"::text), NEW."DocumentId", 322);
     END IF;
     RETURN NEW;
 END;
@@ -48977,7 +48978,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Survey_ReferentialIdentity" ON "edfi"."Survey";
 CREATE TRIGGER "TR_Survey_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."Survey"
+AFTER INSERT OR UPDATE ON "edfi"."Survey"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Survey_ReferentialIdentity"();
 
@@ -49020,7 +49021,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 324;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyCourseAssociation' || '$$.courseReference.courseCode=' || NEW."Course_CourseCode"::text || '#' || '$$.courseReference.educationOrganizationId=' || NEW."Course_EducationOrganizationId"::text || '#' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 324);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyCourseAssociation' || '$.courseReference.courseCode=' || NEW."Course_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."Course_EducationOrganizationId"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 324);
     END IF;
     RETURN NEW;
 END;
@@ -49028,7 +49029,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyCourseAssociation_ReferentialIdentity" ON "edfi"."SurveyCourseAssociation";
 CREATE TRIGGER "TR_SurveyCourseAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyCourseAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyCourseAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyCourseAssociation_ReferentialIdentity"();
 
@@ -49071,7 +49072,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 326;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyProgramAssociation' || '$$.programReference.educationOrganizationId=' || NEW."Program_EducationOrganizationId"::text || '#' || '$$.programReference.programName=' || NEW."Program_ProgramName"::text || '#' || '$$.programReference.programTypeDescriptor=' || NEW."Program_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 326);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyProgramAssociation' || '$.programReference.educationOrganizationId=' || NEW."Program_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."Program_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || NEW."Program_ProgramTypeDescriptor_DescriptorId"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 326);
     END IF;
     RETURN NEW;
 END;
@@ -49079,7 +49080,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyProgramAssociation_ReferentialIdentity" ON "edfi"."SurveyProgramAssociation";
 CREATE TRIGGER "TR_SurveyProgramAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyProgramAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyProgramAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyProgramAssociation_ReferentialIdentity"();
 
@@ -49122,7 +49123,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 327;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestion' || '$$.questionCode=' || NEW."QuestionCode"::text || '#' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 327);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestion' || '$.questionCode=' || NEW."QuestionCode"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 327);
     END IF;
     RETURN NEW;
 END;
@@ -49130,7 +49131,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyQuestion_ReferentialIdentity" ON "edfi"."SurveyQuestion";
 CREATE TRIGGER "TR_SurveyQuestion_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyQuestion"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestion"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestion_ReferentialIdentity"();
 
@@ -49198,7 +49199,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 328;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestionResponse' || '$$.surveyQuestionReference.namespace=' || NEW."SurveyQuestion_Namespace"::text || '#' || '$$.surveyQuestionReference.questionCode=' || NEW."SurveyQuestion_QuestionCode"::text || '#' || '$$.surveyQuestionReference.surveyIdentifier=' || NEW."SurveyQuestion_SurveyIdentifier"::text || '#' || '$$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 328);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyQuestionResponse' || '$.surveyQuestionReference.namespace=' || NEW."SurveyQuestion_Namespace"::text || '#' || '$.surveyQuestionReference.questionCode=' || NEW."SurveyQuestion_QuestionCode"::text || '#' || '$.surveyQuestionReference.surveyIdentifier=' || NEW."SurveyQuestion_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 328);
     END IF;
     RETURN NEW;
 END;
@@ -49206,7 +49207,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyQuestionResponse_ReferentialIdentity" ON "edfi"."SurveyQuestionResponse";
 CREATE TRIGGER "TR_SurveyQuestionResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyQuestionResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyQuestionResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyQuestionResponse_ReferentialIdentity"();
 
@@ -49324,7 +49325,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 329;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponse' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$$.surveyResponseIdentifier=' || NEW."SurveyResponseIdentifier"::text), NEW."DocumentId", 329);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponse' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$.surveyResponseIdentifier=' || NEW."SurveyResponseIdentifier"::text), NEW."DocumentId", 329);
     END IF;
     RETURN NEW;
 END;
@@ -49332,7 +49333,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponse_ReferentialIdentity" ON "edfi"."SurveyResponse";
 CREATE TRIGGER "TR_SurveyResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponse_ReferentialIdentity"();
 
@@ -49375,7 +49376,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 330;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 330);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 330);
     END IF;
     RETURN NEW;
 END;
@@ -49383,7 +49384,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3" ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation";
 CREATE TRIGGER "TR_SurveyResponseEducationOrganizationTargetAssociat_9770bdcff3"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseEducationOrganizationTargetAssoc_c261f075c0"();
 
@@ -49426,7 +49427,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 331;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseStaffTargetAssociation' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 331);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyResponseStaffTargetAssociation' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text), NEW."DocumentId", 331);
     END IF;
     RETURN NEW;
 END;
@@ -49434,7 +49435,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity" ON "edfi"."SurveyResponseStaffTargetAssociation";
 CREATE TRIGGER "TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveyResponseStaffTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveyResponseStaffTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity"();
 
@@ -49502,7 +49503,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 332;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySection' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$$.surveySectionTitle=' || NEW."SurveySectionTitle"::text), NEW."DocumentId", 332);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySection' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text || '#' || '$.surveySectionTitle=' || NEW."SurveySectionTitle"::text), NEW."DocumentId", 332);
     END IF;
     RETURN NEW;
 END;
@@ -49510,7 +49511,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySection_ReferentialIdentity" ON "edfi"."SurveySection";
 CREATE TRIGGER "TR_SurveySection_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySection"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySection"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySection_ReferentialIdentity"();
 
@@ -49553,7 +49554,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 333;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionAssociation' || '$$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 333);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionAssociation' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 333);
     END IF;
     RETURN NEW;
 END;
@@ -49561,7 +49562,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionAssociation_ReferentialIdentity" ON "edfi"."SurveySectionAssociation";
 CREATE TRIGGER "TR_SurveySectionAssociation_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionAssociation_ReferentialIdentity"();
 
@@ -49604,7 +49605,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 334;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponse' || '$$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text || '#' || '$$.surveySectionReference.namespace=' || NEW."SurveySection_Namespace"::text || '#' || '$$.surveySectionReference.surveyIdentifier=' || NEW."SurveySection_SurveyIdentifier"::text || '#' || '$$.surveySectionReference.surveySectionTitle=' || NEW."SurveySection_SurveySectionTitle"::text), NEW."DocumentId", 334);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponse' || '$.surveyResponseReference.namespace=' || NEW."SurveyResponse_Namespace"::text || '#' || '$.surveyResponseReference.surveyIdentifier=' || NEW."SurveyResponse_SurveyIdentifier"::text || '#' || '$.surveyResponseReference.surveyResponseIdentifier=' || NEW."SurveyResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionReference.namespace=' || NEW."SurveySection_Namespace"::text || '#' || '$.surveySectionReference.surveyIdentifier=' || NEW."SurveySection_SurveyIdentifier"::text || '#' || '$.surveySectionReference.surveySectionTitle=' || NEW."SurveySection_SurveySectionTitle"::text), NEW."DocumentId", 334);
     END IF;
     RETURN NEW;
 END;
@@ -49612,7 +49613,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponse_ReferentialIdentity" ON "edfi"."SurveySectionResponse";
 CREATE TRIGGER "TR_SurveySectionResponse_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponse"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponse"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponse_ReferentialIdentity"();
 
@@ -49687,7 +49688,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 335;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' || '$$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveySectionReferenceNamespace"::text || '#' || '$$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 335);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveySectionReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 335);
     END IF;
     RETURN NEW;
 END;
@@ -49695,7 +49696,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500" ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation";
 CREATE TRIGGER "TR_SurveySectionResponseEducationOrganizationTargetA_f6512e6500"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseEducationOrganizationTarg_7609793e43"();
 
@@ -49706,7 +49707,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 336;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseStaffTargetAssociation' || '$$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveySectionReferenceNamespace"::text || '#' || '$$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 336);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveySectionResponseStaffTargetAssociation' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveyResponseReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.namespace=' || NEW."SurveySectionResponse_SurveySectionReferenceNamespace"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyIdentifier=' || NEW."SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"::text || '#' || '$.surveySectionResponseReference.surveyResponseIdentifier=' || NEW."SurveySectionResponse_SurveyResponseIdentifier"::text || '#' || '$.surveySectionResponseReference.surveySectionTitle=' || NEW."SurveySectionResponse_SurveySectionTitle"::text), NEW."DocumentId", 336);
     END IF;
     RETURN NEW;
 END;
@@ -49714,7 +49715,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69" ON "edfi"."SurveySectionResponseStaffTargetAssociation";
 CREATE TRIGGER "TR_SurveySectionResponseStaffTargetAssociation_Refer_8493fcda69"
-BEFORE INSERT OR UPDATE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
+AFTER INSERT OR UPDATE ON "edfi"."SurveySectionResponseStaffTargetAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SurveySectionResponseStaffTargetAssociation_Re_a36b366b65"();
 

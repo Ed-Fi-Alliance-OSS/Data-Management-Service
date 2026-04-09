@@ -571,6 +571,16 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             {
                 writer.AppendLine(
                     _dialect.RenderNamedPrimaryKeyClause("PK_ReferentialIdentity", [Col("ReferentialId")])
+                        + ","
+                );
+                var uniqueCols = string.Join(
+                    ", ",
+                    new[] { Col("DocumentId"), Col("ResourceKeyId") }.Select(c =>
+                        _dialect.QuoteIdentifier(c.Value)
+                    )
+                );
+                writer.AppendLine(
+                    $"CONSTRAINT {_dialect.QuoteIdentifier("UX_ReferentialIdentity_DocumentId_ResourceKeyId")} UNIQUE ({uniqueCols})"
                 );
             }
         }

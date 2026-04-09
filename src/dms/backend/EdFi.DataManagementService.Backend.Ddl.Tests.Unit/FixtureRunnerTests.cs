@@ -61,6 +61,13 @@ public class Given_FixtureRunner_With_NamingStress_Fixture : DdlGoldenFixtureTes
 }
 
 [TestFixture]
+public class Given_FixtureRunner_With_ReferentialIdentity_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "referential-identity");
+}
+
+[TestFixture]
 public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>

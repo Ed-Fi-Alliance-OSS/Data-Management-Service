@@ -6,6 +6,7 @@
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -120,7 +121,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
-        EmitPeopleAuthViews(writer, authHierarchy);
+        EmitPeopleAuthViews(writer, authHierarchy, concreteResources);
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
 
@@ -520,10 +521,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Keep DELETE in the emitted trigger shape as future-facing prevision for later
         // delete-tracking work, even though DMS-1002 acceptance is centered on
         // INSERT/UPDATE representation stamping.
-        var pgsqlTriggerEvent =
-            trigger.Parameters is TriggerKindParameters.DocumentStamping
-                ? "BEFORE INSERT OR UPDATE OR DELETE ON "
-                : "BEFORE INSERT OR UPDATE ON ";
+        var pgsqlTriggerEvent = trigger.Parameters switch
+        {
+            TriggerKindParameters.DocumentStamping => "BEFORE INSERT OR UPDATE OR DELETE ON ",
+            // Referential identity triggers must be AFTER so that GENERATED ALWAYS STORED
+            // columns (e.g. key-unified alias columns) are already recomputed when the
+            // trigger body reads them.
+            TriggerKindParameters.ReferentialIdentityMaintenance => "AFTER INSERT OR UPDATE ON ",
+            _ => "BEFORE INSERT OR UPDATE ON ",
+        };
         writer.Append(pgsqlTriggerEvent);
         writer.AppendLine(Quote(trigger.Table));
         writer.AppendLine("FOR EACH ROW");
@@ -686,10 +692,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitDocumentStampingBody(writer, trigger, tableModel);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                EmitReferentialIdentityBody(writer, trigger, refId);
+                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var refIdTableModel))
+                {
+                    throw new InvalidOperationException(
+                        $"ReferentialIdentityMaintenance trigger '{trigger.Name.Value}' requires a table model for "
+                            + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+                    );
+                }
+                EmitReferentialIdentityBody(writer, trigger, refIdTableModel, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
-                EmitAbstractIdentityBody(writer, trigger, abstractId);
+                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var abstractIdTableModel))
+                {
+                    throw new InvalidOperationException(
+                        $"AbstractIdentityMaintenance trigger '{trigger.Name.Value}' requires a table model for "
+                            + $"'{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+                    );
+                }
+                EmitAbstractIdentityBody(writer, trigger, abstractIdTableModel, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
                 if (!tableModelsByTableName.TryGetValue(trigger.Table, out var propagationTableModel))
@@ -876,7 +896,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("WHERE del.");
             writer.Append(quotedProbeKeyColumn);
             writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns);
+            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             writer.AppendLine();
             writer.AppendLine("UNION");
             writer.Append("SELECT del.");
@@ -888,7 +908,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("WHERE i.");
             writer.Append(quotedProbeKeyColumn);
             writer.Append(" IS NULL OR ");
-            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns);
+            EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
             writer.AppendLine();
         }
         writer.AppendLine(")");
@@ -950,8 +970,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     {
                         writer.Append(" OR ");
                     }
-                    var col = Quote(trigger.IdentityProjectionColumns[i]);
-                    EmitMssqlNullSafeNotEqual(writer, "i", col, "del", col);
+                    EmitMssqlColumnValueDiffPredicate(
+                        writer,
+                        tableModel,
+                        "i",
+                        "del",
+                        trigger.IdentityProjectionColumns[i]
+                    );
                 }
                 writer.AppendLine(";");
             }
@@ -967,6 +992,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitReferentialIdentityBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
+        DbTableModel tableModel,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
@@ -985,7 +1011,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         else
         {
-            EmitMssqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, refId);
+            EmitMssqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, tableModel, refId);
         }
     }
 
@@ -1102,7 +1128,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" || '#' || ");
             }
-            writer.Append("'$");
+            writer.Append("'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
             EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
@@ -1148,6 +1174,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitMssqlReferentialIdentityBody(
         SqlWriter writer,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
+        DbTableModel tableModel,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
@@ -1156,6 +1183,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitMssqlInsertUpdateDispatch(
             writer,
             identityProjectionColumns,
+            tableModel,
             isInsert => EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, isInsert)
         );
     }
@@ -1282,7 +1310,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" + N'#' + ");
             }
-            writer.Append("N'$");
+            writer.Append("N'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
             EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
@@ -1356,6 +1384,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitAbstractIdentityBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
+        DbTableModel tableModel,
         TriggerKindParameters.AbstractIdentityMaintenance abstractId
     )
     {
@@ -1373,6 +1402,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             EmitMssqlAbstractIdentityBody(
                 writer,
+                tableModel,
                 trigger.IdentityProjectionColumns,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
@@ -1446,6 +1476,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitMssqlAbstractIdentityBody(
         SqlWriter writer,
+        DbTableModel tableModel,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
@@ -1455,6 +1486,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitMssqlInsertUpdateDispatch(
             writer,
             identityProjectionColumns,
+            tableModel,
             isInsert =>
                 EmitMssqlAbstractIdentityUpsert(
                     writer,
@@ -1473,6 +1505,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitMssqlInsertUpdateDispatch(
         SqlWriter writer,
         IReadOnlyList<DbColumnName> identityProjectionColumns,
+        DbTableModel tableModel,
         Action<bool> emitBlock
     )
     {
@@ -1498,7 +1531,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         using (writer.Indent())
         {
-            EmitMssqlValueDiffWorkset(writer, identityProjectionColumns);
+            EmitMssqlValueDiffWorkset(writer, tableModel, identityProjectionColumns);
             emitBlock(false);
         }
 
@@ -1695,17 +1728,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine(documentIdCol);
 
                 // Only update if identity columns actually changed.
-                writer.Append("WHERE ");
+                writer.Append("WHERE (");
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
                     {
                         writer.Append(" OR ");
                     }
-                    var col = Quote(referrer.ColumnMappings[i].SourceColumn);
-                    EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
+                    EmitMssqlColumnValueDiffPredicate(
+                        writer,
+                        tableModel,
+                        "i",
+                        "d",
+                        referrer.ColumnMappings[i].SourceColumn
+                    );
                 }
-                writer.AppendLine();
+                writer.AppendLine(")");
                 writer.Append("AND ");
                 EmitMssqlPropagationOldValueConjunction(writer, referrer.ColumnMappings);
                 writer.AppendLine(";");
@@ -1801,6 +1839,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </remarks>
     private void EmitMssqlValueDiffWorkset(
         SqlWriter writer,
+        DbTableModel tableModel,
         IReadOnlyList<DbColumnName> identityProjectionColumns
     )
     {
@@ -1824,38 +1863,68 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.Append(" OR ");
             }
-            var col = Quote(identityProjectionColumns[i]);
-            EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
+            EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
     }
 
     /// <summary>
-    /// Emits a NULL-safe inequality comparison for MSSQL, equivalent to PostgreSQL's
-    /// <c>IS DISTINCT FROM</c>. Emits <c>(left.col &lt;&gt; right.col OR (left.col IS NULL AND right.col IS NOT NULL) OR (left.col IS NOT NULL AND right.col IS NULL))</c>.
+    /// Emits a NULL-safe inequality comparison for MSSQL.
+    /// For <see cref="ScalarKind.String"/> columns emits
+    /// <c>(CAST(left.col AS varbinary(max)) &lt;&gt; CAST(right.col AS varbinary(max))
+    /// OR (left.col IS NULL AND right.col IS NOT NULL)
+    /// OR (left.col IS NOT NULL AND right.col IS NULL))</c>;
+    /// for all other scalar kinds the <c>CAST</c> wrappers are omitted.
     /// </summary>
     /// <remarks>
-    /// PostgreSQL's <c>IS DISTINCT FROM</c> is a null-safe inequality operator:
-    /// <c>NULL IS DISTINCT FROM NULL</c> returns <c>false</c> (nulls are considered equal),
-    /// and <c>NULL IS DISTINCT FROM value</c> returns <c>true</c>.
-    /// SQL Server lacks this operator, so we expand to the three-part OR expression.
+    /// The <c>CAST(... AS varbinary(max))</c> wrapper on the <c>&lt;&gt;</c> operands ensures
+    /// byte-level comparison, which detects trailing-space-only and case-only changes that
+    /// the default <c>nvarchar</c> comparison misses (ANSI SQL padding ignores trailing
+    /// spaces; the default CI collation ignores case). This mirrors the approach used by
+    /// <c>[dms].[uuidv5]</c>, which hashes raw bytes — so a change that produces a
+    /// different hash must also be detected as a change here.
+    /// Non-text types (int, bigint, decimal, bit, date, datetime, time) are unaffected by
+    /// collation or ANSI padding, so plain <c>&lt;&gt;</c> suffices for those columns.
     /// </remarks>
     private static void EmitMssqlNullSafeNotEqual(
         SqlWriter writer,
         string leftAlias,
         string quotedColumn,
         string rightAlias,
-        string rightQuotedColumn
+        string rightQuotedColumn,
+        ScalarKind? scalarKind
     )
     {
+        // Text columns need CAST(... AS varbinary(max)) to detect trailing-space-only
+        // and case-only changes that the default nvarchar CI collation would miss.
+        // Non-text types (int, bigint, decimal, bit, date, datetime, time) are
+        // unaffected by collation or ANSI padding, so plain <> suffices.
+        bool needsCast = scalarKind == ScalarKind.String;
+
         writer.Append("(");
+        if (needsCast)
+        {
+            writer.Append("CAST(");
+        }
         writer.Append(leftAlias);
         writer.Append(".");
         writer.Append(quotedColumn);
+        if (needsCast)
+        {
+            writer.Append(" AS varbinary(max))");
+        }
         writer.Append(" <> ");
+        if (needsCast)
+        {
+            writer.Append("CAST(");
+        }
         writer.Append(rightAlias);
         writer.Append(".");
         writer.Append(rightQuotedColumn);
+        if (needsCast)
+        {
+            writer.Append(" AS varbinary(max))");
+        }
         writer.Append(" OR (");
         writer.Append(leftAlias);
         writer.Append(".");
@@ -2130,14 +2199,40 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// join structures are not easily generalizable (e.g., Staff joins against two association
     /// tables; Contact goes through Student). See <c>auth.md</c> ("People auth views") for design.
     /// </remarks>
-    private void EmitPeopleAuthViews(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
+    private void EmitPeopleAuthViews(
+        SqlWriter writer,
+        AuthEdOrgHierarchy? authHierarchy,
+        IReadOnlyList<ConcreteResourceModel> concreteResources
+    )
     {
-        // These views assume all five association tables (StudentSchoolAssociation,
-        // StudentContactAssociation, StaffEducationOrganizationAssignmentAssociation,
-        // StaffEducationOrganizationEmploymentAssociation, and
-        // StudentEducationOrganizationResponsibilityAssociation) exist in the target database.
-        // This is guaranteed for any full DS 5.2 deployment that has an auth hierarchy.
+        // Guard: skip when the model does not include all five association resources that
+        // the people auth views join against. This is intentional for synthetic/partial test
+        // models that omit association resources. Emitting views that reference
+        // nonexistent tables would cause SQL deployment failures in those tests.
+        // In any full DS 5.2 deployment these associations are always present, so the guard
+        // is never triggered in production.
         if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        {
+            return;
+        }
+
+        var requiredResourceNames = new[]
+        {
+            "StudentSchoolAssociation",
+            "StudentContactAssociation",
+            "StaffEducationOrganizationAssignmentAssociation",
+            "StaffEducationOrganizationEmploymentAssociation",
+            "StudentEducationOrganizationResponsibilityAssociation",
+        };
+
+        if (
+            !requiredResourceNames.All(requiredResourceName =>
+                concreteResources.Any(r =>
+                    DataModelConstants.IsCoreProjectName(r.ResourceKey.Resource.ProjectName)
+                    && r.ResourceKey.Resource.ResourceName == requiredResourceName
+                )
+            )
+        )
         {
             return;
         }
@@ -2444,6 +2539,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitMssqlColumnValueDiffDisjunction(
         SqlWriter writer,
+        DbTableModel tableModel,
         string leftAlias,
         string rightAlias,
         IReadOnlyList<DbColumnName> columns
@@ -2456,9 +2552,41 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" OR ");
             }
 
-            var quotedColumn = Quote(columns[i]);
-            EmitMssqlNullSafeNotEqual(writer, leftAlias, quotedColumn, rightAlias, quotedColumn);
+            EmitMssqlColumnValueDiffPredicate(writer, tableModel, leftAlias, rightAlias, columns[i]);
         }
+    }
+
+    private void EmitMssqlColumnValueDiffPredicate(
+        SqlWriter writer,
+        DbTableModel tableModel,
+        string leftAlias,
+        string rightAlias,
+        DbColumnName columnName
+    )
+    {
+        var quotedColumn = Quote(columnName);
+        EmitMssqlNullSafeNotEqual(
+            writer,
+            leftAlias,
+            quotedColumn,
+            rightAlias,
+            quotedColumn,
+            GetScalarKind(tableModel, columnName)
+        );
+    }
+
+    private static ScalarKind? GetScalarKind(DbTableModel tableModel, DbColumnName columnName)
+    {
+        var columnModel = tableModel.Columns.FirstOrDefault(column => column.ColumnName == columnName);
+
+        if (columnModel is null)
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName.Value}' was not found on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
+            );
+        }
+
+        return columnModel.ScalarType?.Kind;
     }
 
     private void EmitMssqlPropagationOldValueConjunction(

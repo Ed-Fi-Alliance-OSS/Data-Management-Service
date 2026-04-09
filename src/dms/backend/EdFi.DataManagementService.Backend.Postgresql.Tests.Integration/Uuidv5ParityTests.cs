@@ -100,7 +100,7 @@ public class Given_EdFi_Identity_String : Uuidv5ParityTestBase
 {
     // Mimics a realistic ReferentialIdCalculator input:
     // "{ProjectName}{ResourceName}{DocumentIdentityString}"
-    private const string Name = "Ed-FiSession$$.sessionName=Spring 2025";
+    private const string Name = "Ed-FiSession$.sessionName=Spring 2025";
 
     [SetUp]
     public async Task Setup()
@@ -121,7 +121,7 @@ public class Given_Multi_Part_Identity_String : Uuidv5ParityTestBase
 {
     // Multi-element identity with '#' separator as used by DocumentIdentityString
     private const string Name =
-        "Ed-FiCourseOffering$$.localCourseCode=ALG-1#$$.sessionReference.sessionName=Spring 2025";
+        "Ed-FiCourseOffering$.localCourseCode=ALG-1#$.sessionReference.sessionName=Spring 2025";
 
     [SetUp]
     public async Task Setup()
@@ -208,7 +208,7 @@ public class Given_Whitespace_And_Special_Characters : Uuidv5ParityTestBase
 public class Given_Numeric_Identity_Values : Uuidv5ParityTestBase
 {
     // Numeric identity parts (school IDs, dates, decimals, leading zeros)
-    private const string Name = "Ed-FiLocation$$.schoolReference.schoolId=255901001";
+    private const string Name = "Ed-FiLocation$.schoolReference.schoolId=255901001";
 
     [SetUp]
     public async Task Setup()
@@ -268,7 +268,7 @@ public class Given_Formatting_Edge_Cases : Uuidv5ParityTestBase
 {
     // Dates, decimals, leading zeros, trailing whitespace — all in one string
     private const string Name =
-        "Ed-FiGradingPeriod$$.beginDate=2025-01-01#$$.gradingPeriodDescriptor=uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks#$$.schoolId=00255901";
+        "Ed-FiGradingPeriod$.beginDate=2025-01-01#$.gradingPeriodDescriptor=uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks#$.schoolId=00255901";
 
     [SetUp]
     public async Task Setup()

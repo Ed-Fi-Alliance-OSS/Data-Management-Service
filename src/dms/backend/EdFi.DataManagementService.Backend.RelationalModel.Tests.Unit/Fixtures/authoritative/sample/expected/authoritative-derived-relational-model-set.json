@@ -50241,7 +50241,7 @@
                 "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
@@ -50301,7 +50301,7 @@
                 "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
@@ -51113,7 +51113,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd",
+              "name": "FK_StudentAssessmentRegistration_AssessmentAdministr_a55d509f7f",
               "columns": [
                 "AssessmentAdministration_DocumentId",
                 "AssessmentAdministration_AdministrationIdentifier",
@@ -51133,7 +51133,7 @@
                 "AssigningEducationOrganization_EducationOrganizationId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
@@ -51203,7 +51203,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2",
+              "name": "FK_StudentAssessmentRegistration_ScheduledStudentEdu_f7896c2663",
               "columns": [
                 "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
                 "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
@@ -51219,11 +51219,11 @@
                 "Student_StudentUniqueId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0",
+              "name": "FK_StudentAssessmentRegistration_StudentEducationOrg_08320fab20",
               "columns": [
                 "StudentEducationOrganizationAssociation_DocumentId",
                 "StudentEducationOrganizationAssociation_EducationOrganizationId",
@@ -51239,7 +51239,7 @@
                 "Student_StudentUniqueId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
@@ -52513,7 +52513,7 @@
                 "GraduationSchoolYear_GraduationSchoolYear"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "ForeignKey",
@@ -52958,7 +52958,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_da21c3c238",
               "columns": [
                 "AlternativeGraduationPlan_DocumentId",
                 "AlternativeGraduationPlan_EducationOrganizationId",
@@ -52976,7 +52976,7 @@
                 "GraduationSchoolYear_GraduationSchoolYear"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",

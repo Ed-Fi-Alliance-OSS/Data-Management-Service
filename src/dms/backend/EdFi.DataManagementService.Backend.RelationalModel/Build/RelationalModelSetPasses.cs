@@ -41,6 +41,7 @@ public static class RelationalModelSetPasses
             new AbstractIdentityTableAndUnionViewDerivationPass(),
             new ValidateUnifiedAliasMetadataPass(),
             new RootIdentityConstraintPass(),
+            new TransitiveIdentityMutabilityPass(),
             new ReferenceConstraintPass(),
             new SemanticIdentityCompilationPass(),
             .. collectionSemanticIdentityValidationPasses,

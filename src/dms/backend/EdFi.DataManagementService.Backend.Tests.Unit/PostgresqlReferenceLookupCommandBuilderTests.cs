@@ -101,9 +101,9 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
 
         command.CommandText.Should().Contain("FROM \"edfi\".\"School\" source");
         command.CommandText.Should().Contain("FROM \"edfi\".\"EducationOrganization_View\" source");
-        command.CommandText.Should().Contain("'$$.schoolId='");
-        command.CommandText.Should().Contain("'$$.educationOrganizationId='");
-        command.CommandText.Should().Contain("'$$.descriptor=' || lower(descriptor.\"Uri\")");
+        command.CommandText.Should().Contain("'$.schoolId='");
+        command.CommandText.Should().Contain("'$.educationOrganizationId='");
+        command.CommandText.Should().Contain("'$.descriptor=' || lower(descriptor.\"Uri\")");
     }
 
     [Test]

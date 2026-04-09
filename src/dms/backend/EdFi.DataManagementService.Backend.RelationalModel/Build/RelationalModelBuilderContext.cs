@@ -85,6 +85,13 @@ public sealed class RelationalModelBuilderContext : INameOverrideProvider
     public bool AllowIdentityUpdates { get; set; }
 
     /// <summary>
+    /// Whether identity columns can change transitively — either directly
+    /// (AllowIdentityUpdates) or because the resource's identity includes
+    /// columns from a reference to a transitively-mutable target.
+    /// </summary>
+    public bool TransitivelyAllowIdentityUpdates { get; set; }
+
+    /// <summary>
     /// Document reference mappings derived from <c>documentPathsMapping.referenceJsonPaths</c>.
     /// </summary>
     public IReadOnlyList<DocumentReferenceMapping> DocumentReferenceMappings { get; set; } =

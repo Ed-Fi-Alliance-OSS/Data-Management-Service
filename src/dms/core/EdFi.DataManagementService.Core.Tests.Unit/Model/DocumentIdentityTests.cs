@@ -61,7 +61,7 @@ public class DocumentIdentityTests
         [Test]
         public void It_has_the_correct_referentialId()
         {
-            referentialId.Value.ToString().Should().Be("05374602-2715-517e-8f08-56f877843b57");
+            referentialId.Value.ToString().Should().Be("3af6ad85-1212-5833-be6f-f8df6f4d6402");
         }
     }
 
@@ -88,7 +88,7 @@ public class DocumentIdentityTests
         [Test]
         public void It_has_the_correct_referentialId()
         {
-            referentialId.Value.ToString().Should().Be("9bb7c8d3-7154-5952-9ff3-1766185ca40e");
+            referentialId.Value.ToString().Should().Be("7400934a-8a00-551b-a1ba-4db0b3a4d556");
         }
     }
 }

@@ -92,45 +92,6 @@ SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrga
 FROM "edfi"."StateEducationAgency"
 ;
 
-CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToContactDocumentId" AS
-SELECT DISTINCT
-    edOrg."SourceEducationOrganizationId",
-    sca."Contact_DocumentId"
-FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
-INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa."Student_DocumentId" = sca."Student_DocumentId"
-;
-
-CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStaffDocumentId" AS
-SELECT
-    edOrg."SourceEducationOrganizationId",
-    seoaa."Staff_DocumentId"
-FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa ON edOrg."TargetEducationOrganizationId" = seoaa."EducationOrganization_EducationOrganizationId"
-UNION
-SELECT
-    edOrg."SourceEducationOrganizationId",
-    seoea."Staff_DocumentId"
-FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StaffEducationOrganizationEmploymentAssociation" seoea ON edOrg."TargetEducationOrganizationId" = seoea."EducationOrganization_EducationOrganizationId"
-;
-
-CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentId" AS
-SELECT DISTINCT
-    edOrg."SourceEducationOrganizationId",
-    ssa."Student_DocumentId"
-FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
-;
-
-CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" AS
-SELECT DISTINCT
-    edOrg."SourceEducationOrganizationId",
-    seora."Student_DocumentId"
-FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StudentEducationOrganizationResponsibilityAssociation" seora ON edOrg."TargetEducationOrganizationId" = seora."EducationOrganization_EducationOrganizationId"
-;
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -271,11 +232,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 2);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 2);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
     END IF;
     RETURN NEW;
 END;
@@ -283,7 +244,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
@@ -373,11 +334,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStateEducationAgency' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 3);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStateEducationAgency' || '$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 3);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
     END IF;
     RETURN NEW;
 END;
@@ -385,7 +346,7 @@ $func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_StateEducationAgency_ReferentialIdentity" ON "edfi"."StateEducationAgency";
 CREATE TRIGGER "TR_StateEducationAgency_ReferentialIdentity"
-BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
+AFTER INSERT OR UPDATE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"();
 

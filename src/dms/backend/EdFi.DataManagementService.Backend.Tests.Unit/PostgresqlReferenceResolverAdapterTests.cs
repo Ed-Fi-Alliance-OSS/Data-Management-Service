@@ -32,7 +32,7 @@ public class Given_PostgresqlReferenceResolverAdapter
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
                         ("IsDescriptor", false),
-                        ("VerificationIdentityKey", "$$.schoolId=255901")
+                        ("VerificationIdentityKey", "$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", aliasReferentialId.Value),
@@ -40,7 +40,7 @@ public class Given_PostgresqlReferenceResolverAdapter
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
                         ("IsDescriptor", false),
-                        ("VerificationIdentityKey", "$$.educationOrganizationId=255901")
+                        ("VerificationIdentityKey", "$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
@@ -50,7 +50,7 @@ public class Given_PostgresqlReferenceResolverAdapter
                         ("IsDescriptor", true),
                         (
                             "VerificationIdentityKey",
-                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                         )
                     )
                 ),
@@ -89,14 +89,14 @@ public class Given_PostgresqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     aliasReferentialId,
                     202L,
                     21,
                     30,
                     false,
-                    "$$.educationOrganizationId=255901"
+                    "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
                     descriptorReferentialId,
@@ -104,7 +104,7 @@ public class Given_PostgresqlReferenceResolverAdapter
                     40,
                     40,
                     true,
-                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );
     }
