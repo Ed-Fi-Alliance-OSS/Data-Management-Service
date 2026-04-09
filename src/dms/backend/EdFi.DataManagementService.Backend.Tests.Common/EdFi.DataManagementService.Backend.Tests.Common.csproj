@@ -7,6 +7,10 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql.Tests.Integration" />
+    </ItemGroup>
+    <ItemGroup>
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
         <PackageReference Include="NUnit" />

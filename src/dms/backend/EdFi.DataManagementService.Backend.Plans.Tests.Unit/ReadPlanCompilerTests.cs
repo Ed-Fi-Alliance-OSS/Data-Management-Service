@@ -1922,6 +1922,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: new JsonPathExpression(
+                                "$.schoolReference.schoolId",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolId"),
+                                ]
+                            ),
                             ReferenceJsonPath: new JsonPathExpression(
                                 "$.schoolReference.schoolId",
                                 [
@@ -1932,6 +1939,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                             Column: new DbColumnName("School_RefSchoolId")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: new JsonPathExpression(
+                                "$.schoolReference.schoolYear",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolYear"),
+                                ]
+                            ),
                             ReferenceJsonPath: new JsonPathExpression(
                                 "$.schoolReference.schoolYear",
                                 [
@@ -2267,6 +2281,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.schoolReference.schoolId",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.schoolReference.schoolId",
                                 new JsonPathSegment.Property("schoolReference"),
@@ -2275,6 +2294,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                             Column: new DbColumnName("School_RefSchoolId")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.schoolReference.schoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.schoolReference.schoolYear",
                                 new JsonPathSegment.Property("schoolReference"),
@@ -2296,6 +2320,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.calendarReference.calendarCode",
+                                new JsonPathSegment.Property("calendarReference"),
+                                new JsonPathSegment.Property("calendarCode")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.calendarReference.calendarCode",
                                 new JsonPathSegment.Property("calendarReference"),
@@ -2499,6 +2528,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: CreatePath(
+                        "$.schoolReference.schoolId",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
+                    ),
                     ReferenceJsonPath: CreatePath(
                         "$.schoolReference.schoolId",
                         new JsonPathSegment.Property("schoolReference"),
@@ -2522,6 +2556,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: CreatePath(
+                        "$.addresses[*].calendarReference.calendarCode",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    ),
                     ReferenceJsonPath: CreatePath(
                         "$.addresses[*].calendarReference.calendarCode",
                         new JsonPathSegment.Property("addresses"),
@@ -2547,6 +2588,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: CreatePath(
+                        "$.addresses[*].sessionReference.sessionName",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("sessionReference"),
+                        new JsonPathSegment.Property("sessionName")
+                    ),
                     ReferenceJsonPath: CreatePath(
                         "$.addresses[*].sessionReference.sessionName",
                         new JsonPathSegment.Property("addresses"),
@@ -2673,6 +2721,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.schoolReference.localSchoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("localSchoolYear")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.schoolReference.localSchoolYear",
                                 new JsonPathSegment.Property("schoolReference"),
@@ -2681,6 +2734,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                             Column: new DbColumnName("SchoolYearSecondary")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.schoolReference.schoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.schoolReference.schoolYear",
                                 new JsonPathSegment.Property("schoolReference"),
@@ -2868,14 +2926,17 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdSecondary")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolYearPath,
                             ReferenceJsonPath: schoolYearPath,
                             Column: new DbColumnName("School_RefSchoolYear")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdPrimary")
                         ),
@@ -3153,6 +3214,13 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             IdentityBindings =
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: CreatePath(
+                        "$.addresses[*].schoolReference.schoolId",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
+                    ),
                     ReferenceJsonPath: CreatePath(
                         "$.addresses[*].schoolReference.schoolId",
                         new JsonPathSegment.Property("addresses"),
@@ -3347,6 +3415,11 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IdentityBindings =
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: CreatePath(
+                                "$.schoolReference.localSchoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("localSchoolYear")
+                            ),
                             ReferenceJsonPath: CreatePath(
                                 "$.schoolReference.localSchoolYear",
                                 new JsonPathSegment.Property("schoolReference"),

@@ -96,6 +96,10 @@ internal static class KeyUnificationWritePlanCompiler
                     tableCompilationContext,
                     memberPathColumn
                 );
+                tableCompilationContext.ReferenceDerivedSourceByColumn.TryGetValue(
+                    memberPathColumnName,
+                    out var referenceDerivedSource
+                );
 
                 if (
                     presenceIsSynthetic
@@ -114,6 +118,7 @@ internal static class KeyUnificationWritePlanCompiler
                     keyClass.CanonicalColumn,
                     memberPathColumn,
                     relativePath,
+                    referenceDerivedSource,
                     presenceColumn,
                     presenceBindingIndex,
                     presenceIsSynthetic
@@ -400,11 +405,32 @@ internal static class KeyUnificationWritePlanCompiler
         DbColumnName canonicalColumn,
         DbColumnModel memberPathColumn,
         JsonPathExpression relativePath,
+        ReferenceDerivedValueSourceMetadata? referenceDerivedSource,
         DbColumnName? presenceColumn,
         int? presenceBindingIndex,
         bool presenceIsSynthetic
     )
     {
+        if (referenceDerivedSource is not null)
+        {
+            ReferenceDerivedSourcePathValidator.ValidateOrThrow(
+                "key-unification plan",
+                tableModel.Table,
+                memberPathColumn,
+                "member path column",
+                referenceDerivedSource
+            );
+
+            return new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                MemberPathColumn: memberPathColumn.ColumnName,
+                RelativePath: relativePath,
+                ReferenceSource: referenceDerivedSource,
+                PresenceColumn: presenceColumn,
+                PresenceBindingIndex: presenceBindingIndex,
+                PresenceIsSynthetic: presenceIsSynthetic
+            );
+        }
+
         if (memberPathColumn.Kind is ColumnKind.DescriptorFk)
         {
             if (memberPathColumn.TargetResource is not QualifiedResourceName descriptorResource)

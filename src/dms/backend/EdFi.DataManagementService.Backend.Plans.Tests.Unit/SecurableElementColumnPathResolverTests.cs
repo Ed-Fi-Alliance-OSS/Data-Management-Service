@@ -102,6 +102,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.schoolReference.schoolId"),
+                        Path("$.schoolReference.schoolId"),
                         Col("SchoolReference_SchoolId")
                     ),
                 ]
@@ -165,6 +166,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.schoolReference.schoolId"),
+                        Path("$.schoolReference.schoolId"),
                         Col("SchoolReference_SchoolId")
                     ),
                 ]
@@ -219,6 +221,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "AssessmentAdministration"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.assessmentAdministrationReference.namespace"),
                         Path("$.assessmentAdministrationReference.namespace"),
                         Col("AssessmentAdministration_Namespace")
                     ),
@@ -323,6 +326,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.studentReference.studentUniqueId"),
+                        Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
                 ]
@@ -389,6 +393,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "Contact"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.contactReference.contactUniqueId"),
                         Path("$.contactReference.contactUniqueId"),
                         Col("Contact_ContactUniqueId")
                     ),
@@ -474,6 +479,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.studentAcademicRecordReference.studentUniqueId"),
+                        Path("$.studentAcademicRecordReference.studentUniqueId"),
                         Col("StudentAcademicRecord_StudentUniqueId")
                     ),
                 ]
@@ -487,6 +493,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "Student"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.studentReference.studentUniqueId"),
                         Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
@@ -583,6 +590,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.studentReference.studentUniqueId"),
+                        Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
                 ]
@@ -598,6 +606,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.intermediateReference.studentUniqueId"),
+                        Path("$.intermediateReference.studentUniqueId"),
                         Col("Intermediate_StudentUniqueId")
                     ),
                 ]
@@ -611,6 +620,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "Student"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.studentReference.studentUniqueId"),
                         Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
@@ -699,6 +709,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.staffReference.staffUniqueId"),
+                        Path("$.staffReference.staffUniqueId"),
                         Col("Staff_StaffUniqueId")
                     ),
                 ]
@@ -764,6 +775,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("homograph", "Student"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.studentReference.studentUniqueId"),
                         Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
@@ -857,6 +869,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "School"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.schoolReference.schoolId"),
                         Path("$.schoolReference.schoolId"),
                         Col("SchoolReference_SchoolId")
                     ),
@@ -1017,6 +1030,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.studentReference.studentUniqueId"),
+                        Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),
                 ]
@@ -1085,6 +1099,7 @@ public class Given_SecurableElementColumnPathResolver
                 [
                     new ReferenceIdentityBinding(
                         Path("$.studentAcademicRecordReference.studentUniqueId"),
+                        Path("$.studentAcademicRecordReference.studentUniqueId"),
                         Col("StudentAcademicRecord_StudentUniqueId")
                     ),
                 ]
@@ -1098,6 +1113,7 @@ public class Given_SecurableElementColumnPathResolver
                 new QualifiedResourceName("Ed-Fi", "Student"),
                 [
                     new ReferenceIdentityBinding(
+                        Path("$.studentReference.studentUniqueId"),
                         Path("$.studentReference.studentUniqueId"),
                         Col("Student_StudentUniqueId")
                     ),

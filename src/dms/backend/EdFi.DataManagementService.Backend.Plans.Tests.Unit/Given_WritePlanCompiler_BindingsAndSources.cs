@@ -220,6 +220,137 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_compile_non_unified_propagated_reference_identity_columns_as_reference_derived_sources()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("School_RefSchoolYear"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.ReferenceDerived(
+                    new ReferenceDerivedValueSourceMetadata(
+                        BindingIndex: 0,
+                        ReferenceObjectPath: new JsonPathExpression(
+                            "$.schoolReference",
+                            [new JsonPathSegment.Property("schoolReference")]
+                        ),
+                        IdentityJsonPath: new JsonPathExpression(
+                            "$.schoolYear",
+                            [new JsonPathSegment.Property("schoolYear")]
+                        ),
+                        ReferenceJsonPath: new JsonPathExpression(
+                            "$.schoolReference.schoolYear",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear"),
+                            ]
+                        )
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_compile_descriptor_backed_propagated_reference_identity_columns_as_reference_derived_sources()
+    {
+        var model = ReferenceDerivedWritePlanFixture.CreateDescriptorBackedModel();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("SchoolCategoryDescriptorId"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.ReferenceDerived(
+                    new ReferenceDerivedValueSourceMetadata(
+                        BindingIndex: 0,
+                        ReferenceObjectPath: new JsonPathExpression(
+                            "$.schoolReference",
+                            [new JsonPathSegment.Property("schoolReference")]
+                        ),
+                        IdentityJsonPath: new JsonPathExpression(
+                            "$.schoolCategoryDescriptor",
+                            [new JsonPathSegment.Property("schoolCategoryDescriptor")]
+                        ),
+                        ReferenceJsonPath: new JsonPathExpression(
+                            "$.schoolReference.schoolCategoryDescriptor",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolCategoryDescriptor"),
+                            ]
+                        )
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_preserve_distinct_identity_json_paths_for_duplicate_reference_json_paths()
+    {
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(ReferenceDerivedWritePlanFixture.CreateDuplicateReferenceJsonPathModel())
+            .TablePlansInDependencyOrder.Single();
+
+        var referenceDerivedSources = tablePlan
+            .ColumnBindings.Where(binding => binding.Source is WriteValueSource.ReferenceDerived)
+            .Select(binding =>
+                (
+                    ColumnName: binding.Column.ColumnName.Value,
+                    ReferenceSource: ((WriteValueSource.ReferenceDerived)binding.Source).ReferenceSource
+                )
+            )
+            .ToArray();
+
+        referenceDerivedSources
+            .Select(source =>
+                (
+                    source.ColumnName,
+                    source.ReferenceSource.IdentityJsonPath.Canonical,
+                    source.ReferenceSource.ReferenceJsonPath.Canonical
+                )
+            )
+            .Should()
+            .Equal(
+                (
+                    "EducationOrganizationId",
+                    "$.educationOrganizationId",
+                    "$.educationOrganizationReference.educationOrganizationId"
+                ),
+                (
+                    "LocalEducationAgencyId",
+                    "$.localEducationAgencyId",
+                    "$.educationOrganizationReference.educationOrganizationId"
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_derived_column_source_path_drifts_from_binding_metadata()
+    {
+        var model = ReferenceDerivedWritePlanFixture.WithColumnSourceJsonPath(
+            ReferenceDerivedWritePlanFixture.CreateModel(),
+            "School_RefSchoolYear",
+            "$.schoolReference.localSchoolYear"
+        );
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.ProgramReferenceDerived': reference-derived source mismatch for column 'School_RefSchoolYear'. DbColumnModel.SourceJsonPath '$.schoolReference.localSchoolYear' does not match ReferenceIdentityBinding.ReferenceJsonPath '$.schoolReference.schoolYear'."
+            );
+    }
+
+    [Test]
     public void It_should_treat_document_suffixed_parent_key_parts_as_parent_key_part_sources()
     {
         var model = CreateRootOnlyModelWithDocumentSuffixedParentKeyPart();

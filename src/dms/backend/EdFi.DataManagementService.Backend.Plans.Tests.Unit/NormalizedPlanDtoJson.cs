@@ -384,6 +384,12 @@ internal static class NormalizedPlanDtoJson
                 writer.WriteNumber("binding_index", documentReference.BindingIndex);
                 break;
 
+            case WriteValueSourceDto.ReferenceDerived referenceDerived:
+                writer.WriteString("kind", "reference_derived");
+                writer.WritePropertyName("reference_source");
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
+                break;
+
             case WriteValueSourceDto.DescriptorReference descriptorReference:
                 writer.WriteString("kind", "descriptor_reference");
                 writer.WritePropertyName("descriptor_resource");
@@ -480,6 +486,17 @@ internal static class NormalizedPlanDtoJson
                 writer.WriteBoolean("presence_is_synthetic", descriptor.PresenceIsSynthetic);
                 writer.WritePropertyName("descriptor_resource");
                 WriteQualifiedResourceName(writer, descriptor.DescriptorResource);
+                break;
+
+            case KeyUnificationMemberWritePlanDto.ReferenceDerivedMember referenceDerived:
+                writer.WriteString("kind", "reference_derived");
+                writer.WriteString("member_path_column_name", referenceDerived.MemberPathColumnName);
+                writer.WriteString("relative_path", referenceDerived.RelativePath);
+                WriteNullableString(writer, "presence_column_name", referenceDerived.PresenceColumnName);
+                WriteNullableInt(writer, "presence_binding_index", referenceDerived.PresenceBindingIndex);
+                writer.WriteBoolean("presence_is_synthetic", referenceDerived.PresenceIsSynthetic);
+                writer.WritePropertyName("reference_source");
+                ReferenceDerivedValueSourceJson.Write(writer, referenceDerived.ReferenceSource);
                 break;
 
             default:

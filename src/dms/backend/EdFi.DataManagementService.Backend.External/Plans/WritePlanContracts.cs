@@ -495,6 +495,40 @@ public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource S
 public sealed record CollectionKeyPreallocationPlan(DbColumnName ColumnName, int BindingIndex);
 
 /// <summary>
+/// Identifies one logical value derived from a resolved document-reference site.
+/// </summary>
+/// <param name="BindingIndex">
+/// The authoritative index into <see cref="RelationalResourceModel.DocumentReferenceBindings" /> for the reference
+/// site.
+/// </param>
+/// <param name="ReferenceObjectPath">The canonical reference-object path for the site.</param>
+/// <param name="IdentityJsonPath">The authoritative target-identity path for the derived logical value.</param>
+/// <param name="ReferenceJsonPath">The canonical logical member path under the reference site.</param>
+public sealed record ReferenceDerivedValueSourceMetadata
+{
+    public ReferenceDerivedValueSourceMetadata(
+        int BindingIndex,
+        JsonPathExpression ReferenceObjectPath,
+        JsonPathExpression IdentityJsonPath,
+        JsonPathExpression ReferenceJsonPath
+    )
+    {
+        this.BindingIndex = BindingIndex;
+        this.ReferenceObjectPath = ReferenceObjectPath;
+        this.IdentityJsonPath = IdentityJsonPath;
+        this.ReferenceJsonPath = ReferenceJsonPath;
+    }
+
+    public int BindingIndex { get; init; }
+
+    public JsonPathExpression ReferenceObjectPath { get; init; }
+
+    public JsonPathExpression IdentityJsonPath { get; init; }
+
+    public JsonPathExpression ReferenceJsonPath { get; init; }
+}
+
+/// <summary>
 /// Discriminated union describing where a write-time column value comes from.
 /// </summary>
 public abstract record WriteValueSource
@@ -528,6 +562,14 @@ public abstract record WriteValueSource
     /// </summary>
     /// <param name="BindingIndex">The index into the resource's document-reference binding inventory.</param>
     public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
+
+    /// <summary>
+    /// Uses one logical value derived from an already resolved document-reference site rather than reading request
+    /// JSON directly.
+    /// </summary>
+    /// <param name="ReferenceSource">The authoritative reference-site and logical-member metadata.</param>
+    public sealed record ReferenceDerived(ReferenceDerivedValueSourceMetadata ReferenceSource)
+        : WriteValueSource;
 
     /// <summary>
     /// Resolves a descriptor FK from descriptor metadata and a scope-relative path.
@@ -662,6 +704,37 @@ public abstract record KeyUnificationMemberWritePlan(
         DbColumnName MemberPathColumn,
         JsonPathExpression RelativePath,
         QualifiedResourceName DescriptorResource,
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlan(
+            MemberPathColumn,
+            RelativePath,
+            PresenceColumn,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+
+    /// <summary>
+    /// Reference-derived member source metadata.
+    /// </summary>
+    /// <param name="MemberPathColumn">The member-path binding column.</param>
+    /// <param name="RelativePath">Member value path relative to the table scope.</param>
+    /// <param name="ReferenceSource">
+    /// The authoritative reference-site and logical-member metadata for the derived value.
+    /// </param>
+    /// <param name="PresenceColumn">
+    /// Optional presence gate column used to preserve absent-versus-null semantics.
+    /// </param>
+    /// <param name="PresenceBindingIndex">
+    /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+    /// </param>
+    /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+    public sealed record ReferenceDerivedMember(
+        DbColumnName MemberPathColumn,
+        JsonPathExpression RelativePath,
+        ReferenceDerivedValueSourceMetadata ReferenceSource,
         DbColumnName? PresenceColumn,
         int? PresenceBindingIndex,
         bool PresenceIsSynthetic

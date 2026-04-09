@@ -49,6 +49,21 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_return_concrete_resource_model_when_write_plan_is_omitted()
+    {
+        var actualModel = _mappingSet.GetConcreteResourceModelOrThrow(_descriptorEdgeResource);
+
+        actualModel
+            .Should()
+            .BeSameAs(GetConcreteResourceModelOrThrowByLegacyScan(_mappingSet, _descriptorEdgeResource));
+        actualModel.RelationalModel.DescriptorEdgeSources.Should().ContainSingle();
+        actualModel
+            .RelationalModel.DescriptorEdgeSources[0]
+            .DescriptorValuePath.Canonical.Should()
+            .Be("$.academicSubjectDescriptor");
+    }
+
+    [Test]
     public void It_should_return_read_plan_when_present()
     {
         var expectedPlan = _mappingSet.ReadPlansByResource[_supportedResource];
@@ -291,6 +306,17 @@ public class Given_MappingSetLookupExtensions
     {
         var unknownResource = new QualifiedResourceName("Ed-Fi", "UnknownResource");
         var act = () => _mappingSet.GetWritePlanOrThrow(unknownResource);
+
+        act.Should()
+            .Throw<KeyNotFoundException>()
+            .WithMessage("*does not contain resource*Ed-Fi.UnknownResource*");
+    }
+
+    [Test]
+    public void It_should_throw_deterministic_error_for_unknown_resource_model_lookup()
+    {
+        var unknownResource = new QualifiedResourceName("Ed-Fi", "UnknownResource");
+        var act = () => _mappingSet.GetConcreteResourceModelOrThrow(unknownResource);
 
         act.Should()
             .Throw<KeyNotFoundException>()
@@ -710,6 +736,13 @@ public class Given_MappingSetLookupExtensions
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
                     ReferenceJsonPath: new JsonPathExpression(
                         "$.schoolReference.schoolId",
                         [

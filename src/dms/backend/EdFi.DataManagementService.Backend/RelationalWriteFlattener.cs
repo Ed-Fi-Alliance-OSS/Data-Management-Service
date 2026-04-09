@@ -631,25 +631,29 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             member.RelativePath
         );
 
-        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
-        {
-            return KeyUnificationMemberEvaluation.Absent;
-        }
-
         return member switch
         {
             KeyUnificationMemberWritePlan.ScalarMember scalarMember => EvaluateScalarKeyUnificationMember(
                 tableWritePlan,
                 scalarMember,
                 absolutePath,
-                memberNode
+                scopeNode
             ),
             KeyUnificationMemberWritePlan.DescriptorMember descriptorMember =>
                 EvaluateDescriptorKeyUnificationMember(
                     tableWritePlan,
                     descriptorMember,
                     absolutePath,
-                    memberNode,
+                    scopeNode,
+                    resolvedReferenceLookups,
+                    ordinalPath
+                ),
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceDerivedMember =>
+                EvaluateReferenceDerivedKeyUnificationMember(
+                    tableWritePlan,
+                    referenceDerivedMember,
+                    absolutePath,
+                    scopeNode,
                     resolvedReferenceLookups,
                     ordinalPath
                 ),
@@ -663,27 +667,31 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan.ScalarMember member,
         string absolutePath,
-        JsonNode memberNode
+        JsonNode scopeNode
     )
     {
+        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
+        var conversionContext = CreateKeyUnificationScalarConversionContext(
+            tableWritePlan,
+            member,
+            absolutePath
+        );
+
         if (memberNode is not JsonValue jsonValue)
         {
-            throw CreateInvalidKeyUnificationScalarReadException(
-                tableWritePlan,
-                member,
-                absolutePath,
+            throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
+                member.ScalarType,
                 $"encountered non-scalar JSON node type '{memberNode.GetType().Name}'"
             );
         }
 
         return KeyUnificationMemberEvaluation.Present(
-            ConvertScalarValue(
-                jsonValue,
-                member.ScalarType,
-                tableWritePlan,
-                member.MemberPathColumn,
-                absolutePath
-            )
+            ConvertRequestDerivedJsonValue(jsonValue, member.ScalarType, conversionContext)
         );
     }
 
@@ -691,11 +699,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan.DescriptorMember member,
         string absolutePath,
-        JsonNode memberNode,
+        JsonNode scopeNode,
         FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
         ReadOnlySpan<int> ordinalPath
     )
     {
+        if (!TryGetRelativeLeafNode(scopeNode, member.RelativePath, out var memberNode) || memberNode is null)
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
         if (memberNode is not JsonValue jsonValue || !jsonValue.TryGetValue<string>(out _))
         {
             throw CreateRequestShapeValidationException(
@@ -722,6 +735,43 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return KeyUnificationMemberEvaluation.Present(descriptorId.Value);
+    }
+
+    private static KeyUnificationMemberEvaluation EvaluateReferenceDerivedKeyUnificationMember(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ReferenceDerivedMember member,
+        string absolutePath,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetReferenceObjectNode(
+                tableWritePlan,
+                scopeNode,
+                member.ReferenceSource,
+                out var referenceNode
+            ) || referenceNode is null
+        )
+        {
+            return KeyUnificationMemberEvaluation.Absent;
+        }
+
+        var memberPathColumn = GetRequiredColumnModel(tableWritePlan, member.MemberPathColumn);
+        var concreteAbsolutePath = MaterializeValidationPath(absolutePath, ordinalPath);
+
+        return KeyUnificationMemberEvaluation.Present(
+            ResolveReferenceDerivedLiteralValue(
+                tableWritePlan,
+                memberPathColumn,
+                member.MemberPathColumn,
+                member.ReferenceSource,
+                concreteAbsolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            )
+        );
     }
 
     private static void ValidateKeyUnificationGuardrails(
@@ -827,6 +877,14 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 columnBinding,
                 scalar,
                 scopeNode
+            ),
+            WriteValueSource.ReferenceDerived referenceDerived => ResolveReferenceDerivedValue(
+                tableWritePlan,
+                columnBinding,
+                referenceDerived,
+                scopeNode,
+                resolvedReferenceLookups,
+                ordinalPath
             ),
             WriteValueSource.DocumentReference documentReference => ResolveDocumentReferenceValue(
                 flatteningInput,
@@ -1004,19 +1062,63 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return new FlattenedWriteValue.Literal(null);
         }
 
+        var conversionContext = CreateColumnScalarConversionContext(
+            tableWritePlan,
+            columnBinding.Column.ColumnName,
+            absolutePath
+        );
+
         if (scalarNode is not JsonValue jsonValue)
         {
-            throw CreateInvalidScalarReadException(
-                tableWritePlan,
-                columnBinding,
-                absolutePath,
+            throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
                 scalar.Type,
                 $"encountered non-scalar JSON node type '{scalarNode.GetType().Name}'"
             );
         }
 
         return new FlattenedWriteValue.Literal(
-            ConvertScalarValue(jsonValue, scalar.Type, tableWritePlan, columnBinding, absolutePath)
+            ConvertRequestDerivedJsonValue(jsonValue, scalar.Type, conversionContext)
+        );
+    }
+
+    private static FlattenedWriteValue ResolveReferenceDerivedValue(
+        TableWritePlan tableWritePlan,
+        WriteColumnBinding columnBinding,
+        WriteValueSource.ReferenceDerived referenceDerived,
+        JsonNode scopeNode,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (
+            !TryGetReferenceObjectNode(
+                tableWritePlan,
+                scopeNode,
+                referenceDerived.ReferenceSource,
+                out var referenceNode
+            ) || referenceNode is null
+        )
+        {
+            return new FlattenedWriteValue.Literal(null);
+        }
+
+        var absolutePath = MaterializeValidationPath(
+            columnBinding.Column.SourceJsonPath?.Canonical
+                ?? referenceDerived.ReferenceSource.ReferenceJsonPath.Canonical,
+            ordinalPath
+        );
+
+        return new FlattenedWriteValue.Literal(
+            ResolveReferenceDerivedLiteralValue(
+                tableWritePlan,
+                columnBinding.Column,
+                columnBinding.Column.ColumnName,
+                referenceDerived.ReferenceSource,
+                absolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            )
         );
     }
 
@@ -1334,6 +1436,24 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return TryNavigateRelativeNode(selectedBody, scopeSegments, out scopeNode);
     }
 
+    private static bool TryGetReferenceObjectNode(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        out JsonNode? referenceNode
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(scopeNode);
+        ArgumentNullException.ThrowIfNull(referenceSource);
+
+        return TryNavigateRelativeNode(
+            scopeNode,
+            GetRelativePathWithinScope(tableWritePlan, referenceSource.ReferenceObjectPath),
+            out referenceNode
+        );
+    }
+
     private static IReadOnlyList<JsonPathSegment> GetRelativePathWithinScope(
         TableWritePlan tableWritePlan,
         JsonPathExpression absolutePath
@@ -1379,6 +1499,25 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    private static DbColumnModel GetRequiredColumnModel(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName
+    )
+    {
+        var column = tableWritePlan.TableModel.Columns.FirstOrDefault(modelColumn =>
+            modelColumn.ColumnName.Equals(columnName)
+        );
+
+        if (column is not null)
+        {
+            return column;
+        }
+
+        throw new InvalidOperationException(
+            $"Table '{FormatTable(tableWritePlan)}' does not define column '{columnName.Value}'."
+        );
+    }
+
     private static int[] AppendOrdinalPath(ReadOnlySpan<int> parentOrdinalPath, int ordinal)
     {
         var ordinalPath = new int[parentOrdinalPath.Length + 1];
@@ -1388,88 +1527,151 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return ordinalPath;
     }
 
-    private static object ConvertScalarValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
+    private static object ResolveReferenceDerivedLiteralValue(
         TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        string absolutePath
+        DbColumnModel column,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        string absolutePath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
     )
     {
-        return ConvertScalarValue(
-            jsonValue,
+        return column.Kind switch
+        {
+            ColumnKind.Scalar => ResolveReferenceDerivedScalarValue(
+                tableWritePlan,
+                column,
+                columnName,
+                referenceSource,
+                absolutePath,
+                resolvedReferenceLookups,
+                ordinalPath
+            ),
+            ColumnKind.DescriptorFk => ResolveReferenceDerivedDescriptorValue(
+                tableWritePlan,
+                columnName,
+                referenceSource,
+                ordinalPath,
+                resolvedReferenceLookups
+            ),
+            _ => throw new InvalidOperationException(
+                $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' cannot materialize {nameof(WriteValueSource.ReferenceDerived)} from unsupported column kind '{column.Kind}'."
+            ),
+        };
+    }
+
+    private static object ResolveReferenceDerivedScalarValue(
+        TableWritePlan tableWritePlan,
+        DbColumnModel column,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        string absolutePath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        if (column.ScalarType is not { } scalarType)
+        {
+            throw new InvalidOperationException(
+                $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' cannot materialize {nameof(WriteValueSource.ReferenceDerived)} without scalar type metadata."
+            );
+        }
+
+        var referenceIdentityValue = resolvedReferenceLookups.GetReferenceIdentityValue(
+            referenceSource,
+            columnName,
+            ordinalPath
+        );
+
+        if (referenceIdentityValue is null)
+        {
+            throw CreateMissingReferenceDerivedLookupException(
+                tableWritePlan,
+                columnName,
+                referenceSource,
+                ordinalPath
+            );
+        }
+
+        return ConvertRequestDerivedScalarLiteral(
+            referenceIdentityValue,
             scalarType,
-            tableWritePlan,
-            columnBinding.Column.ColumnName,
-            absolutePath
+            CreateColumnScalarConversionContext(tableWritePlan, columnName, absolutePath),
+            rawValue => $"resolved reference-derived raw value '{rawValue}' could not be converted"
         );
     }
 
-    private static object ConvertScalarValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
+    private static long ResolveReferenceDerivedDescriptorValue(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
-        string absolutePath
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        var descriptorId = resolvedReferenceLookups.GetReferenceIdentityDescriptorId(
+            referenceSource,
+            columnName,
+            ordinalPath
+        );
+
+        if (descriptorId is not null)
+        {
+            return descriptorId.Value;
+        }
+
+        throw CreateMissingReferenceDerivedLookupException(
+            tableWritePlan,
+            columnName,
+            referenceSource,
+            ordinalPath
+        );
+    }
+
+    private static object ConvertRequestDerivedJsonValue(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext
+    )
+    {
+        var scalarLiteral = ReadRequiredRequestDerivedJsonScalarLiteral(
+            jsonValue,
+            scalarType,
+            conversionContext
+        );
+
+        return ConvertRequestDerivedScalarLiteral(
+            scalarLiteral,
+            scalarType,
+            conversionContext,
+            _ =>
+                $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
+        );
+    }
+
+    private static string ReadRequiredRequestDerivedJsonScalarLiteral(
+        JsonValue jsonValue,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext
     )
     {
         return scalarType.Kind switch
         {
-            ScalarKind.String => ReadRequiredJsonValue<string>(
+            ScalarKind.String => ReadRequiredJsonValue<string>(jsonValue, scalarType, conversionContext),
+            ScalarKind.Int32 => ReadRequiredJsonValue<int>(jsonValue, scalarType, conversionContext)
+                .ToString(CultureInfo.InvariantCulture),
+            ScalarKind.Int64 => ReadRequiredJsonValue<long>(jsonValue, scalarType, conversionContext)
+                .ToString(CultureInfo.InvariantCulture),
+            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(jsonValue, scalarType, conversionContext)
+                .ToString(CultureInfo.InvariantCulture),
+            ScalarKind.Boolean => ReadRequiredJsonValue<bool>(jsonValue, scalarType, conversionContext)
+                ? bool.TrueString.ToLowerInvariant()
+                : bool.FalseString.ToLowerInvariant(),
+            ScalarKind.Date or ScalarKind.DateTime or ScalarKind.Time => ReadRequiredJsonValue<string>(
                 jsonValue,
                 scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Int32 => ReadRequiredJsonValue<int>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Int64 => ReadRequiredJsonValue<long>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Decimal => ReadRequiredJsonValue<decimal>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Boolean => ReadRequiredJsonValue<bool>(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Date => ReadDateOnlyValue(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.DateTime => ReadDateTimeValue(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
-            ),
-            ScalarKind.Time => ReadTimeOnlyValue(
-                jsonValue,
-                scalarType,
-                tableWritePlan,
-                columnName,
-                absolutePath
+                conversionContext
             ),
             _ => throw new InvalidOperationException(
                 $"Scalar kind '{scalarType.Kind}' is not supported by the relational write flattener."
@@ -1477,12 +1679,73 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         };
     }
 
+    private static object ConvertRequestDerivedScalarLiteral(
+        string scalarLiteral,
+        RelationalScalarType scalarType,
+        RequestDerivedScalarConversionContext conversionContext,
+        Func<string, string> createInvalidLiteralReason
+    )
+    {
+        ArgumentNullException.ThrowIfNull(scalarLiteral);
+        ArgumentNullException.ThrowIfNull(scalarType);
+        ArgumentNullException.ThrowIfNull(conversionContext);
+        ArgumentNullException.ThrowIfNull(createInvalidLiteralReason);
+
+        return scalarType.Kind switch
+        {
+            ScalarKind.String => scalarLiteral,
+            ScalarKind.Int32
+                when int.TryParse(
+                    scalarLiteral,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var int32Value
+                ) => int32Value,
+            ScalarKind.Int64
+                when long.TryParse(
+                    scalarLiteral,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var int64Value
+                ) => int64Value,
+            ScalarKind.Decimal
+                when decimal.TryParse(
+                    scalarLiteral,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var decimalValue
+                ) => decimalValue,
+            ScalarKind.Boolean when bool.TryParse(scalarLiteral, out var boolValue) => boolValue,
+            ScalarKind.Date
+                when DateOnly.TryParseExact(
+                    scalarLiteral,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var dateOnlyValue
+                ) => dateOnlyValue,
+            ScalarKind.DateTime when TryReadDateTimeValue(scalarLiteral, out var dateTimeValue) =>
+                dateTimeValue,
+            ScalarKind.Time
+                when TimeOnly.TryParseExact(
+                    scalarLiteral,
+                    TimeOnlyFormat,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var timeOnlyValue
+                ) => timeOnlyValue,
+            _ => throw CreateInvalidRequestDerivedScalarException(
+                conversionContext,
+                scalarType,
+                createInvalidLiteralReason(scalarLiteral)
+            ),
+        };
+    }
+
     private static T ReadRequiredJsonValue<T>(
         JsonValue jsonValue,
         RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
+        RequestDerivedScalarConversionContext conversionContext
     )
         where T : notnull
     {
@@ -1491,97 +1754,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return value;
         }
 
-        throw CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
-            scalarType,
-            $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
-        );
-    }
-
-    private static DateOnly ReadDateOnlyValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
-    )
-    {
-        if (
-            jsonValue.TryGetValue<string>(out var rawValue)
-            && DateOnly.TryParseExact(
-                rawValue,
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var dateOnlyValue
-            )
-        )
-        {
-            return dateOnlyValue;
-        }
-
-        throw CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
-            scalarType,
-            $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
-        );
-    }
-
-    private static DateTime ReadDateTimeValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
-    )
-    {
-        if (
-            jsonValue.TryGetValue<string>(out var rawValue)
-            && TryReadDateTimeValue(rawValue, out var dateTimeValue)
-        )
-        {
-            return dateTimeValue;
-        }
-
-        throw CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
-            scalarType,
-            $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
-        );
-    }
-
-    private static TimeOnly ReadTimeOnlyValue(
-        JsonValue jsonValue,
-        RelationalScalarType scalarType,
-        TableWritePlan tableWritePlan,
-        DbColumnName columnName,
-        string absolutePath
-    )
-    {
-        if (
-            jsonValue.TryGetValue<string>(out var rawValue)
-            && TimeOnly.TryParseExact(
-                rawValue,
-                TimeOnlyFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var timeOnlyValue
-            )
-        )
-        {
-            return timeOnlyValue;
-        }
-
-        throw CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnName,
-            absolutePath,
+        throw CreateInvalidRequestDerivedScalarException(
+            conversionContext,
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
         );
@@ -1669,48 +1843,44 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
-        TableWritePlan tableWritePlan,
-        WriteColumnBinding columnBinding,
-        string absolutePath,
-        RelationalScalarType scalarType,
-        string reason
-    )
-    {
-        return CreateInvalidScalarReadException(
-            tableWritePlan,
-            columnBinding.Column.ColumnName,
-            absolutePath,
-            scalarType,
-            reason
-        );
-    }
-
-    private static RelationalWriteRequestValidationException CreateInvalidScalarReadException(
+    private static RequestDerivedScalarConversionContext CreateColumnScalarConversionContext(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
-        string absolutePath,
+        string absolutePath
+    )
+    {
+        return new RequestDerivedScalarConversionContext(
+            AbsolutePath: absolutePath,
+            SubjectDescription: $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}'"
+        );
+    }
+
+    private static RequestDerivedScalarConversionContext CreateKeyUnificationScalarConversionContext(
+        TableWritePlan tableWritePlan,
+        KeyUnificationMemberWritePlan.ScalarMember member,
+        string absolutePath
+    )
+    {
+        return new RequestDerivedScalarConversionContext(
+            AbsolutePath: absolutePath,
+            SubjectDescription: $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}'"
+        );
+    }
+
+    private static RelationalWriteRequestValidationException CreateInvalidRequestDerivedScalarException(
+        RequestDerivedScalarConversionContext conversionContext,
         RelationalScalarType scalarType,
         string reason
     )
     {
+        // Classification boundary:
+        // request-shaped data issues from JSON payloads or resolved reference identity literals become
+        // write-validation failures, while compiled metadata drift and unsupported plan shapes remain
+        // internal invariant breaches.
         return CreateRequestShapeValidationException(
-            absolutePath,
-            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' expected scalar kind '{scalarType.Kind}' at path '{absolutePath}', but {reason}."
-        );
-    }
-
-    private static RelationalWriteRequestValidationException CreateInvalidKeyUnificationScalarReadException(
-        TableWritePlan tableWritePlan,
-        KeyUnificationMemberWritePlan.ScalarMember member,
-        string absolutePath,
-        string reason
-    )
-    {
-        return CreateRequestShapeValidationException(
-            absolutePath,
-            $"Key-unification member '{member.MemberPathColumn.Value}' on table '{FormatTable(tableWritePlan)}' "
-                + $"expected scalar kind '{member.ScalarType.Kind}' at path '{absolutePath}', but {reason}."
+            conversionContext.AbsolutePath,
+            $"{conversionContext.SubjectDescription} expected scalar kind '{scalarType.Kind}' at path "
+                + $"'{conversionContext.AbsolutePath}', but {reason}."
         );
     }
 
@@ -1722,7 +1892,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         return RelationalWriteRequestValidationException.ForPath(path, message);
     }
 
-    private static InvalidOperationException CreateMissingDocumentReferenceLookupException(
+    private static RelationalWriteRequestValidationException CreateMissingDocumentReferenceLookupException(
         TableWritePlan tableWritePlan,
         WriteColumnBinding columnBinding,
         string wildcardPath,
@@ -1732,11 +1902,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var concretePath = MaterializeConcretePath(wildcardPath, ordinalPath);
 
-        return new InvalidOperationException(
-            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' had a document reference value at path "
-                + $"'{concretePath}', but the resolved lookup set did not contain a matching "
-                + $"'{RelationalWriteSupport.FormatResource(targetResource)}' entry for ordinal path "
-                + $"{FormatOrdinalPath(ordinalPath)}."
+        return CreateRequestShapeValidationException(
+            concretePath,
+            $"Column '{columnBinding.Column.ColumnName.Value}' on table '{FormatTable(tableWritePlan)}' could not materialize document reference "
+                + $"'{RelationalWriteSupport.FormatResource(targetResource)}' at path '{concretePath}' because the write request did not produce a matching resolved reference occurrence."
         );
     }
 
@@ -1755,6 +1924,29 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 + $"'{concretePath}', but the resolved lookup set did not contain a matching "
                 + $"'{RelationalWriteSupport.FormatResource(descriptorResource)}' entry for ordinal path "
                 + $"{FormatOrdinalPath(ordinalPath)}."
+        );
+    }
+
+    private static RelationalWriteRequestValidationException CreateMissingReferenceDerivedLookupException(
+        TableWritePlan tableWritePlan,
+        DbColumnName columnName,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        var concreteReferenceValuePath = MaterializeConcretePath(
+            referenceSource.ReferenceJsonPath.Canonical,
+            ordinalPath
+        );
+        var concreteReferenceObjectPath = MaterializeConcretePath(
+            referenceSource.ReferenceObjectPath.Canonical,
+            ordinalPath
+        );
+
+        return CreateRequestShapeValidationException(
+            concreteReferenceValuePath,
+            $"Column '{columnName.Value}' on table '{FormatTable(tableWritePlan)}' could not materialize reference-derived value at path "
+                + $"'{concreteReferenceValuePath}' because reference object '{concreteReferenceObjectPath}' did not produce a matching resolved reference occurrence."
         );
     }
 
@@ -1878,6 +2070,23 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         return concretePath.ToString();
     }
+
+    private static string MaterializeValidationPath(
+        string wildcardOrConcretePath,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardOrConcretePath);
+
+        return ordinalPath.Length > 0 && wildcardOrConcretePath.Contains("[*]", StringComparison.Ordinal)
+            ? MaterializeConcretePath(wildcardOrConcretePath, ordinalPath)
+            : wildcardOrConcretePath;
+    }
+
+    private sealed record RequestDerivedScalarConversionContext(
+        string AbsolutePath,
+        string SubjectDescription
+    );
 
     private sealed record KeyUnificationMemberEvaluation(bool IsPresent, object? Value)
     {

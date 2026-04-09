@@ -1135,7 +1135,7 @@ public class Given_Key_Unification_Canonical_Base_Token_Derivation
             table.Table,
             new DbColumnName("School_DocumentId"),
             new QualifiedResourceName("Ed-Fi", "School"),
-            [new ReferenceIdentityBinding(sourcePath, memberColumn.ColumnName)]
+            [new ReferenceIdentityBinding(sourcePath, sourcePath, memberColumn.ColumnName)]
         );
         IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingByIdentityPath = new Dictionary<
             string,

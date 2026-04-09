@@ -387,6 +387,84 @@ public class Given_MappingSetManifestJsonEmitter
         }
     }
 
+    [Test]
+    public void It_should_emit_reference_derived_write_metadata_in_manifest_output()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Program");
+        var referenceDerivedWritePlan = ReferenceDerivedWritePlanFixture.CreateWritePlan(resource);
+        var mappingSets = BuildPermutedMappingSets(reverseMappingSetOrder: false)
+            .Select(mappingSet => ReplaceWritePlan(mappingSet, resource, referenceDerivedWritePlan))
+            .ToArray();
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var document = JsonNode.Parse(manifest)!.AsObject();
+        var mappingSetNodes = RequireArray(document["mapping_sets"], "mapping_sets");
+
+        foreach (var mappingSetNode in mappingSetNodes)
+        {
+            var mappingSetObject = RequireObject(mappingSetNode, "mapping_sets entry");
+            var resourceNode = FindResource(mappingSetObject, resource.ProjectName, resource.ResourceName);
+            var writePlan = RequireObject(resourceNode["write_plan"], "write_plan");
+            var tablePlan = RequireArray(
+                    writePlan["table_plans_in_dependency_order"],
+                    "table_plans_in_dependency_order"
+                )
+                .Single()!
+                .AsObject();
+            var columnBindings = RequireArray(
+                tablePlan["column_bindings_in_order"],
+                "column_bindings_in_order"
+            );
+            var referenceDerivedBinding = RequireObject(
+                RequireObject(columnBindings[2], "column_bindings_in_order entry")["write_value_source"],
+                "write_value_source"
+            );
+
+            RequireString(referenceDerivedBinding, "kind").Should().Be("reference_derived");
+
+            var referenceSource = RequireObject(
+                referenceDerivedBinding["reference_source"],
+                "reference_source"
+            );
+
+            ManifestJsonNodeValueReader
+                .RequireIntValue(referenceSource["binding_index"], "binding_index")
+                .Should()
+                .Be(0);
+            RequireString(referenceSource, "reference_object_path").Should().Be("$.schoolReference");
+            RequireString(referenceSource, "identity_json_path").Should().Be("$.schoolYear");
+            RequireString(referenceSource, "reference_json_path").Should().Be("$.schoolReference.schoolYear");
+
+            var keyUnificationPlan = RequireObject(
+                RequireArray(tablePlan["key_unification_plans"], "key_unification_plans").Single(),
+                "key_unification_plans entry"
+            );
+            var referenceDerivedMember = RequireObject(
+                RequireArray(keyUnificationPlan["members_in_order"], "members_in_order").Single(),
+                "members_in_order entry"
+            );
+
+            RequireString(referenceDerivedMember, "kind").Should().Be("reference_derived");
+            RequireString(referenceDerivedMember, "member_path_column_name")
+                .Should()
+                .Be("School_RefSchoolIdAlias");
+
+            var memberReferenceSource = RequireObject(
+                referenceDerivedMember["reference_source"],
+                "reference_source"
+            );
+
+            ManifestJsonNodeValueReader
+                .RequireIntValue(memberReferenceSource["binding_index"], "binding_index")
+                .Should()
+                .Be(0);
+            RequireString(memberReferenceSource, "reference_object_path").Should().Be("$.schoolReference");
+            RequireString(memberReferenceSource, "identity_json_path").Should().Be("$.schoolId");
+            RequireString(memberReferenceSource, "reference_json_path")
+                .Should()
+                .Be("$.schoolReference.schoolId");
+        }
+    }
+
     private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(bool reverseMappingSetOrder)
     {
         return BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder);
@@ -430,6 +508,24 @@ public class Given_MappingSetManifestJsonEmitter
         {
             WritePlansByResource = permutedWritePlans,
             ReadPlansByResource = permutedReadPlans,
+        };
+    }
+
+    private static MappingSet ReplaceWritePlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceWritePlan writePlan
+    )
+    {
+        var writePlansByResource = mappingSet.WritePlansByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+        writePlansByResource[resource] = writePlan;
+
+        return mappingSet with
+        {
+            WritePlansByResource = writePlansByResource,
         };
     }
 

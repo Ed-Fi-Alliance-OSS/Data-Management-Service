@@ -349,6 +349,13 @@ public class Given_Relational_Write_Constraint_Resolver
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
+                    new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
                     new DbColumnName("SchoolReference_SchoolId")
                 ),
             ]

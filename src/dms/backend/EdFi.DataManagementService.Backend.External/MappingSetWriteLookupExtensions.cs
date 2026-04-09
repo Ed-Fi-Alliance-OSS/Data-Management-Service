@@ -129,8 +129,8 @@ public static class MappingSetWriteLookupExtensions
     /// <summary>
     /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
     /// </summary>
-    private static ConcreteResourceModel GetConcreteResourceModelOrThrow(
-        MappingSet mappingSet,
+    public static ConcreteResourceModel GetConcreteResourceModelOrThrow(
+        this MappingSet mappingSet,
         QualifiedResourceName resource
     )
     {

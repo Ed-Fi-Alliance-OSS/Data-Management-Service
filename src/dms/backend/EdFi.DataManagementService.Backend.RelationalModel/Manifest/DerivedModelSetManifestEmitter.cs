@@ -571,6 +571,7 @@ public static class DerivedModelSetManifestEmitter
     )
     {
         writer.WriteStartObject();
+        writer.WriteString("identity_json_path", identityBinding.IdentityJsonPath.Canonical);
         writer.WriteString("reference_json_path", identityBinding.ReferenceJsonPath.Canonical);
         writer.WriteString("column", identityBinding.Column.Value);
         writer.WriteEndObject();

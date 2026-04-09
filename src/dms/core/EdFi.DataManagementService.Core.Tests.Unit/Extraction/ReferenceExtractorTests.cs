@@ -10,13 +10,14 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
 [Parallelizable]
-public class ExtractDocumentReferencesTests
+public class ReferenceExtractorTests
 {
     internal static ApiSchemaDocuments BuildApiSchemaDocuments()
     {
@@ -54,10 +55,396 @@ public class ExtractDocumentReferencesTests
             .ToApiSchemaDocuments();
     }
 
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDuplicateReferenceJsonPaths()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Section")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "EducationOrganization",
+                [
+                    new(
+                        "$.educationOrganizationId",
+                        "$.educationOrganizationReference.educationOrganizationId"
+                    ),
+                    new(
+                        "$.localEducationAgencyReference.educationOrganizationId",
+                        "$.educationOrganizationReference.educationOrganizationId"
+                    ),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithPermutedMultiPartReferenceJsonPaths()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Section")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "CourseOffering",
+                [
+                    new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName"),
+                    new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
+                    new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
+                    new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDescriptorValuedReferenceIdentity()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("StudentSchoolAssociation")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "GraduationPlan",
+                [
+                    new("$.educationOrganizationId", "$.graduationPlanReference.educationOrganizationId"),
+                    new(
+                        "$.graduationPlanTypeDescriptor",
+                        "$.graduationPlanReference.graduationPlanTypeDescriptor"
+                    ),
+                    new("$.graduationSchoolYear", "$.graduationPlanReference.graduationSchoolYear"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    internal static ApiSchemaDocuments BuildApiSchemaDocumentsWithDescriptorValuedResourceAndReferenceIdentity()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("GraduationPlan")
+            .WithIdentityJsonPaths([
+                "$.educationOrganizationId",
+                "$.graduationPlanTypeDescriptor",
+                "$.graduationSchoolYear",
+            ])
+            .WithEndResource()
+            .WithStartResource("StudentSchoolAssociation")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "GraduationPlan",
+                [
+                    new("$.educationOrganizationId", "$.graduationPlanReference.educationOrganizationId"),
+                    new(
+                        "$.graduationPlanTypeDescriptor",
+                        "$.graduationPlanReference.graduationPlanTypeDescriptor"
+                    ),
+                    new("$.graduationSchoolYear", "$.graduationPlanReference.graduationSchoolYear"),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    private static DocumentReference ExtractSingleReference(
+        ResourceSchema resourceSchema,
+        string documentBody
+    )
+    {
+        var (documentReferences, _) = resourceSchema.ExtractReferences(
+            JsonNode.Parse(documentBody)!,
+            NullLogger.Instance,
+            ReferenceExtractionMode.RelationalWriteValidation
+        );
+
+        return documentReferences.Should().ContainSingle().Subject;
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_Duplicate_Reference_Json_Paths
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocumentsWithDuplicateReferenceJsonPaths();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var (documentReferences, _) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "educationOrganizationReference": {
+                            "educationOrganizationId": 255901
+                        }
+                    }
+                    """
+                )!,
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
+            );
+
+            _documentReference = documentReferences.Should().ContainSingle().Subject;
+        }
+
+        [Test]
+        public void It_preserves_duplicate_reference_members_in_document_identity_order()
+        {
+            _documentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    ("$.localEducationAgencyReference.educationOrganizationId", "255901")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_referential_id_from_the_preserved_duplicate_identity_order()
+        {
+            _documentReference
+                .ReferentialId.Should()
+                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Descriptor_Valued_Identity_Member
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _lowercaseDocumentReference = null!;
+        private DocumentReference _mixedCaseDocumentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithDescriptorValuedReferenceIdentity();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentSchoolAssociations"
+            );
+
+            _lowercaseDocumentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/graduationplantypedescriptor#foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+
+            _mixedCaseDocumentReference = ExtractSingleReference(
+                resourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+        }
+
+        [Test]
+        public void It_normalizes_descriptor_valued_identity_members_before_building_the_document_identity()
+        {
+            _mixedCaseDocumentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    (
+                        "$.graduationPlanTypeDescriptor",
+                        "uri://ed-fi.org/graduationplantypedescriptor#foundation"
+                    ),
+                    ("$.graduationSchoolYear", "2030")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_same_referential_id_for_mixed_case_and_lowercase_descriptor_values()
+        {
+            _mixedCaseDocumentReference.ReferentialId.Should().Be(_lowercaseDocumentReference.ReferentialId);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_The_Same_Descriptor_Valued_Identity_From_Resource_And_Reference_Payloads
+        : ReferenceExtractorTests
+    {
+        private DocumentIdentity _resourceDocumentIdentity = null!;
+        private DocumentReference _referenceDocumentReference = null!;
+        private ReferentialId _resourceReferentialId;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithDescriptorValuedResourceAndReferenceIdentity();
+            ResourceSchema graduationPlanResourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "graduationPlans"
+            );
+            ResourceSchema studentSchoolAssociationResourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentSchoolAssociations"
+            );
+
+            (_resourceDocumentIdentity, _) = graduationPlanResourceSchema.ExtractIdentities(
+                JsonNode.Parse(
+                    """
+                    {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+                        "graduationSchoolYear": 2030
+                    }
+                    """
+                )!,
+                NullLogger.Instance
+            );
+
+            _referenceDocumentReference = ExtractSingleReference(
+                studentSchoolAssociationResourceSchema,
+                """
+                {
+                    "graduationPlanReference": {
+                        "educationOrganizationId": 255901,
+                        "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#FOUNDATION",
+                        "graduationSchoolYear": 2030
+                    }
+                }
+                """
+            );
+
+            _resourceReferentialId = ReferentialIdFrom(
+                _referenceDocumentReference.ResourceInfo,
+                _resourceDocumentIdentity
+            );
+        }
+
+        [Test]
+        public void It_builds_the_same_canonical_document_identity_from_resource_and_reference_payloads()
+        {
+            var expectedIdentityElements = new[]
+            {
+                ("$.educationOrganizationId", "255901"),
+                ("$.graduationPlanTypeDescriptor", "uri://ed-fi.org/graduationplantypedescriptor#foundation"),
+                ("$.graduationSchoolYear", "2030"),
+            };
+
+            _resourceDocumentIdentity
+                .DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(expectedIdentityElements);
+
+            _referenceDocumentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(expectedIdentityElements);
+
+            _resourceDocumentIdentity
+                .DocumentIdentityElements.Should()
+                .Equal(_referenceDocumentReference.DocumentIdentity.DocumentIdentityElements);
+        }
+
+        [Test]
+        public void It_builds_the_same_referential_id_from_resource_and_reference_payloads()
+        {
+            _resourceReferentialId.Should().Be(_referenceDocumentReference.ReferentialId);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_Permuted_Multi_Part_Reference_Json_Paths
+        : ReferenceExtractorTests
+    {
+        private DocumentReference _documentReference = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument =
+                BuildApiSchemaDocumentsWithPermutedMultiPartReferenceJsonPaths();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var (documentReferences, _) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "courseOfferingReference": {
+                            "localCourseCode": "ELA-1",
+                            "schoolId": 255901,
+                            "schoolYear": 2030,
+                            "sessionName": "Fall Semester"
+                        }
+                    }
+                    """
+                )!,
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
+            );
+
+            _documentReference = documentReferences.Should().ContainSingle().Subject;
+        }
+
+        [Test]
+        public void It_preserves_the_authoritative_reference_json_path_order_in_document_identity()
+        {
+            _documentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.sessionReference.sessionName", "Fall Semester"),
+                    ("$.localCourseCode", "ELA-1"),
+                    ("$.sessionReference.schoolYear", "2030"),
+                    ("$.schoolReference.schoolId", "255901")
+                );
+        }
+
+        [Test]
+        public void It_builds_the_referential_id_from_the_authoritative_reference_json_path_order()
+        {
+            _documentReference
+                .ReferentialId.Should()
+                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_One_As_Scalar_And_Another_As_Collection
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -96,7 +483,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -227,7 +615,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Course_Offering_Reference_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -259,7 +647,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -346,7 +735,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Only_Single_Reference_In_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -373,7 +762,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -432,7 +822,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Empty_Reference_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -453,7 +843,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -467,7 +858,7 @@ public class ExtractDocumentReferencesTests
     [TestFixture]
     [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Class_Period_Reference_Collection_In_Body
-        : ExtractDocumentReferencesTests
+        : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -492,7 +883,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -556,8 +948,317 @@ public class ExtractDocumentReferencesTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Extracting_Document_References_With_No_References_In_Body
-        : ExtractDocumentReferencesTests
+    public class Given_Extracting_Document_References_With_An_Empty_Reference_Object_In_Body
+        : ReferenceExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {}
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_reference_object_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception.ValidationFailures[0].Path.Value.Should().Be("$.courseOfferingReference");
+        }
+
+        [Test]
+        public void It_reports_each_missing_identity_member_in_the_validation_message()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("$.courseOfferingReference.localCourseCode")
+                .And.Contain("$.courseOfferingReference.schoolId")
+                .And.Contain("$.courseOfferingReference.schoolYear")
+                .And.Contain("$.courseOfferingReference.sessionName");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Partial_Nested_Reference_Object_In_Body
+        : ReferenceExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": "Class Period 1"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_nested_reference_object_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception.ValidationFailures[0].Path.Value.Should().Be("$.classPeriods[0].classPeriodReference");
+        }
+
+        [Test]
+        public void It_reports_the_missing_nested_identity_member()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("$.classPeriods[0].classPeriodReference.schoolId");
+        }
+    }
+
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Malformed_Root_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ReferenceExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        $$"""
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {
+                                "localCourseCode": {{_invalidValueJson}},
+                                "schoolId": "23",
+                                "schoolYear": 1234,
+                                "sessionName": "aSessionName"
+                            }
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_invalid_member_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception
+                .ValidationFailures[0]
+                .Path.Value.Should()
+                .Be("$.courseOfferingReference.localCourseCode");
+        }
+
+        [Test]
+        public void It_reports_the_present_member_as_non_scalar()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
+
+    [TestFixture("null", "null")]
+    [TestFixture("{}", "a JSON object")]
+    [TestFixture("[]", "a JSON array")]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_A_Malformed_Nested_Reference_Identity_Member(
+        string _invalidValueJson,
+        string _expectedInvalidValueDescription
+    ) : ReferenceExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        $$"""
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": {{_invalidValueJson}},
+                                        "schoolId": "111"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.RelationalWriteValidation
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_rejects_the_invalid_nested_member_at_its_concrete_path()
+        {
+            _exception.ValidationFailures.Should().ContainSingle();
+            _exception
+                .ValidationFailures[0]
+                .Path.Value.Should()
+                .Be("$.classPeriods[0].classPeriodReference.classPeriodName");
+        }
+
+        [Test]
+        public void It_reports_the_nested_present_member_as_non_scalar()
+        {
+            _exception
+                .ValidationFailures[0]
+                .Message.Should()
+                .Contain("must be a scalar value when present")
+                .And.Contain(_expectedInvalidValueDescription);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_An_Empty_Reference_Object
+        : ReferenceExtractorTests
+    {
+        private InvalidOperationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "courseOfferingReference": {}
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.LegacyCompatibility
+                );
+
+            _exception = act.Should().Throw<InvalidOperationException>().Which;
+        }
+
+        [Test]
+        public void It_preserves_the_pre_relational_identity_count_mismatch_failure()
+        {
+            _exception
+                .Message.Should()
+                .Be(
+                    "Reference 'CourseOffering' at '$.courseOfferingReference': expected 4 identity elements but found 0"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_In_Legacy_Compatibility_Mode_With_A_Malformed_Nested_Reference_Member
+        : ReferenceExtractorTests
+    {
+        private InvalidOperationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+
+            var act = () =>
+                resourceSchema.ExtractReferences(
+                    JsonNode.Parse(
+                        """
+                        {
+                            "sectionIdentifier": "Bob",
+                            "classPeriods": [
+                                {
+                                    "classPeriodReference": {
+                                        "classPeriodName": {},
+                                        "schoolId": "111"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance,
+                    ReferenceExtractionMode.LegacyCompatibility
+                );
+
+            _exception = act.Should().Throw<InvalidOperationException>().Which;
+        }
+
+        [Test]
+        public void It_preserves_the_pre_relational_scalar_coercion_failure()
+        {
+            _exception.Message.Should().Be("Unexpected JSONPath value error");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_No_References_In_Body : ReferenceExtractorTests
     {
         internal DocumentReference[] documentReferences = [];
         internal DocumentReferenceArray[] documentReferenceArrays = [];
@@ -576,7 +1277,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 
@@ -668,7 +1370,8 @@ public class ExtractDocumentReferencesTests
                     }
 """
                 )!,
-                NullLogger.Instance
+                NullLogger.Instance,
+                ReferenceExtractionMode.RelationalWriteValidation
             );
         }
 

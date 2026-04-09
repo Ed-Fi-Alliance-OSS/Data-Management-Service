@@ -264,9 +264,13 @@
                     "column_kind": "scalar",
                     "parameter_name": "school_SchoolId",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.schoolReference.schoolId",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.schoolReference",
+                        "identity_json_path": "$.schoolId",
+                        "reference_json_path": "$.schoolReference.schoolId"
+                      }
                     }
                   },
                   {
@@ -819,9 +823,13 @@
                     "column_kind": "scalar",
                     "parameter_name": "school_SchoolId",
                     "write_value_source": {
-                      "kind": "scalar",
-                      "relative_path": "$.schoolReference.schoolId",
-                      "scalar_kind": "int32"
+                      "kind": "reference_derived",
+                      "reference_source": {
+                        "binding_index": 0,
+                        "reference_object_path": "$.schoolReference",
+                        "identity_json_path": "$.schoolId",
+                        "reference_json_path": "$.schoolReference.schoolId"
+                      }
                     }
                   },
                   {

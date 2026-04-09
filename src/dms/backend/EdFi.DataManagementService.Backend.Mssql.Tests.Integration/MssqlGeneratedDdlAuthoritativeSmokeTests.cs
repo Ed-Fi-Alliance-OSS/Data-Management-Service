@@ -32,6 +32,20 @@ internal sealed record DocumentStampState(
     DateTimeOffset IdentityLastModifiedAt
 );
 
+internal sealed record CourseOfferingSessionReferenceState(
+    long SessionDocumentId,
+    int SchoolIdUnified,
+    int SessionSchoolYear,
+    string SessionSessionName
+);
+
+internal sealed record SurveySessionReferenceState(
+    long SessionDocumentId,
+    int SessionSchoolId,
+    int SchoolYearUnified,
+    string SessionSessionName
+);
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
@@ -583,11 +597,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_stamp_indirect_identity_propagation_changes_via_mssql_trigger_fallback_without_disabling_constraints()
+    public async Task It_should_stamp_indirect_Identity_propagation_changes_via_mssql_trigger_fallback_without_disabling_constraints()
     {
+        const string updatedSessionName = "Fall Updated";
+
+        var beforeCourseOfferingSessionReferenceState = await GetCourseOfferingSessionReferenceStateAsync(
+            _seedData.CourseOfferingDocumentId
+        );
+        var beforeSurveySessionReferenceState = await GetSurveySessionReferenceStateAsync(
+            _seedData.SurveyDocumentId
+        );
         var beforeSession = await GetDocumentStampStateAsync(_seedData.SessionDocumentId);
         var beforeCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
+
+        beforeCourseOfferingSessionReferenceState
+            .Should()
+            .Be(new CourseOfferingSessionReferenceState(_seedData.SessionDocumentId, 100, 2025, "Fall"));
+        beforeSurveySessionReferenceState
+            .Should()
+            .Be(new SurveySessionReferenceState(_seedData.SessionDocumentId, 100, 2025, "Fall"));
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -596,13 +625,26 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SET [SessionName] = @sessionName
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@sessionName", "Fall Updated"),
+            new SqlParameter("@sessionName", updatedSessionName),
             new SqlParameter("@documentId", _seedData.SessionDocumentId)
         );
 
+        var afterCourseOfferingSessionReferenceState = await GetCourseOfferingSessionReferenceStateAsync(
+            _seedData.CourseOfferingDocumentId
+        );
+        var afterSurveySessionReferenceState = await GetSurveySessionReferenceStateAsync(
+            _seedData.SurveyDocumentId
+        );
         var afterSession = await GetDocumentStampStateAsync(_seedData.SessionDocumentId);
         var afterCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var afterSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
+
+        afterCourseOfferingSessionReferenceState
+            .Should()
+            .Be(beforeCourseOfferingSessionReferenceState with { SessionSessionName = updatedSessionName });
+        afterSurveySessionReferenceState
+            .Should()
+            .Be(beforeSurveySessionReferenceState with { SessionSessionName = updatedSessionName });
 
         afterSession.ContentVersion.Should().BeGreaterThan(beforeSession.ContentVersion);
         afterSession.ContentLastModifiedAt.Should().BeAfter(beforeSession.ContentLastModifiedAt);
@@ -1449,6 +1491,58 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
+    private async Task<CourseOfferingSessionReferenceState> GetCourseOfferingSessionReferenceStateAsync(
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT
+                    [Session_DocumentId],
+                    [SchoolId_Unified],
+                    [Session_SchoolYear],
+                    [Session_SessionName]
+                FROM [edfi].[CourseOffering]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["Session_DocumentId"], CultureInfo.InvariantCulture),
+            Convert.ToInt32(row["SchoolId_Unified"], CultureInfo.InvariantCulture),
+            Convert.ToInt32(row["Session_SchoolYear"], CultureInfo.InvariantCulture),
+            ReadRequiredString(row["Session_SessionName"])
+        );
+    }
+
+    private async Task<SurveySessionReferenceState> GetSurveySessionReferenceStateAsync(long documentId)
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT
+                    [Session_DocumentId],
+                    [Session_SchoolId],
+                    [SchoolYear_Unified],
+                    [Session_SessionName]
+                FROM [edfi].[Survey]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return new(
+            Convert.ToInt64(row["Session_DocumentId"], CultureInfo.InvariantCulture),
+            Convert.ToInt32(row["Session_SchoolId"], CultureInfo.InvariantCulture),
+            Convert.ToInt32(row["SchoolYear_Unified"], CultureInfo.InvariantCulture),
+            ReadRequiredString(row["Session_SessionName"])
+        );
+    }
+
     private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
         string schema,
         string table,
@@ -1495,6 +1589,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 $"Unsupported timestamp value type '{value?.GetType().FullName ?? "<null>"}'."
             ),
         };
+    }
+
+    private static string ReadRequiredString(object? value)
+    {
+        return value as string
+            ?? throw new InvalidOperationException(
+                $"Unsupported string value type '{value?.GetType().FullName ?? "<null>"}'."
+            );
     }
 
     private static async Task AssertForeignKeyViolationAsync(Func<Task> act)

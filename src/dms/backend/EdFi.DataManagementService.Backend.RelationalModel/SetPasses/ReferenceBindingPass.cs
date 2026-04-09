@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
@@ -218,7 +219,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     );
 
                     identityBindings.Add(
-                        new ReferenceIdentityBinding(identityBinding.ReferenceJsonPath, descriptorColumnName)
+                        new ReferenceIdentityBinding(
+                            identityBinding.IdentityJsonPath,
+                            identityBinding.ReferenceJsonPath,
+                            descriptorColumnName
+                        )
                     );
 
                     continue;
@@ -264,7 +269,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
                 tableBuilder.AddColumn(scalarColumn, originalColumnName.Value);
                 identityBindings.Add(
-                    new ReferenceIdentityBinding(identityBinding.ReferenceJsonPath, columnName)
+                    new ReferenceIdentityBinding(
+                        identityBinding.IdentityJsonPath,
+                        identityBinding.ReferenceJsonPath,
+                        columnName
+                    )
                 );
             }
 
@@ -364,9 +373,7 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     /// </summary>
     private static bool IsDescriptorIdentityPath(JsonPathExpression identityJsonPath)
     {
-        return identityJsonPath.Segments.Count > 0
-            && identityJsonPath.Segments[^1] is JsonPathSegment.Property property
-            && property.Name.EndsWith("Descriptor", StringComparison.Ordinal);
+        return DocumentIdentity.IsDescriptorIdentityPath(identityJsonPath.Canonical);
     }
 
     /// <summary>

@@ -1159,6 +1159,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             [
                 new ReferenceIdentityBinding(
                     JsonPathExpressionCompiler.Compile("$.ref.identity"),
+                    JsonPathExpressionCompiler.Compile("$.ref.identity"),
                     new DbColumnName(_identifiers.IdentityColumnName)
                 ),
             ]

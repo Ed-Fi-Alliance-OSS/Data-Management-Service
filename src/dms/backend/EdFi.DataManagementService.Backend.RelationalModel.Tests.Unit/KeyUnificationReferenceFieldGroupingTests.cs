@@ -32,13 +32,16 @@ public class Given_KeyUnification_Reference_Field_Grouping
             [
                 new ReferenceIdentityBinding(
                     JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                    JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
                     new DbColumnName("School_SchoolId")
                 ),
                 new ReferenceIdentityBinding(
                     JsonPathExpressionCompiler.Compile("$.schoolReference.educationOrganizationId"),
+                    JsonPathExpressionCompiler.Compile("$.schoolReference.educationOrganizationId"),
                     new DbColumnName("School_EducationOrganizationId")
                 ),
                 new ReferenceIdentityBinding(
+                    JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
                     JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
                     new DbColumnName("SecondarySchool_SchoolId")
                 ),
@@ -109,6 +112,7 @@ public class Given_KeyUnification_Reference_Field_Grouping_With_Duplicate_Paths_
                 [
                     new ReferenceIdentityBinding(
                         duplicatePath,
+                        duplicatePath,
                         new DbColumnName("School_LocalEducationAgencyId")
                     ),
                 ]
@@ -122,6 +126,7 @@ public class Given_KeyUnification_Reference_Field_Grouping_With_Duplicate_Paths_
                 IdentityBindings:
                 [
                     new ReferenceIdentityBinding(
+                        duplicatePath,
                         duplicatePath,
                         new DbColumnName("EducationOrganization_LocalEducationAgencyId")
                     ),

@@ -250,7 +250,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         // due to multiple cascade paths.
         if (context.Dialect == SqlDialect.Mssql)
         {
-            var resourceContextsByResource = BuildResourceContextLookup(context);
+            var resourceContextsByResource = SetPassHelpers.BuildResourceContextLookup(context);
 
             EmitPropagationFallbackTriggers(
                 context,
@@ -410,7 +410,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 // Concrete target must allow identity updates.
                 if (
                     !resourceContextsByResource.TryGetValue(targetResource, out var targetContext)
-                    || !context.GetOrCreateResourceBuilderContext(targetContext).TransitivelyAllowIdentityUpdates
+                    || !context
+                        .GetOrCreateResourceBuilderContext(targetContext)
+                        .TransitivelyAllowIdentityUpdates
                 )
                 {
                     continue;
@@ -597,10 +599,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         foreach (var ib in binding.IdentityBindings)
         {
             if (
-                !identityPathByReferencePath.TryGetValue(
-                    ib.ReferenceJsonPath.Canonical,
-                    out var identityPath
-                )
+                !identityPathByReferencePath.TryGetValue(ib.ReferenceJsonPath.Canonical, out var identityPath)
             )
             {
                 throw new InvalidOperationException(
@@ -837,34 +836,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         }
 
         return mappings.ToArray();
-    }
-
-    /// <summary>
-    /// Builds a lookup from qualified resource name to its concrete schema context (excluding extensions).
-    /// </summary>
-    private static IReadOnlyDictionary<
-        QualifiedResourceName,
-        ConcreteResourceSchemaContext
-    > BuildResourceContextLookup(RelationalModelSetBuilderContext context)
-    {
-        Dictionary<QualifiedResourceName, ConcreteResourceSchemaContext> lookup = new();
-
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
-        {
-            if (IsResourceExtension(resourceContext))
-            {
-                continue;
-            }
-
-            var resource = new QualifiedResourceName(
-                resourceContext.Project.ProjectSchema.ProjectName,
-                resourceContext.ResourceName
-            );
-
-            lookup[resource] = resourceContext;
-        }
-
-        return lookup;
     }
 
     /// <summary>

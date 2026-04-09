@@ -84,6 +84,36 @@ internal static class SetPassHelpers
     }
 
     /// <summary>
+    /// Builds a lookup from qualified resource name to its concrete schema context, excluding resource extensions.
+    /// </summary>
+    internal static IReadOnlyDictionary<
+        QualifiedResourceName,
+        ConcreteResourceSchemaContext
+    > BuildResourceContextLookup(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        Dictionary<QualifiedResourceName, ConcreteResourceSchemaContext> lookup = new();
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            if (IsResourceExtension(resourceContext))
+            {
+                continue;
+            }
+
+            var resource = new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            );
+
+            lookup[resource] = resourceContext;
+        }
+
+        return lookup;
+    }
+
+    /// <summary>
     /// Executes one shared mutation flow for concrete resources and resource extensions, resolving extension
     /// contributions back to the base resource model before applying accumulated mutations.
     /// </summary>

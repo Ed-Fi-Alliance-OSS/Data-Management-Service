@@ -117,6 +117,13 @@ internal sealed record WriteColumnBindingDto(
 
 internal sealed record CollectionKeyPreallocationPlanDto(string ColumnName, int BindingIndex);
 
+internal sealed record ReferenceDerivedValueSourceDto(
+    int BindingIndex,
+    string ReferenceObjectPath,
+    string IdentityJsonPath,
+    string ReferenceJsonPath
+);
+
 internal sealed record CollectionMergePlanDto
 {
     private const string CanonicalSemanticIdentityBindingsPropertyName = "semantic_identity_bindings";
@@ -360,6 +367,9 @@ internal abstract record WriteValueSourceDto
 
     public sealed record DocumentReference(int BindingIndex) : WriteValueSourceDto;
 
+    public sealed record ReferenceDerived(ReferenceDerivedValueSourceDto ReferenceSource)
+        : WriteValueSourceDto;
+
     public sealed record DescriptorReference(
         QualifiedResourceNameDto DescriptorResource,
         string RelativePath,
@@ -419,6 +429,22 @@ internal abstract record KeyUnificationMemberWritePlanDto(
         string MemberPathColumnName,
         string RelativePath,
         QualifiedResourceNameDto DescriptorResource,
+        string? PresenceColumnName,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlanDto(
+            MemberPathColumnName,
+            RelativePath,
+            PresenceColumnName,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+
+    public sealed record ReferenceDerivedMember(
+        string MemberPathColumnName,
+        string RelativePath,
+        ReferenceDerivedValueSourceDto ReferenceSource,
         string? PresenceColumnName,
         int? PresenceBindingIndex,
         bool PresenceIsSynthetic

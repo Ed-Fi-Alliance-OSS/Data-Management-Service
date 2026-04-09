@@ -21,9 +21,28 @@ public class Given_RelationalWriteFlattener
         "Ed-Fi",
         "PresenceGateExample"
     );
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _schoolCategoryDescriptorResource = new(
+        "Ed-Fi",
+        "SchoolCategoryDescriptor"
+    );
+    private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
+        "Ed-Fi",
+        "SchoolTypeDescriptor"
+    );
+    private static readonly BaseResourceInfo _schoolResourceInfo = new(
+        new ProjectName("Ed-Fi"),
+        new ResourceName("School"),
+        false
+    );
     private static readonly BaseResourceInfo _schoolTypeDescriptorResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("SchoolTypeDescriptor"),
+        true
+    );
+    private static readonly BaseResourceInfo _schoolCategoryDescriptorResourceInfo = new(
+        new ProjectName("Ed-Fi"),
+        new ResourceName("SchoolCategoryDescriptor"),
         true
     );
 
@@ -685,7 +704,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_fails_when_a_root_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    public void It_returns_a_validation_failure_when_a_root_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -703,15 +722,18 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Column 'School_DocumentId' on table 'edfi.Student' had a document reference value at path '$.schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path []*"
-            );
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("could not materialize document reference 'Ed-Fi.School' at path '$.schoolReference'");
     }
 
     [Test]
-    public void It_fails_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
+    public void It_returns_a_validation_failure_when_a_nested_document_reference_is_present_but_missing_from_the_resolved_lookup_set()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -739,10 +761,15 @@ public class Given_RelationalWriteFlattener
 
         var act = () => _sut.Flatten(flatteningInput);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Column 'School_DocumentId' on table 'edfi.StudentAddressPeriod' had a document reference value at path '$.addresses[0].periods[0].schoolReference'*resolved lookup set did not contain a matching 'Ed-Fi.School' entry for ordinal path [0, 0]*"
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[0].periods[0].schoolReference");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "could not materialize document reference 'Ed-Fi.School' at path '$.addresses[0].periods[0].schoolReference'"
             );
     }
 
@@ -1004,6 +1031,549 @@ public class Given_RelationalWriteFlattener
             );
     }
 
+    [Test]
+    public void It_populates_direct_reference_derived_bindings_from_resolved_reference_values()
+    {
+        var writePlan = CreateReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.schoolYear", "2026")
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal(2026),
+                new FlattenedWriteValue.Literal(255901)
+            );
+    }
+
+    [Test]
+    public void It_populates_duplicate_scalar_reference_derived_bindings_from_one_logical_reference_path()
+    {
+        var writePlan = CreateDuplicateScalarReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCode": "ignored-body-value"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.localEducationAgencyId", "255902")
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal("255901"),
+                new FlattenedWriteValue.Literal("255902")
+            );
+    }
+
+    [Test]
+    public void It_does_not_silently_swap_duplicate_reference_derived_columns_when_resolved_identity_order_drifts()
+    {
+        // The flattening seam guards the old order-only assumption end to end: same-kind identities
+        // may arrive in a different resolved order, but propagated columns still have to bind by IdentityJsonPath.
+        var writePlan = CreateDuplicateScalarReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCode": "ignored-body-value"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.localEducationAgencyId", "255902"),
+                        ("$.schoolId", "255901")
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal("255901"),
+                new FlattenedWriteValue.Literal("255902")
+            );
+    }
+
+    [Test]
+    public void It_returns_a_validation_failure_when_a_reference_derived_member_is_present_but_missing_from_the_resolved_lookup_set()
+    {
+        var writePlan = CreateReferenceDerivedValueOnlyWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain("could not materialize reference-derived value at path '$.schoolReference.schoolYear'")
+            .And.Contain("reference object '$.schoolReference'");
+    }
+
+    [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_reference_derived_scalar_values()
+    {
+        var writePlan = CreateReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.schoolYear", "not-a-number")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.schoolReference.schoolYear");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32'"
+            )
+            .And.Contain("path '$.schoolReference.schoolYear'")
+            .And.Contain("resolved reference-derived raw value 'not-a-number' could not be converted");
+    }
+
+    [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_nested_reference_derived_scalar_values()
+    {
+        var writePlan = CreateNestedReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-19",
+                          "schoolReference": {
+                            "active": true
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.addresses[0].periods[0].schoolReference",
+                        901L,
+                        ("$.active", "not-a-bool")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception
+            .ValidationFailures[0]
+            .Path.Value.Should()
+            .Be("$.addresses[0].periods[0].schoolReference.active");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Column 'School_RefIsActive' on table 'edfi.StudentNestedReferenceDerivedPeriod' expected scalar kind 'Boolean'"
+            )
+            .And.Contain("path '$.addresses[0].periods[0].schoolReference.active'")
+            .And.Contain("resolved reference-derived raw value 'not-a-bool' could not be converted");
+    }
+
+    [Test]
+    public void It_keeps_missing_reference_derived_scalar_type_metadata_as_an_invariant_breach()
+    {
+        var writePlan = CreateReferenceDerivedWritePlanWithMissingScalarTypeMetadata();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.schoolYear", "1900")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' cannot materialize ReferenceDerived without scalar type metadata.*"
+            );
+    }
+
+    [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_key_unification_scalar_members()
+    {
+        var writePlan = CreateMixedSourceReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "localSchoolId": "not-a-number"
+                }
+                """
+            )!,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.localSchoolId");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Key-unification member 'SchoolId_LocalAlias' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32'"
+            )
+            .And.Contain("path '$.localSchoolId'")
+            .And.Contain("encountered JSON value kind 'String' with raw value \"not-a-number\"");
+    }
+
+    private static DbColumnModel CreateTestColumn(
+        string columnName,
+        ColumnKind kind,
+        RelationalScalarType? scalarType,
+        bool isNullable,
+        JsonPathExpression? sourceJsonPath = null,
+        QualifiedResourceName? targetResource = null
+    )
+    {
+        return new DbColumnModel(
+            ColumnName: new DbColumnName(columnName),
+            Kind: kind,
+            ScalarType: scalarType,
+            IsNullable: isNullable,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: targetResource,
+            Storage: new ColumnStorage.Stored()
+        );
+    }
+
+    [Test]
+    public void It_populates_descriptor_backed_reference_derived_bindings_on_create()
+    {
+        var writePlan = CreateDescriptorBackedReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.CreateNew(_fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCategoryDescriptor": "uri://ed-fi.org/schoolcategorydescriptor#body"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        (
+                            DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                            "uri://ed-fi.org/schoolcategorydescriptor#resolved"
+                        )
+                    ),
+                ],
+                descriptorReferences:
+                [
+                    CreateResolvedSchoolCategoryDescriptorReference(
+                        "$.schoolReference.schoolCategoryDescriptor",
+                        501L,
+                        "uri://ed-fi.org/schoolcategorydescriptor#resolved"
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.Values[0].Should().BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        result.RootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(901L));
+        result.RootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal(501L));
+    }
+
+    [Test]
+    public void It_populates_duplicate_scalar_and_descriptor_reference_derived_bindings_from_one_logical_reference_path()
+    {
+        var writePlan = CreateDuplicateDescriptorReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCategory": "uri://ed-fi.org/schooltypedescriptor#body"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolCategoryCode", "255901"),
+                        (
+                            DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                            "uri://ed-fi.org/schooltypedescriptor#resolved"
+                        )
+                    ),
+                ],
+                descriptorReferences:
+                [
+                    CreateResolvedSchoolTypeDescriptorReference(
+                        "$.schoolReference.schoolCategory",
+                        501L,
+                        "uri://ed-fi.org/schooltypedescriptor#resolved"
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal("255901"),
+                new FlattenedWriteValue.Literal(501L)
+            );
+    }
+
+    [Test]
+    public void It_populates_reference_derived_key_unification_members_from_resolved_reference_values()
+    {
+        var writePlan = CreateDescriptorBackedKeyUnificationReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCategoryDescriptor": "uri://ed-fi.org/schoolcategorydescriptor#body"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        (
+                            DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                            "uri://ed-fi.org/schoolcategorydescriptor#resolved"
+                        )
+                    ),
+                ],
+                descriptorReferences:
+                [
+                    CreateResolvedSchoolCategoryDescriptorReference(
+                        "$.schoolReference.schoolCategoryDescriptor",
+                        501L,
+                        "uri://ed-fi.org/schoolcategorydescriptor#resolved"
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal(501L)
+            );
+    }
+
+    [Test]
+    public void It_treats_absent_reference_derived_members_as_semantically_absent_for_key_unification()
+    {
+        var writePlan = CreateMixedSourceReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "localSchoolId": 42
+                }
+                """
+            )!,
+            FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(null),
+                new FlattenedWriteValue.Literal(42)
+            );
+    }
+
     private static ResourceWritePlan CreatePresenceGateExampleWritePlan()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
@@ -1160,6 +1730,1495 @@ public class Given_RelationalWriteFlattener
         );
 
         return new ResourceWritePlan(resourceModel, [rootPlan]);
+    }
+
+    private static ResourceWritePlan CreateReferenceDerivedWritePlan()
+    {
+        return CreateReferenceDerivedWritePlan(CreateReferenceDerivedModel());
+    }
+
+    private static ResourceWritePlan CreateReferenceDerivedValueOnlyWritePlan()
+    {
+        var model = CreateReferenceDerivedModel();
+        var table = model.Root;
+
+        DbColumnModel Column(string name)
+        {
+            return table.Columns.Single(column =>
+                string.Equals(column.ColumnName.Value, name, StringComparison.Ordinal)
+            );
+        }
+
+        return new ResourceWritePlan(
+            Model: model,
+            TablePlansInDependencyOrder:
+            [
+                new TableWritePlan(
+                    TableModel: table,
+                    InsertSql: "INSERT INTO [edfi].[ProgramReferenceDerived] ([DocumentId], [School_RefSchoolYear]) VALUES (@documentId, @schoolRefSchoolYear);",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(
+                        MaxRowsPerBatch: 525,
+                        ParametersPerRow: 2,
+                        MaxParametersPerCommand: 2100
+                    ),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: Column("DocumentId"),
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: Column("School_RefSchoolYear"),
+                            Source: new WriteValueSource.ReferenceDerived(
+                                ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                                    BindingIndex: 0,
+                                    ReferenceObjectPath: CreateTestPath(
+                                        "$.schoolReference",
+                                        new JsonPathSegment.Property("schoolReference")
+                                    ),
+                                    IdentityJsonPath: CreateTestPath(
+                                        "$.schoolYear",
+                                        new JsonPathSegment.Property("schoolYear")
+                                    ),
+                                    ReferenceJsonPath: CreateTestPath(
+                                        "$.schoolReference.schoolYear",
+                                        new JsonPathSegment.Property("schoolReference"),
+                                        new JsonPathSegment.Property("schoolYear")
+                                    )
+                                )
+                            ),
+                            ParameterName: "schoolRefSchoolYear"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
+    }
+
+    private static ResourceWritePlan CreateMixedSourceReferenceDerivedWritePlan()
+    {
+        return CreateReferenceDerivedWritePlan(CreateMixedSourceReferenceDerivedModel());
+    }
+
+    private static ResourceWritePlan CreateDuplicateScalarReferenceDerivedWritePlan()
+    {
+        var referencePath = CreateTestPath(
+            "$.schoolReference",
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var duplicatePath = CreateTestPath(
+            "$.schoolReference.schoolCode",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCode")
+        );
+        var primaryIdentityPath = CreateTestPath("$.schoolId", new JsonPathSegment.Property("schoolId"));
+        var secondaryIdentityPath = CreateTestPath(
+            "$.localEducationAgencyId",
+            new JsonPathSegment.Property("localEducationAgencyId")
+        );
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "ProgramDuplicateScalarReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_ProgramDuplicateScalarReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: referencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("PrimarySchoolCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: duplicatePath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SecondarySchoolCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: duplicatePath,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Program"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: referencePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: primaryIdentityPath,
+                                ReferenceJsonPath: duplicatePath,
+                                Column: new DbColumnName("PrimarySchoolCode")
+                            ),
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: secondaryIdentityPath,
+                                ReferenceJsonPath: duplicatePath,
+                                Column: new DbColumnName("SecondarySchoolCode")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources: []
+            ),
+            [
+                new TableWritePlan(
+                    TableModel: table,
+                    InsertSql: "INSERT INTO [edfi].[ProgramDuplicateScalarReferenceDerived] ([DocumentId], [School_DocumentId], [PrimarySchoolCode], [SecondarySchoolCode]) VALUES (@documentId, @schoolDocumentId, @primarySchoolCode, @secondarySchoolCode);",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(525, 4, 2100),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: table.Columns[0],
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: table.Columns[1],
+                            Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                            ParameterName: "schoolDocumentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: table.Columns[2],
+                            Source: new WriteValueSource.ReferenceDerived(
+                                new ReferenceDerivedValueSourceMetadata(
+                                    BindingIndex: 0,
+                                    ReferenceObjectPath: referencePath,
+                                    IdentityJsonPath: primaryIdentityPath,
+                                    ReferenceJsonPath: duplicatePath
+                                )
+                            ),
+                            ParameterName: "primarySchoolCode"
+                        ),
+                        new WriteColumnBinding(
+                            Column: table.Columns[3],
+                            Source: new WriteValueSource.ReferenceDerived(
+                                new ReferenceDerivedValueSourceMetadata(
+                                    BindingIndex: 0,
+                                    ReferenceObjectPath: referencePath,
+                                    IdentityJsonPath: secondaryIdentityPath,
+                                    ReferenceJsonPath: duplicatePath
+                                )
+                            ),
+                            ParameterName: "secondarySchoolCode"
+                        ),
+                    ],
+                    KeyUnificationPlans: []
+                ),
+            ]
+        );
+    }
+
+    private static ResourceWritePlan CreateReferenceDerivedWritePlanWithMissingScalarTypeMetadata()
+    {
+        var model = CreateReferenceDerivedModel();
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns.Select(column =>
+                    string.Equals(column.ColumnName.Value, "School_RefSchoolYear", StringComparison.Ordinal)
+                        ? column with
+                        {
+                            ScalarType = null,
+                        }
+                        : column
+                ),
+            ],
+        };
+
+        return CreateReferenceDerivedWritePlan(
+            model with
+            {
+                Root = rootTable,
+                TablesInDependencyOrder = [rootTable],
+            }
+        );
+    }
+
+    private static ResourceWritePlan CreateNestedReferenceDerivedWritePlan()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var rootPlan = CreateNestedReferenceDerivedRootPlan();
+        var addressPlan = CreateNestedReferenceDerivedAddressPlan();
+        var periodPlan = CreateNestedReferenceDerivedPeriodPlan();
+        var referenceObjectPath = CreateTestPath(
+            "$.addresses[*].periods[*].schoolReference",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("periods"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var referenceValuePath = CreateTestPath(
+            "$.addresses[*].periods[*].schoolReference.active",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("periods"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("active")
+        );
+        var identityPath = CreateTestPath("$.active", new JsonPathSegment.Property("active"));
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: resource,
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, addressPlan.TableModel, periodPlan.TableModel],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: referenceObjectPath,
+                        Table: periodPlan.TableModel.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: identityPath,
+                                ReferenceJsonPath: referenceValuePath,
+                                Column: new DbColumnName("School_RefIsActive")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, addressPlan, periodPlan]
+        );
+    }
+
+    private static ResourceWritePlan CreateReferenceDerivedWritePlan(RelationalResourceModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        var table = model.Root;
+
+        DbColumnModel Column(string name)
+        {
+            return table.Columns.Single(column =>
+                string.Equals(column.ColumnName.Value, name, StringComparison.Ordinal)
+            );
+        }
+
+        var keyClass = table.KeyUnificationClasses.Single();
+        var keyMembers = keyClass
+            .MemberPathColumns.Select(memberPathColumn =>
+                (KeyUnificationMemberWritePlan)(
+                    memberPathColumn.Value switch
+                    {
+                        "School_RefSchoolIdAlias" => new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                            MemberPathColumn: memberPathColumn,
+                            RelativePath: CreateTestPath(
+                                "$.schoolReference.schoolId",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId")
+                            ),
+                            ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                                BindingIndex: 0,
+                                ReferenceObjectPath: CreateTestPath(
+                                    "$.schoolReference",
+                                    new JsonPathSegment.Property("schoolReference")
+                                ),
+                                IdentityJsonPath: CreateTestPath(
+                                    "$.schoolId",
+                                    new JsonPathSegment.Property("schoolId")
+                                ),
+                                ReferenceJsonPath: CreateTestPath(
+                                    "$.schoolReference.schoolId",
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolId")
+                                )
+                            ),
+                            PresenceColumn: new DbColumnName("School_DocumentId"),
+                            PresenceBindingIndex: 1,
+                            PresenceIsSynthetic: false
+                        ),
+                        "SchoolId_LocalAlias" => new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: memberPathColumn,
+                            RelativePath: CreateTestPath(
+                                "$.localSchoolId",
+                                new JsonPathSegment.Property("localSchoolId")
+                            ),
+                            ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                            PresenceColumn: null,
+                            PresenceBindingIndex: null,
+                            PresenceIsSynthetic: false
+                        ),
+                        _ => throw new InvalidOperationException(
+                            $"Unsupported key-unification member path column '{memberPathColumn.Value}' in reference-derived test fixture."
+                        ),
+                    }
+                )
+            )
+            .ToArray();
+
+        return new ResourceWritePlan(
+            Model: model,
+            TablePlansInDependencyOrder:
+            [
+                new TableWritePlan(
+                    TableModel: table,
+                    InsertSql: $"INSERT INTO [edfi].[{table.Table.Name}] ([DocumentId], [School_DocumentId], [School_RefSchoolYear], [SchoolId_Canonical]) VALUES (@documentId, @schoolDocumentId, @schoolRefSchoolYear, @schoolIdCanonical);",
+                    UpdateSql: null,
+                    DeleteByParentSql: null,
+                    BulkInsertBatching: new BulkInsertBatchingInfo(
+                        MaxRowsPerBatch: 525,
+                        ParametersPerRow: 4,
+                        MaxParametersPerCommand: 2100
+                    ),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBinding(
+                            Column: Column("DocumentId"),
+                            Source: new WriteValueSource.DocumentId(),
+                            ParameterName: "documentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: Column("School_DocumentId"),
+                            Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                            ParameterName: "schoolDocumentId"
+                        ),
+                        new WriteColumnBinding(
+                            Column: Column("School_RefSchoolYear"),
+                            Source: new WriteValueSource.ReferenceDerived(
+                                ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                                    BindingIndex: 0,
+                                    ReferenceObjectPath: CreateTestPath(
+                                        "$.schoolReference",
+                                        new JsonPathSegment.Property("schoolReference")
+                                    ),
+                                    IdentityJsonPath: CreateTestPath(
+                                        "$.schoolYear",
+                                        new JsonPathSegment.Property("schoolYear")
+                                    ),
+                                    ReferenceJsonPath: CreateTestPath(
+                                        "$.schoolReference.schoolYear",
+                                        new JsonPathSegment.Property("schoolReference"),
+                                        new JsonPathSegment.Property("schoolYear")
+                                    )
+                                )
+                            ),
+                            ParameterName: "schoolRefSchoolYear"
+                        ),
+                        new WriteColumnBinding(
+                            Column: Column("SchoolId_Canonical"),
+                            Source: new WriteValueSource.Precomputed(),
+                            ParameterName: "schoolIdCanonical"
+                        ),
+                    ],
+                    KeyUnificationPlans:
+                    [
+                        new KeyUnificationWritePlan(
+                            CanonicalColumn: keyClass.CanonicalColumn,
+                            CanonicalBindingIndex: 3,
+                            MembersInOrder: keyMembers
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedRootPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerived] ([DocumentId]) VALUES (@documentId);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 1, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedAddressPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerivedAddress"),
+            JsonScope: CreateTestPath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerivedAddress",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                CreateTestColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                CreateTestColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                CreateTestColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                CreateTestColumn(
+                    "AddressType",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: false,
+                    sourceJsonPath: CreateTestPath(
+                        "$.addressType",
+                        new JsonPathSegment.Property("addressType")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new DbColumnName("AddressType")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerivedAddress] ([CollectionItemId], [Student_DocumentId], [Ordinal], [AddressType]) VALUES (@collectionItemId, @studentDocumentId, @ordinal, @addressType);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 4, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "collectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "studentDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new WriteValueSource.Ordinal(),
+                    ParameterName: "ordinal"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new WriteValueSource.Scalar(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    ParameterName: "addressType"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE [edfi].[StudentNestedReferenceDerivedAddress] SET [AddressType] = @addressType WHERE [CollectionItemId] = @collectionItemId;",
+                DeleteByStableRowIdentitySql: "DELETE FROM [edfi].[StudentNestedReferenceDerivedAddress] WHERE [CollectionItemId] = @collectionItemId;",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedPeriodPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerivedPeriod"),
+            JsonScope: CreateTestPath(
+                "$.addresses[*].periods[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("periods"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerivedPeriod",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                CreateTestColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                CreateTestColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                CreateTestColumn(
+                    "Address_CollectionItemId",
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    isNullable: false
+                ),
+                CreateTestColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                CreateTestColumn(
+                    "BeginDate",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Date),
+                    isNullable: false,
+                    sourceJsonPath: CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate"))
+                ),
+                CreateTestColumn(
+                    "School_DocumentId",
+                    ColumnKind.DocumentFk,
+                    null,
+                    isNullable: true,
+                    targetResource: _schoolResource
+                ),
+                CreateTestColumn(
+                    "School_RefIsActive",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    isNullable: true,
+                    sourceJsonPath: CreateTestPath(
+                        "$.addresses[*].periods[*].schoolReference.active",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("periods"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("active")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("Address_CollectionItemId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        new DbColumnName("BeginDate")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerivedPeriod] ([CollectionItemId], [Student_DocumentId], [Address_CollectionItemId], [Ordinal], [BeginDate], [School_DocumentId], [School_RefIsActive]) VALUES (@collectionItemId, @studentDocumentId, @addressCollectionItemId, @ordinal, @beginDate, @schoolDocumentId, @schoolRefIsActive);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 7, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "collectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "studentDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new WriteValueSource.ParentKeyPart(0),
+                    ParameterName: "addressCollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new WriteValueSource.Ordinal(),
+                    ParameterName: "ordinal"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[4],
+                    Source: new WriteValueSource.Scalar(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        new RelationalScalarType(ScalarKind.Date)
+                    ),
+                    ParameterName: "beginDate"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[5],
+                    Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                    ParameterName: "schoolDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[6],
+                    Source: new WriteValueSource.ReferenceDerived(
+                        ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            ReferenceObjectPath: CreateTestPath(
+                                "$.addresses[*].periods[*].schoolReference",
+                                new JsonPathSegment.Property("addresses"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("periods"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("schoolReference")
+                            ),
+                            IdentityJsonPath: CreateTestPath(
+                                "$.active",
+                                new JsonPathSegment.Property("active")
+                            ),
+                            ReferenceJsonPath: CreateTestPath(
+                                "$.addresses[*].periods[*].schoolReference.active",
+                                new JsonPathSegment.Property("addresses"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("periods"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("active")
+                            )
+                        )
+                    ),
+                    ParameterName: "schoolRefIsActive"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        4
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE [edfi].[StudentNestedReferenceDerivedPeriod] SET [BeginDate] = @beginDate WHERE [CollectionItemId] = @collectionItemId;",
+                DeleteByStableRowIdentitySql: "DELETE FROM [edfi].[StudentNestedReferenceDerivedPeriod] WHERE [CollectionItemId] = @collectionItemId;",
+                OrdinalBindingIndex: 3,
+                CompareBindingIndexesInOrder: [4, 3]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static RelationalResourceModel CreateReferenceDerivedModel()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Program");
+        var schoolReferencePath = CreateTestPath(
+            "$.schoolReference",
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var schoolIdPath = CreateTestPath(
+            "$.schoolReference.schoolId",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolId")
+        );
+        var schoolIdIdentityPath = CreateTestPath("$.schoolId", new JsonPathSegment.Property("schoolId"));
+        var schoolYearPath = CreateTestPath(
+            "$.schoolReference.schoolYear",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolYear")
+        );
+        var schoolYearIdentityPath = CreateTestPath(
+            "$.schoolYear",
+            new JsonPathSegment.Property("schoolYear")
+        );
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "ProgramReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_ProgramReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: schoolYearPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolId_Canonical"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolIdAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: schoolIdPath,
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolId_Canonical"),
+                        PresenceColumn: new DbColumnName("School_DocumentId")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolId_Canonical"),
+                    MemberPathColumns: [new DbColumnName("School_RefSchoolIdAlias")]
+                ),
+            ],
+        };
+
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: table,
+            TablesInDependencyOrder: [table],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: _schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdIdentityPath,
+                            ReferenceJsonPath: schoolIdPath,
+                            Column: new DbColumnName("School_RefSchoolIdAlias")
+                        ),
+                        new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolYearIdentityPath,
+                            ReferenceJsonPath: schoolYearPath,
+                            Column: new DbColumnName("School_RefSchoolYear")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateMixedSourceReferenceDerivedModel()
+    {
+        var model = CreateReferenceDerivedModel();
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolId_LocalAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreateTestPath(
+                        "$.localSchoolId",
+                        new JsonPathSegment.Property("localSchoolId")
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolId_Canonical"),
+                        PresenceColumn: null
+                    )
+                ),
+            ],
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolId_Canonical"),
+                    MemberPathColumns:
+                    [
+                        new DbColumnName("School_RefSchoolIdAlias"),
+                        new DbColumnName("SchoolId_LocalAlias"),
+                    ]
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static ResourceWritePlan CreateDescriptorBackedReferenceDerivedWritePlan()
+    {
+        var schoolReferencePath = CreateTestPath(
+            "$.schoolReference",
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var descriptorPath = CreateTestPath(
+            "$.schoolReference.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var descriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "ProgramDescriptorReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_ProgramDescriptorReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: descriptorPath,
+                    TargetResource: _schoolCategoryDescriptorResource
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var writePlan = new TableWritePlan(
+            TableModel: table,
+            InsertSql: "INSERT INTO [edfi].[ProgramDescriptorReferenceDerived] ([DocumentId], [School_DocumentId], [SchoolCategoryDescriptorId]) VALUES (@documentId, @schoolDocumentId, @schoolCategoryDescriptorId);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(700, 3, 2100),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: table.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[1],
+                    Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                    ParameterName: "schoolDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[2],
+                    Source: new WriteValueSource.ReferenceDerived(
+                        new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: descriptorIdentityPath,
+                            ReferenceJsonPath: descriptorPath
+                        )
+                    ),
+                    ParameterName: "schoolCategoryDescriptorId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Program"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: schoolReferencePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: descriptorIdentityPath,
+                                ReferenceJsonPath: descriptorPath,
+                                Column: new DbColumnName("SchoolCategoryDescriptorId")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: descriptorPath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("SchoolCategoryDescriptorId"),
+                        DescriptorResource: _schoolCategoryDescriptorResource
+                    ),
+                ]
+            ),
+            [writePlan]
+        );
+    }
+
+    private static ResourceWritePlan CreateDuplicateDescriptorReferenceDerivedWritePlan()
+    {
+        var schoolReferencePath = CreateTestPath(
+            "$.schoolReference",
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var duplicatePath = CreateTestPath(
+            "$.schoolReference.schoolCategory",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategory")
+        );
+        var schoolCategoryCodeIdentityPath = CreateTestPath(
+            "$.schoolCategoryCode",
+            new JsonPathSegment.Property("schoolCategoryCode")
+        );
+        var schoolCategoryDescriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "ProgramDuplicateDescriptorReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_ProgramDuplicateDescriptorReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: duplicatePath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: duplicatePath,
+                    TargetResource: _schoolTypeDescriptorResource
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var writePlan = new TableWritePlan(
+            TableModel: table,
+            InsertSql: "INSERT INTO [edfi].[ProgramDuplicateDescriptorReferenceDerived] ([DocumentId], [School_DocumentId], [SchoolCategoryCode], [SchoolCategoryDescriptorId]) VALUES (@documentId, @schoolDocumentId, @schoolCategoryCode, @schoolCategoryDescriptorId);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(525, 4, 2100),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: table.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[1],
+                    Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                    ParameterName: "schoolDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[2],
+                    Source: new WriteValueSource.ReferenceDerived(
+                        new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: schoolCategoryCodeIdentityPath,
+                            ReferenceJsonPath: duplicatePath
+                        )
+                    ),
+                    ParameterName: "schoolCategoryCode"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[3],
+                    Source: new WriteValueSource.ReferenceDerived(
+                        new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: schoolCategoryDescriptorIdentityPath,
+                            ReferenceJsonPath: duplicatePath
+                        )
+                    ),
+                    ParameterName: "schoolCategoryDescriptorId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Program"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: schoolReferencePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: schoolCategoryCodeIdentityPath,
+                                ReferenceJsonPath: duplicatePath,
+                                Column: new DbColumnName("SchoolCategoryCode")
+                            ),
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: schoolCategoryDescriptorIdentityPath,
+                                ReferenceJsonPath: duplicatePath,
+                                Column: new DbColumnName("SchoolCategoryDescriptorId")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: duplicatePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("SchoolCategoryDescriptorId"),
+                        DescriptorResource: _schoolTypeDescriptorResource
+                    ),
+                ]
+            ),
+            [writePlan]
+        );
+    }
+
+    private static ResourceWritePlan CreateDescriptorBackedKeyUnificationReferenceDerivedWritePlan()
+    {
+        var schoolReferencePath = CreateTestPath(
+            "$.schoolReference",
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var descriptorPath = CreateTestPath(
+            "$.schoolReference.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var descriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var table = new DbTableModel(
+            Table: new DbTableName(
+                new DbSchemaName("edfi"),
+                "ProgramDescriptorKeyUnificationReferenceDerived"
+            ),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_ProgramDescriptorKeyUnificationReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: _schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryDescriptorId_Canonical"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: _schoolCategoryDescriptorResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolCategoryDescriptorId_Alias"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: descriptorPath,
+                    TargetResource: _schoolCategoryDescriptorResource,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolCategoryDescriptorId_Canonical"),
+                        PresenceColumn: new DbColumnName("School_DocumentId")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolCategoryDescriptorId_Canonical"),
+                    MemberPathColumns: [new DbColumnName("SchoolCategoryDescriptorId_Alias")]
+                ),
+            ],
+        };
+
+        var writePlan = new TableWritePlan(
+            TableModel: table,
+            InsertSql: "INSERT INTO [edfi].[ProgramDescriptorKeyUnificationReferenceDerived] ([DocumentId], [School_DocumentId], [SchoolCategoryDescriptorId_Canonical]) VALUES (@documentId, @schoolDocumentId, @schoolCategoryDescriptorIdCanonical);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(700, 3, 2100),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: table.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[1],
+                    Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                    ParameterName: "schoolDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: table.Columns[2],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "schoolCategoryDescriptorIdCanonical"
+                ),
+            ],
+            KeyUnificationPlans:
+            [
+                new KeyUnificationWritePlan(
+                    CanonicalColumn: new DbColumnName("SchoolCategoryDescriptorId_Canonical"),
+                    CanonicalBindingIndex: 2,
+                    MembersInOrder:
+                    [
+                        new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                            MemberPathColumn: new DbColumnName("SchoolCategoryDescriptorId_Alias"),
+                            RelativePath: descriptorPath,
+                            ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                                BindingIndex: 0,
+                                ReferenceObjectPath: schoolReferencePath,
+                                IdentityJsonPath: descriptorIdentityPath,
+                                ReferenceJsonPath: descriptorPath
+                            ),
+                            PresenceColumn: new DbColumnName("School_DocumentId"),
+                            PresenceBindingIndex: 1,
+                            PresenceIsSynthetic: false
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "Program"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: table,
+                TablesInDependencyOrder: [table],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: schoolReferencePath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: descriptorIdentityPath,
+                                ReferenceJsonPath: descriptorPath,
+                                Column: new DbColumnName("SchoolCategoryDescriptorId_Alias")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: false,
+                        DescriptorValuePath: descriptorPath,
+                        Table: table.Table,
+                        FkColumn: new DbColumnName("SchoolCategoryDescriptorId_Alias"),
+                        DescriptorResource: _schoolCategoryDescriptorResource
+                    ),
+                ]
+            ),
+            [writePlan]
+        );
+    }
+
+    private static ResolvedReferenceSet CreateResolvedReferenceSet(
+        IEnumerable<ResolvedDocumentReference>? documentReferences = null,
+        IEnumerable<ResolvedDescriptorReference>? descriptorReferences = null
+    )
+    {
+        var resolvedDocumentReferences = documentReferences?.ToArray() ?? [];
+        var resolvedDescriptorReferences = descriptorReferences?.ToArray() ?? [];
+
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: resolvedDocumentReferences.ToDictionary(
+                documentReference => documentReference.Reference.Path,
+                documentReference => documentReference
+            ),
+            SuccessfulDescriptorReferencesByPath: resolvedDescriptorReferences.ToDictionary(
+                descriptorReference => descriptorReference.Reference.Path,
+                descriptorReference => descriptorReference
+            ),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+    }
+
+    private static ResolvedDocumentReference CreateResolvedSchoolReference(
+        string path,
+        long documentId,
+        params (string IdentityJsonPath, string IdentityValue)[] identityElements
+    )
+    {
+        return new ResolvedDocumentReference(
+            new DocumentReference(
+                _schoolResourceInfo,
+                new DocumentIdentity([
+                    .. identityElements.Select(identityElement => new DocumentIdentityElement(
+                        new JsonPath(identityElement.IdentityJsonPath),
+                        identityElement.IdentityValue
+                    )),
+                ]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            documentId,
+            ResourceKeyId: 21
+        );
+    }
+
+    private static ResolvedDescriptorReference CreateResolvedSchoolCategoryDescriptorReference(
+        string path,
+        long documentId,
+        string uri
+    )
+    {
+        return new ResolvedDescriptorReference(
+            new DescriptorReference(
+                _schoolCategoryDescriptorResourceInfo,
+                new DocumentIdentity([
+                    new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
+                ]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            documentId,
+            ResourceKeyId: 31
+        );
+    }
+
+    private static ResolvedDescriptorReference CreateResolvedSchoolTypeDescriptorReference(
+        string path,
+        long documentId,
+        string uri
+    )
+    {
+        return new ResolvedDescriptorReference(
+            new DescriptorReference(
+                _schoolTypeDescriptorResourceInfo,
+                new DocumentIdentity([
+                    new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
+                ]),
+                new ReferentialId(Guid.NewGuid()),
+                new JsonPath(path)
+            ),
+            documentId,
+            ResourceKeyId: 31
+        );
     }
 
     private static ResolvedReferenceSet CreateResolvedDescriptorReferences(
