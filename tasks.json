@@ -233,7 +233,7 @@
       "Document the classification matrix near the reference-derived error helpers in `RelationalWriteFlattener` so future changes have an explicit request-data versus invariant policy to follow.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference Identity Binding Metadata Hardening",

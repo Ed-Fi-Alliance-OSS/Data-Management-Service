@@ -759,6 +759,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         var memberPathColumn = GetRequiredColumnModel(tableWritePlan, member.MemberPathColumn);
+        var concreteAbsolutePath = MaterializeValidationPath(absolutePath, ordinalPath);
 
         return KeyUnificationMemberEvaluation.Present(
             ResolveReferenceDerivedLiteralValue(
@@ -766,7 +767,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 memberPathColumn,
                 member.MemberPathColumn,
                 member.ReferenceSource,
-                absolutePath,
+                concreteAbsolutePath,
                 resolvedReferenceLookups,
                 ordinalPath
             )
@@ -1102,9 +1103,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             return new FlattenedWriteValue.Literal(null);
         }
 
-        var absolutePath =
+        var absolutePath = MaterializeValidationPath(
             columnBinding.Column.SourceJsonPath?.Canonical
-            ?? referenceDerived.ReferenceSource.ReferenceJsonPath.Canonical;
+                ?? referenceDerived.ReferenceSource.ReferenceJsonPath.Canonical,
+            ordinalPath
+        );
 
         return new FlattenedWriteValue.Literal(
             ResolveReferenceDerivedLiteralValue(
@@ -1870,6 +1873,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         string reason
     )
     {
+        // Classification boundary:
+        // request-shaped data issues from JSON payloads or resolved reference identity literals become
+        // write-validation failures, while compiled metadata drift and unsupported plan shapes remain
+        // internal invariant breaches.
         return CreateRequestShapeValidationException(
             conversionContext.AbsolutePath,
             $"{conversionContext.SubjectDescription} expected scalar kind '{scalarType.Kind}' at path "
@@ -2062,6 +2069,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return concretePath.ToString();
+    }
+
+    private static string MaterializeValidationPath(
+        string wildcardOrConcretePath,
+        ReadOnlySpan<int> ordinalPath
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(wildcardOrConcretePath);
+
+        return ordinalPath.Length > 0 && wildcardOrConcretePath.Contains("[*]", StringComparison.Ordinal)
+            ? MaterializeConcretePath(wildcardOrConcretePath, ordinalPath)
+            : wildcardOrConcretePath;
     }
 
     private sealed record RequestDerivedScalarConversionContext(

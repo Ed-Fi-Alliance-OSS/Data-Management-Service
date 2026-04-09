@@ -1371,12 +1371,12 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_maps_flattener_validation_failures_for_post_requests()
+    public async Task It_maps_reference_derived_scalar_validation_failures_for_post_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Post);
         var validationFailure = new WriteValidationFailure(
-            new JsonPath("$.schoolReference"),
-            "must include all identifying values when present"
+            new JsonPath("$.schoolReference.schoolYear"),
+            "Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' expected scalar kind 'Int32' at path '$.schoolReference.schoolYear', but resolved reference-derived raw value 'not-a-number' could not be converted."
         );
         _writeFlattener.ExceptionToThrow = new RelationalWriteRequestValidationException([validationFailure]);
 
@@ -1398,12 +1398,12 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_maps_flattener_validation_failures_for_put_requests()
+    public async Task It_maps_nested_reference_derived_scalar_validation_failures_for_put_requests()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
         var validationFailure = new WriteValidationFailure(
-            new JsonPath("$.schoolYear"),
-            "expected scalar kind 'Int32'"
+            new JsonPath("$.addresses[0].periods[0].schoolReference.active"),
+            "Column 'School_RefIsActive' on table 'edfi.StudentNestedReferenceDerivedPeriod' expected scalar kind 'Boolean' at path '$.addresses[0].periods[0].schoolReference.active', but resolved reference-derived raw value 'not-a-bool' could not be converted."
         );
         _writeFlattener.ExceptionToThrow = new RelationalWriteRequestValidationException([validationFailure]);
 

@@ -1242,6 +1242,104 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_nested_reference_derived_scalar_values()
+    {
+        var writePlan = CreateNestedReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "periods": [
+                        {
+                          "beginDate": "2026-08-19",
+                          "schoolReference": {
+                            "active": true
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.addresses[0].periods[0].schoolReference",
+                        901L,
+                        ("$.active", "not-a-bool")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception
+            .ValidationFailures[0]
+            .Path.Value.Should()
+            .Be("$.addresses[0].periods[0].schoolReference.active");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Contain(
+                "Column 'School_RefIsActive' on table 'edfi.StudentNestedReferenceDerivedPeriod' expected scalar kind 'Boolean'"
+            )
+            .And.Contain("path '$.addresses[0].periods[0].schoolReference.active'")
+            .And.Contain("resolved reference-derived raw value 'not-a-bool' could not be converted");
+    }
+
+    [Test]
+    public void It_keeps_missing_reference_derived_scalar_type_metadata_as_an_invariant_breach()
+    {
+        var writePlan = CreateReferenceDerivedWritePlanWithMissingScalarTypeMetadata();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolId": 1,
+                    "schoolYear": 1900
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.schoolId", "255901"),
+                        ("$.schoolYear", "1900")
+                    ),
+                ]
+            )
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Column 'School_RefSchoolYear' on table 'edfi.ProgramReferenceDerived' cannot materialize ReferenceDerived without scalar type metadata.*"
+            );
+    }
+
+    [Test]
     public void It_uses_the_shared_scalar_conversion_error_shape_for_invalid_key_unification_scalar_members()
     {
         var writePlan = CreateMixedSourceReferenceDerivedWritePlan();
@@ -1273,6 +1371,26 @@ public class Given_RelationalWriteFlattener
             )
             .And.Contain("path '$.localSchoolId'")
             .And.Contain("encountered JSON value kind 'String' with raw value \"not-a-number\"");
+    }
+
+    private static DbColumnModel CreateTestColumn(
+        string columnName,
+        ColumnKind kind,
+        RelationalScalarType? scalarType,
+        bool isNullable,
+        JsonPathExpression? sourceJsonPath = null,
+        QualifiedResourceName? targetResource = null
+    )
+    {
+        return new DbColumnModel(
+            ColumnName: new DbColumnName(columnName),
+            Kind: kind,
+            ScalarType: scalarType,
+            IsNullable: isNullable,
+            SourceJsonPath: sourceJsonPath,
+            TargetResource: targetResource,
+            Storage: new ColumnStorage.Stored()
+        );
     }
 
     [Test]
@@ -1838,6 +1956,89 @@ public class Given_RelationalWriteFlattener
         );
     }
 
+    private static ResourceWritePlan CreateReferenceDerivedWritePlanWithMissingScalarTypeMetadata()
+    {
+        var model = CreateReferenceDerivedModel();
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns.Select(column =>
+                    string.Equals(column.ColumnName.Value, "School_RefSchoolYear", StringComparison.Ordinal)
+                        ? column with
+                        {
+                            ScalarType = null,
+                        }
+                        : column
+                ),
+            ],
+        };
+
+        return CreateReferenceDerivedWritePlan(
+            model with
+            {
+                Root = rootTable,
+                TablesInDependencyOrder = [rootTable],
+            }
+        );
+    }
+
+    private static ResourceWritePlan CreateNestedReferenceDerivedWritePlan()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var rootPlan = CreateNestedReferenceDerivedRootPlan();
+        var addressPlan = CreateNestedReferenceDerivedAddressPlan();
+        var periodPlan = CreateNestedReferenceDerivedPeriodPlan();
+        var referenceObjectPath = CreateTestPath(
+            "$.addresses[*].periods[*].schoolReference",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("periods"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("schoolReference")
+        );
+        var referenceValuePath = CreateTestPath(
+            "$.addresses[*].periods[*].schoolReference.active",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("periods"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("active")
+        );
+        var identityPath = CreateTestPath("$.active", new JsonPathSegment.Property("active"));
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: resource,
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootPlan.TableModel,
+                TablesInDependencyOrder: [rootPlan.TableModel, addressPlan.TableModel, periodPlan.TableModel],
+                DocumentReferenceBindings:
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        ReferenceObjectPath: referenceObjectPath,
+                        Table: periodPlan.TableModel.Table,
+                        FkColumn: new DbColumnName("School_DocumentId"),
+                        TargetResource: _schoolResource,
+                        IdentityBindings:
+                        [
+                            new ReferenceIdentityBinding(
+                                IdentityJsonPath: identityPath,
+                                ReferenceJsonPath: referenceValuePath,
+                                Column: new DbColumnName("School_RefIsActive")
+                            ),
+                        ]
+                    ),
+                ],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, addressPlan, periodPlan]
+        );
+    }
+
     private static ResourceWritePlan CreateReferenceDerivedWritePlan(RelationalResourceModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -1967,6 +2168,325 @@ public class Given_RelationalWriteFlattener
                     ]
                 ),
             ]
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedRootPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerived"),
+            JsonScope: CreateTestPath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerived",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerived] ([DocumentId]) VALUES (@documentId);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 1, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "documentId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedAddressPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerivedAddress"),
+            JsonScope: CreateTestPath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerivedAddress",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                CreateTestColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                CreateTestColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                CreateTestColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                CreateTestColumn(
+                    "AddressType",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: false,
+                    sourceJsonPath: CreateTestPath(
+                        "$.addressType",
+                        new JsonPathSegment.Property("addressType")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new DbColumnName("AddressType")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerivedAddress] ([CollectionItemId], [Student_DocumentId], [Ordinal], [AddressType]) VALUES (@collectionItemId, @studentDocumentId, @ordinal, @addressType);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 4, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "collectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "studentDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new WriteValueSource.Ordinal(),
+                    ParameterName: "ordinal"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new WriteValueSource.Scalar(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    ParameterName: "addressType"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        CreateTestPath("$.addressType", new JsonPathSegment.Property("addressType")),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE [edfi].[StudentNestedReferenceDerivedAddress] SET [AddressType] = @addressType WHERE [CollectionItemId] = @collectionItemId;",
+                DeleteByStableRowIdentitySql: "DELETE FROM [edfi].[StudentNestedReferenceDerivedAddress] WHERE [CollectionItemId] = @collectionItemId;",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static TableWritePlan CreateNestedReferenceDerivedPeriodPlan()
+    {
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentNestedReferenceDerivedPeriod"),
+            JsonScope: CreateTestPath(
+                "$.addresses[*].periods[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("periods"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentNestedReferenceDerivedPeriod",
+                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                CreateTestColumn("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                CreateTestColumn("Student_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                CreateTestColumn(
+                    "Address_CollectionItemId",
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    isNullable: false
+                ),
+                CreateTestColumn("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                CreateTestColumn(
+                    "BeginDate",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Date),
+                    isNullable: false,
+                    sourceJsonPath: CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate"))
+                ),
+                CreateTestColumn(
+                    "School_DocumentId",
+                    ColumnKind.DocumentFk,
+                    null,
+                    isNullable: true,
+                    targetResource: _schoolResource
+                ),
+                CreateTestColumn(
+                    "School_RefIsActive",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    isNullable: true,
+                    sourceJsonPath: CreateTestPath(
+                        "$.addresses[*].periods[*].schoolReference.active",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("periods"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("active")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("Student_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("Address_CollectionItemId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        new DbColumnName("BeginDate")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO [edfi].[StudentNestedReferenceDerivedPeriod] ([CollectionItemId], [Student_DocumentId], [Address_CollectionItemId], [Ordinal], [BeginDate], [School_DocumentId], [School_RefIsActive]) VALUES (@collectionItemId, @studentDocumentId, @addressCollectionItemId, @ordinal, @beginDate, @schoolDocumentId, @schoolRefIsActive);",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 7, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "collectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[1],
+                    Source: new WriteValueSource.DocumentId(),
+                    ParameterName: "studentDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[2],
+                    Source: new WriteValueSource.ParentKeyPart(0),
+                    ParameterName: "addressCollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[3],
+                    Source: new WriteValueSource.Ordinal(),
+                    ParameterName: "ordinal"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[4],
+                    Source: new WriteValueSource.Scalar(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        new RelationalScalarType(ScalarKind.Date)
+                    ),
+                    ParameterName: "beginDate"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[5],
+                    Source: new WriteValueSource.DocumentReference(BindingIndex: 0),
+                    ParameterName: "schoolDocumentId"
+                ),
+                new WriteColumnBinding(
+                    Column: tableModel.Columns[6],
+                    Source: new WriteValueSource.ReferenceDerived(
+                        ReferenceSource: new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            ReferenceObjectPath: CreateTestPath(
+                                "$.addresses[*].periods[*].schoolReference",
+                                new JsonPathSegment.Property("addresses"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("periods"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("schoolReference")
+                            ),
+                            IdentityJsonPath: CreateTestPath(
+                                "$.active",
+                                new JsonPathSegment.Property("active")
+                            ),
+                            ReferenceJsonPath: CreateTestPath(
+                                "$.addresses[*].periods[*].schoolReference.active",
+                                new JsonPathSegment.Property("addresses"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("periods"),
+                                new JsonPathSegment.AnyArrayElement(),
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("active")
+                            )
+                        )
+                    ),
+                    ParameterName: "schoolRefIsActive"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        CreateTestPath("$.beginDate", new JsonPathSegment.Property("beginDate")),
+                        4
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE [edfi].[StudentNestedReferenceDerivedPeriod] SET [BeginDate] = @beginDate WHERE [CollectionItemId] = @collectionItemId;",
+                DeleteByStableRowIdentitySql: "DELETE FROM [edfi].[StudentNestedReferenceDerivedPeriod] WHERE [CollectionItemId] = @collectionItemId;",
+                OrdinalBindingIndex: 3,
+                CompareBindingIndexesInOrder: [4, 3]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
         );
     }
 
