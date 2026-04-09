@@ -663,6 +663,45 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     [Test]
+    public void It_extracts_descriptor_valued_collection_reference_members_from_concrete_paths_via_the_shared_document_info_helper()
+    {
+        var documentInfo =
+            AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateDocumentInfo(
+                JsonNode.Parse(CreateRequestBodyJson)!,
+                _resourceInfo,
+                _baseResourceSchema,
+                _mappingSet,
+                _seedData.GraduationPlanTypeDescriptorId
+            );
+
+        documentInfo
+            .DescriptorReferences.Select(reference =>
+                (
+                    Path: reference.Path.Value,
+                    ResourceName: reference.ResourceInfo.ResourceName.Value,
+                    DescriptorValue: reference
+                        .DocumentIdentity.DocumentIdentityElements.Single()
+                        .IdentityValue
+                )
+            )
+            .Should()
+            .Contain(
+                (
+                    "$.alternativeGraduationPlans[0].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+                    "GraduationPlanTypeDescriptor",
+                    GraduationPlanTypeDescriptorUri.ToLowerInvariant()
+                )
+            )
+            .And.Contain(
+                (
+                    "$.alternativeGraduationPlans[1].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+                    "GraduationPlanTypeDescriptor",
+                    GraduationPlanTypeDescriptorUri.ToLowerInvariant()
+                )
+            );
+    }
+
+    [Test]
     public void It_persists_authoritative_student_school_association_root_extension_and_child_rows_on_create()
     {
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
