@@ -736,6 +736,13 @@ public class Given_MappingSetLookupExtensions
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
                     ReferenceJsonPath: new JsonPathExpression(
                         "$.schoolReference.schoolId",
                         [

@@ -334,6 +334,7 @@ public static class HydrationTestHelper
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdJsonPath,
                             ReferenceJsonPath: schoolIdJsonPath,
                             Column: new DbColumnName("School_SchoolId")
                         ),
@@ -348,6 +349,7 @@ public static class HydrationTestHelper
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: calendarCodeJsonPath,
                             ReferenceJsonPath: calendarCodeJsonPath,
                             Column: new DbColumnName("Calendar_CalendarCode")
                         ),

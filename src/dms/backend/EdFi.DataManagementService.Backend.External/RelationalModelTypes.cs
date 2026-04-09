@@ -691,9 +691,6 @@ public sealed record ReferenceIdentityBinding
         this.Column = Column;
     }
 
-    public ReferenceIdentityBinding(JsonPathExpression ReferenceJsonPath, DbColumnName Column)
-        : this(ReferenceJsonPath, ReferenceJsonPath, Column) { }
-
     public JsonPathExpression IdentityJsonPath { get; init; }
 
     public JsonPathExpression ReferenceJsonPath { get; init; }

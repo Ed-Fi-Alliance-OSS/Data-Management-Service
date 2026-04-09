@@ -650,6 +650,7 @@ file sealed class RewriteReferenceIdentityBindingsPass(
                             (path, rewrittenIndex) =>
                                 new ReferenceIdentityBinding(
                                     path,
+                                    path,
                                     binding.IdentityBindings[rewrittenIndex].Column
                                 )
                         )

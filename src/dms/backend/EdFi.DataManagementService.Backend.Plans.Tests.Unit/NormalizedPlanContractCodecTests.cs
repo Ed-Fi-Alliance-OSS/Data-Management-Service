@@ -2186,10 +2186,12 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: Path("$.schoolReference.schoolId"),
                             ReferenceJsonPath: Path("$.schoolReference.schoolId"),
                             Column: new DbColumnName("School_RefSchoolId")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: Path("$.schoolReference.schoolYear"),
                             ReferenceJsonPath: Path("$.schoolReference.schoolYear"),
                             Column: new DbColumnName("School_RefSchoolYear")
                         ),
@@ -2204,6 +2206,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: Path("$.calendarReference.calendarCode"),
                             ReferenceJsonPath: Path("$.calendarReference.calendarCode"),
                             Column: new DbColumnName("Calendar_RefCalendarCode")
                         ),
@@ -2548,6 +2551,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.schoolReference.schoolId"),
                     ReferenceJsonPath: Path("$.schoolReference.schoolId"),
                     Column: new DbColumnName("School_RefSchoolId")
                 ),
@@ -2562,6 +2566,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.addresses[*].calendarReference.calendarCode"),
                     ReferenceJsonPath: Path("$.addresses[*].calendarReference.calendarCode"),
                     Column: new DbColumnName("Calendar_RefCalendarCode")
                 ),
@@ -2576,6 +2581,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             IdentityBindings:
             [
                 new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.addresses[*].sessionReference.sessionName"),
                     ReferenceJsonPath: Path("$.addresses[*].sessionReference.sessionName"),
                     Column: new DbColumnName("Session_RefSessionName")
                 ),
@@ -2753,14 +2759,17 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdSecondary")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolYearPath,
                             ReferenceJsonPath: schoolYearPath,
                             Column: new DbColumnName("School_RefSchoolYear")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdPrimary")
                         ),

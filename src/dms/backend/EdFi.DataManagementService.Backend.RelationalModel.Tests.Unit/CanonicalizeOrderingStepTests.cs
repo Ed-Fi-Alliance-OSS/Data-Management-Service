@@ -632,6 +632,7 @@ public class Given_Reference_Group_Columns_In_Column_Ordering
                 [
                     new ReferenceIdentityBinding(
                         JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                        JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
                         new DbColumnName("School_SchoolId")
                     ),
                 ]
