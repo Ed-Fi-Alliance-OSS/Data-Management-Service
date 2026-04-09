@@ -3,11 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Tests.Integration;
 
@@ -931,6 +936,213 @@ public class UpsertTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Insert_Of_A_New_Document_That_References_An_Existing_Resource_With_A_Descriptor_Valued_Identity_Using_Different_Descriptor_Casing
+        : UpsertTests
+    {
+        private static readonly string _descriptorValuedReferencedResourceName = "GraduationPlan";
+        private static readonly string _descriptorValuedReferencingResourceName = "StudentSchoolAssociation";
+        private UpsertResult _upsertResult = null!;
+        private GetResult _getResult = null!;
+        private DocumentReference _documentReference = null!;
+        private ReferentialId _referencedResourceReferentialId;
+        private ReferentialId _referenceReferentialId;
+
+        private static readonly Guid _referencedDocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referencingDocumentUuidGuid = Guid.NewGuid();
+
+        private static readonly string _referencedResourceEdFiDocString = """
+            {
+              "educationOrganizationId": 255901,
+              "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+              "graduationSchoolYear": 2030,
+              "graduationPlanName": "Foundation Plan"
+            }
+            """;
+
+        private static readonly string _referencingResourceEdFiDocString = """
+            {
+              "studentUniqueId": "10001",
+              "graduationPlanReference": {
+                "educationOrganizationId": 255901,
+                "graduationPlanTypeDescriptor": "uri://ed-fi.org/graduationplantypedescriptor#foundation",
+                "graduationSchoolYear": 2030
+              }
+            }
+            """;
+
+        private static JsonNode ParseJsonNode(string json)
+        {
+            return JsonNode.Parse(json)
+                ?? throw new InvalidOperationException("Expected JSON payload to parse for test setup.");
+        }
+
+        private static ResourceSchema CreateDescriptorValuedReferencedResourceSchema()
+        {
+            return new(
+                ParseJsonNode(
+                    """
+                    {
+                      "resourceName": "GraduationPlan",
+                      "isSchoolYearEnumeration": false,
+                      "isDescriptor": false,
+                      "isSubclass": false,
+                      "identityJsonPaths": [
+                        "$.educationOrganizationId",
+                        "$.graduationPlanTypeDescriptor",
+                        "$.graduationSchoolYear"
+                      ],
+                      "documentPathsMapping": {}
+                    }
+                    """
+                )
+            );
+        }
+
+        private static ResourceSchema CreateDescriptorValuedReferencingResourceSchema()
+        {
+            return new(
+                ParseJsonNode(
+                    """
+                    {
+                      "resourceName": "StudentSchoolAssociation",
+                      "isSchoolYearEnumeration": false,
+                      "isDescriptor": false,
+                      "isSubclass": false,
+                      "identityJsonPaths": [
+                        "$.studentUniqueId"
+                      ],
+                      "documentPathsMapping": {
+                        "GraduationPlan": {
+                          "isDescriptor": false,
+                          "isReference": true,
+                          "projectName": "ProjectName",
+                          "referenceJsonPaths": [
+                            {
+                              "identityJsonPath": "$.educationOrganizationId",
+                              "referenceJsonPath": "$.graduationPlanReference.educationOrganizationId"
+                            },
+                            {
+                              "identityJsonPath": "$.graduationPlanTypeDescriptor",
+                              "referenceJsonPath": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+                            },
+                            {
+                              "identityJsonPath": "$.graduationSchoolYear",
+                              "referenceJsonPath": "$.graduationPlanReference.graduationSchoolYear"
+                            }
+                          ],
+                          "resourceName": "GraduationPlan"
+                        }
+                      }
+                    }
+                    """
+                )
+            );
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ResourceSchema referencedResourceSchema = CreateDescriptorValuedReferencedResourceSchema();
+            JsonNode referencedResourceBody = ParseJsonNode(_referencedResourceEdFiDocString);
+
+            (DocumentIdentity referencedDocumentIdentity, _) = referencedResourceSchema.ExtractIdentities(
+                referencedResourceBody,
+                NullLogger.Instance
+            );
+
+            _referencedResourceReferentialId = ReferentialIdFrom(
+                CreateResourceInfo(_descriptorValuedReferencedResourceName),
+                referencedDocumentIdentity
+            );
+
+            IUpsertRequest referencedResourceUpsertRequest = CreateUpsertRequest(
+                _descriptorValuedReferencedResourceName,
+                _referencedDocumentUuidGuid,
+                _referencedResourceReferentialId.Value,
+                _referencedResourceEdFiDocString,
+                documentIdentityElements: referencedDocumentIdentity.DocumentIdentityElements
+            );
+
+            UpsertResult referencedResourceUpsertResult = await CreateUpsert()
+                .Upsert(referencedResourceUpsertRequest, Connection!, Transaction!);
+
+            referencedResourceUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            ResourceSchema referencingResourceSchema = CreateDescriptorValuedReferencingResourceSchema();
+            JsonNode referencingResourceBody = ParseJsonNode(_referencingResourceEdFiDocString);
+
+            (DocumentIdentity referencingDocumentIdentity, _) = referencingResourceSchema.ExtractIdentities(
+                referencingResourceBody,
+                NullLogger.Instance
+            );
+
+            (DocumentReference[] documentReferences, _) = referencingResourceSchema.ExtractReferences(
+                referencingResourceBody,
+                NullLogger.Instance
+            );
+
+            _documentReference = documentReferences.Should().ContainSingle().Subject;
+            _referenceReferentialId = _documentReference.ReferentialId;
+
+            IUpsertRequest referencingResourceUpsertRequest = CreateUpsertRequest(
+                _descriptorValuedReferencingResourceName,
+                _referencingDocumentUuidGuid,
+                ReferentialIdFrom(
+                    CreateResourceInfo(_descriptorValuedReferencingResourceName),
+                    referencingDocumentIdentity
+                ).Value,
+                _referencingResourceEdFiDocString,
+                documentReferences,
+                documentIdentityElements: referencingDocumentIdentity.DocumentIdentityElements
+            );
+
+            _upsertResult = await CreateUpsert()
+                .Upsert(referencingResourceUpsertRequest, Connection!, Transaction!);
+
+            _getResult = await CreateGetById()
+                .GetById(
+                    CreateGetRequest(_descriptorValuedReferencingResourceName, _referencingDocumentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
+        }
+
+        [Test]
+        public void It_should_extract_the_same_canonical_referential_id_for_the_resource_and_reference()
+        {
+            _referenceReferentialId.Should().Be(_referencedResourceReferentialId);
+            _documentReference
+                .DocumentIdentity.DocumentIdentityElements.Select(static element =>
+                    (element.IdentityJsonPath.Value, element.IdentityValue)
+                )
+                .Should()
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    (
+                        "$.graduationPlanTypeDescriptor",
+                        "uri://ed-fi.org/graduationplantypedescriptor#foundation"
+                    ),
+                    ("$.graduationSchoolYear", "2030")
+                );
+        }
+
+        [Test]
+        public void It_should_be_a_successful_insert_instead_of_a_reference_failure()
+        {
+            _upsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult as GetResult.GetSuccess)!
+                .DocumentUuid.Value.Should()
+                .Be(_referencingDocumentUuidGuid);
         }
     }
 

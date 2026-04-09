@@ -33,7 +33,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj --filter \"descriptor|reference|referential\"`",
       "Confirm the new test demonstrates successful legacy reference resolution for a descriptor-valued identity scenario instead of a `409 Unresolved Reference` failure."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Targeted Verification",
