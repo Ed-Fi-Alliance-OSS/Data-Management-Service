@@ -268,5 +268,62 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~ReferenceResolver\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Core Extraction Boundary",
+    "description": "Refactor the relational descriptor extraction seam so Core reads descriptor-edge metadata from the mapping set's concrete resource model instead of forcing a compiled write-plan lookup inside `ExtractDocumentInfoMiddleware`. Acceptance: `DescriptorExtractor.ExtractRelationalDescriptors` no longer calls `GetWritePlanOrThrow` for non-descriptor resources; the seam still extracts descriptor-valued members under `documentPathsMapping.referenceJsonPaths` with concrete indexed JSON paths and correct descriptor resource typing; descriptor resources continue to use the shared descriptor path without requiring relational write-plan metadata; and missing or intentionally unsupported write plans remain backend-owned guard rails rather than middleware-owned failures.",
+    "steps-to-verify": [
+      "Add or extend a mapping-set lookup helper that exposes the concrete relational resource model or `DescriptorEdgeSources` without requiring `WritePlansByResource` to contain a compiled write plan entry.",
+      "Refactor `DescriptorExtractor` and `ExtractDocumentInfoMiddleware` to use that model-level metadata for relational descriptor extraction.",
+      "Add or update Core unit tests proving relational descriptor extraction still covers descriptor-valued members under `referenceJsonPaths`, including at least one collection-backed path with concrete indices.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DescriptorExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~MappingSetLookupExtensions|FullyQualifiedName~MappingSetManifestJsonEmitter\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write-Plan Guard Rail Preservation",
+    "description": "Restore the intended failure boundary for missing or unsupported relational write plans so they are classified by the repository and handlers instead of surfacing as middleware exceptions. Acceptance: a non-descriptor relational POST or PUT whose mapping set lacks a compiled write plan reaches `RelationalDocumentStoreRepository.ExecuteWriteGuardRails`; the repository continues to return the deterministic `UnknownFailure` message for missing or unsupported write plans; `ExtractDocumentInfoMiddleware` no longer turns this state into an unhandled exception; and writable-profile requests remain aligned with `ProfileWritePipelineMiddleware` by treating missing plan states as guarded skip behavior before repository-owned classification.",
+    "steps-to-verify": [
+      "Add regression coverage around the relational write request path proving a missing write plan no longer fails inside `ExtractDocumentInfoMiddleware` and instead surfaces through the repository-owned failure classification.",
+      "Add or update handler or frontend-path assertions so the final response body and status code continue to match the existing deterministic `UnknownFailure` path for missing write plans.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalDocumentStoreRepository\"`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Middleware Regression Coverage",
+    "description": "Add focused regression coverage for the new Core-side relational descriptor extraction seam. Acceptance: Core tests cover one non-descriptor resource with descriptor edges under `referenceJsonPaths`, one descriptor resource, and one non-descriptor resource whose mapping set has concrete resource metadata but no compiled write plan; descriptor references are extracted with the expected concrete path and resource type in each supported case; conflicting descriptor-path resolutions still fail deterministically; and no test depends on `GetWritePlanOrThrow` as an extraction side effect.",
+    "steps-to-verify": [
+      "Extend `DescriptorExtractorTests` to cover relational descriptor extraction from model metadata, descriptor-resource short-circuit behavior, and deterministic conflict handling when the same concrete path resolves to incompatible descriptor references.",
+      "Extend `ExtractDocumentInfoMiddlewareTests` to cover a missing-write-plan mapping set that still contains the concrete resource model metadata needed for descriptor extraction and to assert the middleware completes without throwing.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DescriptorExtractor|FullyQualifiedName~ExtractDocumentInfoMiddleware\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Shared Relational DocumentInfo Test Helper",
+    "description": "Replace duplicated backend integration `CreateDocumentInfo` helpers with one shared helper that mirrors the production relational extraction seam. Acceptance: PostgreSQL and SQL Server backend integration fixtures can build `DocumentInfo` from `ResourceSchema`, `ResourceInfo`, `MappingSet`, and request JSON through one shared helper; the helper uses relational reference extraction plus relational descriptor extraction rather than plain `ExtractDescriptors`; extension-specific supplemental references remain explicit only when they are genuinely synthetic and outside the production extraction contract; and ordinary relational integration tests no longer need bespoke per-fixture `CreateDocumentInfo` implementations just to assemble production-shaped `DocumentInfo`.",
+    "steps-to-verify": [
+      "Introduce a shared relational `DocumentInfo` builder under backend test common or equivalent support code that uses the same extraction path as production for references and descriptors.",
+      "Migrate the flagged integration supports that still call `ExtractDescriptors` directly, including `PostgresqlRelationalWriteAuthoritativeSampleStudentSectionAssociationSmokeTests`, `PostgresqlRelationalWritePostAsUpdateSmokeTests`, and `MssqlRelationalWriteAuthoritativeDs52SurveySmokeTests`, to the shared helper.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSectionAssociation|FullyQualifiedName~PostAsUpdate\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Survey\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cross-Engine Relational Descriptor Coverage",
+    "description": "Expand integration coverage so the new Core-side descriptor extraction seam is exercised by real relational write scenarios on both PostgreSQL and SQL Server. Acceptance: at least one PostgreSQL and one SQL Server integration scenario enter through the normal relational request or repository seam and prove descriptor-valued members under `referenceJsonPaths` are extracted, resolved, and persisted correctly; the scenarios use the shared relational `DocumentInfo` helper instead of bypassing production extraction; at least one collection-backed descriptor-valued member with a concrete indexed path is asserted; and the branch no longer depends on a single converted helper to provide the only end-to-end proof for this seam.",
+    "steps-to-verify": [
+      "Add or update one PostgreSQL integration scenario that explicitly asserts descriptor extraction or persisted-column results for a descriptor-valued member under `referenceJsonPaths` after the request flows through the normal relational seam.",
+      "Add or update one SQL Server integration scenario with the same assertion pattern so the seam is covered on both engines, not only in PostgreSQL.",
+      "Use the shared relational `DocumentInfo` helper in those scenarios so the tests exercise the same extraction contract that production uses.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation|FullyQualifiedName~StudentSectionAssociation|FullyQualifiedName~PostAsUpdate\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Survey|FullyQualifiedName~RelationalWrite\"`"
+    ],
+    "completed": false
   }
 ]
