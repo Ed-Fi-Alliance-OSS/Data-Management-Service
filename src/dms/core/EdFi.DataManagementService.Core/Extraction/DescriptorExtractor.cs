@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Extraction;
 internal static class DescriptorExtractor
 {
     /// <summary>
-    /// Takes a relational write plan and extracts every descriptor reference needed by the
+    /// Takes mapping-set relational metadata and extracts every descriptor reference needed by the
     /// real relational request path, including descriptor-valued members under referenceJsonPaths.
     /// </summary>
     public static DescriptorReference[] ExtractRelationalDescriptors(
@@ -55,9 +55,9 @@ internal static class DescriptorExtractor
             resourceInfo.ProjectName.Value,
             resourceInfo.ResourceName.Value
         );
-        var writePlan = mappingSet.GetWritePlanOrThrow(resource);
+        var resourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel;
 
-        foreach (var descriptorEdgeSource in writePlan.Model.DescriptorEdgeSources)
+        foreach (var descriptorEdgeSource in resourceModel.DescriptorEdgeSources)
         {
             AddDescriptorReferences(
                 descriptorReferencesByPath,
