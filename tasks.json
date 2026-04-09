@@ -6,7 +6,7 @@
       "Add or update `NormalizedPlanContractCodec` and `MappingSetManifestJsonEmitter` coverage so reference-derived column bindings and key-unification members survive round-tripping, appear in normalized and manifest output, and invalid DTO or manifest mutations fail fast instead of silently collapsing back to generic scalar shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Plan Compilation",
@@ -211,7 +211,7 @@
       "Add or update `DefaultRelationalWriteExecutorTests` so invalid propagated reference identity scalars on create and update return validation-failure results instead of escaping as uncaught exceptions.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteFlattener|FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Request-Derived Conversion Policy Consolidation",
