@@ -399,6 +399,20 @@ jobs:
         run: |
           dotnet restore ./src/dms/EdFi.DataManagementService.sln --verbosity:normal
 
+      - name: Build CLI Integration Test Projects
+        run: |
+          $projects = @(
+            "./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj",
+            "./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj",
+            "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
+          )
+
+          dotnet build $projects `
+            -c ${{ env.CONFIGURATION }} `
+            --no-restore `
+            -v normal `
+            --nologo
+
       - name: Run CLI Integration Tests
         if: success()
         run: |
@@ -413,6 +427,7 @@ jobs:
 
             dotnet test $project `
               -c ${{ env.CONFIGURATION }} `
+              --no-build `
               --no-restore `
               -v normal `
               --logger "trx;LogFileName=$logFileName" `
