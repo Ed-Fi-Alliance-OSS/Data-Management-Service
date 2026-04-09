@@ -1098,7 +1098,49 @@ public class Given_RelationalWriteFlattener
                         "$.schoolReference",
                         901L,
                         ("$.schoolId", "255901"),
-                        ("$.localEducationAgencyReference.schoolId", "255902")
+                        ("$.localEducationAgencyId", "255902")
+                    ),
+                ]
+            )
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(456L),
+                new FlattenedWriteValue.Literal(901L),
+                new FlattenedWriteValue.Literal("255901"),
+                new FlattenedWriteValue.Literal("255902")
+            );
+    }
+
+    [Test]
+    public void It_does_not_silently_swap_duplicate_reference_derived_columns_when_resolved_identity_order_drifts()
+    {
+        var writePlan = CreateDuplicateScalarReferenceDerivedWritePlan();
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(456L, _fixture.DocumentUuid),
+            writePlan,
+            JsonNode.Parse(
+                """
+                {
+                  "schoolReference": {
+                    "schoolCode": "ignored-body-value"
+                  }
+                }
+                """
+            )!,
+            CreateResolvedReferenceSet(
+                documentReferences:
+                [
+                    CreateResolvedSchoolReference(
+                        "$.schoolReference",
+                        901L,
+                        ("$.localEducationAgencyId", "255902"),
+                        ("$.schoolId", "255901")
                     ),
                 ]
             )
@@ -1580,6 +1622,10 @@ public class Given_RelationalWriteFlattener
                                         "$.schoolReference",
                                         new JsonPathSegment.Property("schoolReference")
                                     ),
+                                    IdentityJsonPath: CreateTestPath(
+                                        "$.schoolYear",
+                                        new JsonPathSegment.Property("schoolYear")
+                                    ),
                                     ReferenceJsonPath: CreateTestPath(
                                         "$.schoolReference.schoolYear",
                                         new JsonPathSegment.Property("schoolReference"),
@@ -1611,6 +1657,11 @@ public class Given_RelationalWriteFlattener
             "$.schoolReference.schoolCode",
             new JsonPathSegment.Property("schoolReference"),
             new JsonPathSegment.Property("schoolCode")
+        );
+        var primaryIdentityPath = CreateTestPath("$.schoolId", new JsonPathSegment.Property("schoolId"));
+        var secondaryIdentityPath = CreateTestPath(
+            "$.localEducationAgencyId",
+            new JsonPathSegment.Property("localEducationAgencyId")
         );
         var table = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "ProgramDuplicateScalarReferenceDerived"),
@@ -1684,10 +1735,12 @@ public class Given_RelationalWriteFlattener
                         IdentityBindings:
                         [
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: primaryIdentityPath,
                                 ReferenceJsonPath: duplicatePath,
                                 Column: new DbColumnName("PrimarySchoolCode")
                             ),
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: secondaryIdentityPath,
                                 ReferenceJsonPath: duplicatePath,
                                 Column: new DbColumnName("SecondarySchoolCode")
                             ),
@@ -1721,6 +1774,7 @@ public class Given_RelationalWriteFlattener
                                 new ReferenceDerivedValueSourceMetadata(
                                     BindingIndex: 0,
                                     ReferenceObjectPath: referencePath,
+                                    IdentityJsonPath: primaryIdentityPath,
                                     ReferenceJsonPath: duplicatePath
                                 )
                             ),
@@ -1732,6 +1786,7 @@ public class Given_RelationalWriteFlattener
                                 new ReferenceDerivedValueSourceMetadata(
                                     BindingIndex: 0,
                                     ReferenceObjectPath: referencePath,
+                                    IdentityJsonPath: secondaryIdentityPath,
                                     ReferenceJsonPath: duplicatePath
                                 )
                             ),
@@ -1775,6 +1830,10 @@ public class Given_RelationalWriteFlattener
                                 ReferenceObjectPath: CreateTestPath(
                                     "$.schoolReference",
                                     new JsonPathSegment.Property("schoolReference")
+                                ),
+                                IdentityJsonPath: CreateTestPath(
+                                    "$.schoolId",
+                                    new JsonPathSegment.Property("schoolId")
                                 ),
                                 ReferenceJsonPath: CreateTestPath(
                                     "$.schoolReference.schoolId",
@@ -1840,6 +1899,10 @@ public class Given_RelationalWriteFlattener
                                         "$.schoolReference",
                                         new JsonPathSegment.Property("schoolReference")
                                     ),
+                                    IdentityJsonPath: CreateTestPath(
+                                        "$.schoolYear",
+                                        new JsonPathSegment.Property("schoolYear")
+                                    ),
                                     ReferenceJsonPath: CreateTestPath(
                                         "$.schoolReference.schoolYear",
                                         new JsonPathSegment.Property("schoolReference"),
@@ -1880,9 +1943,14 @@ public class Given_RelationalWriteFlattener
             new JsonPathSegment.Property("schoolReference"),
             new JsonPathSegment.Property("schoolId")
         );
+        var schoolIdIdentityPath = CreateTestPath("$.schoolId", new JsonPathSegment.Property("schoolId"));
         var schoolYearPath = CreateTestPath(
             "$.schoolReference.schoolYear",
             new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolYear")
+        );
+        var schoolYearIdentityPath = CreateTestPath(
+            "$.schoolYear",
             new JsonPathSegment.Property("schoolYear")
         );
         var table = new DbTableModel(
@@ -1975,10 +2043,12 @@ public class Given_RelationalWriteFlattener
                     IdentityBindings:
                     [
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolIdIdentityPath,
                             ReferenceJsonPath: schoolIdPath,
                             Column: new DbColumnName("School_RefSchoolIdAlias")
                         ),
                         new ReferenceIdentityBinding(
+                            IdentityJsonPath: schoolYearIdentityPath,
                             ReferenceJsonPath: schoolYearPath,
                             Column: new DbColumnName("School_RefSchoolYear")
                         ),
@@ -2042,6 +2112,10 @@ public class Given_RelationalWriteFlattener
         var descriptorPath = CreateTestPath(
             "$.schoolReference.schoolCategoryDescriptor",
             new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var descriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
             new JsonPathSegment.Property("schoolCategoryDescriptor")
         );
         var table = new DbTableModel(
@@ -2114,6 +2188,7 @@ public class Given_RelationalWriteFlattener
                         new ReferenceDerivedValueSourceMetadata(
                             BindingIndex: 0,
                             ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: descriptorIdentityPath,
                             ReferenceJsonPath: descriptorPath
                         )
                     ),
@@ -2141,6 +2216,7 @@ public class Given_RelationalWriteFlattener
                         IdentityBindings:
                         [
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: descriptorIdentityPath,
                                 ReferenceJsonPath: descriptorPath,
                                 Column: new DbColumnName("SchoolCategoryDescriptorId")
                             ),
@@ -2172,6 +2248,14 @@ public class Given_RelationalWriteFlattener
             "$.schoolReference.schoolCategory",
             new JsonPathSegment.Property("schoolReference"),
             new JsonPathSegment.Property("schoolCategory")
+        );
+        var schoolCategoryCodeIdentityPath = CreateTestPath(
+            "$.schoolCategoryCode",
+            new JsonPathSegment.Property("schoolCategoryCode")
+        );
+        var schoolCategoryDescriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
         );
         var table = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "ProgramDuplicateDescriptorReferenceDerived"),
@@ -2251,6 +2335,7 @@ public class Given_RelationalWriteFlattener
                         new ReferenceDerivedValueSourceMetadata(
                             BindingIndex: 0,
                             ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: schoolCategoryCodeIdentityPath,
                             ReferenceJsonPath: duplicatePath
                         )
                     ),
@@ -2262,6 +2347,7 @@ public class Given_RelationalWriteFlattener
                         new ReferenceDerivedValueSourceMetadata(
                             BindingIndex: 0,
                             ReferenceObjectPath: schoolReferencePath,
+                            IdentityJsonPath: schoolCategoryDescriptorIdentityPath,
                             ReferenceJsonPath: duplicatePath
                         )
                     ),
@@ -2289,10 +2375,12 @@ public class Given_RelationalWriteFlattener
                         IdentityBindings:
                         [
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: schoolCategoryCodeIdentityPath,
                                 ReferenceJsonPath: duplicatePath,
                                 Column: new DbColumnName("SchoolCategoryCode")
                             ),
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: schoolCategoryDescriptorIdentityPath,
                                 ReferenceJsonPath: duplicatePath,
                                 Column: new DbColumnName("SchoolCategoryDescriptorId")
                             ),
@@ -2323,6 +2411,10 @@ public class Given_RelationalWriteFlattener
         var descriptorPath = CreateTestPath(
             "$.schoolReference.schoolCategoryDescriptor",
             new JsonPathSegment.Property("schoolReference"),
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var descriptorIdentityPath = CreateTestPath(
+            "$.schoolCategoryDescriptor",
             new JsonPathSegment.Property("schoolCategoryDescriptor")
         );
         var table = new DbTableModel(
@@ -2430,6 +2522,7 @@ public class Given_RelationalWriteFlattener
                             ReferenceSource: new ReferenceDerivedValueSourceMetadata(
                                 BindingIndex: 0,
                                 ReferenceObjectPath: schoolReferencePath,
+                                IdentityJsonPath: descriptorIdentityPath,
                                 ReferenceJsonPath: descriptorPath
                             ),
                             PresenceColumn: new DbColumnName("School_DocumentId"),
@@ -2459,6 +2552,7 @@ public class Given_RelationalWriteFlattener
                         IdentityBindings:
                         [
                             new ReferenceIdentityBinding(
+                                IdentityJsonPath: descriptorIdentityPath,
                                 ReferenceJsonPath: descriptorPath,
                                 Column: new DbColumnName("SchoolCategoryDescriptorId_Alias")
                             ),

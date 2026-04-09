@@ -255,7 +255,7 @@
       "Add or update `RelationalWriteFlattenerTests` so a misordered resolved identity payload cannot silently populate persisted propagated columns on create or existing-document flows.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~FlatteningResolvedReferenceLookupSet|FullyQualifiedName~RelationalWriteFlattener\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Cross-Layer Reference Identity Drift Regression Net",

@@ -13,14 +13,19 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 {
     private readonly DocumentReferenceBinding[] _documentReferenceBindings;
     private readonly OrdinalPathMap<ResolvedDocumentReference>?[] _documentReferenceMapsByBindingIndex;
-    private readonly Dictionary<string, int>[] _identityBindingIndexByColumnByBindingIndex;
+    private readonly Dictionary<string, IdentityBindingLookup>[] _identityBindingByColumnByBindingIndex;
     private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> _descriptorIdMapsByKey;
     private readonly Dictionary<string, QualifiedResourceName> _descriptorResourceByPath;
+
+    private readonly record struct IdentityBindingLookup(
+        int IdentityBindingIndex,
+        ReferenceIdentityBinding IdentityBinding
+    );
 
     private FlatteningResolvedReferenceLookupSet(
         DocumentReferenceBinding[] documentReferenceBindings,
         OrdinalPathMap<ResolvedDocumentReference>?[] documentReferenceMapsByBindingIndex,
-        Dictionary<string, int>[] identityBindingIndexByColumnByBindingIndex,
+        Dictionary<string, IdentityBindingLookup>[] identityBindingByColumnByBindingIndex,
         Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey,
         Dictionary<string, QualifiedResourceName> descriptorResourceByPath
     )
@@ -30,9 +35,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         _documentReferenceMapsByBindingIndex =
             documentReferenceMapsByBindingIndex
             ?? throw new ArgumentNullException(nameof(documentReferenceMapsByBindingIndex));
-        _identityBindingIndexByColumnByBindingIndex =
-            identityBindingIndexByColumnByBindingIndex
-            ?? throw new ArgumentNullException(nameof(identityBindingIndexByColumnByBindingIndex));
+        _identityBindingByColumnByBindingIndex =
+            identityBindingByColumnByBindingIndex
+            ?? throw new ArgumentNullException(nameof(identityBindingByColumnByBindingIndex));
         _descriptorIdMapsByKey =
             descriptorIdMapsByKey ?? throw new ArgumentNullException(nameof(descriptorIdMapsByKey));
         _descriptorResourceByPath =
@@ -107,7 +112,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         return new(
             documentReferenceBindings,
             documentReferenceMapsByBindingIndex,
-            BuildIdentityBindingIndexByColumnByBindingIndex(documentReferenceBindings),
+            BuildIdentityBindingByColumnByBindingIndex(documentReferenceBindings),
             descriptorIdMapsByKey,
             BuildDescriptorResourceByPath(writePlan)
         );
@@ -307,7 +312,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             return null;
         }
 
-        var identityBindingIndex = GetIdentityBindingIndexOrThrow(referenceSource, columnName);
+        var identityBindingLookup = GetIdentityBindingOrThrow(referenceSource, columnName);
         var identityElements = resolvedReference.Reference.DocumentIdentity.DocumentIdentityElements;
 
         if (identityElements.Length != binding.IdentityBindings.Count)
@@ -319,7 +324,14 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             );
         }
 
-        var identityElement = identityElements[identityBindingIndex];
+        var identityElement = ResolveIdentityElementByPath(
+            binding,
+            resolvedReference,
+            referenceSource,
+            identityBindingLookup,
+            identityElements,
+            expectedDescriptorIdentity
+        );
         var isDescriptorIdentity = IsDescriptorIdentity(identityElement);
 
         if (isDescriptorIdentity == expectedDescriptorIdentity)
@@ -332,9 +344,84 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
         throw new InvalidOperationException(
             $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
-                + $"'{binding.ReferenceObjectPath.Canonical}' had {actualKind} identity metadata at ordered position "
-                + $"{identityBindingIndex}, but compiled logical member '{referenceSource.ReferenceJsonPath.Canonical}' "
-                + $"requires {expectedKind} identity metadata."
+                + $"'{binding.ReferenceObjectPath.Canonical}' resolved identity path "
+                + $"'{identityElement.IdentityJsonPath.Value}' as {actualKind}, but compiled logical member "
+                + $"'{referenceSource.ReferenceJsonPath.Canonical}' expects {expectedKind} identity metadata "
+                + $"for identity path '{identityBindingLookup.IdentityBinding.IdentityJsonPath.Canonical}'."
+        );
+    }
+
+    private static DocumentIdentityElement ResolveIdentityElementByPath(
+        DocumentReferenceBinding binding,
+        ResolvedDocumentReference resolvedReference,
+        ReferenceDerivedValueSourceMetadata referenceSource,
+        IdentityBindingLookup identityBindingLookup,
+        IReadOnlyList<DocumentIdentityElement> identityElements,
+        bool expectedDescriptorIdentity
+    )
+    {
+        var expectedIdentityPath = identityBindingLookup.IdentityBinding.IdentityJsonPath.Canonical;
+        var exactMatches = identityElements
+            .Where(identityElement =>
+                string.Equals(
+                    identityElement.IdentityJsonPath.Value,
+                    expectedIdentityPath,
+                    StringComparison.Ordinal
+                )
+            )
+            .Take(2)
+            .ToArray();
+
+        if (exactMatches.Length == 1)
+        {
+            return exactMatches[0];
+        }
+
+        if (exactMatches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
+                    + $"'{binding.ReferenceObjectPath.Canonical}' carried duplicate identity path "
+                    + $"'{expectedIdentityPath}' for logical member '{referenceSource.ReferenceJsonPath.Canonical}'."
+            );
+        }
+
+        if (expectedDescriptorIdentity && IsDescriptorIdentityPath(expectedIdentityPath))
+        {
+            var descriptorIdentityCount = identityElements.Count(IsDescriptorIdentity);
+            var syntheticDescriptorMatches = identityElements
+                .Where(identityElement =>
+                    identityElement.IdentityJsonPath == DocumentIdentity.DescriptorIdentityJsonPath
+                )
+                .Take(2)
+                .ToArray();
+
+            if (syntheticDescriptorMatches.Length == 1 && descriptorIdentityCount == 1)
+            {
+                return syntheticDescriptorMatches[0];
+            }
+
+            if (syntheticDescriptorMatches.Length > 1 || descriptorIdentityCount > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
+                        + $"'{binding.ReferenceObjectPath.Canonical}' could not safely match synthetic descriptor identity metadata "
+                        + $"while logical member '{referenceSource.ReferenceJsonPath.Canonical}' expected identity path "
+                        + $"'{expectedIdentityPath}'. Actual identity paths: {FormatIdentityPathList(identityElements)}."
+                );
+            }
+        }
+
+        var actualPathAtCompiledPosition = identityElements[identityBindingLookup.IdentityBindingIndex]
+            .IdentityJsonPath
+            .Value;
+
+        throw new InvalidOperationException(
+            $"Resolved document-reference occurrence '{resolvedReference.Reference.Path.Value}' for binding "
+                + $"'{binding.ReferenceObjectPath.Canonical}' expected identity path '{expectedIdentityPath}' for "
+                + $"logical member '{referenceSource.ReferenceJsonPath.Canonical}', but found "
+                + $"'{actualPathAtCompiledPosition}' at compiled position {identityBindingLookup.IdentityBindingIndex}. "
+                + $"Actual identity paths: {FormatIdentityPathList(identityElements)}."
         );
     }
 
@@ -342,15 +429,28 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     {
         ArgumentNullException.ThrowIfNull(identityElement);
 
-        if (identityElement.IdentityJsonPath == DocumentIdentity.DescriptorIdentityJsonPath)
-        {
-            return true;
-        }
+        return IsDescriptorIdentityPath(identityElement.IdentityJsonPath.Value);
+    }
 
-        var canonicalPath = identityElement.IdentityJsonPath.Value;
+    private static bool IsDescriptorIdentityPath(string canonicalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
 
-        return canonicalPath.EndsWith("Descriptor", StringComparison.Ordinal)
+        return string.Equals(
+                canonicalPath,
+                DocumentIdentity.DescriptorIdentityJsonPath.Value,
+                StringComparison.Ordinal
+            )
+            || canonicalPath.EndsWith("Descriptor", StringComparison.Ordinal)
             || canonicalPath.EndsWith("Descriptor]", StringComparison.Ordinal);
+    }
+
+    private static string FormatIdentityPathList(IReadOnlyList<DocumentIdentityElement> identityElements)
+    {
+        return string.Join(
+            ", ",
+            identityElements.Select(identityElement => $"'{identityElement.IdentityJsonPath.Value}'")
+        );
     }
 
     private DocumentReferenceBinding GetDocumentReferenceBinding(int bindingIndex)
@@ -369,19 +469,17 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         return _documentReferenceBindings[bindingIndex];
     }
 
-    private int GetIdentityBindingIndexOrThrow(
+    private IdentityBindingLookup GetIdentityBindingOrThrow(
         ReferenceDerivedValueSourceMetadata referenceSource,
         DbColumnName columnName
     )
     {
         var binding = GetDocumentReferenceBinding(referenceSource.BindingIndex);
-        var identityBindingIndexByColumn = _identityBindingIndexByColumnByBindingIndex[
-            referenceSource.BindingIndex
-        ];
+        var identityBindingByColumn = _identityBindingByColumnByBindingIndex[referenceSource.BindingIndex];
 
-        if (identityBindingIndexByColumn.TryGetValue(columnName.Value, out var identityBindingIndex))
+        if (identityBindingByColumn.TryGetValue(columnName.Value, out var identityBindingLookup))
         {
-            var identityBinding = binding.IdentityBindings[identityBindingIndex];
+            var identityBinding = identityBindingLookup.IdentityBinding;
 
             if (
                 string.Equals(
@@ -391,7 +489,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 )
             )
             {
-                return identityBindingIndex;
+                return identityBindingLookup;
             }
 
             throw new InvalidOperationException(
@@ -407,17 +505,17 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         );
     }
 
-    private static Dictionary<string, int>[] BuildIdentityBindingIndexByColumnByBindingIndex(
+    private static Dictionary<string, IdentityBindingLookup>[] BuildIdentityBindingByColumnByBindingIndex(
         IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings
     )
     {
-        var identityBindingIndexByColumnByBindingIndex = new Dictionary<string, int>[
+        var identityBindingByColumnByBindingIndex = new Dictionary<string, IdentityBindingLookup>[
             documentReferenceBindings.Count
         ];
 
         for (var bindingIndex = 0; bindingIndex < documentReferenceBindings.Count; bindingIndex++)
         {
-            Dictionary<string, int> identityBindingIndexByColumn = new(StringComparer.Ordinal);
+            Dictionary<string, IdentityBindingLookup> identityBindingByColumn = new(StringComparer.Ordinal);
             var binding = documentReferenceBindings[bindingIndex];
 
             for (
@@ -427,9 +525,12 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             )
             {
                 if (
-                    !identityBindingIndexByColumn.TryAdd(
+                    !identityBindingByColumn.TryAdd(
                         binding.IdentityBindings[identityBindingIndex].Column.Value,
-                        identityBindingIndex
+                        new IdentityBindingLookup(
+                            identityBindingIndex,
+                            binding.IdentityBindings[identityBindingIndex]
+                        )
                     )
                 )
                 {
@@ -440,10 +541,10 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 }
             }
 
-            identityBindingIndexByColumnByBindingIndex[bindingIndex] = identityBindingIndexByColumn;
+            identityBindingByColumnByBindingIndex[bindingIndex] = identityBindingByColumn;
         }
 
-        return identityBindingIndexByColumnByBindingIndex;
+        return identityBindingByColumnByBindingIndex;
     }
 
     private static Dictionary<string, QualifiedResourceName> BuildDescriptorResourceByPath(

@@ -67,7 +67,11 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         _schoolResource,
                         [
                             new ReferenceIdentityBinding(
-                                Path(
+                                IdentityJsonPath: Path(
+                                    "$.schoolId",
+                                    new JsonPathSegment.Property("schoolId")
+                                ),
+                                ReferenceJsonPath: Path(
                                     "$.schoolReference.schoolId",
                                     new JsonPathSegment.Property("schoolReference"),
                                     new JsonPathSegment.Property("schoolId")
@@ -89,7 +93,11 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         _schoolResource,
                         [
                             new ReferenceIdentityBinding(
-                                Path(
+                                IdentityJsonPath: Path(
+                                    "$.schoolId",
+                                    new JsonPathSegment.Property("schoolId")
+                                ),
+                                ReferenceJsonPath: Path(
                                     "$.sections[*].schoolReference.schoolId",
                                     new JsonPathSegment.Property("sections"),
                                     new JsonPathSegment.AnyArrayElement(),
@@ -99,7 +107,11 @@ public class Given_FlatteningResolvedReferenceLookupSet
                                 new DbColumnName("SchoolId")
                             ),
                             new ReferenceIdentityBinding(
-                                Path(
+                                IdentityJsonPath: Path(
+                                    "$.schoolTypeDescriptor",
+                                    new JsonPathSegment.Property("schoolTypeDescriptor")
+                                ),
+                                ReferenceJsonPath: Path(
                                     "$.sections[*].schoolReference.schoolTypeDescriptor",
                                     new JsonPathSegment.Property("sections"),
                                     new JsonPathSegment.AnyArrayElement(),
@@ -125,7 +137,11 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         _schoolResource,
                         [
                             new ReferenceIdentityBinding(
-                                Path(
+                                IdentityJsonPath: Path(
+                                    "$.schoolId",
+                                    new JsonPathSegment.Property("schoolId")
+                                ),
+                                ReferenceJsonPath: Path(
                                     "$.sections[*].sessions[*].schoolReference.schoolId",
                                     new JsonPathSegment.Property("sections"),
                                     new JsonPathSegment.AnyArrayElement(),
@@ -182,9 +198,10 @@ public class Given_FlatteningResolvedReferenceLookupSet
         var binding = _writePlan.Model.DocumentReferenceBindings[bindingIndex];
 
         return new ReferenceDerivedValueSourceMetadata(
-            bindingIndex,
-            binding.ReferenceObjectPath,
-            binding.IdentityBindings[identityBindingIndex].ReferenceJsonPath
+            BindingIndex: bindingIndex,
+            ReferenceObjectPath: binding.ReferenceObjectPath,
+            IdentityJsonPath: binding.IdentityBindings[identityBindingIndex].IdentityJsonPath,
+            ReferenceJsonPath: binding.IdentityBindings[identityBindingIndex].ReferenceJsonPath
         );
     }
 
@@ -346,24 +363,87 @@ public class Given_FlatteningResolvedReferenceLookupSet
     }
 
     [Test]
-    public void It_rejects_identity_kind_order_drift_between_compiled_bindings_and_resolved_occurrences()
+    public void It_resolves_descriptor_identity_elements_even_when_the_resolved_payload_order_drifts()
     {
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             _writePlan,
             CreateResolvedReferenceSetWithIdentityKindDrift()
         );
 
-        var act = () =>
-            lookupSet.GetReferenceIdentityDescriptorId(
+        lookupSet
+            .GetReferenceIdentityDescriptorId(
                 CreateReferenceDerivedSource(1, 1),
                 CreateReferenceDerivedColumn(1, 1),
                 [0]
-            );
+            )
+            .Should()
+            .Be(501L);
+    }
+
+    [Test]
+    public void It_resolves_duplicate_scalar_reference_json_paths_by_identity_path_when_resolved_order_drifts()
+    {
+        var (writePlan, _, firstScalarColumn, secondScalarColumn, referenceSource) =
+            CreateDuplicateReferenceJsonPathScalarFixture();
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            writePlan,
+            new ResolvedReferenceSet(
+                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+                {
+                    [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
+                        _schoolResourceInfo,
+                        "$.schoolReference",
+                        101L,
+                        ("$.localEducationAgencyId", "255902"),
+                        ("$.schoolId", "255901")
+                    ),
+                },
+                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                InvalidDocumentReferences: [],
+                InvalidDescriptorReferences: [],
+                DocumentReferenceOccurrences: [],
+                DescriptorReferenceOccurrences: []
+            )
+        );
+
+        lookupSet.GetReferenceIdentityValue(referenceSource, firstScalarColumn, []).Should().Be("255901");
+        lookupSet.GetReferenceIdentityValue(referenceSource, secondScalarColumn, []).Should().Be("255902");
+    }
+
+    [Test]
+    public void It_rejects_missing_expected_identity_paths_even_when_identity_counts_match()
+    {
+        var (writePlan, _, _, secondScalarColumn, referenceSource) =
+            CreateDuplicateReferenceJsonPathScalarFixture();
+        var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
+            writePlan,
+            new ResolvedReferenceSet(
+                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+                {
+                    [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
+                        _schoolResourceInfo,
+                        "$.schoolReference",
+                        101L,
+                        ("$.schoolId", "255901"),
+                        ("$.educationOrganizationId", "255902")
+                    ),
+                },
+                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                InvalidDocumentReferences: [],
+                InvalidDescriptorReferences: [],
+                DocumentReferenceOccurrences: [],
+                DescriptorReferenceOccurrences: []
+            )
+        );
+
+        var act = () => lookupSet.GetReferenceIdentityValue(referenceSource, secondScalarColumn, []);
 
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*'$.sections[0].schoolReference'*had scalar identity metadata at ordered position 1*requires descriptor identity metadata*"
+                "*expected identity path '$.localEducationAgencyId'*found '$.educationOrganizationId' at compiled position 1*Actual identity paths: '$.schoolId', '$.educationOrganizationId'*"
             );
     }
 
@@ -676,6 +756,11 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new JsonPathSegment.Property("schoolReference"),
             new JsonPathSegment.Property("schoolCode")
         );
+        var schoolIdIdentityPath = Path("$.schoolId", new JsonPathSegment.Property("schoolId"));
+        var localEducationAgencyIdIdentityPath = Path(
+            "$.localEducationAgencyId",
+            new JsonPathSegment.Property("localEducationAgencyId")
+        );
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: referencePath,
@@ -684,8 +769,16 @@ public class Given_FlatteningResolvedReferenceLookupSet
             TargetResource: _schoolResource,
             IdentityBindings:
             [
-                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("PrimarySchoolCode")),
-                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SecondarySchoolCode")),
+                new ReferenceIdentityBinding(
+                    schoolIdIdentityPath,
+                    duplicatePath,
+                    new DbColumnName("PrimarySchoolCode")
+                ),
+                new ReferenceIdentityBinding(
+                    localEducationAgencyIdIdentityPath,
+                    duplicatePath,
+                    new DbColumnName("SecondarySchoolCode")
+                ),
             ]
         );
 
@@ -712,7 +805,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         "$.schoolReference",
                         101L,
                         ("$.schoolId", "255901"),
-                        ("$.localEducationAgencyReference.schoolId", "255902")
+                        ("$.localEducationAgencyId", "255902")
                     ),
                 },
                 SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
@@ -732,6 +825,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new ReferenceDerivedValueSourceMetadata(
                 BindingIndex: 0,
                 ReferenceObjectPath: referencePath,
+                IdentityJsonPath: schoolIdIdentityPath,
                 ReferenceJsonPath: duplicatePath
             )
         );
@@ -816,6 +910,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new JsonPathSegment.Property("schoolReference"),
             new JsonPathSegment.Property("schoolCategory")
         );
+        var schoolCategoryCodeIdentityPath = Path(
+            "$.schoolCategoryCode",
+            new JsonPathSegment.Property("schoolCategoryCode")
+        );
+        var schoolCategoryDescriptorIdentityPath = Path(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: referencePath,
@@ -824,8 +926,16 @@ public class Given_FlatteningResolvedReferenceLookupSet
             TargetResource: _schoolResource,
             IdentityBindings:
             [
-                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SchoolCode")),
-                new ReferenceIdentityBinding(duplicatePath, new DbColumnName("SchoolCategoryDescriptorId")),
+                new ReferenceIdentityBinding(
+                    schoolCategoryCodeIdentityPath,
+                    duplicatePath,
+                    new DbColumnName("SchoolCode")
+                ),
+                new ReferenceIdentityBinding(
+                    schoolCategoryDescriptorIdentityPath,
+                    duplicatePath,
+                    new DbColumnName("SchoolCategoryDescriptorId")
+                ),
             ]
         );
 
@@ -891,6 +1001,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new ReferenceDerivedValueSourceMetadata(
                 BindingIndex: 0,
                 ReferenceObjectPath: referencePath,
+                IdentityJsonPath: schoolCategoryCodeIdentityPath,
                 ReferenceJsonPath: duplicatePath
             )
         );
