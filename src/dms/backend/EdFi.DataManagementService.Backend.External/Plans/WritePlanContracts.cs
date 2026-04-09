@@ -519,13 +519,6 @@ public sealed record ReferenceDerivedValueSourceMetadata
         this.ReferenceJsonPath = ReferenceJsonPath;
     }
 
-    public ReferenceDerivedValueSourceMetadata(
-        int BindingIndex,
-        JsonPathExpression ReferenceObjectPath,
-        JsonPathExpression ReferenceJsonPath
-    )
-        : this(BindingIndex, ReferenceObjectPath, ReferenceJsonPath, ReferenceJsonPath) { }
-
     public int BindingIndex { get; init; }
 
     public JsonPathExpression ReferenceObjectPath { get; init; }
