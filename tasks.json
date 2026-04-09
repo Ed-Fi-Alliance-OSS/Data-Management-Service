@@ -43,6 +43,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj --filter \"descriptor|reference|referential\"`",
       "If Docker-backed validation is needed afterward, tear down and re-set up the local DMS test stack before running broader PostgreSQL E2E coverage."
     ],
-    "completed": false
+    "completed": true
   }
 ]
