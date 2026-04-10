@@ -369,10 +369,23 @@ jobs:
           use-actions-summary: "true"
 
   run-cli-integration-tests:
-    name: Run CLI Integration Tests
+    name: Run CLI Integration Tests (${{ matrix.cli }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cli: ApiSchemaDownloader
+            project: ./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj
+            trx: EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.trx
+          - cli: OpenApiGenerator
+            project: ./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj
+            trx: EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.trx
+          - cli: SchemaTools
+            project: ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj
+            trx: EdFi.DataManagementService.SchemaTools.Tests.Integration.trx
     defaults:
       run:
         shell: pwsh
@@ -445,17 +458,11 @@ jobs:
 
       - name: Restore CLI Integration Tests
         run: |
-          dotnet restore ./src/dms/EdFi.DataManagementService.sln --verbosity:normal
+          dotnet restore ${{ matrix.project }} --verbosity:normal
 
-      - name: Build CLI Integration Test Projects
+      - name: Build CLI Integration Test Project
         run: |
-          $projects = @(
-            "./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj",
-            "./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj",
-            "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
-          )
-
-          dotnet build $projects `
+          dotnet build ${{ matrix.project }} `
             -c ${{ env.CONFIGURATION }} `
             --no-restore `
             -v normal `
@@ -464,30 +471,20 @@ jobs:
       - name: Run CLI Integration Tests
         if: success()
         run: |
-          $projects = @(
-            "./src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration/EdFi.DataManagementService.ApiSchemaDownloader.Tests.Integration.csproj",
-            "./src/dms/clis/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration/EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj",
-            "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
-          )
-
-          foreach ($project in $projects) {
-            $logFileName = [System.IO.Path]::GetFileNameWithoutExtension($project) + ".trx"
-
-            dotnet test $project `
-              -c ${{ env.CONFIGURATION }} `
-              --no-build `
-              --no-restore `
-              -v normal `
-              --logger "trx;LogFileName=$logFileName" `
-              --logger "console" `
-              --nologo
-          }
+          dotnet test ${{ matrix.project }} `
+            -c ${{ env.CONFIGURATION }} `
+            --no-build `
+            --no-restore `
+            -v normal `
+            --logger "trx;LogFileName=${{ matrix.trx }}" `
+            --logger "console" `
+            --nologo
 
       - name: Upload CLI Integration Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         if: (success() || failure())
         with:
-          name: CLI Integration Tests
+          name: CLI Integration Tests (${{ matrix.cli }})
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
