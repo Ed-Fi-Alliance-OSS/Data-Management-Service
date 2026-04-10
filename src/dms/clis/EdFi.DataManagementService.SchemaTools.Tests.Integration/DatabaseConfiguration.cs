@@ -32,7 +32,8 @@ public static class DatabaseConfiguration
     }
 
     public static string PostgresAdminConnectionString =>
-        Config().GetConnectionString("PostgresAdmin")
+        Environment.GetEnvironmentVariable("ConnectionStrings__PostgresAdmin")
+        ?? Config().GetConnectionString("PostgresAdmin")
         ?? throw new InvalidOperationException(
             "PostgresAdmin connection string is not configured in appsettings.json"
         );
@@ -42,5 +43,7 @@ public static class DatabaseConfiguration
     /// MSSQL integration tests are opt-in: configure MssqlAdmin in appsettings.Test.json
     /// to enable them locally.
     /// </summary>
-    public static string? MssqlAdminConnectionString => Config().GetConnectionString("MssqlAdmin");
+    public static string? MssqlAdminConnectionString =>
+        Environment.GetEnvironmentVariable("ConnectionStrings__MssqlAdmin")
+        ?? Config().GetConnectionString("MssqlAdmin");
 }

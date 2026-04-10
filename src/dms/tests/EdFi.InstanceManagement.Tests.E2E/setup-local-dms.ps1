@@ -15,7 +15,10 @@
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [switch]
+    $SkipDockerBuild
+)
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
@@ -58,7 +61,7 @@ try {
     Write-Host "  - Kafka UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
     Write-Host "  - Environment File: ./.env.routeContext.e2e" -ForegroundColor Gray
-    Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
+    Write-Host "  - Force Rebuild: $(if ($SkipDockerBuild) { "No" } else { "Yes" })" -ForegroundColor Gray
     Write-Host "  - Extension Security Metadata: Yes" -ForegroundColor Gray
     Write-Host "  - Route Qualifiers: districtId, schoolYear" -ForegroundColor Cyan
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
@@ -67,7 +70,12 @@ try {
     Write-Host ""
 
     # Run the start script - NO instance creation
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+    if ($SkipDockerBuild) {
+        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+    }
+    else {
+        ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"

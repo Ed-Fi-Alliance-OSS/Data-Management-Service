@@ -497,6 +497,11 @@ function RunInstanceE2E {
 }
 
 function InstanceE2ETests {
+    param (
+        [switch]
+        $SkipDockerBuild
+    )
+
     # Instance management tests require the DMS environment to be started with route qualifiers
     Write-Host "Setting up instance management E2E tests..." -ForegroundColor Cyan
 
@@ -506,7 +511,12 @@ function InstanceE2ETests {
     if (Test-Path $instanceSetupScript) {
         Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
         Invoke-Execute {
-            & $instanceSetupScript
+            if ($SkipDockerBuild) {
+                & $instanceSetupScript -SkipDockerBuild
+            }
+            else {
+                & $instanceSetupScript
+            }
         }
     }
     else {
@@ -692,7 +702,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
-        InstanceE2ETest { Invoke-Step { InstanceE2ETests } }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
