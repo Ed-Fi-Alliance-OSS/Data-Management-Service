@@ -63,19 +63,6 @@ file sealed class MssqlStudentSchoolAssociationNoOpUpdateCascadeHandler : IUpdat
         );
 }
 
-file sealed record MssqlStudentSchoolAssociationRelationalGetRequest(
-    DocumentUuid DocumentUuid,
-    BaseResourceInfo ResourceInfo,
-    MappingSet MappingSet,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    TraceId TraceId,
-    RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
-    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-) : IRelationalGetRequest
-{
-    public ResourceName ResourceName => ResourceInfo.ResourceName;
-}
-
 file static class MssqlStudentSchoolAssociationIntegrationTestSupport
 {
     public const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -529,37 +516,22 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             StudentSchoolAssociationDocumentUuid,
             "mssql-authoritative-sample-student-school-association-get-by-id"
         );
-        var expectedDocument = CreateExpectedExternalResponse(CreateRequestBodyJson, _documentMetadata);
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            CreateRequestBodyJson,
+            _documentMetadata.DocumentUuid,
+            _documentMetadata.ContentVersion,
+            _documentMetadata.ContentLastModifiedAt
+        );
 
-        getResult.Should().BeOfType<GetResult.GetSuccess>();
-
-        var success = getResult.As<GetResult.GetSuccess>();
-
-        success.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid);
-        success.LastModifiedTraceId.Should().BeNull();
-        success.LastModifiedDate.Should().Be(_documentMetadata.ContentLastModifiedAt.UtcDateTime);
-        success.EdfiDoc["id"]!
-            .GetValue<string>()
-            .Should()
-            .Be(StudentSchoolAssociationDocumentUuid.Value.ToString());
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be($"\"{_documentMetadata.ContentVersion}\"");
-        success.EdfiDoc["_lastModifiedDate"]!
-            .GetValue<string>()
-            .Should()
-            .Be(FormatExternalLastModifiedDate(_documentMetadata.ContentLastModifiedAt));
-        success.EdfiDoc["alternativeGraduationPlans"]!
-            .AsArray()
-            .Select(plan =>
-                plan?["alternativeGraduationPlanReference"]?["graduationSchoolYear"]?.GetValue<int>()
-            )
-            .Should()
-            .Equal(FoundationGraduationSchoolYear, EndorsementGraduationSchoolYear);
-        success.EdfiDoc["educationPlans"]!
-            .AsArray()
-            .Select(plan => plan?["educationPlanDescriptor"]?.GetValue<string>())
-            .Should()
-            .Equal(PathwayEducationPlanDescriptorUri, InterventionEducationPlanDescriptorUri);
-        CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
+        RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
+            getResult,
+            StudentSchoolAssociationDocumentUuid,
+            _documentMetadata.ContentVersion,
+            _documentMetadata.ContentLastModifiedAt,
+            expectedDocument,
+            [FoundationGraduationSchoolYear, EndorsementGraduationSchoolYear],
+            [PathwayEducationPlanDescriptorUri, InterventionEducationPlanDescriptorUri]
+        );
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(
@@ -596,7 +568,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
-        var request = new MssqlStudentSchoolAssociationRelationalGetRequest(
+        var request = new IntegrationRelationalGetRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
@@ -1255,64 +1227,5 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         {
             await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
         }
-    }
-
-    private static JsonNode CreateExpectedExternalResponse(
-        string requestBodyJson,
-        MssqlStudentSchoolAssociationDocumentMetadata metadata
-    )
-    {
-        var expectedDocument =
-            JsonNode.Parse(requestBodyJson)?.AsObject()
-            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
-
-        expectedDocument["id"] = metadata.DocumentUuid.ToString();
-        expectedDocument["_etag"] = $"\"{metadata.ContentVersion}\"";
-        expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(
-            metadata.ContentLastModifiedAt
-        );
-
-        return expectedDocument;
-    }
-
-    private static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>
-        lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-
-    private static string CanonicalizeJson(JsonNode node) =>
-        NormalizeJsonNode(node)?.ToJsonString() ?? "null";
-
-    private static JsonNode? NormalizeJsonNode(JsonNode? node)
-    {
-        return node switch
-        {
-            null => null,
-            JsonObject jsonObject => NormalizeJsonObject(jsonObject),
-            JsonArray jsonArray => NormalizeJsonArray(jsonArray),
-            _ => node.DeepClone(),
-        };
-    }
-
-    private static JsonObject NormalizeJsonObject(JsonObject jsonObject)
-    {
-        JsonObject normalized = [];
-
-        foreach (var property in jsonObject.OrderBy(static property => property.Key, StringComparer.Ordinal))
-        {
-            normalized[property.Key] = NormalizeJsonNode(property.Value);
-        }
-
-        return normalized;
-    }
-
-    private static JsonArray NormalizeJsonArray(JsonArray jsonArray)
-    {
-        JsonArray normalized = [];
-
-        foreach (var item in jsonArray)
-        {
-            normalized.Add(NormalizeJsonNode(item));
-        }
-
-        return normalized;
     }
 }

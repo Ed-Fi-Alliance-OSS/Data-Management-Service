@@ -73,19 +73,6 @@ file sealed class AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHa
         );
 }
 
-file sealed record AuthoritativeSampleStudentSchoolAssociationRelationalGetRequest(
-    DocumentUuid DocumentUuid,
-    BaseResourceInfo ResourceInfo,
-    MappingSet MappingSet,
-    IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    TraceId TraceId,
-    RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
-    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
-) : IRelationalGetRequest
-{
-    public ResourceName ResourceName => ResourceInfo.ResourceName;
-}
-
 file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport
 {
     public const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -968,44 +955,22 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var expectedLastModifiedAt = await ReadContentLastModifiedAtAsync(
             StudentSchoolAssociationDocumentUuid.Value
         );
-        var expectedDocument = CreateExpectedExternalResponse(
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             ChangedUpdateRequestBodyJson,
-            _stateAfterNoOpUpdate.Document,
+            _stateAfterNoOpUpdate.Document.DocumentUuid,
+            _stateAfterNoOpUpdate.Document.ContentVersion,
             expectedLastModifiedAt
         );
 
-        getResult.Should().BeOfType<GetResult.GetSuccess>();
-
-        var success = getResult.As<GetResult.GetSuccess>();
-
-        success.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid);
-        success.LastModifiedTraceId.Should().BeNull();
-        success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
-        success.EdfiDoc["id"]!
-            .GetValue<string>()
-            .Should()
-            .Be(StudentSchoolAssociationDocumentUuid.Value.ToString());
-        success.EdfiDoc["_etag"]!
-            .GetValue<string>()
-            .Should()
-            .Be($"\"{_stateAfterNoOpUpdate.Document.ContentVersion}\"");
-        success.EdfiDoc["_lastModifiedDate"]!
-            .GetValue<string>()
-            .Should()
-            .Be(FormatExternalLastModifiedDate(expectedLastModifiedAt));
-        success.EdfiDoc["alternativeGraduationPlans"]!
-            .AsArray()
-            .Select(plan =>
-                plan?["alternativeGraduationPlanReference"]?["graduationSchoolYear"]?.GetValue<int>()
-            )
-            .Should()
-            .Equal(EndorsementGraduationSchoolYear, StemGraduationSchoolYear);
-        success.EdfiDoc["educationPlans"]!
-            .AsArray()
-            .Select(plan => plan?["educationPlanDescriptor"]?.GetValue<string>())
-            .Should()
-            .Equal(InterventionEducationPlanDescriptorUri, CareerEducationPlanDescriptorUri);
-        CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
+        RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
+            getResult,
+            StudentSchoolAssociationDocumentUuid,
+            _stateAfterNoOpUpdate.Document.ContentVersion,
+            expectedLastModifiedAt,
+            expectedDocument,
+            [EndorsementGraduationSchoolYear, StemGraduationSchoolYear],
+            [InterventionEducationPlanDescriptorUri, CareerEducationPlanDescriptorUri]
+        );
     }
 
     private async Task<GetResult> ExecuteGetByIdAsync(DocumentUuid documentUuid, string traceId)
@@ -1013,7 +978,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
-        var request = new AuthoritativeSampleStudentSchoolAssociationRelationalGetRequest(
+        var request = new IntegrationRelationalGetRequest(
             DocumentUuid: documentUuid,
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
@@ -1045,64 +1010,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             : throw new InvalidOperationException(
                 $"Expected exactly one document metadata row for '{documentUuid}', but found {rows.Count}."
             );
-    }
-
-    private static JsonNode CreateExpectedExternalResponse(
-        string requestBodyJson,
-        AuthoritativeSampleStudentSchoolAssociationDocumentRow document,
-        DateTimeOffset lastModifiedAt
-    )
-    {
-        var expectedDocument =
-            JsonNode.Parse(requestBodyJson)?.AsObject()
-            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
-
-        expectedDocument["id"] = document.DocumentUuid.ToString();
-        expectedDocument["_etag"] = $"\"{document.ContentVersion}\"";
-        expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
-
-        return expectedDocument;
-    }
-
-    private static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>
-        lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-
-    private static string CanonicalizeJson(JsonNode node) =>
-        NormalizeJsonNode(node)?.ToJsonString() ?? "null";
-
-    private static JsonNode? NormalizeJsonNode(JsonNode? node)
-    {
-        return node switch
-        {
-            null => null,
-            JsonObject jsonObject => NormalizeJsonObject(jsonObject),
-            JsonArray jsonArray => NormalizeJsonArray(jsonArray),
-            _ => node.DeepClone(),
-        };
-    }
-
-    private static JsonObject NormalizeJsonObject(JsonObject jsonObject)
-    {
-        JsonObject normalized = [];
-
-        foreach (var property in jsonObject.OrderBy(static property => property.Key, StringComparer.Ordinal))
-        {
-            normalized[property.Key] = NormalizeJsonNode(property.Value);
-        }
-
-        return normalized;
-    }
-
-    private static JsonArray NormalizeJsonArray(JsonArray jsonArray)
-    {
-        JsonArray normalized = [];
-
-        foreach (var item in jsonArray)
-        {
-            normalized.Add(NormalizeJsonNode(item));
-        }
-
-        return normalized;
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(
