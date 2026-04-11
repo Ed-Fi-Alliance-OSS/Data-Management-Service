@@ -1311,6 +1311,9 @@ public class Given_DocumentReconstituter_With_Nested_Collection_And_Root_Extensi
 public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Child_Extension_Collection
 {
     private JsonNode _result = null!;
+    private IReadOnlyList<HydratedTableRows> _tableRowsInDependencyOrder = null!;
+    private DbTableModel _addressTableModel = null!;
+    private DbTableModel _extensionScopeTableModel = null!;
 
     private static readonly DbSchemaName _schema = new("edfi");
     private static readonly DbTableName _rootTableName = new(_schema, "Contact");
@@ -1469,7 +1472,7 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             ),
         };
 
-        var addressTableModel = new DbTableModel(
+        _addressTableModel = new DbTableModel(
             Table: _addressTableName,
             JsonScope: _addressesScope,
             Key: new TableKey(
@@ -1518,7 +1521,7 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             ),
         };
 
-        var extensionScopeTableModel = new DbTableModel(
+        _extensionScopeTableModel = new DbTableModel(
             Table: _extensionScopeTableName,
             JsonScope: _extensionScope,
             Key: new TableKey(
@@ -1614,25 +1617,34 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
         object?[] extScopeRow1 = [10L, 1L, true];
         // Extension scope for address 2: BaseCollectionItemId=20, Contact_DocumentId=1, IsUrban=false
         object?[] extScopeRow2 = [20L, 1L, false];
-        // Delivery note under address 1 ext scope: CollectionItemId=100, Contact_DocumentId=1, BaseCollectionItemId=10, Ordinal=0, Note="Ring bell"
-        object?[] noteRow1 = [100L, 1L, 10L, 0, "Ring bell"];
+        // Delivery notes under address 1 ext scope arrive out of ordinal order.
+        object?[] noteRow1 = [101L, 1L, 10L, 1, "Ring bell"];
+        object?[] noteRow2 = [100L, 1L, 10L, 0, "Call ahead"];
         // Delivery note under address 2 ext scope: CollectionItemId=200, Contact_DocumentId=1, BaseCollectionItemId=20, Ordinal=0, Note="Leave at door"
-        object?[] noteRow2 = [200L, 1L, 20L, 0, "Leave at door"];
+        object?[] noteRow3 = [200L, 1L, 20L, 0, "Leave at door"];
 
         var rootTableRows = new HydratedTableRows(rootTableModel, [rootRow]);
-        var addressTableRows = new HydratedTableRows(addressTableModel, [addressRow1, addressRow2]);
-        var extScopeTableRows = new HydratedTableRows(extensionScopeTableModel, [extScopeRow1, extScopeRow2]);
-        var extCollectionTableRows = new HydratedTableRows(extCollectionTableModel, [noteRow1, noteRow2]);
+        var addressTableRows = new HydratedTableRows(_addressTableModel, [addressRow1, addressRow2]);
+        var extScopeTableRows = new HydratedTableRows(
+            _extensionScopeTableModel,
+            [extScopeRow1, extScopeRow2]
+        );
+        var extCollectionTableRows = new HydratedTableRows(
+            extCollectionTableModel,
+            [noteRow1, noteRow2, noteRow3]
+        );
+
+        _tableRowsInDependencyOrder =
+        [
+            rootTableRows,
+            addressTableRows,
+            extScopeTableRows,
+            extCollectionTableRows,
+        ];
 
         _result = DocumentReconstituter.Reconstitute(
             documentId: 1L,
-            tableRowsInDependencyOrder:
-            [
-                rootTableRows,
-                addressTableRows,
-                extScopeTableRows,
-                extCollectionTableRows,
-            ],
+            tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
             descriptorUriLookup: new Dictionary<long, string>()
@@ -1682,15 +1694,44 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
     }
 
     [Test]
-    public void It_should_emit_address_0_ext_sample_deliveryNotes_with_one_item()
+    public void It_should_not_discover_deliveryNotes_directly_from_the_address_scope()
     {
-        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(1);
+        DocumentReconstituter
+            .FindImmediateChildTables(_addressTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extensionScopeTableName);
+    }
+
+    [Test]
+    public void It_should_discover_deliveryNotes_from_the_extension_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extCollectionTableName);
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_with_two_items()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(2);
     }
 
     [Test]
     public void It_should_emit_address_0_ext_sample_deliveryNotes_0_note()
     {
         _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Call ahead");
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_1_note()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![1]!["note"]!
             .GetValue<string>()
             .Should()
             .Be("Ring bell");
@@ -1709,6 +1750,263 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             .GetValue<string>()
             .Should()
             .Be("Leave at door");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Root_Extension_And_Child_Extension_Collection
+{
+    private JsonNode _result = null!;
+    private IReadOnlyList<HydratedTableRows> _tableRowsInDependencyOrder = null!;
+    private DbTableModel _rootTableModel = null!;
+    private DbTableModel _extensionScopeTableModel = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "School");
+    private static readonly DbTableName _extensionScopeTableName = new(_schema, "SchoolExtension");
+    private static readonly DbTableName _interventionTableName = new(_schema, "SchoolExtensionIntervention");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _extensionScope = new(
+        "$._ext.sample",
+        [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample")]
+    );
+
+    private static readonly JsonPathExpression _interventionsScope = new(
+        "$._ext.sample.interventions[*]",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _schoolIdPath = new(
+        "$.schoolId",
+        [new JsonPathSegment.Property("schoolId")]
+    );
+
+    private static readonly JsonPathExpression _isExemplaryPath = new(
+        "$._ext.sample.isExemplary",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("isExemplary"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _interventionCodePath = new(
+        "$._ext.sample.interventions[*].code",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("code"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        _rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _schoolIdPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        _extensionScopeTableModel = new DbTableModel(
+            Table: _extensionScopeTableName,
+            JsonScope: _extensionScope,
+            Key: new TableKey(
+                "PK_SchoolExtension",
+                [new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("IsExemplary"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    false,
+                    _isExemplaryPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var interventionTableModel = new DbTableModel(
+            Table: _interventionTableName,
+            JsonScope: _interventionsScope,
+            Key: new TableKey(
+                "PK_SchoolExtensionIntervention",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Code"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _interventionCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var rootTableRows = new HydratedTableRows(
+            _rootTableModel,
+            [
+                [1L, 255901],
+            ]
+        );
+        var extensionScopeTableRows = new HydratedTableRows(
+            _extensionScopeTableModel,
+            [
+                [1L, true],
+            ]
+        );
+        var interventionTableRows = new HydratedTableRows(
+            interventionTableModel,
+            [
+                [102L, 1L, 1, "Tier 2"],
+                [101L, 1L, 0, "Attendance"],
+            ]
+        );
+
+        _tableRowsInDependencyOrder = [rootTableRows, extensionScopeTableRows, interventionTableRows];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_not_discover_interventions_directly_from_the_root_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_rootTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extensionScopeTableName);
+    }
+
+    [Test]
+    public void It_should_discover_interventions_from_the_root_extension_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_interventionTableName);
+    }
+
+    [Test]
+    public void It_should_emit_ext_sample_isExemplary_as_true()
+    {
+        _result["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_emit_interventions_in_ordinal_order()
+    {
+        _result["_ext"]!["sample"]!["interventions"]!.AsArray().Should().HaveCount(2);
+        _result["_ext"]!["sample"]!["interventions"]![0]!["code"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Attendance");
+        _result["_ext"]!["sample"]!["interventions"]![1]!["code"]!.GetValue<string>().Should().Be("Tier 2");
     }
 }
 

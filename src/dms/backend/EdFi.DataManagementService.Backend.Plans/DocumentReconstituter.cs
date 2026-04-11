@@ -554,7 +554,7 @@ public static class DocumentReconstituter
     /// <summary>
     /// Finds immediate child tables of the given parent table in the dependency-ordered list.
     /// </summary>
-    private static List<HydratedTableRows> FindImmediateChildTables(
+    internal static IReadOnlyList<HydratedTableRows> FindImmediateChildTables(
         DbTableModel parentTableModel,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
     )
@@ -606,7 +606,13 @@ public static class DocumentReconstituter
             // Collections: one [*] deeper than parent
             // e.g., parent "$" -> child "$.addresses[*]" => suffix = "addresses[*]"
             // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]" => suffix = "periods[*]"
-            DbTableKind.Collection or DbTableKind.ExtensionCollection => IsOneArrayLevelDeeper(suffix),
+            DbTableKind.Collection => IsOneArrayLevelDeeper(suffix),
+
+            // Extension collections must recurse through their owning _ext.projectName scope.
+            // Without this guard, a base scope like "$.addresses[*]" incorrectly sees
+            // "$.addresses[*]._ext.sample.deliveryNotes[*]" as a direct child.
+            DbTableKind.ExtensionCollection => !suffix.StartsWith("_ext.", StringComparison.Ordinal)
+                && IsOneArrayLevelDeeper(suffix),
 
             // Extensions: _ext.projectName at same array depth
             // e.g., parent "$" -> child "$._ext.sample" => suffix = "_ext.sample"

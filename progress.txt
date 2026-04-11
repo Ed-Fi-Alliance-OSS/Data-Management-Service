@@ -125,3 +125,11 @@ Decisions: audited relational write tests for stale null-ETag assumptions; host 
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs; progress.txt; tasks.json
 Verify: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/RelationalWriteSmokeTests.cs -> Formatted 1 file; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -> Passed 422; dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter "FullyQualifiedName~Given_A_Host_Using_The_Relational_Backend|FullyQualifiedName~Given_AspNetCoreFrontend_Response_Header_Writing" -> Passed 5
 Notes next: remaining incomplete tasks are Extension Collection Traversal Simplification and Dead Code Cleanup After Hydration Refactor.
+
+2026-04-11
+Task complete: Extension Collection Traversal Simplification
+Story: reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md
+Decisions: blocked ExtensionCollection child discovery when the relative suffix still starts with `_ext.` so base scopes stop traversing extension-owned arrays directly; kept extension-scope recursion active so root-aligned and collection-aligned extension arrays still materialize once and still sort by Ordinal.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReconstituter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs; progress.txt; tasks.json
+Verify: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReconstituter.cs src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs -> Formatted 2 files; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj -> Passed 650
+Notes next: remaining incomplete task is Dead Code Cleanup After Hydration Refactor.

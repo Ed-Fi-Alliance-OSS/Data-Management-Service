@@ -167,7 +167,7 @@
       "Add unit tests covering root-aligned and collection-aligned extension child collections to prove each array is emitted once and in the correct order, including at least one white-box assertion on child discovery/traversal so a duplicate build-and-overwrite path cannot still pass on final JSON shape alone.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Dead Code Cleanup After Hydration Refactor",
