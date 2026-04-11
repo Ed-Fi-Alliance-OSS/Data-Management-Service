@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -538,6 +539,18 @@ public sealed class RelationalDocumentStoreRepository(
                 )
             );
 
+        if (ShouldApplyReadableProfileProjection(relationalGetRequest))
+        {
+            var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
+            edfiDoc = _serviceProvider
+                .GetRequiredService<IReadableProfileProjector>()
+                .Project(
+                    edfiDoc,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+        }
+
         return new GetResult.GetSuccess(
             new DocumentUuid(documentMetadata.DocumentUuid),
             edfiDoc,
@@ -562,6 +575,10 @@ public sealed class RelationalDocumentStoreRepository(
                 $"Relational GET by id is not implemented for resource '{FormatResource(resource)}'."
             );
     }
+
+    private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
+        relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
+        && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
     private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
         object request,

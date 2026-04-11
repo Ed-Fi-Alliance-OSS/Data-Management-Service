@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -70,7 +71,7 @@ internal class GetByIdHandler(
 
         requestInfo.FrontendResponse = getResult switch
         {
-            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
+            GetSuccess success => CreateSuccessResponse(requestInfo, success.EdfiDoc),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             GetFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
@@ -104,6 +105,21 @@ internal class GetByIdHandler(
                 Headers: []
             ),
         };
+    }
+
+    private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
+    {
+        var contentType =
+            requestInfo.MappingSet is not null
+            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+                ? ProfileHeaderParser.BuildProfileContentType(
+                    requestInfo.ResourceSchema.ResourceName.Value,
+                    requestInfo.ProfileContext.ProfileName,
+                    ProfileUsageType.Readable
+                )
+                : "application/json";
+
+        return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
     }
 
     private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(

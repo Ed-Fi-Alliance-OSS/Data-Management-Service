@@ -26,6 +26,13 @@ internal class ProfileFilteringMiddleware(
         // Execute downstream handlers first
         await next();
 
+        // Relational reads own readable projection during repository materialization.
+        // Keep the legacy response filter on the non-relational path only.
+        if (requestInfo.MappingSet is not null)
+        {
+            return;
+        }
+
         // Only filter successful GET responses
         if (requestInfo.FrontendResponse.StatusCode != 200)
         {

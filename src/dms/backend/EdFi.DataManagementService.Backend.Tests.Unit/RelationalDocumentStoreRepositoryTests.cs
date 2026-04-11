@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IDocumentHydrator _documentHydrator = null!;
     private IRelationalReadTargetLookupService _readTargetLookupService = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
+    private IReadableProfileProjector _readableProfileProjector = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
@@ -53,6 +55,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _documentHydrator = A.Fake<IDocumentHydrator>();
         _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
+        _readableProfileProjector = A.Fake<IReadableProfileProjector>();
         _capturedExecutorRequests = [];
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -76,7 +79,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
             _documentHydrator,
-            CreateReadServiceProvider(_readTargetLookupService, _readMaterializer)
+            CreateReadServiceProvider(_readTargetLookupService, _readMaterializer, _readableProfileProjector)
         );
     }
 
@@ -215,6 +218,101 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeOfType<GetResult.GetSuccess>();
         capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+    }
+
+    [Test]
+    public async Task It_applies_readable_profile_projection_after_external_materialization()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("nameOfInstitution")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "schoolId" }
+        );
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            readableProfileProjectionContext: projectionContext
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 93L),
+            (345L, "Lincoln High")
+        );
+        var materializedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "cccccccc-1111-2222-3333-dddddddddddd",
+              "_etag": "\"93\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
+              "webSite": "https://example.com"
+            }
+            """
+        )!;
+        var projectedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "cccccccc-1111-2222-3333-dddddddddddd",
+              "_etag": "\"93\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High"
+            }
+            """
+        )!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(materializedDocument);
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedDocument,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .Returns(projectedDocument);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        var success = (GetResult.GetSuccess)result;
+        success.EdfiDoc.Should().BeSameAs(projectedDocument);
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedDocument,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -1267,7 +1365,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
         IResourceAuthorizationHandler resourceAuthorizationHandler,
-        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse
+        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
     )
     {
         var getRequest = A.Fake<IRelationalGetRequest>();
@@ -1284,6 +1383,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => getRequest.ResourceAuthorizationHandler).Returns(resourceAuthorizationHandler);
         A.CallTo(() => getRequest.TraceId).Returns(new TraceId("get-trace"));
         A.CallTo(() => getRequest.ReadMode).Returns(readMode);
+        A.CallTo(() => getRequest.ReadableProfileProjectionContext).Returns(readableProfileProjectionContext);
 
         return getRequest;
     }
@@ -1325,12 +1425,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static IServiceProvider CreateReadServiceProvider(
         IRelationalReadTargetLookupService readTargetLookupService,
-        IRelationalReadMaterializer readMaterializer
+        IRelationalReadMaterializer readMaterializer,
+        IReadableProfileProjector readableProfileProjector
     )
     {
         return new ServiceCollection()
             .AddSingleton(readTargetLookupService)
             .AddSingleton(readMaterializer)
+            .AddSingleton(readableProfileProjector)
             .BuildServiceProvider();
     }
 

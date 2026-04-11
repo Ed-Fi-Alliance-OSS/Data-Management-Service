@@ -16,6 +16,8 @@ namespace EdFi.DataManagementService.Core.Profile;
 internal sealed class ReadableProfileProjector : IReadableProfileProjector
 {
     private const string IdFieldName = "id";
+    private const string EtagFieldName = "_etag";
+    private const string LastModifiedDateFieldName = "_lastModifiedDate";
     private const string ExtensionFieldName = "_ext";
 
     /// <inheritdoc />
@@ -82,8 +84,11 @@ internal sealed class ReadableProfileProjector : IReadableProfileProjector
             string name = property.Key;
             JsonNode? value = property.Value;
 
-            // Always preserve identity fields and the 'id' field
-            if (name == IdFieldName || identityPropertyNames.Contains(name))
+            // Always preserve metadata and identity fields at the document root.
+            if (
+                name is IdFieldName or EtagFieldName or LastModifiedDateFieldName
+                || identityPropertyNames.Contains(name)
+            )
             {
                 result[name] = value?.DeepClone();
                 continue;

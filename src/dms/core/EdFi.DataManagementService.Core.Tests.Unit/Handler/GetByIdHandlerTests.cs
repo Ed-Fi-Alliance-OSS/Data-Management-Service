@@ -362,5 +362,13 @@ actual: {requestInfo.FrontendResponse.Body}
                 .Equal("studentUniqueId", "schoolReference");
             _repository.CapturedRequest.ResourceName.Should().Be(new ResourceName("Student"));
         }
+
+        [Test]
+        public void It_sets_profile_content_type_for_relational_profile_reads()
+        {
+            _requestInfo
+                .FrontendResponse.ContentType.Should()
+                .Be("application/vnd.ed-fi.student.readableprofile.readable+json");
+        }
     }
 }
