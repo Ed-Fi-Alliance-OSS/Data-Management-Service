@@ -160,7 +160,7 @@ internal sealed class DescriptorWriteHandler(
         if (
             targetContext
             is not RelationalWriteTargetContext.ExistingDocument
-            (var documentId, var documentUuid, _)
+            (var documentId, var documentUuid, var observedContentVersion)
         )
         {
             throw new InvalidOperationException(
@@ -200,7 +200,10 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return new UpdateResult.UpdateSuccess(documentUuid);
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(observedContentVersion)
+            );
         }
 
         _logger.LogDebug(
@@ -221,11 +224,13 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
 
-            await _commandExecutor
-                .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
+            var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new UpdateResult.UpdateSuccess(documentUuid);
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(contentVersion)
+            );
         }
         catch (DbException ex)
         {
@@ -353,11 +358,13 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await _commandExecutor
-            .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
+        var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
             .ConfigureAwait(false);
 
-        return new UpsertResult.InsertSuccess(documentUuid);
+        return new UpsertResult.InsertSuccess(
+            documentUuid,
+            RelationalApiMetadataFormatter.FormatEtag(contentVersion)
+        );
     }
 
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
@@ -395,11 +402,40 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await _commandExecutor
-            .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
+        var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
             .ConfigureAwait(false);
 
-        return new UpsertResult.UpdateSuccess(existingDocumentUuid);
+        return new UpsertResult.UpdateSuccess(
+            existingDocumentUuid,
+            RelationalApiMetadataFormatter.FormatEtag(contentVersion)
+        );
+    }
+
+    private async Task<long> ExecuteContentVersionCommandAsync(
+        RelationalCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _commandExecutor
+            .ExecuteReaderAsync(
+                command,
+                static async (reader, ct) =>
+                {
+                    do
+                    {
+                        if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                        {
+                            return reader.GetRequiredFieldValue<long>("ContentVersion");
+                        }
+                    } while (await reader.NextResultAsync(ct).ConfigureAwait(false));
+
+                    throw new InvalidOperationException(
+                        "Descriptor write completed without returning a ContentVersion result."
+                    );
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     // ── PostgreSQL SQL builders ──────────────────────────────────────────
@@ -415,7 +451,7 @@ internal sealed class DescriptorWriteHandler(
             WITH new_doc AS (
                 INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
                 VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId"
+                RETURNING "DocumentId", "ContentVersion"
             )
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
@@ -429,8 +465,12 @@ internal sealed class DescriptorWriteHandler(
                     @discriminator, @uri
                 FROM new_doc
             )
-            INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            SELECT @referentialId, "DocumentId", @resourceKeyId
+            , new_identity AS (
+                INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+                SELECT @referentialId, "DocumentId", @resourceKeyId
+                FROM new_doc
+            )
+            SELECT "ContentVersion"
             FROM new_doc;
             """;
 
@@ -468,6 +508,10 @@ internal sealed class DescriptorWriteHandler(
 
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @newDocumentId, @resourceKeyId);
+
+            SELECT [ContentVersion]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @newDocumentId;
             """;
 
         return new RelationalCommand(
@@ -498,6 +542,10 @@ internal sealed class DescriptorWriteHandler(
             SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
                 "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = @documentId;
+
+            SELECT document."ContentVersion"
+            FROM dms."Document" AS document
+            WHERE document."DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -519,6 +567,10 @@ internal sealed class DescriptorWriteHandler(
             UPDATE [dms].[Document]
             SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
                 [ContentLastModifiedAt] = GETUTCDATE()
+            WHERE [DocumentId] = @documentId;
+
+            SELECT [ContentVersion]
+            FROM [dms].[Document]
             WHERE [DocumentId] = @documentId;
             """;
 
@@ -555,6 +607,10 @@ internal sealed class DescriptorWriteHandler(
             ON CONFLICT ("ReferentialId") DO UPDATE
             SET "DocumentId" = EXCLUDED."DocumentId",
                 "ResourceKeyId" = EXCLUDED."ResourceKeyId";
+
+            SELECT document."ContentVersion"
+            FROM dms."Document" AS document
+            WHERE document."DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(
@@ -596,6 +652,10 @@ internal sealed class DescriptorWriteHandler(
             WHEN NOT MATCHED THEN
                 INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
                 VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
+
+            SELECT [ContentVersion]
+            FROM [dms].[Document]
+            WHERE [DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(

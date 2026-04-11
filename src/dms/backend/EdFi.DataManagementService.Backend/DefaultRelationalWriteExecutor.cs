@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -184,15 +185,31 @@ internal sealed class DefaultRelationalWriteExecutor(
                 }
 
                 await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
+                return BuildGuardedNoOpSuccessResult(
+                    request.OperationKind,
+                    guardedTarget.DocumentUuid,
+                    guardedTarget.ObservedContentVersion
+                );
             }
 
             await _noProfilePersister
                 .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
+            var committedContentVersion = await ReadCommittedContentVersionAsync(
+                    request.MappingSet.Key.Dialect,
+                    executionRequest.TargetContext,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext);
+            return BuildAppliedWriteSuccessResult(
+                request.OperationKind,
+                executionRequest.TargetContext,
+                committedContentVersion
+            );
         }
         catch (RelationalWriteRequestValidationException ex)
         {
@@ -235,17 +252,20 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
-        DocumentUuid documentUuid
+        DocumentUuid documentUuid,
+        long contentVersion
     )
     {
+        var etag = RelationalApiMetadataFormatter.FormatEtag(contentVersion);
+
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpdateSuccess(documentUuid),
+                new UpsertResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateSuccess(documentUuid),
+                new UpdateResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
@@ -254,14 +274,17 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static RelationalWriteExecutorResult BuildAppliedWriteSuccessResult(
         RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetContext targetContext
+        RelationalWriteTargetContext targetContext,
+        long contentVersion
     )
     {
+        var etag = RelationalApiMetadataFormatter.FormatEtag(contentVersion);
+
         return (operationKind, targetContext) switch
         {
             (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.CreateNew(var documentUuid)) =>
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(documentUuid),
+                    new UpsertResult.InsertSuccess(documentUuid, etag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 ),
             (
@@ -269,7 +292,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 RelationalWriteTargetContext.ExistingDocument
                 (_, var documentUuid, _)
             ) => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpdateSuccess(documentUuid),
+                new UpsertResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
             ),
             (
@@ -277,11 +300,61 @@ internal sealed class DefaultRelationalWriteExecutor(
                 RelationalWriteTargetContext.ExistingDocument
                 (_, var documentUuid, _)
             ) => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateSuccess(documentUuid),
+                new UpdateResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
         };
+    }
+
+    private static async Task<long> ReadCommittedContentVersionAsync(
+        SqlDialect dialect,
+        RelationalWriteTargetContext targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        var documentUuid = targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew(var value) => value,
+            RelationalWriteTargetContext.ExistingDocument(_, var value, _) => value,
+            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
+        };
+
+        var command = dialect switch
+        {
+            SqlDialect.Pgsql => new RelationalCommand(
+                """
+                SELECT document."ContentVersion"
+                FROM dms."Document" AS document
+                WHERE document."DocumentUuid" = @documentUuid;
+                """,
+                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+            ),
+            SqlDialect.Mssql => new RelationalCommand(
+                """
+                SELECT document.[ContentVersion]
+                FROM [dms].[Document] AS document
+                WHERE document.[DocumentUuid] = @documentUuid;
+                """,
+                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational write executor does not support SQL dialect '{dialect}'."
+            ),
+        };
+
+        await using var dbCommand = writeSession.CreateCommand(command);
+        var scalarResult = await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (scalarResult is null or DBNull)
+        {
+            throw new InvalidOperationException(
+                $"Relational write succeeded for document uuid '{documentUuid.Value}', but the committed ContentVersion could not be read in-session."
+            );
+        }
+
+        return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
     }
 
     private static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(

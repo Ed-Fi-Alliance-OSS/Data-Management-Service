@@ -61,7 +61,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            var descriptorResult = await _descriptorWriteHandler
+            return await _descriptorWriteHandler
                 .HandlePostAsync(
                     new DescriptorWriteRequest(
                         mappingSet,
@@ -71,14 +71,6 @@ public sealed class RelationalDocumentStoreRepository(
                         relationalUpsertRequest.DocumentInfo.ReferentialId,
                         relationalUpsertRequest.TraceId
                     )
-                )
-                .ConfigureAwait(false);
-
-            return await WithStoredResponseEtagAsync(
-                    mappingSet,
-                    resource,
-                    descriptorResult,
-                    relationalUpsertRequest.TraceId
                 )
                 .ConfigureAwait(false);
         }
@@ -115,13 +107,7 @@ public sealed class RelationalDocumentStoreRepository(
             )
             .ConfigureAwait(false);
 
-        return await WithStoredResponseEtagAsync(
-                mappingSet,
-                resource,
-                result,
-                relationalUpsertRequest.TraceId
-            )
-            .ConfigureAwait(false);
+        return result;
     }
 
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
@@ -181,7 +167,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            var descriptorResult = await _descriptorWriteHandler
+            return await _descriptorWriteHandler
                 .HandlePutAsync(
                     new DescriptorWriteRequest(
                         mappingSet,
@@ -191,14 +177,6 @@ public sealed class RelationalDocumentStoreRepository(
                         referentialId: null,
                         relationalUpdateRequest.TraceId
                     )
-                )
-                .ConfigureAwait(false);
-
-            return await WithStoredResponseEtagAsync(
-                    mappingSet,
-                    resource,
-                    descriptorResult,
-                    relationalUpdateRequest.TraceId
                 )
                 .ConfigureAwait(false);
         }
@@ -232,13 +210,7 @@ public sealed class RelationalDocumentStoreRepository(
             )
             .ConfigureAwait(false);
 
-        return await WithStoredResponseEtagAsync(
-                mappingSet,
-                resource,
-                result,
-                relationalUpdateRequest.TraceId
-            )
-            .ConfigureAwait(false);
+        return result;
     }
 
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
@@ -503,111 +475,6 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteExecutorResult? ImmediateResult
     );
-
-    private async Task<UpsertResult> WithStoredResponseEtagAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        UpsertResult result,
-        TraceId traceId
-    )
-    {
-        if (result is UpsertResult.InsertSuccess insertSuccess)
-        {
-            var storedEtag = await TryResolveStoredResponseEtagAsync(
-                    mappingSet,
-                    resource,
-                    insertSuccess.NewDocumentUuid,
-                    traceId
-                )
-                .ConfigureAwait(false);
-
-            return storedEtag is null ? result : insertSuccess with { ETag = storedEtag };
-        }
-
-        if (result is UpsertResult.UpdateSuccess updateSuccess)
-        {
-            var storedEtag = await TryResolveStoredResponseEtagAsync(
-                    mappingSet,
-                    resource,
-                    updateSuccess.ExistingDocumentUuid,
-                    traceId
-                )
-                .ConfigureAwait(false);
-
-            return storedEtag is null ? result : updateSuccess with { ETag = storedEtag };
-        }
-
-        return result;
-    }
-
-    private async Task<UpdateResult> WithStoredResponseEtagAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        UpdateResult result,
-        TraceId traceId
-    )
-    {
-        if (result is UpdateResult.UpdateSuccess updateSuccess)
-        {
-            var storedEtag = await TryResolveStoredResponseEtagAsync(
-                    mappingSet,
-                    resource,
-                    updateSuccess.ExistingDocumentUuid,
-                    traceId
-                )
-                .ConfigureAwait(false);
-
-            return storedEtag is null ? result : updateSuccess with { ETag = storedEtag };
-        }
-
-        return result;
-    }
-
-    private async Task<string?> TryResolveStoredResponseEtagAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        TraceId traceId
-    )
-    {
-        try
-        {
-            var targetLookupResult = await _targetLookupService
-                .ResolveForPutAsync(mappingSet, resource, documentUuid)
-                .ConfigureAwait(false);
-
-            if (
-                targetLookupResult is RelationalWriteTargetLookupResult.ExistingDocument(
-                    _,
-                    _,
-                    var observedContentVersion
-                )
-            )
-            {
-                return RelationalApiMetadataFormatter.FormatEtag(observedContentVersion);
-            }
-
-            _logger.LogWarning(
-                "Relational write succeeded for resource '{Resource}' and document uuid '{DocumentUuid}', but response ETag lookup returned '{LookupResultType}' - {TraceId}",
-                FormatResource(resource),
-                documentUuid.Value,
-                targetLookupResult.GetType().Name,
-                traceId.Value
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "Relational write succeeded for resource '{Resource}' and document uuid '{DocumentUuid}', but response ETag lookup failed - {TraceId}",
-                FormatResource(resource),
-                documentUuid.Value,
-                traceId.Value
-            );
-        }
-
-        return null;
-    }
 
     private async Task<GetResult> GetDocumentByIdAsync(
         IRelationalGetRequest relationalGetRequest,

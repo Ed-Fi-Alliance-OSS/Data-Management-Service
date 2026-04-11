@@ -463,6 +463,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_requests_through_the_executor_with_reference_resolution_inputs()
     {
+        const string committedEtag = "\"91\"";
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -486,7 +487,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -501,7 +504,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"44\""));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
@@ -532,11 +535,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
+        const string committedEtag = "\"92\"";
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
@@ -558,7 +563,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpdateSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -572,7 +579,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, "\"44\""));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, committedEtag));
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
@@ -585,11 +592,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]
     public async Task It_routes_put_requests_through_the_executor_with_reference_resolution_inputs()
     {
+        const string committedEtag = "\"93\"";
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -613,7 +622,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -629,7 +640,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"44\""));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest
@@ -651,6 +662,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
     }
 
     [Test]
@@ -710,7 +722,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
                         ),
                         1 => new RelationalWriteExecutorResult.Update(
-                            new UpdateResult.UpdateSuccess(documentUuid),
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
                             RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                         ),
                         _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
@@ -746,7 +758,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
                 new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
             ]);
-        _targetLookupService.ResolveForPutCallCount.Should().Be(3);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -761,9 +773,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.PutResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
         );
-        _targetLookupService.PutResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
-        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -776,7 +785,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(documentUuid),
+                        new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
                         RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                     )
                 )
@@ -796,7 +805,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequests[0]
             .TargetContext.Should()
             .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L));
-        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
         _targetLookupService.PutResults.Count.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -818,9 +827,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
         );
-        _targetLookupService.PutResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
-        );
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -838,7 +844,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
                         ),
                         1 => new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(documentUuid),
+                            new UpsertResult.UpdateSuccess(documentUuid, "\"45\""),
                             RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                         ),
                         _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
@@ -1128,6 +1134,78 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_preserves_descriptor_post_etags_returned_by_the_handler_without_a_follow_up_lookup()
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
+        );
+
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_preserves_descriptor_put_etags_returned_by_the_handler_without_a_follow_up_lookup()
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
+        );
+
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_routes_descriptor_delete_requests_to_the_descriptor_write_handler()
     {
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -1231,6 +1309,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_allows_create_new_post_requests_to_bypass_missing_read_plan_guard_rails()
     {
+        const string committedEtag = "\"94\"";
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Create without read plan");
         var documentInfo = CreateDocumentInfo();
@@ -1245,7 +1324,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -1259,13 +1340,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"44\""));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest
             .TargetContext.Should()
             .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeNull();
         _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]

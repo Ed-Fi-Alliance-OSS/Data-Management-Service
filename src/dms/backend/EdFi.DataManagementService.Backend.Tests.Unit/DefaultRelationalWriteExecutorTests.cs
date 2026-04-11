@@ -106,7 +106,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
-                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -241,7 +242,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -301,7 +303,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, "\"45\""),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -336,7 +338,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"44\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -382,7 +385,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"44\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -413,7 +417,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -471,7 +476,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -568,7 +574,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"44\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -624,7 +631,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(candidateDocumentUuid),
+                    new UpsertResult.InsertSuccess(candidateDocumentUuid, "\"45\""),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -684,7 +691,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, "\"45\""),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -787,7 +794,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
-                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -820,7 +828,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -855,7 +864,8 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
-                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                        new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                        "\"45\""
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -2262,6 +2272,8 @@ public class Given_Default_Relational_Write_Executor
 
         public DbTransaction Transaction { get; }
 
+        public List<RelationalCommand> Commands { get; } = [];
+
         public int CommitCallCount { get; private set; }
 
         public int RollbackCallCount { get; private set; }
@@ -2270,7 +2282,13 @@ public class Given_Default_Relational_Write_Executor
 
         public Exception? CommitExceptionToThrow { get; set; }
 
-        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+        public object? ScalarResultToReturn { get; set; } = 45L;
+
+        public DbCommand CreateCommand(RelationalCommand command)
+        {
+            Commands.Add(command);
+            return new RecordingDbCommand(ScalarResultToReturn);
+        }
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
@@ -2297,6 +2315,120 @@ public class Given_Default_Relational_Write_Executor
             DisposeCallCount++;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class RecordingDbCommand(object? scalarResult) : DbCommand
+    {
+        protected override DbConnection? DbConnection { get; set; }
+
+        protected override DbParameterCollection DbParameterCollection { get; } =
+            new StubDbParameterCollection();
+
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        [AllowNull]
+        public override string CommandText { get; set; } = string.Empty;
+
+        public override int CommandTimeout { get; set; }
+
+        public override CommandType CommandType { get; set; }
+
+        public override bool DesignTimeVisible { get; set; }
+
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+
+        public override void Cancel() { }
+
+        public override int ExecuteNonQuery() => throw new NotSupportedException();
+
+        public override object? ExecuteScalar() => scalarResult;
+
+        public override void Prepare() { }
+
+        protected override DbParameter CreateDbParameter() => new StubDbParameter();
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
+            throw new NotSupportedException();
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
+            CommandBehavior behavior,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(scalarResult);
+        }
+    }
+
+    private sealed class StubDbParameterCollection : DbParameterCollection
+    {
+        public override int Count => 0;
+
+        public override object SyncRoot => this;
+
+        public override int Add(object value) => 0;
+
+        public override void AddRange(Array values) { }
+
+        public override void Clear() { }
+
+        public override bool Contains(object value) => false;
+
+        public override bool Contains(string value) => false;
+
+        public override void CopyTo(Array array, int index) { }
+
+        public override System.Collections.IEnumerator GetEnumerator() =>
+            Array.Empty<object>().GetEnumerator();
+
+        protected override DbParameter GetParameter(int index) => throw new IndexOutOfRangeException();
+
+        protected override DbParameter GetParameter(string parameterName) =>
+            throw new IndexOutOfRangeException();
+
+        public override int IndexOf(object value) => -1;
+
+        public override int IndexOf(string parameterName) => -1;
+
+        public override void Insert(int index, object value) { }
+
+        public override void Remove(object value) { }
+
+        public override void RemoveAt(int index) { }
+
+        public override void RemoveAt(string parameterName) { }
+
+        protected override void SetParameter(int index, DbParameter value) { }
+
+        protected override void SetParameter(string parameterName, DbParameter value) { }
+    }
+
+    private sealed class StubDbParameter : DbParameter
+    {
+        public override DbType DbType { get; set; }
+
+        public override ParameterDirection Direction { get; set; }
+
+        public override bool IsNullable { get; set; }
+
+        [AllowNull]
+        public override string ParameterName { get; set; } = string.Empty;
+
+        [AllowNull]
+        public override string SourceColumn { get; set; } = string.Empty;
+
+        public override object? Value { get; set; }
+
+        public override bool SourceColumnNullMapping { get; set; }
+
+        public override int Size { get; set; }
+
+        public override void ResetDbType() { }
     }
 
     private sealed class StubDbConnection : DbConnection

@@ -31,6 +31,7 @@ public class Given_No_Profile_Relational_Post
     [SetUp]
     public async Task Setup()
     {
+        const string committedEtag = "\"51\"";
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
         _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
@@ -60,7 +61,7 @@ public class Given_No_Profile_Relational_Post
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(_documentUuid)
+                        new UpsertResult.InsertSuccess(_documentUuid, committedEtag)
                     );
                 }
             );
@@ -91,7 +92,7 @@ public class Given_No_Profile_Relational_Post
     [Test]
     public void It_routes_through_the_executor()
     {
-        _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid));
+        _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid, "\"51\""));
         A.CallTo(() =>
                 _targetLookupService.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -137,6 +138,7 @@ public class Given_No_Profile_Relational_Put
     [SetUp]
     public async Task Setup()
     {
+        const string committedEtag = "\"52\"";
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
         _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
@@ -173,7 +175,7 @@ public class Given_No_Profile_Relational_Put
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(_documentUuid)
+                        new UpdateResult.UpdateSuccess(_documentUuid, committedEtag)
                     );
                 }
             );
@@ -204,7 +206,7 @@ public class Given_No_Profile_Relational_Put
     [Test]
     public void It_routes_through_the_executor()
     {
-        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid));
+        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid, "\"52\""));
         A.CallTo(() =>
                 _targetLookupService.ResolveForPutAsync(
                     A<MappingSet>._,
