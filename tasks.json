@@ -99,6 +99,6 @@
       "Add one SQL Server integration test that performs write then relational GET-by-id for the same representative fixture and asserts nested collections, `_ext`, and metadata.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
