@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Startup;
@@ -199,6 +200,8 @@ public class Given_A_Host_Using_The_Relational_Backend
         var responseBody = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
+        response.Headers.ETag.Should().NotBeNull();
+        response.Headers.ETag!.ToString().Should().Be("\"41\"");
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
         _flattener.Inputs.Should().ContainSingle();
@@ -399,6 +402,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IMappingSetProvider>();
                 services.RemoveAll<IRelationalWriteTargetLookupService>();
                 services.RemoveAll<IRelationalWriteExecutor>();
+                services.RemoveAll<IDocumentHydrator>();
+                services.RemoveAll<IRelationalReadTargetLookupService>();
+                services.RemoveAll<IRelationalReadMaterializer>();
+                services.RemoveAll<IReadableProfileProjector>();
 
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
@@ -411,6 +418,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                     new CapturingRelationalWriteTargetLookupService()
                 );
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
+                services.AddSingleton(A.Fake<IDocumentHydrator>());
+                services.AddSingleton(A.Fake<IRelationalReadTargetLookupService>());
+                services.AddSingleton(A.Fake<IRelationalReadMaterializer>());
+                services.AddSingleton(A.Fake<IReadableProfileProjector>());
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });
@@ -516,11 +527,11 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.InsertSuccess(documentUuid)
+                            new UpsertResult.InsertSuccess(documentUuid, "\"41\"")
                         ),
                     RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(documentUuid)
+                            new UpsertResult.UpdateSuccess(documentUuid, "\"42\"")
                         ),
                     _ => throw new InvalidOperationException(
                         $"Unsupported target context type '{targetContext.GetType().Name}'."
