@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -79,7 +78,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
             _documentHydrator,
-            CreateReadServiceProvider(_readTargetLookupService, _readMaterializer, _readableProfileProjector)
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
         );
     }
 
@@ -1423,19 +1424,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
             ],
             []
         );
-    }
-
-    private static IServiceProvider CreateReadServiceProvider(
-        IRelationalReadTargetLookupService readTargetLookupService,
-        IRelationalReadMaterializer readMaterializer,
-        IReadableProfileProjector readableProfileProjector
-    )
-    {
-        return new ServiceCollection()
-            .AddSingleton(readTargetLookupService)
-            .AddSingleton(readMaterializer)
-            .AddSingleton(readableProfileProjector)
-            .BuildServiceProvider();
     }
 
     private static ResourceInfo CreateResourceInfo(string resourceName, bool isDescriptor = false)

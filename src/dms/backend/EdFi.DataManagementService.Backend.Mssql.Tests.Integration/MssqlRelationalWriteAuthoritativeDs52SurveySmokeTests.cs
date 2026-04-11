@@ -72,6 +72,7 @@ file static class MssqlSurveyRuntimeIntegrationTestSupport
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 

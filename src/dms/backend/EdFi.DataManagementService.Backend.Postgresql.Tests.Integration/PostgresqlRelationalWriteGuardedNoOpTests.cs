@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -497,6 +498,7 @@ file static class GuardedNoOpIntegrationTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
         configureServices?.Invoke(services);

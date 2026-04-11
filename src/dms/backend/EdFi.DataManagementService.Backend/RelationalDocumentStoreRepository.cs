@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -21,7 +20,9 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteTargetLookupService targetLookupService,
     IDescriptorWriteHandler descriptorWriteHandler,
     IDocumentHydrator documentHydrator,
-    IServiceProvider serviceProvider
+    IRelationalReadTargetLookupService readTargetLookupService,
+    IRelationalReadMaterializer readMaterializer,
+    IReadableProfileProjector readableProfileProjector
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -34,8 +35,12 @@ public sealed class RelationalDocumentStoreRepository(
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
     private readonly IDocumentHydrator _documentHydrator =
         documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
-    private readonly IServiceProvider _serviceProvider =
-        serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+    private readonly IRelationalReadTargetLookupService _readTargetLookupService =
+        readTargetLookupService ?? throw new ArgumentNullException(nameof(readTargetLookupService));
+    private readonly IRelationalReadMaterializer _readMaterializer =
+        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IReadableProfileProjector _readableProfileProjector =
+        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -117,7 +122,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (relationalGetRequest.ResourceInfo.IsDescriptor)
         {
-            return Task.FromResult<GetResult>(BuildGetNotImplementedResult(relationalGetRequest, resource));
+            return Task.FromResult<GetResult>(BuildDescriptorGetNotImplementedResult(resource));
         }
 
         ResourceReadPlan readPlan;
@@ -470,8 +475,7 @@ public sealed class RelationalDocumentStoreRepository(
     {
         // Relational authorization is pending a later story. Do not route GET-by-id
         // through the legacy authorization handler while the relational auth seam lands.
-        var targetLookupResult = await _serviceProvider
-            .GetRequiredService<IRelationalReadTargetLookupService>()
+        var targetLookupResult = await _readTargetLookupService
             .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
             .ConfigureAwait(false);
 
@@ -526,28 +530,24 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        var edfiDoc = _serviceProvider
-            .GetRequiredService<IRelationalReadMaterializer>()
-            .Materialize(
-                new RelationalReadMaterializationRequest(
-                    readPlan,
-                    documentMetadata,
-                    hydratedPage.TableRowsInDependencyOrder,
-                    hydratedPage.DescriptorRowsInPlanOrder,
-                    relationalGetRequest.ReadMode
-                )
-            );
+        var edfiDoc = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                relationalGetRequest.ReadMode
+            )
+        );
 
         if (ShouldApplyReadableProfileProjection(relationalGetRequest))
         {
             var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
-            edfiDoc = _serviceProvider
-                .GetRequiredService<IReadableProfileProjector>()
-                .Project(
-                    edfiDoc,
-                    projectionContext.ContentTypeDefinition,
-                    projectionContext.IdentityPropertyNames
-                );
+            edfiDoc = _readableProfileProjector.Project(
+                edfiDoc,
+                projectionContext.ContentTypeDefinition,
+                projectionContext.IdentityPropertyNames
+            );
         }
 
         return new GetResult.GetSuccess(
@@ -561,18 +561,11 @@ public sealed class RelationalDocumentStoreRepository(
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
 
-    private static GetResult BuildGetNotImplementedResult(
-        IRelationalGetRequest relationalGetRequest,
-        QualifiedResourceName resource
-    )
+    private static GetResult BuildDescriptorGetNotImplementedResult(QualifiedResourceName resource)
     {
-        return relationalGetRequest.ResourceInfo.IsDescriptor
-            ? new GetResult.GetFailureNotImplemented(
-                $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
-            )
-            : new GetResult.GetFailureNotImplemented(
-                $"Relational GET by id is not implemented for resource '{FormatResource(resource)}'."
-            );
+        return new GetResult.GetFailureNotImplemented(
+            $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
+        );
     }
 
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>

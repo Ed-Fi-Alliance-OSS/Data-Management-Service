@@ -11,7 +11,7 @@ using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal sealed record RelationalReadMaterializationRequest(
+public sealed record RelationalReadMaterializationRequest(
     ResourceReadPlan ReadPlan,
     DocumentMetadataRow DocumentMetadata,
     IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder,
@@ -19,7 +19,7 @@ internal sealed record RelationalReadMaterializationRequest(
     RelationalGetRequestReadMode ReadMode
 );
 
-internal interface IRelationalReadMaterializer
+public interface IRelationalReadMaterializer
 {
     JsonNode Materialize(RelationalReadMaterializationRequest request);
 }

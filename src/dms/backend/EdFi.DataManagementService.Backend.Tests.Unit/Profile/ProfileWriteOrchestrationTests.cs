@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -72,7 +71,9 @@ public class Given_No_Profile_Relational_Post
             _targetLookupService,
             _descriptorWriteHandler,
             A.Fake<IDocumentHydrator>(),
-            OrchestrationTestHelpers.CreateReadServiceProvider()
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -183,7 +184,9 @@ public class Given_No_Profile_Relational_Put
             _targetLookupService,
             _descriptorWriteHandler,
             A.Fake<IDocumentHydrator>(),
-            OrchestrationTestHelpers.CreateReadServiceProvider()
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -287,7 +290,9 @@ public class Given_A_Profiled_Relational_Post
             _targetLookupService,
             _descriptorWriteHandler,
             A.Fake<IDocumentHydrator>(),
-            OrchestrationTestHelpers.CreateReadServiceProvider()
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -398,7 +403,9 @@ public class Given_A_Profiled_Relational_Put
             _targetLookupService,
             _descriptorWriteHandler,
             A.Fake<IDocumentHydrator>(),
-            OrchestrationTestHelpers.CreateReadServiceProvider()
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -452,14 +459,6 @@ public class Given_A_Profiled_Relational_Put
 /// </summary>
 internal static class OrchestrationTestHelpers
 {
-    public static IServiceProvider CreateReadServiceProvider()
-    {
-        return new ServiceCollection()
-            .AddSingleton(A.Fake<IRelationalReadTargetLookupService>())
-            .AddSingleton(A.Fake<IRelationalReadMaterializer>())
-            .BuildServiceProvider();
-    }
-
     public static ResourceInfo CreateResourceInfo() =>
         new(
             ProjectName: new ProjectName("Ed-Fi"),

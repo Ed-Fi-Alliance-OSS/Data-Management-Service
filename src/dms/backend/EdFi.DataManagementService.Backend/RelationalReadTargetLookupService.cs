@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalReadTargetLookupService
+public interface IRelationalReadTargetLookupService
 {
     Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
         MappingSet mappingSet,
@@ -18,16 +18,16 @@ internal interface IRelationalReadTargetLookupService
     );
 }
 
-internal abstract record RelationalReadTargetLookupResult
+public abstract record RelationalReadTargetLookupResult
 {
     private RelationalReadTargetLookupResult() { }
 
-    internal sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid)
+    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid)
         : RelationalReadTargetLookupResult;
 
-    internal sealed record NotFound() : RelationalReadTargetLookupResult;
+    public sealed record NotFound() : RelationalReadTargetLookupResult;
 
-    internal sealed record WrongResource(DocumentUuid DocumentUuid, QualifiedResourceName ActualResource)
+    public sealed record WrongResource(DocumentUuid DocumentUuid, QualifiedResourceName ActualResource)
         : RelationalReadTargetLookupResult;
 }
 

@@ -89,6 +89,7 @@ file static class AuthoritativeDs52ContactWriteIntegrationTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
