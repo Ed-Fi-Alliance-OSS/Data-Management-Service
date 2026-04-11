@@ -43,7 +43,7 @@
       "Add/extend focused `DocumentReconstituter` unit tests for deterministic property order, attachment behavior after batched descriptor changes, null handling, and omitted empty optional arrays.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "External Response Materializer",

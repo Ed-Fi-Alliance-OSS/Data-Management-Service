@@ -82,7 +82,14 @@ public static class DocumentReconstituter
             );
         }
 
-        return result;
+        return ReorderNode(
+            result,
+            BuildPropertyOrderTree(
+                tableRowsInDependencyOrder,
+                referenceProjectionPlans,
+                descriptorProjectionSources
+            )
+        );
     }
 
     /// <summary>
@@ -323,11 +330,6 @@ public static class DocumentReconstituter
     )
     {
         var childTableModel = childTableRows.TableModel;
-        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
-            parentObject,
-            childTableModel.JsonScope,
-            parentTableModel.JsonScope
-        );
 
         var matchingRows = FilterChildRows(
             documentId,
@@ -340,6 +342,12 @@ public static class DocumentReconstituter
         {
             return;
         }
+
+        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
+            parentObject,
+            childTableModel.JsonScope,
+            parentTableModel.JsonScope
+        );
 
         // Sort by ordinal if an Ordinal column exists
         var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
@@ -436,13 +444,6 @@ public static class DocumentReconstituter
             parentTableModel.JsonScope
         );
 
-        // Ensure _ext object exists on parent
-        if (parentObject[extPropertyName] is not JsonObject extObject)
-        {
-            extObject = new JsonObject();
-            parentObject[extPropertyName] = extObject;
-        }
-
         // Extension scope rows are 1:1 with the parent (for root extensions) or
         // 1:1 with each collection item (for collection extension scopes)
         var extensionRow = matchingRows[0];
@@ -485,6 +486,17 @@ public static class DocumentReconstituter
             descriptorProjectionSources,
             descriptorUriLookup
         );
+
+        if (!HasMeaningfulContent(projectObject))
+        {
+            return;
+        }
+
+        if (parentObject[extPropertyName] is not JsonObject extObject)
+        {
+            extObject = new JsonObject();
+            parentObject[extPropertyName] = extObject;
+        }
 
         extObject[projectName] = projectObject;
     }
@@ -778,6 +790,162 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
+    /// Builds a deterministic member-order tree from the compiled JSON paths that participate in
+    /// scalar, reference, descriptor, collection, and extension reconstitution.
+    /// </summary>
+    private static PropertyOrderNode BuildPropertyOrderTree(
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
+        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
+    )
+    {
+        List<JsonPathExpression> orderedPaths = [];
+
+        foreach (var tableRows in tableRowsInDependencyOrder)
+        {
+            if (!string.Equals(tableRows.TableModel.JsonScope.Canonical, "$", StringComparison.Ordinal))
+            {
+                orderedPaths.Add(tableRows.TableModel.JsonScope);
+            }
+
+            foreach (var column in tableRows.TableModel.Columns)
+            {
+                if (column.SourceJsonPath is JsonPathExpression sourcePath)
+                {
+                    orderedPaths.Add(sourcePath);
+                }
+            }
+        }
+
+        foreach (var plan in referenceProjectionPlans)
+        {
+            foreach (var binding in plan.BindingsInOrder)
+            {
+                orderedPaths.Add(binding.ReferenceObjectPath);
+
+                foreach (var field in binding.IdentityFieldOrdinalsInOrder)
+                {
+                    orderedPaths.Add(field.ReferenceJsonPath);
+                }
+            }
+        }
+
+        foreach (var descriptorSource in descriptorProjectionSources)
+        {
+            orderedPaths.Add(descriptorSource.DescriptorValuePath);
+        }
+
+        orderedPaths.Sort(
+            static (left, right) => string.Compare(left.Canonical, right.Canonical, StringComparison.Ordinal)
+        );
+
+        var root = new PropertyOrderNode();
+        HashSet<string> seenPaths = new(StringComparer.Ordinal);
+
+        foreach (var path in orderedPaths)
+        {
+            if (!seenPaths.Add(path.Canonical))
+            {
+                continue;
+            }
+
+            AddPath(root, path);
+        }
+
+        return root;
+    }
+
+    private static void AddPath(PropertyOrderNode root, JsonPathExpression path)
+    {
+        var current = root;
+
+        foreach (var segment in path.Segments)
+        {
+            if (segment is JsonPathSegment.Property property)
+            {
+                current = current.GetOrAddChild(property.Name);
+            }
+        }
+    }
+
+    private static JsonNode ReorderNode(JsonNode node, PropertyOrderNode propertyOrder)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => ReorderObject(jsonObject, propertyOrder),
+            JsonArray jsonArray => ReorderArray(jsonArray, propertyOrder),
+            _ => node.DeepClone(),
+        };
+    }
+
+    private static JsonObject ReorderObject(JsonObject jsonObject, PropertyOrderNode propertyOrder)
+    {
+        var reordered = new JsonObject();
+        HashSet<string> emittedProperties = new(StringComparer.Ordinal);
+
+        foreach (var (propertyName, childOrder) in propertyOrder.ChildrenInOrder)
+        {
+            if (!jsonObject.TryGetPropertyValue(propertyName, out var propertyValue))
+            {
+                continue;
+            }
+
+            reordered[propertyName] = propertyValue is null ? null : ReorderNode(propertyValue, childOrder);
+            emittedProperties.Add(propertyName);
+        }
+
+        foreach (var property in jsonObject)
+        {
+            if (!emittedProperties.Add(property.Key))
+            {
+                continue;
+            }
+
+            reordered[property.Key] = property.Value is null
+                ? null
+                : ReorderNode(property.Value, PropertyOrderNode.Empty);
+        }
+
+        return reordered;
+    }
+
+    private static JsonArray ReorderArray(JsonArray jsonArray, PropertyOrderNode propertyOrder)
+    {
+        var reordered = new JsonArray();
+
+        foreach (var item in jsonArray)
+        {
+            reordered.Add(item is null ? null : ReorderNode(item, propertyOrder));
+        }
+
+        return reordered;
+    }
+
+    private static bool HasMeaningfulContent(JsonNode? node)
+    {
+        return node switch
+        {
+            null => false,
+            JsonObject jsonObject => JsonObjectHasMeaningfulContent(jsonObject),
+            JsonArray jsonArray => jsonArray.Count > 0,
+            _ => true,
+        };
+    }
+
+    private static bool JsonObjectHasMeaningfulContent(JsonObject jsonObject)
+    {
+        foreach (var property in jsonObject)
+        {
+            if (HasMeaningfulContent(property.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Converts a CLR value from a hydrated row to a <see cref="JsonValue"/>.
     /// </summary>
     private static JsonNode ConvertToJsonValue(object value)
@@ -842,5 +1010,29 @@ public static class DocumentReconstituter
         }
 
         return -1;
+    }
+
+    private sealed class PropertyOrderNode
+    {
+        public static readonly PropertyOrderNode Empty = new();
+
+        private readonly Dictionary<string, PropertyOrderNode> _childrenByName = new(StringComparer.Ordinal);
+        private readonly List<KeyValuePair<string, PropertyOrderNode>> _childrenInOrder = [];
+
+        public IReadOnlyList<KeyValuePair<string, PropertyOrderNode>> ChildrenInOrder => _childrenInOrder;
+
+        public PropertyOrderNode GetOrAddChild(string propertyName)
+        {
+            if (_childrenByName.TryGetValue(propertyName, out var existingChild))
+            {
+                return existingChild;
+            }
+
+            var child = new PropertyOrderNode();
+            _childrenByName[propertyName] = child;
+            _childrenInOrder.Add(new KeyValuePair<string, PropertyOrderNode>(propertyName, child));
+
+            return child;
+        }
     }
 }
