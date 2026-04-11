@@ -66,7 +66,7 @@ file sealed class MssqlStudentSchoolAssociationNoOpUpdateCascadeHandler : IUpdat
 file sealed record MssqlStudentSchoolAssociationRelationalGetRequest(
     DocumentUuid DocumentUuid,
     BaseResourceInfo ResourceInfo,
-    MappingSet? MappingSet,
+    MappingSet MappingSet,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,

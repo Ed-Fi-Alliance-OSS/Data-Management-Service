@@ -76,7 +76,7 @@ file sealed class AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHa
 file sealed record AuthoritativeSampleStudentSchoolAssociationRelationalGetRequest(
     DocumentUuid DocumentUuid,
     BaseResourceInfo ResourceInfo,
-    MappingSet? MappingSet,
+    MappingSet MappingSet,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,

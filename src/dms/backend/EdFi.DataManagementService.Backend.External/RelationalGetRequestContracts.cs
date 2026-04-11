@@ -44,10 +44,9 @@ public interface IRelationalGetRequest : IGetRequest
 {
     /// <summary>
     /// The resolved runtime mapping set for the active request.
-    /// Supported relational middleware-owned execution paths populate this before repository
-    /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
+    /// Relational GET-by-id only executes after mapping-set resolution.
     /// </summary>
-    MappingSet? MappingSet { get; }
+    MappingSet MappingSet { get; }
 
     /// <summary>
     /// The fully qualified/base resource identifier for the request.

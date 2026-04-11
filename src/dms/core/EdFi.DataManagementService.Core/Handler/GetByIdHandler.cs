@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -37,6 +38,14 @@ internal class GetByIdHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
+        var resourceAuthorizationHandler = new ResourceAuthorizationHandler(
+            requestInfo.AuthorizationStrategyEvaluators,
+            requestInfo.AuthorizationSecurableInfo,
+            authorizationServiceFactory,
+            requestInfo.ScopedServiceProvider,
+            _logger
+        );
+
         var getResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
             _logger,
@@ -46,20 +55,7 @@ internal class GetByIdHandler(
             r => r is GetSuccess,
             async ct =>
                 await documentStoreRepository.GetDocumentById(
-                    new GetRequest(
-                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                        ResourceInfo: requestInfo.ResourceInfo,
-                        MappingSet: requestInfo.MappingSet,
-                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                            requestInfo.AuthorizationStrategyEvaluators,
-                            requestInfo.AuthorizationSecurableInfo,
-                            authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider,
-                            _logger
-                        ),
-                        TraceId: requestInfo.FrontendRequest.TraceId,
-                        ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
-                    )
+                    CreateGetRequest(requestInfo, resourceAuthorizationHandler)
                 ),
             requestInfo
         );
@@ -139,5 +135,27 @@ internal class GetByIdHandler(
                 requestInfo.ResourceSchema.IdentityJsonPaths
             )
         );
+    }
+
+    private static IGetRequest CreateGetRequest(
+        RequestInfo requestInfo,
+        IResourceAuthorizationHandler resourceAuthorizationHandler
+    )
+    {
+        return requestInfo.MappingSet is not null
+            ? new RelationalGetRequest(
+                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                ResourceInfo: requestInfo.ResourceInfo,
+                MappingSet: requestInfo.MappingSet,
+                ResourceAuthorizationHandler: resourceAuthorizationHandler,
+                TraceId: requestInfo.FrontendRequest.TraceId,
+                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+            )
+            : new GetRequest(
+                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                ResourceName: requestInfo.ResourceInfo.ResourceName,
+                ResourceAuthorizationHandler: resourceAuthorizationHandler,
+                TraceId: requestInfo.FrontendRequest.TraceId
+            );
     }
 }

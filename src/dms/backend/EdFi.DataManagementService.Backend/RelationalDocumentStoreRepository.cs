@@ -108,7 +108,6 @@ public sealed class RelationalDocumentStoreRepository(
             nameof(getRequest)
         );
         var mappingSet = relationalGetRequest.MappingSet;
-        ArgumentNullException.ThrowIfNull(mappingSet);
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
 
         _logger.LogDebug(

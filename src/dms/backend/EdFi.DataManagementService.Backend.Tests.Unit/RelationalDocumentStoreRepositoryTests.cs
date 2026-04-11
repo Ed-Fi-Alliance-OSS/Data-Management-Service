@@ -153,6 +153,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_returns_a_precise_not_implemented_failure_for_descriptor_get_requests()
     {
         var getRequest = A.Fake<IRelationalGetRequest>();
+        A.CallTo(() => getRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => getRequest.ResourceInfo)
             .Returns(
                 new BaseResourceInfo(

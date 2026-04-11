@@ -100,5 +100,39 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Repository Read Dependency Simplification",
+    "description": "Replace the `IServiceProvider`-based service locator in `RelationalDocumentStoreRepository` with explicit constructor dependencies for the relational read path, including `IRelationalReadTargetLookupService`, `IRelationalReadMaterializer`, and `IReadableProfileProjector`. Remove dead conditional logic made unnecessary by the descriptor guard, including the non-descriptor branch in `BuildGetNotImplementedResult`. Update all direct `RelationalDocumentStoreRepository` registrations and service-provider construction paths that currently rely on the old constructor shape, including provider-specific integration test helpers and any validation-on-build compositions. Acceptance: `RelationalDocumentStoreRepository` no longer resolves read-path services via `GetRequiredService(...)` during request execution; constructor dependencies fully describe the active GET-by-id collaborators; the descriptor-only not-implemented path has no unreachable non-descriptor branch; direct service-provider construction paths still validate and resolve successfully after the constructor change; existing GET-by-id behavior and tests remain unchanged.",
+    "steps-to-verify": [
+      "Refactor `RelationalDocumentStoreRepository` to use direct injected dependencies and delete unreachable not-implemented code paths.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~ProfileWriteValidationMiddlewareTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Shared Relational GET Integration Test Helpers",
+    "description": "Extract the duplicated relational GET-by-id integration test support added for the authoritative sample StudentSchoolAssociation fixture into shared helpers, keeping only dialect-specific wiring in the PostgreSQL and SQL Server test projects. Move the common `IRelationalGetRequest` test record, expected-response construction, JSON canonicalization, and shared relational GET assertions into a reusable helper location such as `Backend.Tests.Common` or a focused shared integration helper. Acceptance: the PostgreSQL and SQL Server smoke tests no longer maintain separate copies of the same GET request type and JSON/assertion helpers; common read assertions are authored once and reused by both dialect suites; each dialect-specific test file keeps only the setup needed for its provider.",
+    "steps-to-verify": [
+      "Extract and reuse the common relational GET integration helpers across the PostgreSQL and SQL Server authoritative sample smoke tests.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational GET Contract Tightening",
+    "description": "Make the active relational GET seam explicit by requiring a non-null `MappingSet` on `IRelationalGetRequest` and its concrete callers, instead of allowing null and then failing fast inside the repository. Update the contract, `GetRequest`, tests, and any helper request implementations to reflect that relational GET-by-id only executes after mapping-set resolution, including provider-specific integration test request records and any other direct `IRelationalGetRequest` implementations. Acceptance: `IRelationalGetRequest.MappingSet` is non-nullable; `GetRequest` and test request implementations populate it unconditionally for relational GET callers; repository code no longer performs a defensive null check for `MappingSet`; compile-time contracts reflect the actual runtime precondition that relational GET requires a resolved mapping set.",
+    "steps-to-verify": [
+      "Change the relational GET contract and implementations so `MappingSet` is non-nullable and remove repository null-guard code that becomes impossible.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~ProfileWriteValidationMiddlewareTests|FullyQualifiedName~RelationalWriteSeamTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
+    ],
+    "completed": true
   }
 ]
