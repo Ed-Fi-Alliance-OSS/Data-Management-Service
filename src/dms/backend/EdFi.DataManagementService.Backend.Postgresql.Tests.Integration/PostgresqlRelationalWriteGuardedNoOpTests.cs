@@ -305,11 +305,15 @@ internal sealed class GuardedNoOpPreLoadContentVersionBumpProbe
 
 file sealed class GuardedNoOpPreLoadContentVersionBumpCurrentStateLoader(
     ISessionDocumentHydrator sessionDocumentHydrator,
+    IRelationalReadMaterializer readMaterializer,
     NpgsqlDataSourceProvider dataSourceProvider,
     GuardedNoOpPreLoadContentVersionBumpProbe probe
 ) : IRelationalWriteCurrentStateLoader
 {
-    private readonly RelationalWriteCurrentStateLoader _inner = new(sessionDocumentHydrator);
+    private readonly RelationalWriteCurrentStateLoader _inner = new(
+        sessionDocumentHydrator,
+        readMaterializer
+    );
     private readonly NpgsqlDataSourceProvider _dataSourceProvider =
         dataSourceProvider ?? throw new ArgumentNullException(nameof(dataSourceProvider));
     private readonly GuardedNoOpPreLoadContentVersionBumpProbe _probe =

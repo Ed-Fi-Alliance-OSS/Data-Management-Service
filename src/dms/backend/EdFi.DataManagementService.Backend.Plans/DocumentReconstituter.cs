@@ -153,7 +153,7 @@ public static class DocumentReconstituter
                 column.SourceJsonPath.Value,
                 tableModel.JsonScope
             );
-            targetObject[propertyName] = ConvertToJsonValue(value);
+            targetObject[propertyName] = ConvertToJsonValue(value, column.ScalarType);
         }
     }
 
@@ -948,8 +948,35 @@ public static class DocumentReconstituter
     /// <summary>
     /// Converts a CLR value from a hydrated row to a <see cref="JsonValue"/>.
     /// </summary>
-    private static JsonNode ConvertToJsonValue(object value)
+    private static JsonNode ConvertToJsonValue(object value, RelationalScalarType? scalarType = null)
     {
+        if (scalarType?.Kind == ScalarKind.Date)
+        {
+            return value switch
+            {
+                DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
+                DateTime dateTime => JsonValue.Create(DateOnly.FromDateTime(dateTime).ToString("yyyy-MM-dd")),
+                DateTimeOffset dateTimeOffset => JsonValue.Create(
+                    DateOnly.FromDateTime(dateTimeOffset.DateTime).ToString("yyyy-MM-dd")
+                ),
+                _ => JsonValue.Create(value.ToString() ?? string.Empty),
+            };
+        }
+
+        if (scalarType?.Kind == ScalarKind.Time)
+        {
+            return value switch
+            {
+                TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
+                TimeSpan timeSpan => JsonValue.Create(TimeOnly.FromTimeSpan(timeSpan).ToString("HH:mm:ss")),
+                DateTime dateTime => JsonValue.Create(TimeOnly.FromDateTime(dateTime).ToString("HH:mm:ss")),
+                DateTimeOffset dateTimeOffset => JsonValue.Create(
+                    TimeOnly.FromDateTime(dateTimeOffset.DateTime).ToString("HH:mm:ss")
+                ),
+                _ => JsonValue.Create(value.ToString() ?? string.Empty),
+            };
+        }
+
         return value switch
         {
             int i => JsonValue.Create(i),

@@ -73,6 +73,19 @@ file sealed class AuthoritativeSampleStudentSchoolAssociationNoOpUpdateCascadeHa
         );
 }
 
+file sealed record AuthoritativeSampleStudentSchoolAssociationRelationalGetRequest(
+    DocumentUuid DocumentUuid,
+    BaseResourceInfo ResourceInfo,
+    MappingSet? MappingSet,
+    IResourceAuthorizationHandler ResourceAuthorizationHandler,
+    TraceId TraceId,
+    RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
+    ReadableProfileProjectionContext? ReadableProfileProjectionContext = null
+) : IRelationalGetRequest
+{
+    public ResourceName ResourceName => ResourceInfo.ResourceName;
+}
+
 file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport
 {
     public const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -218,6 +231,22 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
             DateTime value => DateOnly.FromDateTime(value),
             _ => throw new InvalidOperationException(
                 $"Expected column '{columnName}' to contain a DateOnly value."
+            ),
+        };
+
+    public static DateTimeOffset GetDateTimeOffset(
+        IReadOnlyDictionary<string, object?> row,
+        string columnName
+    ) =>
+        GetRequiredValue(row, columnName) switch
+        {
+            DateTimeOffset value => value,
+            DateTime value => new DateTimeOffset(
+                DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                TimeSpan.Zero
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected column '{columnName}' to contain a DateTimeOffset value."
             ),
         };
 
@@ -926,6 +955,153 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             .ExistingDocumentUuid.Should()
             .Be(StudentSchoolAssociationDocumentUuid);
         _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateAfterChangedUpdate);
+    }
+
+    [Test]
+    public async Task It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
+    {
+        var getResult = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-by-id"
+        );
+        var expectedLastModifiedAt = await ReadContentLastModifiedAtAsync(
+            StudentSchoolAssociationDocumentUuid.Value
+        );
+        var expectedDocument = CreateExpectedExternalResponse(
+            ChangedUpdateRequestBodyJson,
+            _stateAfterNoOpUpdate.Document,
+            expectedLastModifiedAt
+        );
+
+        getResult.Should().BeOfType<GetResult.GetSuccess>();
+
+        var success = getResult.As<GetResult.GetSuccess>();
+
+        success.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid);
+        success.LastModifiedTraceId.Should().BeNull();
+        success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
+        success.EdfiDoc["id"]!
+            .GetValue<string>()
+            .Should()
+            .Be(StudentSchoolAssociationDocumentUuid.Value.ToString());
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be($"\"{_stateAfterNoOpUpdate.Document.ContentVersion}\"");
+        success.EdfiDoc["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be(FormatExternalLastModifiedDate(expectedLastModifiedAt));
+        success.EdfiDoc["alternativeGraduationPlans"]!
+            .AsArray()
+            .Select(plan =>
+                plan?["alternativeGraduationPlanReference"]?["graduationSchoolYear"]?.GetValue<int>()
+            )
+            .Should()
+            .Equal(EndorsementGraduationSchoolYear, StemGraduationSchoolYear);
+        success.EdfiDoc["educationPlans"]!
+            .AsArray()
+            .Select(plan => plan?["educationPlanDescriptor"]?.GetValue<string>())
+            .Should()
+            .Equal(InterventionEducationPlanDescriptorUri, CareerEducationPlanDescriptorUri);
+        CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
+    }
+
+    private async Task<GetResult> ExecuteGetByIdAsync(DocumentUuid documentUuid, string traceId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new AuthoritativeSampleStudentSchoolAssociationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: _resourceInfo,
+            MappingSet: _mappingSet,
+            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
+            TraceId: new TraceId(traceId)
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
+    private async Task<DateTimeOffset> ReadContentLastModifiedAtAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                rows[0],
+                "ContentLastModifiedAt"
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document metadata row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private static JsonNode CreateExpectedExternalResponse(
+        string requestBodyJson,
+        AuthoritativeSampleStudentSchoolAssociationDocumentRow document,
+        DateTimeOffset lastModifiedAt
+    )
+    {
+        var expectedDocument =
+            JsonNode.Parse(requestBodyJson)?.AsObject()
+            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
+
+        expectedDocument["id"] = document.DocumentUuid.ToString();
+        expectedDocument["_etag"] = $"\"{document.ContentVersion}\"";
+        expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
+
+        return expectedDocument;
+    }
+
+    private static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+
+    private static string CanonicalizeJson(JsonNode node) =>
+        NormalizeJsonNode(node)?.ToJsonString() ?? "null";
+
+    private static JsonNode? NormalizeJsonNode(JsonNode? node)
+    {
+        return node switch
+        {
+            null => null,
+            JsonObject jsonObject => NormalizeJsonObject(jsonObject),
+            JsonArray jsonArray => NormalizeJsonArray(jsonArray),
+            _ => node.DeepClone(),
+        };
+    }
+
+    private static JsonObject NormalizeJsonObject(JsonObject jsonObject)
+    {
+        JsonObject normalized = [];
+
+        foreach (var property in jsonObject.OrderBy(static property => property.Key, StringComparer.Ordinal))
+        {
+            normalized[property.Key] = NormalizeJsonNode(property.Value);
+        }
+
+        return normalized;
+    }
+
+    private static JsonArray NormalizeJsonArray(JsonArray jsonArray)
+    {
+        JsonArray normalized = [];
+
+        foreach (var item in jsonArray)
+        {
+            normalized.Add(NormalizeJsonNode(item));
+        }
+
+        return normalized;
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(

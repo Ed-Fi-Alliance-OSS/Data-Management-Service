@@ -90,7 +90,7 @@
       "Add one PostgreSQL integration test that performs write then relational GET-by-id for the representative fixture and asserts nested collections, `_ext`, and metadata.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Parity Smoke",
