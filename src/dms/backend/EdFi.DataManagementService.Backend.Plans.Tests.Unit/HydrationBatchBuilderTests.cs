@@ -273,9 +273,63 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
     }
 }
 
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
+{
+    private string _pgsqlBatch = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var descriptorPlans = new[]
+        {
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM root_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM child_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+        };
+
+        _pgsqlBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql
+        );
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_projection_result_sets_after_table_hydration()
+    {
+        var childSelectIndex = _pgsqlBatch.IndexOf(
+            "SELECT child columns FROM child;",
+            StringComparison.Ordinal
+        );
+        var firstDescriptorIndex = _pgsqlBatch.IndexOf(
+            "SELECT descriptor rows FROM root_descriptor;",
+            StringComparison.Ordinal
+        );
+        var secondDescriptorIndex = _pgsqlBatch.IndexOf(
+            "SELECT descriptor rows FROM child_descriptor;",
+            StringComparison.Ordinal
+        );
+
+        childSelectIndex.Should().BePositive();
+        firstDescriptorIndex.Should().BeGreaterThan(childSelectIndex);
+        secondDescriptorIndex.Should().BeGreaterThan(firstDescriptorIndex);
+    }
+}
+
 internal static class HydrationBatchBuilderTestHelper
 {
-    public static ResourceReadPlan BuildTestReadPlan(SqlDialect dialect = SqlDialect.Pgsql)
+    public static ResourceReadPlan BuildTestReadPlan(
+        SqlDialect dialect = SqlDialect.Pgsql,
+        IReadOnlyList<DescriptorProjectionPlan>? descriptorProjectionPlans = null
+    )
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "School"),
@@ -387,7 +441,7 @@ internal static class HydrationBatchBuilderTestHelper
             KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
             TablePlansInDependencyOrder: [rootTablePlan, childTablePlan],
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans ?? []
         );
     }
 }

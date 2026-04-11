@@ -852,7 +852,8 @@ public class Given_ProjectPage_With_Root_Table_Projections
                     DateTimeOffset.UtcNow
                 ),
             ],
-            TableRowsInDependencyOrder: [hydratedRows]
+            TableRowsInDependencyOrder: [hydratedRows],
+            DescriptorRowsInPlanOrder: []
         );
 
         var projectionPlan = new ReferenceIdentityProjectionTablePlan(
@@ -975,7 +976,8 @@ public class Given_ProjectPage_With_No_Projection_Plans
                     DateTimeOffset.UtcNow
                 ),
             ],
-            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [new object?[] { 1L }])]
+            TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [new object?[] { 1L }])],
+            DescriptorRowsInPlanOrder: []
         );
 
         var resourceModel = new RelationalResourceModel(
@@ -1165,7 +1167,8 @@ public class Given_ProjectPage_With_Mixed_Root_And_Collection_Plans
                     DateTimeOffset.UtcNow
                 ),
             ],
-            TableRowsInDependencyOrder: [rootHydratedRows, collectionHydratedRows]
+            TableRowsInDependencyOrder: [rootHydratedRows, collectionHydratedRows],
+            DescriptorRowsInPlanOrder: []
         );
 
         var rootProjectionPlan = new ReferenceIdentityProjectionTablePlan(

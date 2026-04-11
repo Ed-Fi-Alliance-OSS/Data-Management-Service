@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <item><c>dms.Document</c> metadata joined to the page keyset</item>
 /// <item>Root table rows (from <c>TablePlansInDependencyOrder[0]</c>)</item>
 /// <item>Child table rows (from <c>TablePlansInDependencyOrder[1..n]</c>)</item>
+/// <item>Descriptor URI rows (from <c>DescriptorProjectionPlansInOrder[0..n]</c>)</item>
 /// </list>
 /// </remarks>
 public static class HydrationBatchBuilder
@@ -66,6 +67,13 @@ public static class HydrationBatchBuilder
         foreach (var tablePlan in plan.TablePlansInDependencyOrder)
         {
             writer.AppendLine(tablePlan.SelectByKeysetSql);
+            writer.AppendLine();
+        }
+
+        // 6. Descriptor projection selects in deterministic plan order
+        foreach (var descriptorPlan in plan.DescriptorProjectionPlansInOrder)
+        {
+            writer.AppendLine(EnsureTrailingSemicolon(descriptorPlan.SelectByKeysetSql));
             writer.AppendLine();
         }
 

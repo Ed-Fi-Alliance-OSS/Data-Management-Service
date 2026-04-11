@@ -25,7 +25,7 @@
       "Add/extend unit tests for batch SQL ordering and executor result-set consumption, including descriptor result-set ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Current-State Loader Uses Hydrated Descriptor Results",

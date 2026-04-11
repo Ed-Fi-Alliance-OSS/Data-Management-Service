@@ -16,8 +16,8 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <remarks>
 /// <para>
 /// The executor builds a single SQL batch that materializes a keyset temp table, then
-/// returns multiple result sets (document metadata, root rows, child rows) consumed
-/// sequentially via <see cref="DbDataReader.NextResultAsync"/>.
+/// returns multiple result sets (document metadata, root rows, child rows, descriptor URI rows)
+/// consumed sequentially via <see cref="DbDataReader.NextResultAsync"/>.
 /// </para>
 /// <para>
 /// Takes an already-opened <see cref="DbConnection"/> so callers can manage connection
@@ -118,6 +118,25 @@ public static class HydrationExecutor
             );
         }
 
-        return new HydratedPage(totalCount, documentMetadata, tableRows);
+        // 4. Descriptor URI rows in compiled-plan order
+        var descriptorRows = new HydratedDescriptorRows[plan.DescriptorProjectionPlansInOrder.Length];
+
+        for (var i = 0; i < plan.DescriptorProjectionPlansInOrder.Length; i++)
+        {
+            if (!await reader.NextResultAsync(ct))
+            {
+                throw new InvalidOperationException(
+                    $"Expected descriptor projection result set at index {i} but no more result sets available."
+                );
+            }
+
+            descriptorRows[i] = await HydrationReader.ReadDescriptorRowsAsync(
+                reader,
+                plan.DescriptorProjectionPlansInOrder[i],
+                ct
+            );
+        }
+
+        return new HydratedPage(totalCount, documentMetadata, tableRows, descriptorRows);
     }
 }
