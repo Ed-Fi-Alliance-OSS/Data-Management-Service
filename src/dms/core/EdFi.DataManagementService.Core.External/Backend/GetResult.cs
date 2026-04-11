@@ -18,11 +18,14 @@ public record GetResult
     /// <param name="DocumentUuid">The DocumentUuid of the document</param>
     /// <param name="EdfiDoc">The document itself</param>
     /// <param name="LastModifiedDate">The date the document was last modified</param>
+    /// <param name="LastModifiedTraceId">
+    /// Optional trace identifier associated with the last modification.
+    /// </param>
     public record GetSuccess(
         DocumentUuid DocumentUuid,
         JsonNode EdfiDoc,
         DateTime LastModifiedDate,
-        string LastModifiedTraceId
+        string? LastModifiedTraceId
     ) : GetResult();
 
     /// <summary>
@@ -34,6 +37,12 @@ public record GetResult
     /// A failure because the client is not authorized to get the document
     /// </summary>
     public record GetFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : GetResult();
+
+    /// <summary>
+    /// A failure because the requested read operation is intentionally not implemented.
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public record GetFailureNotImplemented(string FailureMessage) : GetResult();
 
     /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue

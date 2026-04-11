@@ -72,17 +72,50 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_get_requests()
+    public async Task It_returns_a_precise_not_implemented_failure_for_get_requests()
     {
-        var getRequest = A.Fake<IGetRequest>();
-        A.CallTo(() => getRequest.ResourceName).Returns(_schoolResourceInfo.ResourceName);
+        var getRequest = A.Fake<IRelationalGetRequest>();
+        A.CallTo(() => getRequest.ResourceInfo)
+            .Returns(
+                new BaseResourceInfo(
+                    _schoolResourceInfo.ProjectName,
+                    _schoolResourceInfo.ResourceName,
+                    _schoolResourceInfo.IsDescriptor
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
         result
             .Should()
             .BeEquivalentTo(
-                new GetResult.UnknownFailure("Relational GET by id is not implemented for resource 'School'.")
+                new GetResult.GetFailureNotImplemented(
+                    "Relational GET by id is not implemented for resource 'Ed-Fi.School'."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_a_precise_not_implemented_failure_for_descriptor_get_requests()
+    {
+        var getRequest = A.Fake<IRelationalGetRequest>();
+        A.CallTo(() => getRequest.ResourceInfo)
+            .Returns(
+                new BaseResourceInfo(
+                    _descriptorResourceInfo.ProjectName,
+                    _descriptorResourceInfo.ResourceName,
+                    _descriptorResourceInfo.IsDescriptor
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new GetResult.GetFailureNotImplemented(
+                    "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+                )
             );
     }
 
@@ -104,7 +137,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_query_requests()
+    public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
     {
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -114,7 +147,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result
             .Should()
             .BeEquivalentTo(
-                new QueryResult.UnknownFailure(
+                new QueryResult.QueryFailureNotImplemented(
                     "Relational query handling is not implemented for resource 'Ed-Fi.School'."
                 )
             );

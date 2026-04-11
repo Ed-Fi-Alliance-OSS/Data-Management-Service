@@ -52,12 +52,46 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly JsonObject ResponseBody = new();
+            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
                 return Task.FromResult<GetResult>(
-                    new GetSuccess(No.DocumentUuid, new JsonObject(), DateTime.Now, getRequest.TraceId.Value)
+                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, getRequest.TraceId.Value)
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_A_Null_LastModifiedTraceId : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly JsonObject ResponseBody = new() { ["value"] = "expected" };
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(
+                    new GetSuccess(No.DocumentUuid, ResponseBody, DateTime.UtcNow, null)
                 );
             }
         }
@@ -107,6 +141,52 @@ public class GetByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(404);
             requestInfo.FrontendResponse.Body.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Not_Implemented : GetByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string ResponseBody = "FailureMessage";
+
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                return Task.FromResult<GetResult>(new GetFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "xyz";
+        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await getByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = Utility.ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {requestInfo.FrontendResponse.Body}
+                    """
+                );
         }
     }
 

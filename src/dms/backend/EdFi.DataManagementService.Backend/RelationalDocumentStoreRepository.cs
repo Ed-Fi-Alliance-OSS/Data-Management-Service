@@ -95,17 +95,18 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         ArgumentNullException.ThrowIfNull(getRequest);
+        var relationalGetRequest = RequireRelationalRequest<IRelationalGetRequest>(
+            getRequest,
+            nameof(getRequest)
+        );
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.GetDocumentById - {TraceId}",
-            getRequest.TraceId.Value
+            relationalGetRequest.TraceId.Value
         );
 
-        return Task.FromResult<GetResult>(
-            new GetResult.UnknownFailure(
-                $"Relational GET by id is not implemented for resource '{getRequest.ResourceName.Value}'."
-            )
-        );
+        return Task.FromResult<GetResult>(BuildGetNotImplementedResult(relationalGetRequest, resource));
     }
 
     public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
@@ -202,7 +203,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         return Task.FromResult<QueryResult>(
-            new QueryResult.UnknownFailure(
+            new QueryResult.QueryFailureNotImplemented(
                 $"Relational query handling is not implemented for resource '{FormatResource(RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo))}'."
             )
         );
@@ -434,11 +435,25 @@ public sealed class RelationalDocumentStoreRepository(
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
 
+    private static GetResult BuildGetNotImplementedResult(
+        IRelationalGetRequest relationalGetRequest,
+        QualifiedResourceName resource
+    )
+    {
+        return relationalGetRequest.ResourceInfo.IsDescriptor
+            ? new GetResult.GetFailureNotImplemented(
+                $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
+            )
+            : new GetResult.GetFailureNotImplemented(
+                $"Relational GET by id is not implemented for resource '{FormatResource(resource)}'."
+            );
+    }
+
     private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
         object request,
         string paramName
     )
-        where TRelationalRequest : class, IRelationalWriteRequest
+        where TRelationalRequest : class
     {
         return request as TRelationalRequest
             ?? throw new ArgumentException(

@@ -72,6 +72,11 @@ internal class GetByIdHandler(
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            GetFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             GetFailureRetryable => new FrontendResponse(

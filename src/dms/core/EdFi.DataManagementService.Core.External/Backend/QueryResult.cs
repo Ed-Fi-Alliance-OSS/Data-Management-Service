@@ -30,6 +30,12 @@ public record QueryResult
     public record QueryFailureRetryable() : QueryResult();
 
     /// <summary>
+    /// A failure because the requested read operation is intentionally not implemented.
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public record QueryFailureNotImplemented(string FailureMessage) : QueryResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
