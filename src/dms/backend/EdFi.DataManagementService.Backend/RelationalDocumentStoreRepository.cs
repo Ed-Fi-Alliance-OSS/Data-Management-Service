@@ -42,7 +42,7 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
 
-    public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
         var relationalUpsertRequest = RequireRelationalRequest<IRelationalUpsertRequest>(
@@ -61,48 +61,67 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return _descriptorWriteHandler.HandlePostAsync(
-                new DescriptorWriteRequest(
+            var descriptorResult = await _descriptorWriteHandler
+                .HandlePostAsync(
+                    new DescriptorWriteRequest(
+                        mappingSet,
+                        resource,
+                        relationalUpsertRequest.EdfiDoc,
+                        relationalUpsertRequest.DocumentUuid,
+                        relationalUpsertRequest.DocumentInfo.ReferentialId,
+                        relationalUpsertRequest.TraceId
+                    )
+                )
+                .ConfigureAwait(false);
+
+            return await WithStoredResponseEtagAsync(
                     mappingSet,
                     resource,
-                    relationalUpsertRequest.EdfiDoc,
-                    relationalUpsertRequest.DocumentUuid,
-                    relationalUpsertRequest.DocumentInfo.ReferentialId,
+                    descriptorResult,
                     relationalUpsertRequest.TraceId
                 )
-            );
+                .ConfigureAwait(false);
         }
 
         var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
 
-        return ExecuteWriteGuardRails<UpsertResult>(
-            requestBody: selectedBody,
-            traceId: relationalUpsertRequest.TraceId,
-            mappingSet,
-            relationalUpsertRequest.ResourceInfo,
-            RelationalWriteOperationKind.Post,
-            new RelationalWriteTargetRequest.Post(
-                relationalUpsertRequest.DocumentInfo.ReferentialId,
-                relationalUpsertRequest.DocumentUuid
-            ),
-            relationalUpsertRequest.DocumentInfo.DocumentReferences,
-            relationalUpsertRequest.DocumentInfo.DescriptorReferences,
-            static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
-            static executorResult =>
-                executorResult switch
-                {
-                    RelationalWriteExecutorResult.Upsert(var result) => result,
-                    RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
-                        "Relational write executor returned an update result for a POST request."
-                    ),
-                    _ => throw new InvalidOperationException(
-                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
-                    ),
-                },
-            profileWriteContext
-        );
+        var result = await ExecuteWriteGuardRails<UpsertResult>(
+                requestBody: selectedBody,
+                traceId: relationalUpsertRequest.TraceId,
+                mappingSet,
+                relationalUpsertRequest.ResourceInfo,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Post(
+                    relationalUpsertRequest.DocumentInfo.ReferentialId,
+                    relationalUpsertRequest.DocumentUuid
+                ),
+                relationalUpsertRequest.DocumentInfo.DocumentReferences,
+                relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+                static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
+                static executorResult =>
+                    executorResult switch
+                    {
+                        RelationalWriteExecutorResult.Upsert(var result) => result,
+                        RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
+                            "Relational write executor returned an update result for a POST request."
+                        ),
+                        _ => throw new InvalidOperationException(
+                            $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
+                        ),
+                    },
+                profileWriteContext
+            )
+            .ConfigureAwait(false);
+
+        return await WithStoredResponseEtagAsync(
+                mappingSet,
+                resource,
+                result,
+                relationalUpsertRequest.TraceId
+            )
+            .ConfigureAwait(false);
     }
 
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
@@ -143,7 +162,7 @@ public sealed class RelationalDocumentStoreRepository(
         return GetDocumentByIdAsync(relationalGetRequest, mappingSet, resource, readPlan);
     }
 
-    public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+    public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         ArgumentNullException.ThrowIfNull(updateRequest);
         var relationalUpdateRequest = RequireRelationalRequest<IRelationalUpdateRequest>(
@@ -162,45 +181,64 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return _descriptorWriteHandler.HandlePutAsync(
-                new DescriptorWriteRequest(
+            var descriptorResult = await _descriptorWriteHandler
+                .HandlePutAsync(
+                    new DescriptorWriteRequest(
+                        mappingSet,
+                        resource,
+                        relationalUpdateRequest.EdfiDoc,
+                        relationalUpdateRequest.DocumentUuid,
+                        referentialId: null,
+                        relationalUpdateRequest.TraceId
+                    )
+                )
+                .ConfigureAwait(false);
+
+            return await WithStoredResponseEtagAsync(
                     mappingSet,
                     resource,
-                    relationalUpdateRequest.EdfiDoc,
-                    relationalUpdateRequest.DocumentUuid,
-                    referentialId: null,
+                    descriptorResult,
                     relationalUpdateRequest.TraceId
                 )
-            );
+                .ConfigureAwait(false);
         }
 
         var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
 
-        return ExecuteWriteGuardRails<UpdateResult>(
-            requestBody: selectedBody,
-            traceId: relationalUpdateRequest.TraceId,
-            mappingSet,
-            relationalUpdateRequest.ResourceInfo,
-            RelationalWriteOperationKind.Put,
-            new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
-            relationalUpdateRequest.DocumentInfo.DocumentReferences,
-            relationalUpdateRequest.DocumentInfo.DescriptorReferences,
-            static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
-            static executorResult =>
-                executorResult switch
-                {
-                    RelationalWriteExecutorResult.Update(var result) => result,
-                    RelationalWriteExecutorResult.Upsert => throw new InvalidOperationException(
-                        "Relational write executor returned an upsert result for a PUT request."
-                    ),
-                    _ => throw new InvalidOperationException(
-                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
-                    ),
-                },
-            profileWriteContext
-        );
+        var result = await ExecuteWriteGuardRails<UpdateResult>(
+                requestBody: selectedBody,
+                traceId: relationalUpdateRequest.TraceId,
+                mappingSet,
+                relationalUpdateRequest.ResourceInfo,
+                RelationalWriteOperationKind.Put,
+                new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
+                relationalUpdateRequest.DocumentInfo.DocumentReferences,
+                relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+                static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
+                static executorResult =>
+                    executorResult switch
+                    {
+                        RelationalWriteExecutorResult.Update(var result) => result,
+                        RelationalWriteExecutorResult.Upsert => throw new InvalidOperationException(
+                            "Relational write executor returned an upsert result for a PUT request."
+                        ),
+                        _ => throw new InvalidOperationException(
+                            $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
+                        ),
+                    },
+                profileWriteContext
+            )
+            .ConfigureAwait(false);
+
+        return await WithStoredResponseEtagAsync(
+                mappingSet,
+                resource,
+                result,
+                relationalUpdateRequest.TraceId
+            )
+            .ConfigureAwait(false);
     }
 
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
@@ -465,6 +503,111 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteExecutorResult? ImmediateResult
     );
+
+    private async Task<UpsertResult> WithStoredResponseEtagAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        UpsertResult result,
+        TraceId traceId
+    )
+    {
+        if (result is UpsertResult.InsertSuccess insertSuccess)
+        {
+            var storedEtag = await TryResolveStoredResponseEtagAsync(
+                    mappingSet,
+                    resource,
+                    insertSuccess.NewDocumentUuid,
+                    traceId
+                )
+                .ConfigureAwait(false);
+
+            return storedEtag is null ? result : insertSuccess with { ETag = storedEtag };
+        }
+
+        if (result is UpsertResult.UpdateSuccess updateSuccess)
+        {
+            var storedEtag = await TryResolveStoredResponseEtagAsync(
+                    mappingSet,
+                    resource,
+                    updateSuccess.ExistingDocumentUuid,
+                    traceId
+                )
+                .ConfigureAwait(false);
+
+            return storedEtag is null ? result : updateSuccess with { ETag = storedEtag };
+        }
+
+        return result;
+    }
+
+    private async Task<UpdateResult> WithStoredResponseEtagAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        UpdateResult result,
+        TraceId traceId
+    )
+    {
+        if (result is UpdateResult.UpdateSuccess updateSuccess)
+        {
+            var storedEtag = await TryResolveStoredResponseEtagAsync(
+                    mappingSet,
+                    resource,
+                    updateSuccess.ExistingDocumentUuid,
+                    traceId
+                )
+                .ConfigureAwait(false);
+
+            return storedEtag is null ? result : updateSuccess with { ETag = storedEtag };
+        }
+
+        return result;
+    }
+
+    private async Task<string?> TryResolveStoredResponseEtagAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        TraceId traceId
+    )
+    {
+        try
+        {
+            var targetLookupResult = await _targetLookupService
+                .ResolveForPutAsync(mappingSet, resource, documentUuid)
+                .ConfigureAwait(false);
+
+            if (
+                targetLookupResult is RelationalWriteTargetLookupResult.ExistingDocument(
+                    _,
+                    _,
+                    var observedContentVersion
+                )
+            )
+            {
+                return RelationalApiMetadataFormatter.FormatEtag(observedContentVersion);
+            }
+
+            _logger.LogWarning(
+                "Relational write succeeded for resource '{Resource}' and document uuid '{DocumentUuid}', but response ETag lookup returned '{LookupResultType}' - {TraceId}",
+                FormatResource(resource),
+                documentUuid.Value,
+                targetLookupResult.GetType().Name,
+                traceId.Value
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Relational write succeeded for resource '{Resource}' and document uuid '{DocumentUuid}', but response ETag lookup failed - {TraceId}",
+                FormatResource(resource),
+                documentUuid.Value,
+                traceId.Value
+            );
+        }
+
+        return null;
+    }
 
     private async Task<GetResult> GetDocumentByIdAsync(
         IRelationalGetRequest relationalGetRequest,

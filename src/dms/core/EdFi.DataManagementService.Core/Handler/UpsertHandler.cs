@@ -89,7 +89,10 @@ internal class UpsertHandler(
             InsertSuccess insertSuccess => new FrontendResponse(
                 StatusCode: 201,
                 Body: null,
-                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
+                Headers: new()
+                {
+                    ["etag"] = insertSuccess.ETag ?? requestInfo.ParsedBody["_etag"]?.ToString() ?? "",
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     insertSuccess.NewDocumentUuid
@@ -98,7 +101,10 @@ internal class UpsertHandler(
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
+                Headers: new()
+                {
+                    ["etag"] = updateSuccess.ETag ?? requestInfo.ParsedBody["_etag"]?.ToString() ?? "",
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid

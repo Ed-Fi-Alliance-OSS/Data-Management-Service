@@ -501,7 +501,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"44\""));
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
@@ -572,7 +572,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, "\"44\""));
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
@@ -629,7 +629,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"44\""));
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest
@@ -689,6 +689,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.PutResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
         );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -724,7 +727,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().HaveCount(2);
         _capturedExecutorRequests
             .Select(request => request.ExistingDocumentReadPlan)
@@ -743,7 +746,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L),
                 new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 45L),
             ]);
-        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(3);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -788,13 +791,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequests[0]
             .TargetContext.Should()
             .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L));
-        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        _targetLookupService.PutResults.Count.Should().Be(1);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(2);
+        _targetLookupService.PutResults.Count.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -813,6 +816,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
         );
         _targetLookupService.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
+        _targetLookupService.PutResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
         );
         A.CallTo(() =>
@@ -849,7 +855,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().HaveCount(2);
         _capturedExecutorRequests
             .Select(request => request.ExistingDocumentReadPlan)
@@ -1253,7 +1259,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"44\""));
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequest
             .TargetContext.Should()

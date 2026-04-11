@@ -64,6 +64,7 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(201);
+        requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"44\"");
         harness.WriteExecutor.Requests.Should().ContainSingle();
 
         var request = harness.WriteExecutor.Requests.Single();
@@ -117,6 +118,7 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+        requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"44\"");
         harness.WriteExecutor.Requests.Should().ContainSingle();
 
         var request = harness.WriteExecutor.Requests.Single();

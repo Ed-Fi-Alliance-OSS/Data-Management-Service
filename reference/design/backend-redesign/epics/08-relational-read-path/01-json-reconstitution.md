@@ -134,10 +134,10 @@ Implement JSON reconstitution from hydrated relational rows:
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:195.
   7. Relax LastModifiedTraceId to make it optional. GetSuccess still requires it in src/dms/core/EdFi.DataManagementService.Core.External/Backend/GetResult.cs:21, but nothing in the relational redesign
      produces it yet, so make it nullable.
-  8. Yes, move relational GET _etag to ContentVersion now. That is the normative design in reference/design/backend-redesign/design-docs/update-tracking.md:118, and read materialization is
-     supposed to source metadata from stored dms.Document stamps in reference/design/backend-redesign/design-docs/flattening-reconstitution.md:906. The current write-side hash path in src/dms/
-     core/EdFi.DataManagementService.Core/Middleware/InjectVersionMetadataToEdFiDocumentMiddleware.cs:12 and src/dms/core/EdFi.DataManagementService.Core/Backend/DocumentComparer.cs:13 is already
-     legacy debt; document the temporary mismatch and clean it up in DMS-1005.
+  8. No. Do not ship a split contract where relational GET returns a `ContentVersion`-backed `_etag` while write responses remain hash-based.
+     The normative design in reference/design/backend-redesign/design-docs/update-tracking.md:118 and reference/design/backend-redesign/design-docs/flattening-reconstitution.md:906 applies to
+     the external `_etag` surface as a whole, not only to GET materialization. DMS-1005 still owns `If-Match` enforcement, but once the relational read path is active the relational write
+     responses must emit the same stored-stamp `_etag` format in the same branch.
   9. Use semantic JSON equivalence for integration tests, with strict array-order checks. Property-order parity is too brittle and not semantically required by the design. If you want
      deterministic object ordering, keep that as a unit-level invariant on the shared engine, not the end-to-end acceptance bar.
 
