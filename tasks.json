@@ -1,0 +1,90 @@
+[
+  {
+    "category": "Read Seams",
+    "description": "Implement backend-local relational read request contracts for GET/query. Add `IRelationalGetRequest` and `IRelationalQueryRequest` carrying `MappingSet`, an unambiguous qualified-resource/base-resource identifier (do not rely on bare `ResourceName`), a `RelationalReadMode` (`ExternalResponse` vs `StoredDocument`), and the minimal readable-profile projection inputs needed by the backend (`ContentTypeDefinition` plus the precomputed top-level identity-property set). Have Core `GetRequest` and `QueryRequest` implement these contracts internally, and update `GetByIdHandler`, `QueryRequestHandler`, and `ProfileWriteValidationMiddleware` to populate them correctly. Acceptance: no public `Core.External` interface widening is required; relational GET can distinguish extension homographs and descriptor resources; internal existing-document fetches used by profile write validation explicitly request stored-document mode and suppress readable projection.",
+    "steps-to-verify": [
+      "Add unit tests covering GET/query request construction, relational read mode selection, and the profile-write-validation internal GET path.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read Results",
+    "description": "Add explicit not-implemented read results and adjust the GET success contract for relational reads. Introduce `GetFailureNotImplemented` and `QueryFailureNotImplemented` (or equivalent) and map them to HTTP 501 in Core handlers. Relax `GetResult.GetSuccess.LastModifiedTraceId` to nullable/optional so relational GET can return stored last-modified metadata without inventing a trace id. Acceptance: unsupported relational query and descriptor GET no longer surface as `UnknownFailure`/HTTP 500; successful relational GET can return `null` trace id while preserving existing non-relational behavior.",
+    "steps-to-verify": [
+      "Add unit tests for `GetByIdHandler`, `QueryRequestHandler`, and relational repository stubs that assert 501/not-implemented behavior and nullable `LastModifiedTraceId` handling.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hydration",
+    "description": "Fold descriptor URI projection into the same hydration batch used by relational reads, but keep this task scoped to batch SQL, result-shape contracts, and executor/reader changes. Extend `HydrationBatchBuilder`, `HydrationExecutor`, `HydrationReader`, and the hydration contracts so one DB command returns document metadata, hydrated table rows, and descriptor `(DescriptorId, Uri)` result sets in deterministic order for the selected keyset. Acceptance: GET-by-id hydration for relational-table resources uses one DB command/roundtrip for root, child, `_ext`, and descriptor URI data on PostgreSQL and SQL Server; descriptor result-set ordering is deterministic and matches compiled plan order; the batch contract is generic enough for both external reads and current-state reconstitution consumers; DMS-992 still owns the dedicated descriptor behavior matrix, but command-topology ownership lands here.",
+    "steps-to-verify": [
+      "Add/extend unit tests for batch SQL ordering and executor result-set consumption, plus integration coverage for hydrated descriptor lookup in both dialects.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hydration Consumers",
+    "description": "Migrate shared consumers to use descriptor URI data already present in the hydrated batch. Update `RelationalWriteCurrentStateLoader` and the new external read orchestration so they build descriptor lookup state from hydrated result sets instead of issuing a second `DescriptorProjectionExecutor` command. Acceptance: current-state reconstitution and external GET-by-id both consume batch-provided descriptor lookup data; relational-table stored-document loads and external GET-by-id do not issue an extra descriptor SQL command; shared reconstitution behavior remains identical for write-side stored-document loading and external reads after the migration.",
+    "steps-to-verify": [
+      "Add unit tests covering current-state loading and external read orchestration with batch-provided descriptor lookups, including a regression case for profile-driven stored-document reconstitution.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Shared Reconstitution",
+    "description": "Finish and harden the shared JsonNode-based reconstitution engine without splitting write-side and read-side assembly. Keep `DocumentReconstituter` as the single shared full-stored-document assembler used by `RelationalWriteCurrentStateLoader` and external reads, and close remaining gaps around canonical compiled JSON-path property order, stable parent-scope attachment for nested collections/extensions, null handling, and accepted empty-array behavior. Acceptance: reconstitution remains JsonNode-based for this story; deterministic object-member ordering follows canonical compiled JSON-path order; nested collections attach by stable scope identity (`DocumentId`, `CollectionItemId`, `ParentCollectionItemId`); scope-aligned extension rows attach by `DocumentId` or `BaseCollectionItemId` as applicable; `_ext` is omitted when a scope has no extension values; optional empty arrays are omitted; unit tests assert deterministic ordering and nested-plus-`_ext` behavior.",
+    "steps-to-verify": [
+      "Add/extend `DocumentReconstituter` unit tests for deterministic property order, nested collection ordering, root/collection `_ext`, null handling, and omitted empty optional arrays.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Response Materialization",
+    "description": "Add a thin external-read materializer above `DocumentReconstituter`. Build a read-response layer that takes the fully reconstituted stored document plus `DocumentMetadataRow` and injects API metadata: `id` from `DocumentUuid`, `_etag` as the string `\"{ContentVersion}\"`, and `_lastModifiedDate` from `ContentLastModifiedAt` formatted in UTC second precision (`yyyy-MM-ddTHH:mm:ssZ`). Acceptance: metadata comes from stored `dms.Document` stamps, not document hashing or `DateTimeOffset.UtcNow`; stored-document mode does not inject API-only fields; `ChangeVersion` remains deferred in DMS-990.",
+    "steps-to-verify": [
+      "Add unit tests for metadata injection, UTC-second formatting, and separation between stored-document mode and external-response mode.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Readable Profiles",
+    "description": "Finish readable-profile integration for relational reads and bypass legacy response filtering. Use `IReadableProfileProjector` only after full reconstitution and metadata injection in `ExternalResponse` mode, passing the minimal projection inputs from Core, and update `ReadableProfileProjector` to always preserve `id`, `_etag`, and `_lastModifiedDate` in addition to identity fields. Make `ProfileFilteringMiddleware` a no-op for relational GET/query responses so the old `ProfileResponseFilter` does not double-filter, while preserving profiled response media types for relational reads. Acceptance: relational GET-by-id applies readable projection exactly once; relational GET/query responses with readable profiles still emit the profiled `Content-Type`; internal stored-document fetches remain unprojected; non-relational reads keep current legacy filtering behavior.",
+    "steps-to-verify": [
+      "Add/extend unit tests for `ReadableProfileProjector` metadata preservation, relational `ProfileFilteringMiddleware` bypass behavior, relational profile `Content-Type` handling, and backend profile-flow coverage using reconstituted documents.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Repository GET By Id",
+    "description": "Implement `RelationalDocumentStoreRepository.GetDocumentById` for non-descriptor relational-table resources. Use the new read contracts, mapping-set read plan lookup, existing document UUID resolution, single-batch hydration, shared reconstitution, response materialization, and optional readable projection to return real relational GET-by-id responses. Acceptance: when `UseRelationalBackend=true`, non-descriptor GET-by-id is active and does not fall back to the legacy repository; `GetFailureNotExists` still works; descriptor GET returns the explicit 501/not-implemented result until DMS-994; repository code clearly documents that relational authorization is still pending and does not attempt a temporary legacy auth path.",
+    "steps-to-verify": [
+      "Add unit tests for successful GET-by-id, not-found behavior, descriptor-resource guard rails, stored-document mode, and query remaining deferred.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cross-Dialect Coverage",
+    "description": "Add end-to-end relational GET-by-id coverage for at least one nested-plus-`_ext` resource fixture on both PostgreSQL and SQL Server. Extend the authoritative relational backend integration tests to write a representative document, fetch it back through `RelationalDocumentStoreRepository.GetDocumentById`, and assert semantic JSON equivalence with strict array ordering, plus `id`, `_etag`, and `_lastModifiedDate`. Acceptance: PostgreSQL and SQL Server each have a real relational write-then-read proof for a nested-plus-`_ext` scenario; integration assertions use semantic JSON equivalence rather than brittle object-property-order equality.",
+    "steps-to-verify": [
+      "Add one PostgreSQL and one SQL Server integration test that perform write then relational GET-by-id for the same fixture and assert nested collections, `_ext`, and metadata.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  }
+]
