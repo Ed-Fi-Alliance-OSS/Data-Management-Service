@@ -19,6 +19,7 @@ using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -674,7 +675,12 @@ actual: {requestInfo.FrontendResponse.Body}
                 NullLogger<RelationalDocumentStoreRepository>.Instance,
                 writeExecutor,
                 targetLookupService,
-                new DefaultDescriptorWriteHandler()
+                new DefaultDescriptorWriteHandler(),
+                A.Fake<IDocumentHydrator>(),
+                new ServiceCollection()
+                    .AddSingleton(A.Fake<IRelationalReadTargetLookupService>())
+                    .AddSingleton(A.Fake<IRelationalReadMaterializer>())
+                    .BuildServiceProvider()
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

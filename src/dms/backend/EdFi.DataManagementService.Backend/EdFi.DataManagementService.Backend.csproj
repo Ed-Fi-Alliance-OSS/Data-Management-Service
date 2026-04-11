@@ -33,5 +33,6 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Old.Postgresql" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     </ItemGroup>
 </Project>

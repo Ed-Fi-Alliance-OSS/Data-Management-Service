@@ -81,7 +81,7 @@
       "Add unit tests for successful GET-by-id, not-found behavior, wrong-resource => not-exists behavior, descriptor-resource guard rails, query remaining deferred, and the assertion that relational GET-by-id does not call the legacy resource authorization handler.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Write Then Read Smoke",

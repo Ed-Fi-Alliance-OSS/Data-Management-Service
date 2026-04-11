@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -17,7 +18,9 @@ public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
-    IDescriptorWriteHandler descriptorWriteHandler
+    IDescriptorWriteHandler descriptorWriteHandler,
+    IDocumentHydrator documentHydrator,
+    IServiceProvider serviceProvider
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -28,6 +31,10 @@ public sealed class RelationalDocumentStoreRepository(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
+    private readonly IDocumentHydrator _documentHydrator =
+        documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
+    private readonly IServiceProvider _serviceProvider =
+        serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
 
     public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -99,6 +106,8 @@ public sealed class RelationalDocumentStoreRepository(
             getRequest,
             nameof(getRequest)
         );
+        var mappingSet = relationalGetRequest.MappingSet;
+        ArgumentNullException.ThrowIfNull(mappingSet);
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
 
         _logger.LogDebug(
@@ -106,7 +115,27 @@ public sealed class RelationalDocumentStoreRepository(
             relationalGetRequest.TraceId.Value
         );
 
-        return Task.FromResult<GetResult>(BuildGetNotImplementedResult(relationalGetRequest, resource));
+        if (relationalGetRequest.ResourceInfo.IsDescriptor)
+        {
+            return Task.FromResult<GetResult>(BuildGetNotImplementedResult(relationalGetRequest, resource));
+        }
+
+        ResourceReadPlan readPlan;
+
+        try
+        {
+            readPlan = GetReadPlanOrThrow(mappingSet, resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
+        }
+
+        return GetDocumentByIdAsync(relationalGetRequest, mappingSet, resource, readPlan);
     }
 
     public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
@@ -431,6 +460,91 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteTargetContext? TargetContext,
         RelationalWriteExecutorResult? ImmediateResult
     );
+
+    private async Task<GetResult> GetDocumentByIdAsync(
+        IRelationalGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        // Relational authorization is pending a later story. Do not route GET-by-id
+        // through the legacy authorization handler while the relational auth seam lands.
+        var targetLookupResult = await _serviceProvider
+            .GetRequiredService<IRelationalReadTargetLookupService>()
+            .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
+            .ConfigureAwait(false);
+
+        if (
+            targetLookupResult
+            is RelationalReadTargetLookupResult.NotFound
+                or RelationalReadTargetLookupResult.WrongResource
+        )
+        {
+            return new GetResult.GetFailureNotExists();
+        }
+
+        if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+        {
+            throw new InvalidOperationException(
+                $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+            );
+        }
+
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(readPlan, new PageKeysetSpec.Single(existingDocument.DocumentId), default)
+            .ConfigureAwait(false);
+
+        if (hydratedPage.DocumentMetadata.Count == 0)
+        {
+            return new GetResult.GetFailureNotExists();
+        }
+
+        if (hydratedPage.DocumentMetadata.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration for document id {existingDocument.DocumentId} returned "
+                    + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
+            );
+        }
+
+        var documentMetadata = hydratedPage.DocumentMetadata[0];
+
+        if (documentMetadata.DocumentId != existingDocument.DocumentId)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration returned metadata for document id {documentMetadata.DocumentId}, "
+                    + $"but target document id was {existingDocument.DocumentId}."
+            );
+        }
+
+        if (documentMetadata.DocumentUuid != existingDocument.DocumentUuid.Value)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration returned document uuid '{documentMetadata.DocumentUuid}', "
+                    + $"but target document uuid was '{existingDocument.DocumentUuid.Value}'."
+            );
+        }
+
+        var edfiDoc = _serviceProvider
+            .GetRequiredService<IRelationalReadMaterializer>()
+            .Materialize(
+                new RelationalReadMaterializationRequest(
+                    readPlan,
+                    documentMetadata,
+                    hydratedPage.TableRowsInDependencyOrder,
+                    hydratedPage.DescriptorRowsInPlanOrder,
+                    relationalGetRequest.ReadMode
+                )
+            );
+
+        return new GetResult.GetSuccess(
+            new DocumentUuid(documentMetadata.DocumentUuid),
+            edfiDoc,
+            documentMetadata.ContentLastModifiedAt.UtcDateTime,
+            null
+        );
+    }
 
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
