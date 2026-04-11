@@ -58,7 +58,10 @@ public class Given_Relational_Write_Current_State_Loader
         var connection = new RecordingDbConnection(command);
         var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
         var session = new TestRelationalWriteSession(connection, transaction);
-        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+        var sut = new RelationalWriteCurrentStateLoader(
+            new HydrationBackedSessionDocumentHydrator(),
+            new RelationalReadMaterializer()
+        );
 
         var result = (await sut.LoadAsync(nonReconstitutionRequest, session))!;
 
@@ -89,7 +92,10 @@ public class Given_Relational_Write_Current_State_Loader
         var connection = new RecordingDbConnection(command);
         var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
         var session = new TestRelationalWriteSession(connection, transaction);
-        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+        var sut = new RelationalWriteCurrentStateLoader(
+            new HydrationBackedSessionDocumentHydrator(),
+            new RelationalReadMaterializer()
+        );
 
         var result = (await sut.LoadAsync(request, session))!;
 
@@ -179,7 +185,10 @@ public class Given_Relational_Write_Current_State_Loader
         var connection = new RecordingDbConnection(command);
         var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
         var session = new TestRelationalWriteSession(connection, transaction);
-        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+        var sut = new RelationalWriteCurrentStateLoader(
+            new HydrationBackedSessionDocumentHydrator(),
+            new RelationalReadMaterializer()
+        );
 
         var result = (await sut.LoadAsync(request, session))!;
 
@@ -196,7 +205,10 @@ public class Given_Relational_Write_Current_State_Loader
     public async Task It_returns_null_for_missing_targets_and_rejects_duplicate_document_metadata_rows()
     {
         var request = CreateLoadRequest();
-        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+        var sut = new RelationalWriteCurrentStateLoader(
+            new HydrationBackedSessionDocumentHydrator(),
+            new RelationalReadMaterializer()
+        );
 
         var missingConnection = new RecordingDbConnection(
             new RecordingDbCommand(CreateReader(CreateDocumentMetadataTable(), CreateRootTableRows()))

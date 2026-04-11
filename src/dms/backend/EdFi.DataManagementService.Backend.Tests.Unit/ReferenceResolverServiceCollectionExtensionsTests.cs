@@ -63,6 +63,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
+        var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var currentStateLoader =
@@ -97,6 +98,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         documentHydrator.Should().BeOfType<TestDocumentHydrator>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
+        readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();

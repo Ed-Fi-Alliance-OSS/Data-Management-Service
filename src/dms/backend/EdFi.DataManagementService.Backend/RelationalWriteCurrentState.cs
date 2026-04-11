@@ -7,7 +7,6 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -85,11 +84,16 @@ internal interface ISessionDocumentHydrator
 internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurrentStateLoader
 {
     private readonly ISessionDocumentHydrator _sessionDocumentHydrator;
+    private readonly IRelationalReadMaterializer _readMaterializer;
 
-    public RelationalWriteCurrentStateLoader(ISessionDocumentHydrator sessionDocumentHydrator)
+    public RelationalWriteCurrentStateLoader(
+        ISessionDocumentHydrator sessionDocumentHydrator,
+        IRelationalReadMaterializer readMaterializer
+    )
     {
         _sessionDocumentHydrator =
             sessionDocumentHydrator ?? throw new ArgumentNullException(nameof(sessionDocumentHydrator));
+        _readMaterializer = readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
     }
 
     public async Task<RelationalWriteCurrentState?> LoadAsync(
@@ -139,16 +143,14 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
         }
 
-        var descriptorUriLookup = DescriptorProjectionExecutor.BuildLookupFromHydratedRows(
-            hydratedPage.DescriptorRowsInPlanOrder
-        );
-
-        var reconstitutedDocument = DocumentReconstituter.Reconstitute(
-            documentMetadata.DocumentId,
-            hydratedPage.TableRowsInDependencyOrder,
-            request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
-            request.ReadPlan.Model.DescriptorEdgeSources,
-            descriptorUriLookup
+        var reconstitutedDocument = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                request.ReadPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                RelationalGetRequestReadMode.StoredDocument
+            )
         );
 
         return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder)

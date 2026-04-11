@@ -54,6 +54,7 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Scoped<IDocumentHydrator, TDocumentHydrator>());
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteFlattener, RelationalWriteFlattener>());
         services.TryAdd(ServiceDescriptor.Scoped<ISessionDocumentHydrator, TSessionDocumentHydrator>());
+        services.TryAdd(ServiceDescriptor.Scoped<IRelationalReadMaterializer, RelationalReadMaterializer>());
         services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalReadTargetLookupService, RelationalReadTargetLookupService>()
         );

@@ -55,6 +55,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var readTargetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
@@ -76,6 +77,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         factory.Should().BeOfType<PostgresqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
+        readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
