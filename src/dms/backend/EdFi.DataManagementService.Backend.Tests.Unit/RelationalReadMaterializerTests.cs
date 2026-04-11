@@ -69,6 +69,32 @@ public class Given_RelationalReadMaterializer
         result["_lastModifiedDate"].Should().BeNull();
     }
 
+    [Test]
+    public void It_projects_descriptor_uris_from_hydrated_descriptor_rows()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = CreateReadPlanWithDescriptor();
+
+        var result = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 91L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                ),
+                CreateHydratedDescriptorTableRows(readPlan, (345L, 601L)),
+                CreateHydratedDescriptorRows((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
+                RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+
+        result.Should().BeOfType<JsonObject>();
+        result["entryGradeLevelDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade");
+    }
+
     private static ResourceReadPlan CreateReadPlan()
     {
         var rootTable = new DbTableModel(
@@ -127,6 +153,95 @@ public class Given_RelationalReadMaterializer
         );
     }
 
+    private static ResourceReadPlan CreateReadPlanWithDescriptor()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var descriptorValuePath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    descriptorResource
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new ResourceReadPlan(
+            new RelationalResourceModel(
+                Resource: new QualifiedResourceName("Ed-Fi", "School"),
+                PhysicalSchema: new DbSchemaName("edfi"),
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootTable,
+                TablesInDependencyOrder: [rootTable],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources:
+                [
+                    new DescriptorEdgeSource(
+                        IsIdentityComponent: true,
+                        DescriptorValuePath: descriptorValuePath,
+                        Table: rootTable.Table,
+                        FkColumn: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
+                        DescriptorResource: descriptorResource
+                    ),
+                ]
+            ),
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [
+                new TableReadPlan(
+                    rootTable,
+                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\""
+                ),
+            ],
+            [],
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: descriptorValuePath,
+                            Table: rootTable.Table,
+                            DescriptorResource: descriptorResource,
+                            DescriptorIdColumnOrdinal: 1
+                        ),
+                    ]
+                ),
+            ]
+        );
+    }
+
     private static DocumentMetadataRow CreateDocumentMetadataRow(
         long contentVersion,
         DateTimeOffset contentLastModifiedAt
@@ -152,6 +267,32 @@ public class Given_RelationalReadMaterializer
             new HydratedTableRows(
                 readPlan.Model.Root,
                 rows.Select(row => new object?[] { row.DocumentId, row.Name }).ToArray()
+            ),
+        ];
+    }
+
+    private static IReadOnlyList<HydratedTableRows> CreateHydratedDescriptorTableRows(
+        ResourceReadPlan readPlan,
+        params (long DocumentId, long DescriptorId)[] rows
+    )
+    {
+        return
+        [
+            new HydratedTableRows(
+                readPlan.Model.Root,
+                rows.Select(row => new object?[] { row.DocumentId, row.DescriptorId }).ToArray()
+            ),
+        ];
+    }
+
+    private static IReadOnlyList<HydratedDescriptorRows> CreateHydratedDescriptorRows(
+        params (long DescriptorId, string Uri)[] rows
+    )
+    {
+        return
+        [
+            new HydratedDescriptorRows(
+                rows.Select(row => new DescriptorUriRow(row.DescriptorId, row.Uri)).ToArray()
             ),
         ];
     }

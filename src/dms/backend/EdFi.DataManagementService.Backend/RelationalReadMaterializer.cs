@@ -35,9 +35,7 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var descriptorUriLookup = DescriptorProjectionExecutor.BuildLookupFromHydratedRows(
-            request.DescriptorRowsInPlanOrder
-        );
+        var descriptorUriLookup = BuildDescriptorUriLookup(request.DescriptorRowsInPlanOrder);
 
         var materializedDocument = DocumentReconstituter.Reconstitute(
             request.DocumentMetadata.DocumentId,
@@ -85,5 +83,31 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
         return documentObject;
+    }
+
+    private static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
+        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(descriptorRowsInPlanOrder);
+
+        if (descriptorRowsInPlanOrder.Count == 0)
+        {
+            return new Dictionary<long, string>();
+        }
+
+        Dictionary<long, string> lookup = [];
+
+        foreach (var descriptorRows in descriptorRowsInPlanOrder)
+        {
+            ArgumentNullException.ThrowIfNull(descriptorRows);
+
+            foreach (var row in descriptorRows.Rows)
+            {
+                lookup.TryAdd(row.DescriptorId, row.Uri);
+            }
+        }
+
+        return lookup;
     }
 }
