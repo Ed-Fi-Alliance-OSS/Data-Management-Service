@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +47,8 @@ internal class GetByIdHandler(
                 await documentStoreRepository.GetDocumentById(
                     new GetRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                        ResourceName: requestInfo.ResourceInfo.ResourceName,
+                        ResourceInfo: requestInfo.ResourceInfo,
+                        MappingSet: requestInfo.MappingSet,
                         ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
@@ -53,7 +56,8 @@ internal class GetByIdHandler(
                             requestInfo.ScopedServiceProvider,
                             _logger
                         ),
-                        TraceId: requestInfo.FrontendRequest.TraceId
+                        TraceId: requestInfo.FrontendRequest.TraceId,
+                        ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
                     )
                 ),
             requestInfo
@@ -95,5 +99,24 @@ internal class GetByIdHandler(
                 Headers: []
             ),
         };
+    }
+
+    private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
+        RequestInfo requestInfo
+    )
+    {
+        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
+
+        if (readContentType is null)
+        {
+            return null;
+        }
+
+        return new ReadableProfileProjectionContext(
+            readContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(
+                requestInfo.ResourceSchema.IdentityJsonPaths
+            )
+        );
     }
 }

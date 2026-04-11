@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -1000,9 +1001,15 @@ internal class ProfileWriteValidationMiddleware(
         var getResult = await documentStoreRepository.GetDocumentById(
             new GetRequest(
                 DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                ResourceName: requestInfo.ResourceSchema.ResourceName,
+                ResourceInfo: new BaseResourceInfo(
+                    requestInfo.ProjectSchema.ProjectName,
+                    requestInfo.ResourceSchema.ResourceName,
+                    requestInfo.ResourceSchema.IsDescriptor
+                ),
+                MappingSet: requestInfo.MappingSet,
                 ResourceAuthorizationHandler: bypassAuthHandler,
-                TraceId: requestInfo.FrontendRequest.TraceId
+                TraceId: requestInfo.FrontendRequest.TraceId,
+                ReadMode: RelationalGetRequestReadMode.StoredDocument
             )
         );
 

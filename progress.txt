@@ -1,0 +1,7 @@
+2026-04-10
+Task complete: Read Seams and Modes
+Story: reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md
+Decisions: added backend-local IRelationalGetRequest; split ContentTypeDefinition rule DTOs into Core.External so Backend.External can carry readable-profile inputs; GetByIdHandler emits ExternalResponse mode with qualified resource + precomputed identity names; ProfileWriteValidationMiddleware emits StoredDocument mode and suppresses readable projection.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalGetRequestContracts.cs; src/dms/core/EdFi.DataManagementService.Core.External/Profile/ContentTypeDefinition.cs; src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileContext.cs; src/dms/core/EdFi.DataManagementService.Core/Backend/GetRequest.cs; src/dms/core/EdFi.DataManagementService.Core/Handler/GetByIdHandler.cs; src/dms/core/EdFi.DataManagementService.Core/Middleware/ProfileWriteValidationMiddleware.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/GetByIdHandlerTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProfileWriteValidationMiddlewareTests.cs; tasks.json
+Verify: dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj -> Passed 2200
+Notes next: next highest-priority work is Read Results or execution-side GET plumbing; query seam intentionally left untouched.
