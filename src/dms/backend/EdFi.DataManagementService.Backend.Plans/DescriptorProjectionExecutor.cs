@@ -100,4 +100,40 @@ public static class DescriptorProjectionExecutor
 
         return lookup;
     }
+
+    /// <summary>
+    /// Builds a <c>DescriptorId → Uri</c> lookup from descriptor result sets already read from a hydration batch.
+    /// </summary>
+    /// <param name="descriptorRowsInPlanOrder">
+    /// Hydrated descriptor URI rows aligned to <see cref="ResourceReadPlan.DescriptorProjectionPlansInOrder" />.
+    /// </param>
+    /// <returns>
+    /// A read-only dictionary mapping each <c>DescriptorId</c> to its URI.
+    /// Returns an empty dictionary when <paramref name="descriptorRowsInPlanOrder" /> is empty.
+    /// </returns>
+    public static IReadOnlyDictionary<long, string> BuildLookupFromHydratedRows(
+        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(descriptorRowsInPlanOrder);
+
+        if (descriptorRowsInPlanOrder.Count == 0)
+        {
+            return new Dictionary<long, string>();
+        }
+
+        Dictionary<long, string> lookup = [];
+
+        foreach (var descriptorRows in descriptorRowsInPlanOrder)
+        {
+            ArgumentNullException.ThrowIfNull(descriptorRows);
+
+            foreach (var row in descriptorRows.Rows)
+            {
+                lookup.TryAdd(row.DescriptorId, row.Uri);
+            }
+        }
+
+        return lookup;
+    }
 }

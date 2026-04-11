@@ -29,10 +29,10 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
 
     /// <summary>
-    /// When <c>true</c>, the loader performs descriptor projection and JSON reconstitution
+    /// When <c>true</c>, the loader performs JSON reconstitution from hydrated rows
     /// so the result includes <see cref="RelationalWriteCurrentState.ReconstitutedDocument"/>.
-    /// When <c>false</c> (the default), the extra SQL round-trip and in-memory assembly are skipped
-    /// because the reconstituted document is not needed for non-profiled writes.
+    /// When <c>false</c> (the default), the extra in-memory assembly is skipped because
+    /// the reconstituted document is not needed for non-profiled writes.
     /// </summary>
     public bool RequiresReconstitution { get; init; }
 }
@@ -139,16 +139,9 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
         }
 
-        // Reconstitute the stored JSON document from hydrated rows
-        var descriptorUriLookup = await DescriptorProjectionExecutor
-            .ExecuteAsync(
-                writeSession.Connection,
-                writeSession.Transaction,
-                request.ReadPlan.DescriptorProjectionPlansInOrder,
-                new PageKeysetSpec.Single(request.TargetContext.DocumentId),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var descriptorUriLookup = DescriptorProjectionExecutor.BuildLookupFromHydratedRows(
+            hydratedPage.DescriptorRowsInPlanOrder
+        );
 
         var reconstitutedDocument = DocumentReconstituter.Reconstitute(
             documentMetadata.DocumentId,

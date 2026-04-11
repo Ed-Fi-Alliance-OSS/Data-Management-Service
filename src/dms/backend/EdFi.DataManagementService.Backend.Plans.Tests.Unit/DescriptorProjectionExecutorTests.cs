@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -59,5 +60,43 @@ public class Given_DescriptorProjectionExecutor_With_Resolved_Pairs
     public void It_should_resolve_the_second_descriptor_id_to_the_correct_uri()
     {
         _result[202L].Should().Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade");
+    }
+}
+
+[TestFixture]
+public class Given_DescriptorProjectionExecutor_With_Hydrated_Descriptor_Rows
+{
+    private IReadOnlyDictionary<long, string> _result = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder =
+        [
+            new HydratedDescriptorRows([
+                new DescriptorUriRow(101L, "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"),
+                new DescriptorUriRow(202L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade"),
+            ]),
+            new HydratedDescriptorRows([
+                new DescriptorUriRow(202L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade"),
+                new DescriptorUriRow(303L, "uri://ed-fi.org/GradeLevelDescriptor#Twelfth Grade"),
+            ]),
+        ];
+
+        _result = DescriptorProjectionExecutor.BuildLookupFromHydratedRows(descriptorRowsInPlanOrder);
+    }
+
+    [Test]
+    public void It_should_flatten_rows_from_all_result_sets()
+    {
+        _result.Should().HaveCount(3);
+    }
+
+    [Test]
+    public void It_should_resolve_descriptor_ids_to_their_uris()
+    {
+        _result[101L].Should().Be("uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade");
+        _result[202L].Should().Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade");
+        _result[303L].Should().Be("uri://ed-fi.org/GradeLevelDescriptor#Twelfth Grade");
     }
 }
