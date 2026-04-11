@@ -183,6 +183,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<PostgresqlRelationalWriteSessionFactory>();
             scope
+                .ServiceProvider.GetRequiredService<IDocumentHydrator>()
+                .Should()
+                .BeOfType<PostgresqlDocumentHydrator>();
+            scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()
                 .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
@@ -286,6 +290,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Match<IRelationalWriteSessionFactory>(factory =>
                     factory.GetType().Name == "MssqlRelationalWriteSessionFactory"
                 );
+            scope
+                .ServiceProvider.GetRequiredService<IDocumentHydrator>()
+                .Should()
+                .Match<IDocumentHydrator>(hydrator => hydrator.GetType().Name == "MssqlDocumentHydrator");
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
                 .Should()

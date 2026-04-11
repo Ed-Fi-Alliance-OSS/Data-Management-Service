@@ -110,7 +110,6 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
 internal static class RelationalWriteTargetLookupSupport
 {
     private const string ReferentialIdParameterName = "@referentialId";
-    private const string DocumentUuidParameterName = "@documentUuid";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
 
     public static async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
@@ -203,21 +202,43 @@ internal static class RelationalWriteTargetLookupSupport
         CancellationToken cancellationToken
     )
     {
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        return ExecuteLookupAsync(
+        return TryResolveExistingDocumentByDocumentUuidCoreAsync(
             commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                SqlDialect.Mssql => BuildMssqlLookupByDocumentUuidCommand(documentUuid, resourceKeyId),
-                _ => throw new NotSupportedException(
-                    $"Relational PUT target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and document uuid '{documentUuid.Value}'",
+            mappingSet,
+            resource,
+            documentUuid,
             cancellationToken
         );
+    }
+
+    private static async Task<ResolvedExistingDocument?> TryResolveExistingDocumentByDocumentUuidCoreAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken
+    )
+    {
+        var resolvedDocument = await RelationalDocumentUuidLookupSupport
+            .TryResolveByDocumentUuidAndResourceAsync(
+                commandExecutor,
+                mappingSet,
+                resource,
+                documentUuid,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return resolvedDocument is null
+            ? null
+            : new ResolvedExistingDocument(
+                resolvedDocument.DocumentId,
+                resolvedDocument.DocumentUuid,
+                resolvedDocument.ContentVersion
+                    ?? throw new InvalidOperationException(
+                        $"Relational PUT target lookup for document uuid '{documentUuid.Value}' returned a row without ContentVersion."
+                    )
+            );
     }
 
     private static Task<ResolvedExistingDocument?> ExecuteLookupAsync(
@@ -279,28 +300,6 @@ internal static class RelationalWriteTargetLookupSupport
         );
     }
 
-    private static RelationalCommand BuildPostgresqlLookupByDocumentUuidCommand(
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
-    {
-        return new RelationalCommand(
-            """
-            SELECT
-                document."DocumentId" AS "DocumentId",
-                document."DocumentUuid" AS "DocumentUuid",
-                document."ContentVersion" AS "ContentVersion"
-            FROM dms."Document" document
-            WHERE document."DocumentUuid" = @documentUuid
-                AND document."ResourceKeyId" = @resourceKeyId
-            """,
-            [
-                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
-        );
-    }
-
     private static RelationalCommand BuildMssqlLookupByReferentialIdCommand(
         ReferentialId referentialId,
         short resourceKeyId
@@ -320,28 +319,6 @@ internal static class RelationalWriteTargetLookupSupport
             """,
             [
                 new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
-        );
-    }
-
-    private static RelationalCommand BuildMssqlLookupByDocumentUuidCommand(
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
-    {
-        return new RelationalCommand(
-            """
-            SELECT
-                document.[DocumentId] AS [DocumentId],
-                document.[DocumentUuid] AS [DocumentUuid],
-                document.[ContentVersion] AS [ContentVersion]
-            FROM [dms].[Document] document
-            WHERE document.[DocumentUuid] = @documentUuid
-                AND document.[ResourceKeyId] = @resourceKeyId
-            """,
-            [
-                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
                 new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
             ]
         );
