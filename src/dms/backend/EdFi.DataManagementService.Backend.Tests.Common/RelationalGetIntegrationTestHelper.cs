@@ -32,7 +32,6 @@ public static class RelationalGetIntegrationTestHelper
     public static JsonObject CreateExpectedExternalResponse(
         string requestBodyJson,
         Guid documentUuid,
-        long contentVersion,
         DateTimeOffset lastModifiedAt
     )
     {
@@ -40,8 +39,8 @@ public static class RelationalGetIntegrationTestHelper
             JsonNode.Parse(requestBodyJson)?.AsObject()
             ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
 
+        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
         expectedDocument["id"] = documentUuid.ToString();
-        expectedDocument["_etag"] = $"\"{contentVersion}\"";
         expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
 
         return expectedDocument;
@@ -53,7 +52,6 @@ public static class RelationalGetIntegrationTestHelper
     public static void AssertStudentSchoolAssociationExternalResponse(
         GetResult getResult,
         DocumentUuid expectedDocumentUuid,
-        long expectedContentVersion,
         DateTimeOffset expectedLastModifiedAt,
         JsonNode expectedDocument,
         IReadOnlyList<int> expectedGraduationSchoolYears,
@@ -68,7 +66,10 @@ public static class RelationalGetIntegrationTestHelper
         success.LastModifiedTraceId.Should().BeNull();
         success.LastModifiedDate.Should().Be(expectedLastModifiedAt.UtcDateTime);
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(expectedDocumentUuid.Value.ToString());
-        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be($"\"{expectedContentVersion}\"");
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedDocument["_etag"]!.GetValue<string>());
         success.EdfiDoc["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()

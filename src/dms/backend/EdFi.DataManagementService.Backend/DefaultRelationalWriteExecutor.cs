@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
@@ -188,7 +189,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
-                    guardedTarget.ObservedContentVersion
+                    executionRequest.SelectedBody,
+                    executionRequest.ExistingDocumentReadPlan
                 );
             }
 
@@ -196,7 +198,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
-            var committedContentVersion = await ReadCommittedContentVersionAsync(
+            _ = await ReadCommittedContentVersionAsync(
                     request.MappingSet.Key.Dialect,
                     executionRequest.TargetContext,
                     writeSession,
@@ -208,7 +210,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             return BuildAppliedWriteSuccessResult(
                 request.OperationKind,
                 executionRequest.TargetContext,
-                committedContentVersion
+                executionRequest.SelectedBody,
+                executionRequest.ExistingDocumentReadPlan
             );
         }
         catch (RelationalWriteRequestValidationException ex)
@@ -253,10 +256,11 @@ internal sealed class DefaultRelationalWriteExecutor(
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
         DocumentUuid documentUuid,
-        long contentVersion
+        JsonNode selectedBody,
+        ResourceReadPlan? readPlan
     )
     {
-        var etag = RelationalApiMetadataFormatter.FormatEtag(contentVersion);
+        var etag = RelationalApiMetadataFormatter.FormatEtag(selectedBody, readPlan);
 
         return operationKind switch
         {
@@ -275,10 +279,11 @@ internal sealed class DefaultRelationalWriteExecutor(
     private static RelationalWriteExecutorResult BuildAppliedWriteSuccessResult(
         RelationalWriteOperationKind operationKind,
         RelationalWriteTargetContext targetContext,
-        long contentVersion
+        JsonNode selectedBody,
+        ResourceReadPlan? readPlan
     )
     {
-        var etag = RelationalApiMetadataFormatter.FormatEtag(contentVersion);
+        var etag = RelationalApiMetadataFormatter.FormatEtag(selectedBody, readPlan);
 
         return (operationKind, targetContext) switch
         {

@@ -17,8 +17,9 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class Given_AspNetCoreFrontend_Response_Header_Writing
 {
     [Test]
-    public async Task It_writes_a_valid_etag_header_for_frontend_responses()
+    public async Task It_writes_opaque_etag_headers_without_parsing_them_as_entity_tags()
     {
+        const string opaqueEtag = "Q29udGVudEhhc2g=";
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "https";
         httpContext.Request.Host = new HostString("localhost");
@@ -28,7 +29,7 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         var response = new FrontendResponse(
             StatusCode: 201,
             Body: null,
-            Headers: new Dictionary<string, string> { ["etag"] = "\"61\"" },
+            Headers: new Dictionary<string, string> { ["etag"] = opaqueEtag },
             LocationHeaderPath: "/data/testproject/widgets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
         );
 
@@ -43,6 +44,6 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         await result.ExecuteAsync(httpContext);
 
         httpContext.Response.StatusCode.Should().Be(201);
-        httpContext.Response.Headers.ETag.ToString().Should().Be("\"61\"");
+        httpContext.Response.Headers.ETag.ToString().Should().Be(opaqueEtag);
     }
 }

@@ -160,7 +160,7 @@ internal sealed class DescriptorWriteHandler(
         if (
             targetContext
             is not RelationalWriteTargetContext.ExistingDocument
-            (var documentId, var documentUuid, var observedContentVersion)
+            (var documentId, var documentUuid, _)
         )
         {
             throw new InvalidOperationException(
@@ -202,7 +202,7 @@ internal sealed class DescriptorWriteHandler(
 
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(observedContentVersion)
+                RelationalApiMetadataFormatter.FormatEtag(body)
             );
         }
 
@@ -224,12 +224,11 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
 
-            var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
-                .ConfigureAwait(false);
+            _ = await ExecuteContentVersionCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
             return new UpdateResult.UpdateSuccess(
                 documentUuid,
-                RelationalApiMetadataFormatter.FormatEtag(contentVersion)
+                RelationalApiMetadataFormatter.FormatEtag(body)
             );
         }
         catch (DbException ex)
@@ -358,13 +357,9 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
-            .ConfigureAwait(false);
+        _ = await ExecuteContentVersionCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
-        return new UpsertResult.InsertSuccess(
-            documentUuid,
-            RelationalApiMetadataFormatter.FormatEtag(contentVersion)
-        );
+        return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
 
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
@@ -402,12 +397,11 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var contentVersion = await ExecuteContentVersionCommandAsync(command, cancellationToken)
-            .ConfigureAwait(false);
+        _ = await ExecuteContentVersionCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
         return new UpsertResult.UpdateSuccess(
             existingDocumentUuid,
-            RelationalApiMetadataFormatter.FormatEtag(contentVersion)
+            RelationalApiMetadataFormatter.FormatEtag(body)
         );
     }
 

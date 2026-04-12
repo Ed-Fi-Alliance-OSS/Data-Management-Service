@@ -227,6 +227,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_applies_readable_profile_projection_after_external_materialization()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!
+        );
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var projectionContext = new ReadableProfileProjectionContext(
@@ -308,6 +311,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetSuccess>();
         var success = (GetResult.GetSuccess)result;
         success.EdfiDoc.Should().BeSameAs(projectedDocument);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedProjectedEtag);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBe("\"93\"");
         A.CallTo(() =>
                 _readableProfileProjector.Project(
                     materializedDocument,

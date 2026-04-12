@@ -107,7 +107,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -208,7 +208,10 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_loads_current_state_once_for_existing_document_requests()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High Updated","schoolId":255901}""")!
+        );
         _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
             new DocumentMetadataRow(
                 345L,
@@ -243,7 +246,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -303,7 +306,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, "\"45\""),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -329,7 +332,10 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_short_circuits_unchanged_put_requests_as_guarded_no_ops()
     {
-        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
+        );
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -339,7 +345,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"44\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -386,7 +392,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"44\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -418,7 +424,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -477,7 +483,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -575,7 +581,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"44\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -631,7 +637,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(candidateDocumentUuid, "\"45\""),
+                    new UpsertResult.InsertSuccess(candidateDocumentUuid, ExpectedEtag(request)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -691,7 +697,7 @@ public class Given_Default_Relational_Write_Executor
             .Should()
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpdateSuccess(existingDocumentUuid, "\"45\""),
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
@@ -795,7 +801,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -829,7 +835,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -865,7 +871,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                        "\"45\""
+                        ExpectedEtag(request)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -1570,6 +1576,9 @@ public class Given_Default_Relational_Write_Executor
             targetContext: resolvedTargetContext
         );
     }
+
+    private static string ExpectedEtag(RelationalWriteExecutorRequest request) =>
+        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody, request.ExistingDocumentReadPlan);
 
     private static MappingSet CreateMappingSet(
         RelationalResourceModel resourceModel,

@@ -21,7 +21,7 @@ public class Given_Descriptor_Write_Response_Etags
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
 
     [Test]
-    public async Task It_returns_the_committed_etag_for_descriptor_post_creates()
+    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_post_creates()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -41,14 +41,46 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(request.DocumentUuid, "\"81\""));
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedEtag(request)));
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_returns_the_committed_etag_for_descriptor_post_as_update()
+    public async Task It_hashes_descriptor_write_responses_from_canonical_field_order()
+    {
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+            ),
+        };
+        var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
+        commandExecutor.ResultSets.Enqueue([
+            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["ContentVersion"] = 81L }),
+        ]);
+        var sut = CreateSut(targetLookupService, commandExecutor);
+        var request = new DescriptorWriteRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            _descriptorResource,
+            CreateRequestBodyInNonCanonicalOrder(),
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+            new TraceId("descriptor-post-trace")
+        );
+
+        var result = await sut.HandlePostAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedEtag(request)));
+    }
+
+    [Test]
+    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_post_as_update()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -64,14 +96,14 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, "\"82\""));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_returns_the_observed_etag_for_descriptor_put_no_ops_without_an_update_command()
+    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_put_no_ops_without_an_update_command()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -96,13 +128,13 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"44\""));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_returns_the_committed_etag_for_descriptor_put_updates()
+    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_put_updates()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -134,10 +166,15 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"91\""));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().HaveCount(2);
     }
+
+    private static string ExpectedEtag(DescriptorWriteRequest request) =>
+        RelationalApiMetadataFormatter.FormatEtag(
+            DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
+        );
 
     private static DescriptorWriteHandler CreateSut(
         IRelationalWriteTargetLookupService targetLookupService,
@@ -193,6 +230,21 @@ public class Given_Descriptor_Write_Response_Etags
               "shortDescription": "Charter",
               "description": "{{description}}",
               "effectiveBeginDate": "2024-01-01"
+            }
+            """
+        )!;
+    }
+
+    private static JsonNode CreateRequestBodyInNonCanonicalOrder()
+    {
+        return JsonNode.Parse(
+            """
+            {
+              "description": "Charter",
+              "effectiveBeginDate": "2024-01-01",
+              "shortDescription": "Charter",
+              "codeValue": "Charter",
+              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor"
             }
             """
         )!;

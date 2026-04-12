@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
-using EntityTagHeaderValue = Microsoft.Net.Http.Headers.EntityTagHeaderValue;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore;
 
@@ -196,15 +195,6 @@ public static class AspNetCoreFrontend
         }
         foreach (var header in frontendResponse.Headers)
         {
-            if (
-                string.Equals(header.Key, "etag", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(header.Value)
-            )
-            {
-                httpContext.Response.GetTypedHeaders().ETag = EntityTagHeaderValue.Parse(header.Value);
-                continue;
-            }
-
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 

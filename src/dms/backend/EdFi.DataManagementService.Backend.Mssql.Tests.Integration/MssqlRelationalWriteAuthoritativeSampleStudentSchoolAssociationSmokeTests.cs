@@ -519,14 +519,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             CreateRequestBodyJson,
             _documentMetadata.DocumentUuid,
-            _documentMetadata.ContentVersion,
             _documentMetadata.ContentLastModifiedAt
         );
 
         RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
             getResult,
             StudentSchoolAssociationDocumentUuid,
-            _documentMetadata.ContentVersion,
             _documentMetadata.ContentLastModifiedAt,
             expectedDocument,
             [FoundationGraduationSchoolYear, EndorsementGraduationSchoolYear],

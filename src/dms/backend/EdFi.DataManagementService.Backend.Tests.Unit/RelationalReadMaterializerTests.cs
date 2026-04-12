@@ -18,7 +18,7 @@ public class Given_RelationalReadMaterializer
     private static readonly Guid _documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
 
     [Test]
-    public void It_injects_api_metadata_for_external_response_reads_using_stored_document_stamps()
+    public void It_injects_api_metadata_for_external_response_reads_using_legacy_opaque_etags()
     {
         var sut = new RelationalReadMaterializer();
         var readPlan = CreateReadPlan();
@@ -39,7 +39,10 @@ public class Given_RelationalReadMaterializer
         result.Should().BeOfType<JsonObject>();
         result["name"]!.GetValue<string>().Should().Be("Lincoln High");
         result["id"]!.GetValue<string>().Should().Be(_documentUuid.ToString());
-        result["_etag"]!.GetValue<string>().Should().Be("\"91\"");
+        result["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(RelationalApiMetadataFormatter.FormatEtag(JsonNode.Parse("""{"name":"Lincoln High"}""")!));
         result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
     }
 

@@ -74,10 +74,9 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             );
         }
 
+        var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
-        documentObject[EtagPropertyName] = RelationalApiMetadataFormatter.FormatEtag(
-            documentMetadata.ContentVersion
-        );
+        documentObject[EtagPropertyName] = etag;
         documentObject[LastModifiedDatePropertyName] = documentMetadata
             .ContentLastModifiedAt.ToUniversalTime()
             .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);

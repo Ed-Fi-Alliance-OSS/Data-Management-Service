@@ -198,10 +198,13 @@ public class Given_A_Host_Using_The_Relational_Backend
             )
         );
         var responseBody = await response.Content.ReadAsStringAsync();
+        var expectedEtag = RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse("""{"widgetId":101,"widgetName":"Smoke Widget"}""")!
+        );
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
-        response.Headers.ETag.Should().NotBeNull();
-        response.Headers.ETag!.ToString().Should().Be("\"41\"");
+        response.Headers.TryGetValues("ETag", out var etagValues).Should().BeTrue();
+        etagValues.Should().ContainSingle().Which.Should().Be(expectedEtag);
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
         _flattener.Inputs.Should().ContainSingle();
@@ -527,11 +530,17 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.InsertSuccess(documentUuid, "\"41\"")
+                            new UpsertResult.InsertSuccess(
+                                documentUuid,
+                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
+                            )
                         ),
                     RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(documentUuid, "\"42\"")
+                            new UpsertResult.UpdateSuccess(
+                                documentUuid,
+                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
+                            )
                         ),
                     _ => throw new InvalidOperationException(
                         $"Unsupported target context type '{targetContext.GetType().Name}'."

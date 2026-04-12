@@ -18,6 +18,32 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public static class DocumentReconstituter
 {
     /// <summary>
+    /// Reorders an existing JSON document into the deterministic member order defined by the
+    /// compiled read plan.
+    /// </summary>
+    public static JsonNode ReorderToReadPlanOrder(JsonNode document, ResourceReadPlan readPlan)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(readPlan);
+
+        List<DbTableModel> tableModelsInDependencyOrder = [];
+
+        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        {
+            tableModelsInDependencyOrder.Add(tablePlan.TableModel);
+        }
+
+        return ReorderNode(
+            document,
+            BuildPropertyOrderTree(
+                tableModelsInDependencyOrder,
+                readPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
+                readPlan.Model.DescriptorEdgeSources
+            )
+        );
+    }
+
+    /// <summary>
     /// Reconstitutes a single JSON document from hydrated row data.
     /// </summary>
     /// <param name="documentId">The root document identity to reconstitute.</param>
@@ -82,10 +108,17 @@ public static class DocumentReconstituter
             );
         }
 
+        List<DbTableModel> tableModelsInDependencyOrder = [];
+
+        foreach (var tableRows in tableRowsInDependencyOrder)
+        {
+            tableModelsInDependencyOrder.Add(tableRows.TableModel);
+        }
+
         return ReorderNode(
             result,
             BuildPropertyOrderTree(
-                tableRowsInDependencyOrder,
+                tableModelsInDependencyOrder,
                 referenceProjectionPlans,
                 descriptorProjectionSources
             )
@@ -800,21 +833,21 @@ public static class DocumentReconstituter
     /// scalar, reference, descriptor, collection, and extension reconstitution.
     /// </summary>
     private static PropertyOrderNode BuildPropertyOrderTree(
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<DbTableModel> tableModelsInDependencyOrder,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
     )
     {
         List<JsonPathExpression> orderedPaths = [];
 
-        foreach (var tableRows in tableRowsInDependencyOrder)
+        foreach (var tableModel in tableModelsInDependencyOrder)
         {
-            if (!string.Equals(tableRows.TableModel.JsonScope.Canonical, "$", StringComparison.Ordinal))
+            if (!string.Equals(tableModel.JsonScope.Canonical, "$", StringComparison.Ordinal))
             {
-                orderedPaths.Add(tableRows.TableModel.JsonScope);
+                orderedPaths.Add(tableModel.JsonScope);
             }
 
-            foreach (var column in tableRows.TableModel.Columns)
+            foreach (var column in tableModel.Columns)
             {
                 if (column.SourceJsonPath is JsonPathExpression sourcePath)
                 {
