@@ -30,9 +30,6 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["ContentVersion"] = 81L }),
-        ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePostRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -47,6 +44,10 @@ public class Given_Descriptor_Write_Response_Etags
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor
+            .Commands[0]
+            .CommandText.Should()
+            .NotContain("RETURNING \"DocumentId\", \"ContentVersion\"");
     }
 
     [Test]
@@ -59,9 +60,6 @@ public class Given_Descriptor_Write_Response_Etags
             ),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["ContentVersion"] = 81L }),
-        ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -88,9 +86,6 @@ public class Given_Descriptor_Write_Response_Etags
             PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
         };
         var commandExecutor = new RecordingRelationalCommandExecutor(SqlDialect.Pgsql);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["ContentVersion"] = 82L }),
-        ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
@@ -100,6 +95,7 @@ public class Given_Descriptor_Write_Response_Etags
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands[0].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
     }
 
     [Test]
@@ -154,9 +150,6 @@ public class Given_Descriptor_Write_Response_Etags
                 }
             ),
         ]);
-        commandExecutor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["ContentVersion"] = 91L }),
-        ]);
         var sut = CreateSut(targetLookupService, commandExecutor);
         var request = CreatePutRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -169,6 +162,7 @@ public class Given_Descriptor_Write_Response_Etags
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
     }
 
     private static string ExpectedEtag(DescriptorWriteRequest request) =>

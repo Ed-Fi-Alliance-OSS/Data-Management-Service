@@ -49,7 +49,7 @@
       "Update descriptor handler unit tests so they no longer depend on a returned `ContentVersion` result set for successful writes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Descriptor_Write_Response_Etags\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Repository And Handler Contract Regression Coverage",
