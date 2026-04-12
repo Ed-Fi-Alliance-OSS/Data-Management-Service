@@ -189,12 +189,23 @@ internal sealed class DefaultRelationalWriteExecutor(
                     return BuildStaleNoOpCompareResult(request.OperationKind);
                 }
 
+                var guardedNoOpCommittedResponse = await _committedRepresentationReader
+                    .ReadAsync(
+                        executionRequest,
+                        new RelationalWritePersistResult(
+                            guardedTarget.DocumentId,
+                            guardedTarget.DocumentUuid
+                        ),
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
                 await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
                 return BuildGuardedNoOpSuccessResult(
                     request.OperationKind,
                     guardedTarget.DocumentUuid,
-                    executionRequest.SelectedBody,
-                    executionRequest.ExistingDocumentReadPlan
+                    guardedNoOpCommittedResponse
                 );
             }
 
@@ -258,11 +269,10 @@ internal sealed class DefaultRelationalWriteExecutor(
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
         DocumentUuid documentUuid,
-        JsonNode selectedBody,
-        ResourceReadPlan? readPlan
+        JsonNode committedResponse
     )
     {
-        var etag = RelationalApiMetadataFormatter.FormatEtag(selectedBody, readPlan);
+        var etag = GetCommittedResponseEtag(committedResponse);
 
         return operationKind switch
         {

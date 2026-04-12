@@ -8,7 +8,7 @@
       "Add a regression case where the committed external document includes fields not present in `SelectedBody`, and assert the returned ETag matches the committed external document.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Committed Representation Readback Flow",
