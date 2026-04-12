@@ -307,10 +307,7 @@ public sealed class RelationalDocumentStoreRepository(
                 return executorResultProjector(targetResolution.ImmediateResult);
             }
 
-            if (
-                targetResolution.TargetContext is RelationalWriteTargetContext.ExistingDocument
-                && readPlanPreparation.ReadPlan is null
-            )
+            if (readPlanPreparation.ReadPlan is null)
             {
                 return failureFactory(
                     readPlanPreparation.FailureMessage

@@ -19,7 +19,7 @@
       "Add unit tests proving the committed-response readback is invoked from the write executor success path and is not replaced by a second post-commit lookup.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Root Document Identity Plumbing",

@@ -62,6 +62,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IRelationalWriteCurrentStateLoader, RelationalWriteCurrentStateLoader>()
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalCommittedRepresentationReader,
+                RelationalCommittedRepresentationReader
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteFreshnessChecker, RelationalWriteFreshnessChecker>()
         );
         services.TryAdd(

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -20,6 +19,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
+    IRelationalCommittedRepresentationReader committedRepresentationReader,
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
@@ -40,6 +40,10 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
+
+    private readonly IRelationalCommittedRepresentationReader _committedRepresentationReader =
+        committedRepresentationReader
+        ?? throw new ArgumentNullException(nameof(committedRepresentationReader));
 
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
         targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
@@ -200,12 +204,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             ValidatePersistedTargetIdentity(executionRequest.TargetContext, persistedTarget);
 
-            _ = await ReadCommittedContentVersionAsync(
-                    request.MappingSet.Key.Dialect,
-                    executionRequest.TargetContext,
-                    writeSession,
-                    cancellationToken
-                )
+            var committedResponse = await _committedRepresentationReader
+                .ReadAsync(executionRequest, persistedTarget, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -213,8 +213,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                 request.OperationKind,
                 executionRequest.TargetContext,
                 persistedTarget,
-                executionRequest.SelectedBody,
-                executionRequest.ExistingDocumentReadPlan
+                committedResponse
             );
         }
         catch (RelationalWriteRequestValidationException ex)
@@ -283,11 +282,10 @@ internal sealed class DefaultRelationalWriteExecutor(
         RelationalWriteOperationKind operationKind,
         RelationalWriteTargetContext targetContext,
         RelationalWritePersistResult persistedTarget,
-        JsonNode selectedBody,
-        ResourceReadPlan? readPlan
+        JsonNode committedResponse
     )
     {
-        var etag = RelationalApiMetadataFormatter.FormatEtag(selectedBody, readPlan);
+        var etag = GetCommittedResponseEtag(committedResponse);
         var documentUuid = persistedTarget.DocumentUuid;
 
         return (operationKind, targetContext) switch
@@ -344,54 +342,23 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
     }
 
-    private static async Task<long> ReadCommittedContentVersionAsync(
-        SqlDialect dialect,
-        RelationalWriteTargetContext targetContext,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
+    private static string GetCommittedResponseEtag(JsonNode committedResponse)
     {
-        var documentUuid = targetContext switch
-        {
-            RelationalWriteTargetContext.CreateNew(var value) => value,
-            RelationalWriteTargetContext.ExistingDocument(_, var value, _) => value,
-            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
-        };
+        ArgumentNullException.ThrowIfNull(committedResponse);
 
-        var command = dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                SELECT document."ContentVersion"
-                FROM dms."Document" AS document
-                WHERE document."DocumentUuid" = @documentUuid;
-                """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                SELECT document.[ContentVersion]
-                FROM [dms].[Document] AS document
-                WHERE document.[DocumentUuid] = @documentUuid;
-                """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational write executor does not support SQL dialect '{dialect}'."
-            ),
-        };
-
-        await using var dbCommand = writeSession.CreateCommand(command);
-        var scalarResult = await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        if (scalarResult is null or DBNull)
+        if (
+            committedResponse is not JsonObject documentObject
+            || documentObject["_etag"] is not JsonValue etagValue
+            || !etagValue.TryGetValue(out string? etag)
+            || string.IsNullOrWhiteSpace(etag)
+        )
         {
             throw new InvalidOperationException(
-                $"Relational write succeeded for document uuid '{documentUuid.Value}', but the committed ContentVersion could not be read in-session."
+                "Committed relational write readback did not produce an external response _etag."
             );
         }
 
-        return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
+        return etag;
     }
 
     private static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(

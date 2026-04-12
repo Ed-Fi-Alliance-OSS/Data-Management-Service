@@ -39,7 +39,8 @@ public class Given_No_Profile_Relational_Post
         _documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
@@ -146,14 +147,7 @@ public class Given_No_Profile_Relational_Put
         _documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var rootTable = writePlan.Model.Root;
-        var readPlan = new ResourceReadPlan(
-            writePlan.Model,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(rootTable, "select 1")],
-            [],
-            []
-        );
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
@@ -256,7 +250,8 @@ public class Given_A_Profiled_Relational_Post
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
@@ -362,14 +357,7 @@ public class Given_A_Profiled_Relational_Put
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var rootTable = writePlan.Model.Root;
-        var readPlan = new ResourceReadPlan(
-            writePlan.Model,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(rootTable, "select 1")],
-            [],
-            []
-        );
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
@@ -538,6 +526,19 @@ internal static class OrchestrationTestHelpers
                     new FlattenedWriteValue.Literal(255901),
                 ]
             )
+        );
+    }
+
+    public static ResourceReadPlan CreateReadPlan(ResourceWritePlan writePlan)
+    {
+        var rootTable = writePlan.Model.Root;
+
+        return new ResourceReadPlan(
+            writePlan.Model,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(rootTable, "select 1")],
+            [],
+            []
         );
     }
 
