@@ -52,7 +52,8 @@ public class Given_Relational_Write_Seam
             resourceInfo: _fixture.ResourceInfo,
             writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.InsertSuccess(
-                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid,
+                    "\"44\""
                 )
             )
         );
@@ -105,7 +106,8 @@ public class Given_Relational_Write_Seam
             resourceInfo: _fixture.ResourceInfo,
             writeResultFactory: request => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateSuccess(
-                    ((RelationalWriteTargetRequest.Put)request.TargetRequest).DocumentUuid
+                    ((RelationalWriteTargetRequest.Put)request.TargetRequest).DocumentUuid,
+                    "\"44\""
                 )
             )
         );
