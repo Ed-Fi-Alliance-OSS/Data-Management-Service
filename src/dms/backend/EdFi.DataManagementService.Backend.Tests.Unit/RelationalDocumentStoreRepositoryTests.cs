@@ -478,6 +478,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             "$.schoolCategoryDescriptor"
         );
         var requestBody = CreateRequestBody();
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var traceId = new TraceId("post-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var documentInfo = CreateDocumentInfo([documentReference], [descriptorReference]);
@@ -510,6 +511,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpsertDocument(upsertRequest);
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
+        ((UpsertResult.InsertSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
@@ -550,6 +552,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var documentInfo = CreateDocumentInfo();
@@ -585,6 +588,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpsertDocument(upsertRequest);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, committedEtag));
+        ((UpsertResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
@@ -615,6 +619,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var traceId = new TraceId("put-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var documentInfo = CreateDocumentInfo([documentReference], [descriptorReference]);
 
         A.CallTo(() =>
@@ -646,6 +651,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
+        ((UpdateResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest

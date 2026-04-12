@@ -93,6 +93,7 @@ public class UpsertHandlerTests
         {
             var (upsertHandler, serviceProvider) = Handler(new Repository());
             requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.ParsedBody = JsonNode.Parse("""{"_etag":"\"stale\""}""")!;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
@@ -101,6 +102,10 @@ public class UpsertHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(201);
             requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"71\"");
+            requestInfo
+                .FrontendResponse.Headers["etag"]
+                .Should()
+                .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
         }
     }
 

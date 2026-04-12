@@ -48,6 +48,8 @@ public class Given_Relational_Write_Seam
     )
     {
         var documentInfo = _fixture.CreateDocumentInfo();
+        var parsedBody = RelationalWriteSeamFixture.CreateComplexBody();
+        parsedBody["_etag"] = "\"stale-request-etag\"";
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
             writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
@@ -59,13 +61,17 @@ public class Given_Relational_Write_Seam
         );
 
         var requestInfo = await harness.ExecuteUpsertAsync(
-            RelationalWriteSeamFixture.CreateComplexBody(),
+            parsedBody,
             _fixture.CreateSupportedMappingSet(dialect),
             documentInfo
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(201);
         requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"44\"");
+        requestInfo
+            .FrontendResponse.Headers["etag"]
+            .Should()
+            .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
         harness.WriteExecutor.Requests.Should().ContainSingle();
 
         var request = harness.WriteExecutor.Requests.Single();
@@ -102,6 +108,8 @@ public class Given_Relational_Write_Seam
     public async Task It_routes_put_requests_through_the_relational_seam_for_both_dialects(SqlDialect dialect)
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var parsedBody = RelationalWriteSeamFixture.CreateComplexBody();
+        parsedBody["_etag"] = "\"stale-request-etag\"";
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
             writeResultFactory: request => new RelationalWriteExecutorResult.Update(
@@ -113,7 +121,7 @@ public class Given_Relational_Write_Seam
         );
 
         var requestInfo = await harness.ExecuteUpdateAsync(
-            RelationalWriteSeamFixture.CreateComplexBody(),
+            parsedBody,
             _fixture.CreateSupportedMappingSet(dialect),
             _fixture.CreateDocumentInfo(),
             existingDocumentUuid
@@ -121,6 +129,10 @@ public class Given_Relational_Write_Seam
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(204);
         requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"44\"");
+        requestInfo
+            .FrontendResponse.Headers["etag"]
+            .Should()
+            .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
         harness.WriteExecutor.Requests.Should().ContainSingle();
 
         var request = harness.WriteExecutor.Requests.Single();
