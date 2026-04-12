@@ -189,3 +189,11 @@ Decisions: removed descriptor write `ContentVersion` readback/result dependency 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorWriteHandlerResponseEtagTests.cs; progress.txt; tasks.json
 Verify: dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DescriptorWriteHandlerResponseEtagTests.cs -> Formatted 2 files; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj -> Passed 427; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter "FullyQualifiedName~Given_PostgresqlDescriptorWriteHandler" -> Passed 11
 Notes next: remaining listed work is Dead ContentVersion Readback Removal; executor helper already appears absent in current code, so next iteration likely just confirms/bookkeeps that task.
+
+2026-04-12
+Task complete: Dead ContentVersion Readback Removal
+Story: reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md
+Decisions: confirmed `DefaultRelationalWriteExecutor` no longer contains `ReadCommittedContentVersionAsync(...)` or any discarded success-path `ContentVersion` readback; existing committed-representation tests already assert applied writes do not issue extra session commands, so this iteration is task closure/bookkeeping only.
+Files changed: progress.txt; tasks.json
+Verify: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter "FullyQualifiedName~DefaultRelationalWriteExecutor" -> No tests matched current NUnit names; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter "Name~Given_Default_Relational_Write_Executor" -> Passed 39
+Notes next: all listed tasks complete.

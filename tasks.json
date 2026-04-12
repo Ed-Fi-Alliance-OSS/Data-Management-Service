@@ -39,7 +39,7 @@
       "Delete the dead helper and update unit tests to assert no discarded `ContentVersion` readback remains in the success path.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Write ContentVersion Cleanup",
