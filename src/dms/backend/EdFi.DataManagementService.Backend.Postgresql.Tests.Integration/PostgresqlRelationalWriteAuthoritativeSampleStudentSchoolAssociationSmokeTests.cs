@@ -589,6 +589,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private UpsertResult _createResult = null!;
     private UpdateResult _changedUpdateResult = null!;
     private UpdateResult _noOpUpdateResult = null!;
+    private GetResult _getResultAfterCreate = null!;
+    private GetResult _getResultAfterChangedUpdate = null!;
+    private GetResult _getResultAfterNoOpUpdate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterCreate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterChangedUpdate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterNoOpUpdate = null!;
@@ -633,6 +636,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterCreate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-create"
+        );
 
         _changedUpdateResult = await ExecuteUpdateAsync(
             ChangedUpdateRequestBodyJson,
@@ -648,6 +655,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _changedUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _stateAfterChangedUpdate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterChangedUpdate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-changed-update"
+        );
 
         _noOpUpdateResult = await ExecuteUpdateAsync(
             ChangedUpdateRequestBodyJson,
@@ -663,6 +674,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _noOpUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterNoOpUpdate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-no-op-update"
+        );
     }
 
     [TearDown]
@@ -946,12 +961,26 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     [Test]
+    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+
+    [Test]
+    public void It_returns_the_changed_put_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            _changedUpdateResult,
+            _getResultAfterChangedUpdate
+        );
+
+    [Test]
+    public void It_returns_the_repeat_put_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            _noOpUpdateResult,
+            _getResultAfterNoOpUpdate
+        );
+
+    [Test]
     public async Task It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
     {
-        var getResult = await ExecuteGetByIdAsync(
-            StudentSchoolAssociationDocumentUuid,
-            "pg-authoritative-sample-student-school-association-get-by-id"
-        );
         var expectedLastModifiedAt = await ReadContentLastModifiedAtAsync(
             StudentSchoolAssociationDocumentUuid.Value
         );
@@ -964,7 +993,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
 
         RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
-            getResult,
+            _getResultAfterNoOpUpdate,
             StudentSchoolAssociationDocumentUuid,
             expectedLastModifiedAt,
             expectedDocument,

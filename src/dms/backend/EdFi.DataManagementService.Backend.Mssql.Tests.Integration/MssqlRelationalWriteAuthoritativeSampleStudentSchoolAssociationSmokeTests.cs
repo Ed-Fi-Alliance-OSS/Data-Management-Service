@@ -432,6 +432,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private ResourceSchema _resourceSchema = null!;
     private MssqlStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
+    private GetResult _getResultAfterCreate = null!;
     private MssqlStudentSchoolAssociationDocumentMetadata _documentMetadata = null!;
 
     [SetUp]
@@ -493,6 +494,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
 
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _documentMetadata = await ReadDocumentMetadataAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterCreate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "mssql-authoritative-sample-student-school-association-get-after-create"
+        );
     }
 
     [TearDown]
@@ -510,12 +515,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     }
 
     [Test]
-    public async Task It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
+    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+
+    [Test]
+    public void It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
     {
-        var getResult = await ExecuteGetByIdAsync(
-            StudentSchoolAssociationDocumentUuid,
-            "mssql-authoritative-sample-student-school-association-get-by-id"
-        );
         var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             CreateRequestBodyJson,
             _resourceInfo,
@@ -525,7 +530,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
 
         RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
-            getResult,
+            _getResultAfterCreate,
             StudentSchoolAssociationDocumentUuid,
             _documentMetadata.ContentLastModifiedAt,
             expectedDocument,

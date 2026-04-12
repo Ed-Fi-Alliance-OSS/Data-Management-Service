@@ -108,7 +108,55 @@ public static class RelationalGetIntegrationTestHelper
         CanonicalizeJson(success.EdfiDoc).Should().Be(CanonicalizeJson(expectedDocument));
     }
 
+    public static void AssertWriteResultEtagParity(UpsertResult writeResult, GetResult getResult) =>
+        GetWriteResultEtag(writeResult).Should().Be(GetReadResultEtag(getResult));
+
+    public static void AssertWriteResultEtagParity(UpdateResult writeResult, GetResult getResult) =>
+        GetWriteResultEtag(writeResult).Should().Be(GetReadResultEtag(getResult));
+
     public static string CanonicalizeJson(JsonNode node) => NormalizeJsonNode(node)?.ToJsonString() ?? "null";
+
+    private static string GetWriteResultEtag(UpsertResult writeResult) =>
+        writeResult switch
+        {
+            UpsertResult.InsertSuccess { ETag: not null } insertSuccess => insertSuccess.ETag,
+            UpsertResult.UpdateSuccess { ETag: not null } updateSuccess => updateSuccess.ETag,
+            UpsertResult.InsertSuccess => throw new InvalidOperationException(
+                "Expected upsert success to return an ETag for parity assertion."
+            ),
+            UpsertResult.UpdateSuccess => throw new InvalidOperationException(
+                "Expected upsert success to return an ETag for parity assertion."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected upsert success result for ETag parity assertion, but got '{writeResult.GetType().Name}'."
+            ),
+        };
+
+    private static string GetWriteResultEtag(UpdateResult writeResult) =>
+        writeResult switch
+        {
+            UpdateResult.UpdateSuccess { ETag: not null } updateSuccess => updateSuccess.ETag,
+            UpdateResult.UpdateSuccess => throw new InvalidOperationException(
+                "Expected update success to return an ETag for parity assertion."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected update success result for ETag parity assertion, but got '{writeResult.GetType().Name}'."
+            ),
+        };
+
+    private static string GetReadResultEtag(GetResult getResult) =>
+        getResult switch
+        {
+            GetResult.GetSuccess(var _, var edfiDoc, _, _) when edfiDoc["_etag"] is not null => edfiDoc[
+                "_etag"
+            ]!.GetValue<string>(),
+            GetResult.GetSuccess => throw new InvalidOperationException(
+                "Expected GET success document to contain '_etag' for parity assertion."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected GET success result for ETag parity assertion, but got '{getResult.GetType().Name}'."
+            ),
+        };
 
     private static JsonNode? NormalizeJsonNode(JsonNode? node)
     {
