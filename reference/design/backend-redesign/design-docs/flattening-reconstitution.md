@@ -912,7 +912,8 @@ Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - write descriptor strings by looking up `dms.Descriptor.Uri`
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
 - inject `id` from `dms.Document.DocumentUuid`
-- serve `_etag` and `_lastModifiedDate` from stored `dms.Document` stamps (`ContentVersion`/`ContentLastModifiedAt`); these values must not be generated as “now” at read/materialization time.
+- serve `_lastModifiedDate` from stored `dms.Document.ContentLastModifiedAt`
+- compute `_etag` as `SHA-256` over the serialized JSON representation (excluding `id`, `_etag`, and `_lastModifiedDate`) using deterministic response property order; it must not be generated as “now” or from ad hoc dependency scans at read/materialization time.
 
 Array presence rule (recommended):
 - If the array has rows, write it.

@@ -120,10 +120,11 @@ Notes:
 For a document `P`:
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
-- `_etag(P)` is derived from the same representation stamp:
-  - recommended: encode `ContentVersion` as an opaque string (e.g., `W/"{ContentVersion}"` or base64 of the 8-byte value).
+- `_etag(P)` is a deterministic hash of the JSON representation:
+  - recommended: serialize the response document in deterministic property order after removing `id`, `_etag`, and `_lastModifiedDate`, compute `SHA-256` over the UTF-8 bytes, and encode the hash as base64.
+  - readable-profile responses recompute `_etag` from the projected document using the same rule.
 
-This design does not compute any metadata from dependency scans at read time.
+This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the final serialized JSON payload.
 
 ## Journaling for Change Queries
 
@@ -205,8 +206,8 @@ ORDER BY c.ChangeVersion, c.DocumentId;
 ## Optimistic concurrency (`If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` derived from `dms.Document.ContentVersion`.
-- PUT/DELETE validates `If-Match` by comparing the client’s `_etag` to the current stored stamp for that `DocumentId`.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current serialized JSON representation.
+- PUT/DELETE validates `If-Match` by comparing the client’s `_etag` to the current deterministic hash for that `DocumentId`.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 
 ## Retention and `oldestChangeVersion`

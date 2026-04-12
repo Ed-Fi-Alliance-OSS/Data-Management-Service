@@ -731,7 +731,7 @@ async Task GetGradeBookEntryById()
         throw new InvalidOperationException(message: "Not found");
     }
 
-    if (requestParams.etag == contentVersion) // TBD Calculate the etag based on the ContentVersion
+    if (requestParams.etag == currentSerializedJsonEtag) // TBD Calculate the etag from the canonical serialized JSON representation
     {
         throw new InvalidOperationException(message: "Not modified");
     }
