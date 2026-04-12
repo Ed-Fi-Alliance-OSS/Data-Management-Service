@@ -117,6 +117,57 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
             .Be(new DescriptorUriRow(401L, "uri://ed-fi.org/AddressTypeDescriptor#Home"));
     }
 
+    [Test]
+    public async Task It_can_skip_descriptor_result_sets_when_projection_is_disabled()
+    {
+        var descriptorPlans = new[]
+        {
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM root_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM child_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+        };
+
+        var command = new RecordingDbCommand(
+            HydrationDescriptorResultTestHelper.CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        42L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((42L, 255901)),
+                CreateChildTableRows((100L, 42L, 0, "Springfield"))
+            )
+        );
+
+        var connection = new RecordingDbConnection(command);
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(IncludeDescriptorProjection: false),
+            CancellationToken.None
+        );
+
+        result.DescriptorRowsInPlanOrder.Should().HaveCount(2);
+        result.DescriptorRowsInPlanOrder.Should().OnlyContain(rows => rows.Rows.Count == 0);
+        command.CommandText.Should().NotContain("SELECT descriptor rows FROM root_descriptor;");
+        command.CommandText.Should().NotContain("SELECT descriptor rows FROM child_descriptor;");
+    }
+
     private static DataTable CreateDocumentMetadataTable(
         params (
             long DocumentId,

@@ -35,7 +35,23 @@ public static class HydrationBatchBuilder
     /// <param name="keyset">The page keyset specification.</param>
     /// <param name="dialect">The SQL dialect.</param>
     /// <returns>The assembled SQL command text.</returns>
-    public static string Build(ResourceReadPlan plan, PageKeysetSpec keyset, SqlDialect dialect)
+    public static string Build(ResourceReadPlan plan, PageKeysetSpec keyset, SqlDialect dialect) =>
+        Build(plan, keyset, dialect, new HydrationExecutionOptions(IncludeDescriptorProjection: true));
+
+    /// <summary>
+    /// Builds the complete SQL batch command text.
+    /// </summary>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="keyset">The page keyset specification.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="executionOptions">Controls optional projection work in the batch.</param>
+    /// <returns>The assembled SQL command text.</returns>
+    public static string Build(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions
+    )
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(keyset);
@@ -71,10 +87,13 @@ public static class HydrationBatchBuilder
         }
 
         // 6. Descriptor projection selects in deterministic plan order
-        foreach (var descriptorPlan in plan.DescriptorProjectionPlansInOrder)
+        if (executionOptions.IncludeDescriptorProjection)
         {
-            writer.AppendLine(EnsureTrailingSemicolon(descriptorPlan.SelectByKeysetSql));
-            writer.AppendLine();
+            foreach (var descriptorPlan in plan.DescriptorProjectionPlansInOrder)
+            {
+                writer.AppendLine(EnsureTrailingSemicolon(descriptorPlan.SelectByKeysetSql));
+                writer.AppendLine();
+            }
         }
 
         return writer.ToString();

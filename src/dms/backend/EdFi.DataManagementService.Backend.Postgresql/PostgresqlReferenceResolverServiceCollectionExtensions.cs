@@ -81,6 +81,7 @@ internal sealed class PostgresqlSessionDocumentHydrator : ISessionDocumentHydrat
         DbTransaction transaction,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
     ) =>
         HydrationExecutor.ExecuteAsync(
@@ -89,6 +90,7 @@ internal sealed class PostgresqlSessionDocumentHydrator : ISessionDocumentHydrat
             keyset,
             SqlDialect.Pgsql,
             transaction,
+            executionOptions,
             cancellationToken
         );
 }

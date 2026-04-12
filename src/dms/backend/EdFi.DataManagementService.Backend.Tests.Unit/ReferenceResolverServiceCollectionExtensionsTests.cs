@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -208,6 +209,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             DbTransaction transaction,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken cancellationToken = default
         )
         {

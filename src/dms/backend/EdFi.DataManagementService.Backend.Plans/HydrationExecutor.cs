@@ -41,7 +41,35 @@ public static class HydrationExecutor
         PageKeysetSpec keyset,
         SqlDialect dialect,
         CancellationToken ct
-    ) => ExecuteAsync(connection, plan, keyset, dialect, transaction: null, ct);
+    ) =>
+        ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            dialect,
+            transaction: null,
+            new HydrationExecutionOptions(IncludeDescriptorProjection: true),
+            ct
+        );
+
+    /// <summary>
+    /// Executes the hydration batch and returns the structured page result.
+    /// </summary>
+    /// <param name="connection">An already-opened database connection.</param>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="keyset">The page keyset specification.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="executionOptions">Controls optional projection work in the hydration batch.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
+    public static Task<HydratedPage> ExecuteAsync(
+        DbConnection connection,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
+    ) => ExecuteAsync(connection, plan, keyset, dialect, transaction: null, executionOptions, ct);
 
     /// <summary>
     /// Executes the hydration batch and returns the structured page result.
@@ -62,13 +90,45 @@ public static class HydrationExecutor
         SqlDialect dialect,
         DbTransaction? transaction,
         CancellationToken ct
+    ) =>
+        await ExecuteAsync(
+            connection,
+            plan,
+            keyset,
+            dialect,
+            transaction,
+            new HydrationExecutionOptions(IncludeDescriptorProjection: true),
+            ct
+        );
+
+    /// <summary>
+    /// Executes the hydration batch and returns the structured page result.
+    /// </summary>
+    /// <param name="connection">An already-opened database connection.</param>
+    /// <param name="plan">The compiled resource read plan.</param>
+    /// <param name="keyset">The page keyset specification.</param>
+    /// <param name="dialect">The SQL dialect.</param>
+    /// <param name="transaction">
+    /// Optional transaction bound to the hydration command so write attempts can reuse one session boundary.
+    /// </param>
+    /// <param name="executionOptions">Controls optional projection work in the hydration batch.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
+    public static async Task<HydratedPage> ExecuteAsync(
+        DbConnection connection,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        DbTransaction? transaction,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
     )
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        var batchSql = HydrationBatchBuilder.Build(plan, keyset, dialect);
+        var batchSql = HydrationBatchBuilder.Build(plan, keyset, dialect, executionOptions);
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -118,25 +178,40 @@ public static class HydrationExecutor
             );
         }
 
-        // 4. Descriptor URI rows in compiled-plan order
-        var descriptorRows = new HydratedDescriptorRows[plan.DescriptorProjectionPlansInOrder.Length];
+        var descriptorRows = CreateDescriptorRowsBuffer(plan.DescriptorProjectionPlansInOrder.Length);
 
-        for (var i = 0; i < plan.DescriptorProjectionPlansInOrder.Length; i++)
+        if (executionOptions.IncludeDescriptorProjection)
         {
-            if (!await reader.NextResultAsync(ct))
+            // 4. Descriptor URI rows in compiled-plan order
+            for (var i = 0; i < plan.DescriptorProjectionPlansInOrder.Length; i++)
             {
-                throw new InvalidOperationException(
-                    $"Expected descriptor projection result set at index {i} but no more result sets available."
+                if (!await reader.NextResultAsync(ct))
+                {
+                    throw new InvalidOperationException(
+                        $"Expected descriptor projection result set at index {i} but no more result sets available."
+                    );
+                }
+
+                descriptorRows[i] = await HydrationReader.ReadDescriptorRowsAsync(
+                    reader,
+                    plan.DescriptorProjectionPlansInOrder[i],
+                    ct
                 );
             }
-
-            descriptorRows[i] = await HydrationReader.ReadDescriptorRowsAsync(
-                reader,
-                plan.DescriptorProjectionPlansInOrder[i],
-                ct
-            );
         }
 
         return new HydratedPage(totalCount, documentMetadata, tableRows, descriptorRows);
+    }
+
+    private static HydratedDescriptorRows[] CreateDescriptorRowsBuffer(int count)
+    {
+        var descriptorRows = new HydratedDescriptorRows[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            descriptorRows[i] = new HydratedDescriptorRows([]);
+        }
+
+        return descriptorRows;
     }
 }

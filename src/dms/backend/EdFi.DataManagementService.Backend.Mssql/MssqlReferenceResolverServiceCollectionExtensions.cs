@@ -110,6 +110,7 @@ internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
         DbTransaction transaction,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
     ) =>
         HydrationExecutor.ExecuteAsync(
@@ -118,6 +119,7 @@ internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
             keyset,
             SqlDialect.Mssql,
             transaction,
+            executionOptions,
             cancellationToken
         );
 }

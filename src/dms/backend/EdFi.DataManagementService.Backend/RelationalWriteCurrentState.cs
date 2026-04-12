@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -58,6 +59,7 @@ internal interface ISessionDocumentHydrator
         DbTransaction transaction,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
     );
 }
@@ -87,6 +89,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                 writeSession.Transaction,
                 request.ReadPlan,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
+                new HydrationExecutionOptions(IncludeDescriptorProjection: false),
                 cancellationToken
             )
             .ConfigureAwait(false);

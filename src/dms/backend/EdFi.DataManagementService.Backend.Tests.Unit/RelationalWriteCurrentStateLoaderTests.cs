@@ -90,6 +90,7 @@ public class Given_Relational_Write_Current_State_Loader
         result.TableRowsInDependencyOrder.Should().ContainSingle();
         result.TableRowsInDependencyOrder[0].Rows.Should().ContainSingle();
         ((long)result.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(601L);
+        command.CommandText.Should().NotContain("select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"");
         connection.CreateCommandCallCount.Should().Be(1);
         command.ExecuteReaderCallCount.Should().Be(1);
     }
@@ -497,6 +498,7 @@ public class Given_Relational_Write_Current_State_Loader
             DbTransaction transaction,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken cancellationToken = default
         ) =>
             HydrationExecutor.ExecuteAsync(
@@ -505,6 +507,7 @@ public class Given_Relational_Write_Current_State_Loader
                 keyset,
                 SqlDialect.Pgsql,
                 transaction,
+                executionOptions,
                 cancellationToken
             );
     }

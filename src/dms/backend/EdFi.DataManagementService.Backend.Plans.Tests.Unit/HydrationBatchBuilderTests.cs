@@ -277,6 +277,7 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
 public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
 {
     private string _pgsqlBatch = null!;
+    private string _pgsqlBatchWithoutDescriptorProjection = null!;
 
     [SetUp]
     public void Setup()
@@ -300,6 +301,12 @@ public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
             new PageKeysetSpec.Single(42L),
             SqlDialect.Pgsql
         );
+        _pgsqlBatchWithoutDescriptorProjection = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(IncludeDescriptorProjection: false)
+        );
     }
 
     [Test]
@@ -321,6 +328,18 @@ public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
         childSelectIndex.Should().BePositive();
         firstDescriptorIndex.Should().BeGreaterThan(childSelectIndex);
         secondDescriptorIndex.Should().BeGreaterThan(firstDescriptorIndex);
+    }
+
+    [Test]
+    public void It_should_allow_descriptor_projection_to_be_omitted()
+    {
+        _pgsqlBatchWithoutDescriptorProjection
+            .Should()
+            .NotContain("SELECT descriptor rows FROM root_descriptor;");
+        _pgsqlBatchWithoutDescriptorProjection
+            .Should()
+            .NotContain("SELECT descriptor rows FROM child_descriptor;");
+        _pgsqlBatchWithoutDescriptorProjection.Should().Contain("SELECT child columns FROM child;");
     }
 }
 
