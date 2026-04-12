@@ -1,183 +1,76 @@
 [
   {
-    "category": "Read Seams and Modes",
-    "description": "Implement the backend-local relational GET seam needed for active relational GET-by-id and internal stored-document loads. Add `IRelationalGetRequest` carrying `MappingSet`, an unambiguous qualified-resource/base-resource identifier (do not rely on bare `ResourceName`), minimal readable-profile projection inputs (`ContentTypeDefinition` plus the precomputed top-level identity-property set), and an explicit local read mode such as `ExternalResponse` vs `StoredDocument`. Have Core `GetRequest` implement this contract internally and update both `GetByIdHandler` and `ProfileWriteValidationMiddleware` to populate it correctly. Keep DMS-990 scoped to GET-by-id: do not pull query-specific request plumbing forward unless a concrete live caller requires it. Acceptance: no public `Core.External` interface widening is required; relational GET can distinguish extension homographs and descriptor resources; internal stored-document fetches can suppress API metadata injection and readable projection without routing through a separate repository API.",
-    "steps-to-verify": [
-      "Add unit tests covering relational GET request construction, qualified-resource identification, read-mode selection, and readable-profile projection inputs.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    "category": "Relational Write Response ETag Source",
+    "description": "Replace request-body-based relational write response ETag generation in `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs` with an in-session materialization of the committed external representation. Acceptance criteria: relational-table POST create, POST-as-update, PUT, and guarded no-op success paths no longer call `RelationalApiMetadataFormatter.FormatEtag(...)` on `SelectedBody`; the returned ETag is derived from the same external-response JSON shape used by relational GET-by-id; the ETag remains stable with the committed write even if `SelectedBody` is only the writable subset of the eventual response document."
+    ,
+    "steps_to_verify": [
+      "Add unit coverage proving the executor returns the materialized response ETag rather than `FormatEtag(request.SelectedBody, ...)`.",
+      "Add a regression case where the committed external document includes fields not present in `SelectedBody`, and assert the returned ETag matches the committed external document.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Committed Representation Readback Flow",
+    "description": "Introduce a write-side committed-representation readback flow that reuses the relational hydration and read materialization pipeline inside the active write session. Acceptance criteria: the executor can materialize the committed external response for a just-written relational-table document before commit completes; the readback materializes the full external GET shape used for relational GET-by-id, including descriptor URI projection; the implementation does not perform a post-commit repository GET to compute the response ETag; the readback runs in the same transaction/session boundary as the write so the returned ETag cannot be changed by a concurrent writer after commit."
+    ,
+    "steps_to_verify": [
+      "Return or otherwise retain the committed target document identity needed to hydrate the written document inside the executor session.",
+      "Add unit tests proving the committed-response readback is invoked from the write executor success path and is not replaced by a second post-commit lookup.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Root Document Identity Plumbing",
+    "description": "Plumb the resolved root `DocumentId` or equivalent committed target identity out of `src/dms/backend/EdFi.DataManagementService.Backend/RelationalWriteNoProfilePersister.cs` so the executor can hydrate the just-written document without a second UUID-to-target lookup. Acceptance criteria: create-new and existing-document write paths both expose enough committed target identity to drive in-session hydration; the executor does not need to re-resolve the target after the write succeeds just to compute the response ETag."
+    ,
+    "steps_to_verify": [
+      "Add unit tests covering create-new, POST-as-update, and PUT paths to prove the executor receives the final committed target identity needed for readback.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor|FullyQualifiedName~RelationalWriteNoProfilePersister\"`"
     ],
     "completed": true
   },
   {
-    "category": "Read Results",
-    "description": "Add explicit not-implemented read results and adjust the GET success contract for relational reads. Introduce `GetFailureNotImplemented` and `QueryFailureNotImplemented` (or equivalent) and map them to HTTP 501 in Core handlers. Relax `GetResult.GetSuccess.LastModifiedTraceId` to nullable/optional so relational GET can return stored last-modified metadata without inventing a trace id. Acceptance: unsupported relational query and descriptor GET no longer surface as `UnknownFailure`/HTTP 500; successful relational GET can return `null` trace id while preserving existing non-relational behavior.",
-    "steps-to-verify": [
-      "Add unit tests for `GetByIdHandler`, `QueryRequestHandler`, and relational repository stubs that assert 501/not-implemented behavior and nullable `LastModifiedTraceId` handling.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    "category": "Dead ContentVersion Readback Removal",
+    "description": "Remove the unused `ContentVersion` readback from `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs` once the committed-response readback is in place. Acceptance criteria: `ReadCommittedContentVersionAsync(...)` and its call sites are deleted unless they become part of the real committed-response materialization path; there is no extra database roundtrip whose result is discarded; write success behavior is unchanged except for the corrected ETag source."
+    ,
+    "steps_to_verify": [
+      "Delete the dead helper and update unit tests to assert no discarded `ContentVersion` readback remains in the success path.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DefaultRelationalWriteExecutor\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Descriptor Results In Hydration Batch",
-    "description": "Fold descriptor URI projection into the same hydration batch used by relational reads, but keep this task scoped to batch SQL, result-shape contracts, and executor/reader changes. Extend `HydrationBatchBuilder`, `HydrationExecutor`, `HydrationReader`, and the hydration contracts so one DB command returns document metadata, hydrated table rows, and descriptor `(DescriptorId, Uri)` result sets in deterministic order for the selected keyset. Acceptance: GET-by-id hydration for relational-table resources uses one DB command/roundtrip for root, child, `_ext`, and descriptor URI data; descriptor result-set ordering is deterministic and matches compiled plan order; the batch contract is reusable by both external reads and current-state reconstitution consumers; DMS-992 still owns the dedicated descriptor behavior matrix; full provider-parity proof stays with the final GET-by-id integration tasks.",
-    "steps-to-verify": [
-      "Add/extend unit tests for batch SQL ordering and executor result-set consumption, including descriptor result-set ordering.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    "category": "Descriptor Write ContentVersion Cleanup",
+    "description": "Remove unused `ContentVersion` return plumbing from `src/dms/backend/EdFi.DataManagementService.Backend/DescriptorWriteHandler.cs`. Acceptance criteria: descriptor POST and PUT SQL no longer reshape statements solely to return `ContentVersion`; `ExecuteContentVersionCommandAsync(...)` is removed unless repurposed for an actively consumed result; descriptor create, update, and no-op behavior stays the same from the caller perspective, including current descriptor response ETag behavior."
+    ,
+    "steps_to_verify": [
+      "Update descriptor handler unit tests so they no longer depend on a returned `ContentVersion` result set for successful writes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~Descriptor_Write_Response_Etags\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Current-State Loader Uses Hydrated Descriptor Results",
-    "description": "Migrate `RelationalWriteCurrentStateLoader` to consume descriptor URI data already present in the hydrated batch instead of issuing a second `DescriptorProjectionExecutor` command. Keep this task scoped to write-side current-state loading; external GET-by-id consumption of the same batched descriptor data belongs with repository orchestration. Acceptance: the then-existing stored-document reconstitution path builds descriptor lookup state from hydrated result sets instead of issuing a second descriptor query; production relational-table current-state loads do not issue an extra descriptor SQL command; later cleanup may remove the dormant reconstitution path entirely without changing hydration-batch behavior.",
-    "steps-to-verify": [
-      "Add unit tests covering current-state loading with batch-provided descriptor lookups, including a regression case for profile-driven stored-document reconstitution.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Shared Reconstituter Hardening",
-    "description": "Close the remaining DMS-990 gaps in the existing shared JsonNode-based reconstitution engine rather than rewriting it. Keep `DocumentReconstituter` as the single shared full-stored-document assembler for external reads, without reviving any dormant write-side consumers in this task, and limit the work to residual deltas: canonical compiled JSON-path property order, any attachment fixes exposed by batched descriptor results, null handling, and the accepted empty-array behavior. Acceptance: reconstitution remains JsonNode-based for this story; deterministic object-member ordering follows canonical compiled JSON-path order; nested collections and scope-aligned extension rows continue attaching by stable scope identity after hydration-batch changes; `_ext` is omitted when a scope has no extension values; optional empty arrays are omitted; do not broaden this task into a wholesale rewrite of already-covered scalar/reference/descriptor/extension cases.",
-    "steps-to-verify": [
-      "Add/extend focused `DocumentReconstituter` unit tests for deterministic property order, attachment behavior after batched descriptor changes, null handling, and omitted empty optional arrays.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "External Response Materializer",
-    "description": "Add a thin external-read materializer above `DocumentReconstituter`. Build a read-response layer that takes the fully reconstituted stored document plus `DocumentMetadataRow` and injects API metadata: `id` from `DocumentUuid`, `_etag` as the string `\"{ContentVersion}\"`, and `_lastModifiedDate` from `ContentLastModifiedAt` formatted in UTC second precision (`yyyy-MM-ddTHH:mm:ssZ`). Drive this from the local read mode so stored-document reads do not inject API-only fields. Acceptance: metadata comes from stored `dms.Document` stamps, not document hashing or `DateTimeOffset.UtcNow`; stored-document mode does not inject API-only fields; `ChangeVersion` remains deferred in DMS-990.",
-    "steps-to-verify": [
-      "Add unit tests for metadata injection, UTC-second formatting, and separation between stored-document mode and external-response mode.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Readable Profile Integration",
-    "description": "Finish readable-profile integration for relational GET-by-id and bypass legacy response filtering. Use `IReadableProfileProjector` only after full reconstitution and metadata injection in `ExternalResponse` mode, passing the minimal projection inputs from Core, and update `ReadableProfileProjector` to always preserve `id`, `_etag`, and `_lastModifiedDate` in addition to identity fields. Make `ProfileFilteringMiddleware` a no-op for relational GET-by-id responses so the old `ProfileResponseFilter` does not double-filter; keep non-relational reads on the current legacy path and leave query-specific readable projection behavior deferred with DMS-993 except for clean 501 stub handling. Acceptance: relational GET-by-id applies readable projection exactly once; relational GET-by-id responses with readable profiles still emit the profiled `Content-Type`; unsupported relational query responses do not run the legacy response filter on their way to 501; non-relational reads keep current legacy filtering behavior.",
-    "steps-to-verify": [
-      "Add/extend unit tests for `ReadableProfileProjector` metadata preservation, relational `ProfileFilteringMiddleware` bypass behavior, relational GET-by-id profile `Content-Type` handling, and backend profile-flow coverage using reconstituted documents.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "External Read Execution Wiring",
-    "description": "Add the external relational read execution seam needed by `RelationalDocumentStoreRepository.GetDocumentById`. Activate a repository-facing read executor such as `IDocumentHydrator` for relational backend requests, wire provider-specific registrations for PostgreSQL and SQL Server, and reuse or extract the existing `(DocumentUuid, QualifiedResource)` lookup path so external reads can resolve a single-document keyset before hydration. Keep this task scoped to read execution infrastructure: provider DI, dialect routing, UUID/resource discrimination reuse, and single-document hydration invocation. Do not materialize API responses here; shared reconstitution, metadata injection, and readable projection remain owned by the repository materialization task. Acceptance: non-session relational reads can execute compiled hydration plans against both providers through an explicit external read seam; repository orchestration can request a hydrated single-document page without owning connection or dialect setup; UUIDs that resolve to the wrong resource type are distinguishable from missing documents for later `GetFailureNotExists` handling.",
-    "steps-to-verify": [
-      "Add unit tests covering provider-specific external read executor registration and the single-document UUID/resource lookup path reused by relational GET-by-id.",
+    "category": "Repository And Handler Contract Regression Coverage",
+    "description": "Update repository, handler, and HTTP-surface tests to assert the corrected committed-response ETag contract instead of the current request-body-derived behavior. Acceptance criteria: unit tests no longer encode `SelectedBody` as the source of truth for write response ETags; Core handlers continue emitting the backend-provided ETag in the HTTP response; descriptor write tests do not assert or mock discarded `ContentVersion` results."
+    ,
+    "steps_to_verify": [
+      "Update unit tests in backend and core projects that currently compute expected ETags from the selected request body.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler|FullyQualifiedName~RelationalWriteSeamTests\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Repository GET By Id Materialization",
-    "description": "Implement `RelationalDocumentStoreRepository.GetDocumentById` for non-descriptor relational-table resources on top of the explicit external read seam. Consume the hydrated single-document page, batch-provided descriptor lookup state, shared reconstitution, external response materialization, and optional readable projection to return real relational GET-by-id responses. Keep this task focused on repository materialization and result mapping, not provider setup or SQL execution infrastructure. Acceptance: when `UseRelationalBackend=true`, non-descriptor GET-by-id is active and does not fall back to the legacy repository; `GetFailureNotExists` covers both missing UUIDs and UUIDs that resolve to a different resource type; descriptor GET returns the explicit 501/not-implemented result until DMS-994; repository code clearly documents that relational authorization is still pending, does not attempt a temporary legacy auth path, and does not invoke the legacy resource authorization handler during relational GET-by-id.",
-    "steps-to-verify": [
-      "Add unit tests for successful GET-by-id, not-found behavior, wrong-resource => not-exists behavior, descriptor-resource guard rails, query remaining deferred, and the assertion that relational GET-by-id does not call the legacy resource authorization handler.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    "category": "Write Then Read ETag Parity Integration Tests",
+    "description": "Add integration coverage proving a successful relational write returns the same ETag that a follow-up relational GET-by-id returns for the committed document. Acceptance criteria: at least one relational-table create/update/no-op scenario verifies write-result ETag equals GET-by-id `_etag` for the same committed state; the fixture exercises a shape where the external response is meaningfully materialized, not just a trivial root-only document; descriptor write integration coverage continues to prove descriptor update tracking behavior without depending on unused `ContentVersion` readback."
+    ,
+    "steps_to_verify": [
+      "Add integration assertions for relational-table write-result ETag parity with subsequent GET-by-id `_etag` on PostgreSQL and, where the fixture already exists, SQL Server.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalWrite|FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~RelationalWrite|FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
-    "completed": true
-  },
-  {
-    "category": "PostgreSQL Write Then Read Smoke",
-    "description": "Add the first end-to-end relational GET-by-id integration proof on PostgreSQL for one nested-plus-`_ext` resource fixture. Extend an authoritative relational backend integration test to write a representative document, fetch it back through `RelationalDocumentStoreRepository.GetDocumentById`, and assert semantic JSON equivalence with strict array ordering, plus `id`, `_etag`, and `_lastModifiedDate`. Acceptance: PostgreSQL has a real relational write-then-read proof for a nested-plus-`_ext` scenario; integration assertions use semantic JSON equivalence rather than brittle object-property-order equality.",
-    "steps-to-verify": [
-      "Add one PostgreSQL integration test that performs write then relational GET-by-id for the representative fixture and asserts nested collections, `_ext`, and metadata.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "SQL Server Parity Smoke",
-    "description": "Port the same nested-plus-`_ext` relational GET-by-id proof to SQL Server once the PostgreSQL smoke is green. Keep this task scoped to provider parity and assertion reuse, not new read-path behavior. Acceptance: SQL Server has the same write-then-read proof for the representative fixture, asserting semantic JSON equivalence with strict array ordering, plus `id`, `_etag`, and `_lastModifiedDate`.",
-    "steps-to-verify": [
-      "Add one SQL Server integration test that performs write then relational GET-by-id for the same representative fixture and asserts nested collections, `_ext`, and metadata.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Repository Read Dependency Simplification",
-    "description": "Replace the `IServiceProvider`-based service locator in `RelationalDocumentStoreRepository` with explicit constructor dependencies for the relational read path, including `IRelationalReadTargetLookupService`, `IRelationalReadMaterializer`, and `IReadableProfileProjector`. Remove dead conditional logic made unnecessary by the descriptor guard, including the non-descriptor branch in `BuildGetNotImplementedResult`. Update all direct `RelationalDocumentStoreRepository` registrations and service-provider construction paths that currently rely on the old constructor shape, including provider-specific integration test helpers and any validation-on-build compositions. Acceptance: `RelationalDocumentStoreRepository` no longer resolves read-path services via `GetRequiredService(...)` during request execution; constructor dependencies fully describe the active GET-by-id collaborators; the descriptor-only not-implemented path has no unreachable non-descriptor branch; direct service-provider construction paths still validate and resolve successfully after the constructor change; existing GET-by-id behavior and tests remain unchanged.",
-    "steps-to-verify": [
-      "Refactor `RelationalDocumentStoreRepository` to use direct injected dependencies and delete unreachable not-implemented code paths.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~ProfileWriteValidationMiddlewareTests\"`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Shared Relational GET Integration Test Helpers",
-    "description": "Extract the duplicated relational GET-by-id integration test support added for the authoritative sample StudentSchoolAssociation fixture into shared helpers, keeping only dialect-specific wiring in the PostgreSQL and SQL Server test projects. Move the common `IRelationalGetRequest` test record, expected-response construction, JSON canonicalization, and shared relational GET assertions into a reusable helper location such as `Backend.Tests.Common` or a focused shared integration helper. Acceptance: the PostgreSQL and SQL Server smoke tests no longer maintain separate copies of the same GET request type and JSON/assertion helpers; common read assertions are authored once and reused by both dialect suites; each dialect-specific test file keeps only the setup needed for its provider.",
-    "steps-to-verify": [
-      "Extract and reuse the common relational GET integration helpers across the PostgreSQL and SQL Server authoritative sample smoke tests.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Relational GET Contract Tightening",
-    "description": "Make the active relational GET seam explicit by requiring a non-null `MappingSet` on `IRelationalGetRequest` and its concrete callers, instead of allowing null and then failing fast inside the repository. Update the contract, `GetRequest`, tests, and any helper request implementations to reflect that relational GET-by-id only executes after mapping-set resolution, including provider-specific integration test request records and any other direct `IRelationalGetRequest` implementations. Acceptance: `IRelationalGetRequest.MappingSet` is non-nullable; `GetRequest` and test request implementations populate it unconditionally for relational GET callers; repository code no longer performs a defensive null check for `MappingSet`; compile-time contracts reflect the actual runtime precondition that relational GET requires a resolved mapping set.",
-    "steps-to-verify": [
-      "Change the relational GET contract and implementations so `MappingSet` is non-nullable and remove repository null-guard code that becomes impossible.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~GetByIdHandlerTests|FullyQualifiedName~ProfileWriteValidationMiddlewareTests|FullyQualifiedName~RelationalWriteSeamTests\"`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSampleStudentSchoolAssociation\"`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Write Response ETag Correctness",
-    "description": "Eliminate the race in relational write response `etag` generation. `RelationalDocumentStoreRepository` currently commits the write in `DefaultRelationalWriteExecutor` and then performs a second `ResolveForPutAsync` lookup to derive the response `etag`, which can return a later `ContentVersion` from a concurrent update rather than the representation committed by the current request. Move the authoritative committed `ContentVersion` onto the success path returned from the write execution flow, or otherwise capture it inside the same committed session boundary, and derive the response `etag` from that committed value instead of a post-commit re-query. Apply the fix to every relational write path that currently routes through `WithStoredResponseEtagAsync`, including relational-table POST create-new, relational-table POST-as-update, relational-table PUT, guarded no-op success, and descriptor POST/PUT, not only a subset of relational-table writes. Do not couple the fix to preserving the current helper structure if a simpler design removes `WithStoredResponseEtagAsync` entirely. Acceptance: POST/PUT response `etag` always corresponds to the representation committed by that request for both descriptor and relational-table resources; no second post-commit target lookup is required to compute the response `etag`; guarded no-op responses continue to return the existing committed version without allocating a new stamp; concurrent updates after commit cannot change the `etag` returned to the caller for the completed request; the HTTP `etag` header emitted by Core handlers reflects the same committed value.",
-    "steps-to-verify": [
-      "Update the relational write success path so committed `ContentVersion` is returned directly or otherwise captured without a post-commit re-query.",
-      "Add unit tests proving the repository no longer performs a second `ResolveForPutAsync` after a successful write, and that relational-table POST create-new, guarded no-op, PUT, post-as-update, descriptor POST, and descriptor PUT flows return the correct committed `etag`.",
-      "Add handler-level assertions showing the public HTTP `etag` header uses the same committed value after the backend contract change.",
-      "Add one public-HTTP relational write smoke or integration assertion that drives POST or PUT through the host stack and verifies the emitted `etag` header matches the committed value, so the fix is proven through the live request pipeline and not only through mocked repository/handler tests.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~UpsertHandler|FullyQualifiedName~UpdateByIdHandler\"`",
-      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Backend Unit Suite Restoration",
-    "description": "Restore the unit-test suites to green after the write-response `etag` contract change. Sequence this after `Write Response ETag Correctness` so the tests are updated against the final intended contract rather than the current transitional behavior. `Given_No_Profile_Relational_Put.It_routes_through_the_executor` in `ProfileWriteOrchestrationTests` still asserts `UpdateSuccess(_documentUuid)` with no `ETag`, but the repository now enriches successful writes with stored response `etag` values. Update the affected tests to assert the intended contract explicitly rather than relying on the old null `ETag` behavior. Audit the remaining relational write tests for the same obsolete assumption, including any frontend smoke/unit coverage that directly asserts relational write results. Acceptance: the backend unit test suite passes without ignored or weakened assertions; profile-write orchestration tests explicitly verify the expected relational write response `etag` behavior; no remaining unit/smoke tests in the active relational path continue to encode the obsolete 'successful relational writes return no `ETag`' assumption.",
-    "steps-to-verify": [
-      "Update failing backend and relational frontend write tests to reflect the intended relational write response contract, including `ETag` assertions where appropriate.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter \"FullyQualifiedName~RelationalWriteSmokeTests\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Extension Collection Traversal Simplification",
-    "description": "Remove duplicate traversal/emission of extension child collections in `DocumentReconstituter`. `FindImmediateChildTables` currently treats `DbTableKind.ExtensionCollection` as an immediate child based only on array depth, while extension scopes also recurse into their child collections through `EmitExtensionScope`, so extension child arrays such as `$.addresses[*]._ext.sample.deliveryNotes[*]` are discovered twice and written twice to the same JSON property. Tighten the child-discovery rules so extension child collections are emitted only through their owning `_ext` scope, or otherwise ensure the traversal model cannot revisit the same extension collection from both the base scope and the extension scope. Acceptance: each extension child collection is assembled exactly once, not merely written to the same final JSON shape twice; extension collection attachment still uses stable parent identity and preserves `Ordinal` ordering; existing nested `_ext` collection behavior remains correct for both root-aligned and collection-aligned extension scopes; the implementation becomes simpler by removing the current overlapping discovery paths.",
-    "steps-to-verify": [
-      "Adjust `DocumentReconstituter` child-table discovery so extension child collections are not reachable through both the base parent scope and the extension scope recursion path.",
-      "Add unit tests covering root-aligned and collection-aligned extension child collections to prove each array is emitted once and in the correct order, including at least one white-box assertion on child discovery/traversal so a duplicate build-and-overwrite path cannot still pass on final JSON shape alone.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Dead Code Cleanup After Hydration Refactor",
-    "description": "Remove dead or inactive code left behind by the hydration-batch and read-materialization changes. `DescriptorProjectionExecutor.ExecuteAsync` is no longer used by production code now that descriptor URI rows are returned in the hydration batch, and `RelationalWriteCurrentStateLoadRequest.RequiresReconstitution` plus `RelationalWriteCurrentState.ReconstitutedDocument` are currently dormant because production call sites never request reconstitution. Treat this as a cleanup-only task: delete the dead paths now rather than activating them under this ticket. If removing the dormant current-state reconstitution contract also makes the `IRelationalReadMaterializer` dependency in `RelationalWriteCurrentStateLoader` unnecessary, remove that DI coupling in the same cleanup rather than leaving a half-dead loader shape behind. If a future feature needs write-side stored-document reconstitution, track that separately in its own story with a real production caller instead of preserving inactive contracts here. If any helper is retained only for tests, move it to test code or explicitly justify it as a supported production seam rather than leaving it as dead production code. Acceptance: production code no longer contains unused descriptor projection execution paths or inactive current-state reconstitution flags/outputs; no production assembly retains dead code solely for test convenience; this task does not expand into new feature work to activate dormant reconstitution behavior; dead code removal does not change observable relational read/write behavior; the current-state loader does not retain unused read-materialization dependencies after the dormant path is removed.",
-    "steps-to-verify": [
-      "Delete the unused descriptor projection executor path and the dormant current-state reconstitution contract members, remove any now-unused `IRelationalReadMaterializer` dependency from the current-state loader, and move any test-only helper code out of production assemblies if it no longer serves a live runtime scenario.",
-      "Update or delete affected unit tests so they cover only live production behavior.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
+    "completed": false
   }
 ]

@@ -817,6 +817,25 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_rejects_create_persistence_when_the_committed_target_uuid_changes()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            910L,
+            new DocumentUuid(Guid.Parse("eeeeeeee-1111-2222-3333-ffffffffffff"))
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*but persistence returned committed uuid*");
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_returns_update_success_when_non_collection_put_dml_is_applied()
     {
         var request = CreateRequest(RelationalWriteOperationKind.Put);
@@ -849,6 +868,62 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rejects_post_as_update_persistence_when_the_committed_target_document_id_changes()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(request, 45L);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(999L, existingDocumentUuid);
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*different committed target identity*");
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rejects_put_persistence_when_the_committed_target_document_id_changes()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            999L,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*different committed target identity*");
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
@@ -2170,7 +2245,9 @@ public class Given_Default_Relational_Write_Executor
 
         public Exception? ExceptionToThrow { get; set; }
 
-        public Task PersistAsync(
+        public RelationalWritePersistResult? ResultToReturn { get; set; }
+
+        public Task<RelationalWritePersistResult> PersistAsync(
             RelationalWriteExecutorRequest request,
             RelationalWriteNoProfileMergeResult mergeResult,
             IRelationalWriteSession writeSession,
@@ -2188,8 +2265,21 @@ public class Given_Default_Relational_Write_Executor
                 throw ExceptionToThrow;
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(ResultToReturn ?? CreateDefaultResult(request));
         }
+
+        private static RelationalWritePersistResult CreateDefaultResult(
+            RelationalWriteExecutorRequest request
+        ) =>
+            request.TargetContext switch
+            {
+                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(910L, documentUuid),
+                RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) => new(
+                    documentId,
+                    documentUuid
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(request), request, null),
+            };
     }
 
     private static RelationalWriteNoProfileMergeResult CreateMergeResult(
