@@ -31,6 +31,8 @@ public static class RelationalGetIntegrationTestHelper
 {
     public static JsonObject CreateExpectedExternalResponse(
         string requestBodyJson,
+        BaseResourceInfo resourceInfo,
+        MappingSet mappingSet,
         Guid documentUuid,
         DateTimeOffset lastModifiedAt
     )
@@ -39,11 +41,28 @@ public static class RelationalGetIntegrationTestHelper
             JsonNode.Parse(requestBodyJson)?.AsObject()
             ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
 
-        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
+        expectedDocument["_etag"] = CreateExpectedEtag(requestBodyJson, resourceInfo, mappingSet);
         expectedDocument["id"] = documentUuid.ToString();
         expectedDocument["_lastModifiedDate"] = FormatExternalLastModifiedDate(lastModifiedAt);
 
         return expectedDocument;
+    }
+
+    public static string CreateExpectedEtag(
+        string requestBodyJson,
+        BaseResourceInfo resourceInfo,
+        MappingSet mappingSet
+    )
+    {
+        var expectedDocument =
+            JsonNode.Parse(requestBodyJson)
+            ?? throw new InvalidOperationException("Expected request body JSON to parse into a JSON object.");
+        var readPlan = mappingSet.GetReadPlanOrThrow(
+            new QualifiedResourceName(resourceInfo.ProjectName.Value, resourceInfo.ResourceName.Value)
+        );
+        var canonicalDocument = DocumentReconstituter.ReorderToReadPlanOrder(expectedDocument, readPlan);
+
+        return DocumentComparer.GenerateContentHash(canonicalDocument);
     }
 
     public static string FormatExternalLastModifiedDate(DateTimeOffset lastModifiedAt) =>

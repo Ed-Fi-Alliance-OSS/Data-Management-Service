@@ -518,6 +518,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
         var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             CreateRequestBodyJson,
+            _resourceInfo,
+            _mappingSet,
             _documentMetadata.DocumentUuid,
             _documentMetadata.ContentLastModifiedAt
         );

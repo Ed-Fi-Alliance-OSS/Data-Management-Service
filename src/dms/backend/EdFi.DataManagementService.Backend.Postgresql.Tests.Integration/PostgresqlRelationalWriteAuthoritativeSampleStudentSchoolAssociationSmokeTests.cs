@@ -957,6 +957,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
         var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             ChangedUpdateRequestBodyJson,
+            _resourceInfo,
+            _mappingSet,
             _stateAfterNoOpUpdate.Document.DocumentUuid,
             expectedLastModifiedAt
         );
