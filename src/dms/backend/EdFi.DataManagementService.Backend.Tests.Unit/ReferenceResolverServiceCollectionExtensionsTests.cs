@@ -71,10 +71,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
-        var noProfileMergeSynthesizer =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
-        var noProfilePersister =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>();
+        var mergeSynthesizer = scope.ServiceProvider.GetRequiredService<IRelationalWriteMergeSynthesizer>();
+        var persister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var writeExceptionClassifier =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
@@ -103,8 +101,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
-        noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
-        noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
+        mergeSynthesizer.Should().BeOfType<RelationalWriteMergeSynthesizer>();
+        persister.Should().BeOfType<RelationalWritePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();

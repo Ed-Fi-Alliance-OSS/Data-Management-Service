@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
 using JsonValue = System.Text.Json.Nodes.JsonValue;
 
@@ -22,8 +24,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalCommittedRepresentationReader committedRepresentationReader,
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
-    IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
-    IRelationalWriteNoProfilePersister noProfilePersister,
+    IRelationalWriteMergeSynthesizer mergeSynthesizer,
+    IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver
 ) : IRelationalWriteExecutor
@@ -51,11 +53,11 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteFreshnessChecker _writeFreshnessChecker =
         writeFreshnessChecker ?? throw new ArgumentNullException(nameof(writeFreshnessChecker));
 
-    private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
-        noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
+    private readonly IRelationalWriteMergeSynthesizer _mergeSynthesizer =
+        mergeSynthesizer ?? throw new ArgumentNullException(nameof(mergeSynthesizer));
 
-    private readonly IRelationalWriteNoProfilePersister _noProfilePersister =
-        noProfilePersister ?? throw new ArgumentNullException(nameof(noProfilePersister));
+    private readonly IRelationalWritePersister _persister =
+        persister ?? throw new ArgumentNullException(nameof(persister));
 
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
@@ -153,19 +155,112 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
             );
 
+            ProfileAppliedWriteContext? profileWriteContext = null;
+
             if (request.ProfileWriteContext is not null)
             {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return BuildProfilePersistPendingResult(request.OperationKind);
+                // Gate 1: Reject creation when profile marks root as non-creatable.
+                // Defense-in-depth — the middleware normally catches this via CreatabilityViolation
+                // failures, but if the pipeline sets RootResourceCreatable=false without emitting
+                // a failure, this gate ensures a 403 rather than silent acceptance.
+                if (
+                    targetContext is RelationalWriteTargetContext.CreateNew
+                    && !request.ProfileWriteContext.Request.RootResourceCreatable
+                )
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileCreatabilityRejectionResult();
+                }
+
+                // Validate Core-emitted contract addresses before merge
+                var resourceDisplayName =
+                    $"{request.WritePlan.Model.Resource.ProjectName}/{request.WritePlan.Model.Resource.ResourceName}";
+                var httpMethod = request.OperationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT";
+                var operationLabel =
+                    request.OperationKind == RelationalWriteOperationKind.Post ? "create" : "update";
+
+                var requestContractFailures = ProfileWriteContractValidator.ValidateRequestContract(
+                    request.ProfileWriteContext.Request,
+                    request.ProfileWriteContext.CompiledScopeCatalog,
+                    request.ProfileWriteContext.ProfileName,
+                    resourceDisplayName,
+                    httpMethod,
+                    operationLabel
+                );
+
+                if (requestContractFailures.Length > 0)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildContractMismatchResult(request.OperationKind, requestContractFailures);
+                }
+
+                if (
+                    targetContext is RelationalWriteTargetContext.ExistingDocument
+                    && currentState is not null
+                )
+                {
+                    profileWriteContext =
+                        request.ProfileWriteContext.StoredStateProjectionInvoker.ProjectStoredState(
+                            currentState.ReconstitutedDocument
+                                ?? throw new InvalidOperationException(
+                                    "Reconstituted document is required for profile-constrained update/upsert."
+                                ),
+                            request.ProfileWriteContext.Request,
+                            request.ProfileWriteContext.CompiledScopeCatalog
+                        );
+
+                    var writeContextContractFailures = ProfileWriteContractValidator.ValidateWriteContext(
+                        profileWriteContext,
+                        request.ProfileWriteContext.CompiledScopeCatalog,
+                        request.ProfileWriteContext.ProfileName,
+                        resourceDisplayName,
+                        httpMethod,
+                        operationLabel
+                    );
+
+                    if (writeContextContractFailures.Length > 0)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return BuildContractMismatchResult(
+                            request.OperationKind,
+                            writeContextContractFailures
+                        );
+                    }
+                }
             }
 
-            var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
-                new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
+            var mergeOutcome = _mergeSynthesizer.Synthesize(
+                new RelationalWriteMergeRequest(
+                    request.WritePlan,
+                    flattenedWriteSet,
+                    currentState,
+                    ProfileRequest: request.ProfileWriteContext?.Request,
+                    ProfileContext: profileWriteContext,
+                    CompiledScopeCatalog: request.ProfileWriteContext?.CompiledScopeCatalog,
+                    SelectedBody: request.ProfileWriteContext is null ? executionRequest.SelectedBody : null
+                )
             );
+
+            if (mergeOutcome is RelationalWriteMergeSynthesisOutcome.ContractMismatch(var mergeMismatches))
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return BuildContractMismatchResultFromMessages(request.OperationKind, mergeMismatches);
+            }
+
+            if (mergeOutcome is RelationalWriteMergeSynthesisOutcome.ValidationFailure(var failures))
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return BuildValidationFailureResult(
+                    request.OperationKind,
+                    failures.Select(f => new WriteValidationFailure(new JsonPath("$"), f.Message)).ToArray()
+                );
+            }
+
+            var mergeResult = ((RelationalWriteMergeSynthesisOutcome.Success)mergeOutcome).MergeResult;
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
                 executionRequest,
-                noProfileMergeResult
+                mergeResult
             );
 
             if (identityStabilityFailure is not null)
@@ -176,7 +271,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (
                 targetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
-                && RelationalWriteGuardedNoOp.IsNoOpCandidate(noProfileMergeResult)
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
             )
             {
                 var isCurrent = await _writeFreshnessChecker
@@ -209,8 +304,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            var persistedTarget = await _noProfilePersister
-                .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
+            var persistedTarget = await _persister
+                .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
             ValidatePersistedTargetIdentity(executionRequest.TargetContext, persistedTarget);
@@ -429,20 +524,52 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private const string ProfilePersistPendingMessage =
-        "Profile-aware relational merge/persist pending DMS-1124.";
+    /// <summary>
+    /// Returns a 403 (NotAuthorized) result when the profile marks the root resource as
+    /// non-creatable. This is defense-in-depth — the middleware normally catches creatability
+    /// violations, but the backend gate ensures correct HTTP semantics if that path is bypassed.
+    /// Only reachable under <see cref="RelationalWriteTargetContext.CreateNew"/>, which
+    /// <see cref="RelationalWriteExecutorRequest"/> constrains to <see cref="RelationalWriteOperationKind.Post"/>.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult()
+    {
+        string[] errors = ["The profile does not allow creating new instances of this resource."];
+        return new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureNotAuthorized(errors));
+    }
 
-    private static RelationalWriteExecutorResult BuildProfilePersistPendingResult(
-        RelationalWriteOperationKind operationKind
+    /// <summary>
+    /// Returns a 500 (UnknownFailure) result when a contract mismatch is detected between
+    /// Core-emitted profile metadata and the compiled backend scope state. These are category-5
+    /// internal errors indicating a pipeline bug, not user-caused validation failures.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildContractMismatchResult(
+        RelationalWriteOperationKind operationKind,
+        ProfileFailure[] contractFailures
+    ) =>
+        BuildContractMismatchResultFromMessages(
+            operationKind,
+            contractFailures.Select(f => f.Message).ToImmutableArray()
+        );
+
+    /// <summary>
+    /// Returns a 500 (UnknownFailure) result from raw contract-mismatch messages detected during
+    /// merge synthesis. Used by <see cref="RelationalWriteMergeSynthesisOutcome.ContractMismatch"/> paths
+    /// that surface Core-backend contract gaps too late for address-level validator diagnostics.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildContractMismatchResultFromMessages(
+        RelationalWriteOperationKind operationKind,
+        ImmutableArray<string> mismatchMessages
     )
     {
+        var message = string.Join("; ", mismatchMessages);
+
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(ProfilePersistPendingMessage)
+                new UpsertResult.UnknownFailure($"Profile write contract mismatch: {message}")
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(ProfilePersistPendingMessage)
+                new UpdateResult.UnknownFailure($"Profile write contract mismatch: {message}")
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
@@ -510,7 +637,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         var currentState = await _currentStateLoader
             .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
+                new RelationalWriteCurrentStateLoadRequest(
+                    request.ExistingDocumentReadPlan!,
+                    targetContext,
+                    requiresReconstitution: request.ProfileWriteContext is not null
+                ),
                 writeSession,
                 cancellationToken
             )
@@ -602,7 +733,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             .LoadAsync(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ExistingDocumentReadPlan!,
-                    existingTargetContext
+                    existingTargetContext,
+                    requiresReconstitution: request.ProfileWriteContext is not null
                 ),
                 writeSession,
                 cancellationToken

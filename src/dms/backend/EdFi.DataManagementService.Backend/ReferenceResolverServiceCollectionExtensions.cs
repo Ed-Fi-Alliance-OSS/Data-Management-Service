@@ -72,19 +72,14 @@ public static class ReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<
-                IRelationalWriteNoProfileMergeSynthesizer,
-                RelationalWriteNoProfileMergeSynthesizer
-            >()
-        );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IRelationalWriteNoProfilePersister, RelationalWriteNoProfilePersister>()
-        );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<
                 IRelationalWriteExceptionClassifier,
                 NoOpRelationalWriteExceptionClassifier
             >()
         );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IRelationalWriteMergeSynthesizer, RelationalWriteMergeSynthesizer>()
+        );
+        services.TryAdd(ServiceDescriptor.Scoped<IRelationalWritePersister, RelationalWritePersister>());
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
         services.TryAdd(
             ServiceDescriptor.Scoped<

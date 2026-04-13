@@ -6,12 +6,13 @@
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
 internal interface IRelationalWritePersister
 {
-    Task PersistAsync(
+    Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -21,7 +22,7 @@ internal interface IRelationalWritePersister
 
 internal sealed class RelationalWritePersister : IRelationalWritePersister
 {
-    public async Task PersistAsync(
+    public async Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -65,7 +66,17 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        return new RelationalWritePersistResult(rootDocumentId, GetTargetDocumentUuid(targetContext));
     }
+
+    private static DocumentUuid GetTargetDocumentUuid(RelationalWriteTargetContext targetContext) =>
+        targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew(var documentUuid) => documentUuid,
+            RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) => documentUuid,
+            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
+        };
 
     private static async Task ExecuteDeletesAsync(
         SqlDialect dialect,
