@@ -307,7 +307,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         // --- Root table (always present) ---
         var rootPlan = request.FlattenedWriteSet.RootRow.TableWritePlan;
         var rootStoredScopeState = scopeLookup.TryGetStoredScopeState("$");
-        var rootHiddenMemberPaths = rootStoredScopeState?.HiddenMemberPaths ?? [];
+        var rootHiddenMemberPaths = HiddenMemberPathVocabulary.ToJsonPathRelative(
+            rootStoredScopeState?.HiddenMemberPaths ?? []
+        );
         var docRefBindings = request.WritePlan.Model.DocumentReferenceBindings;
 
         var (inlinedClearablePaths, inlinedHiddenPaths) = GetInlinedScopePaths(
@@ -534,7 +536,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             if (requestScopeState is { Visibility: ProfileVisibilityKind.VisiblePresent })
             {
                 // Visible present: classify bindings and overlay hidden values from current state
-                var hiddenMemberPaths = storedScopeState?.HiddenMemberPaths ?? [];
+                var hiddenMemberPaths = HiddenMemberPathVocabulary.ToJsonPathRelative(
+                    storedScopeState?.HiddenMemberPaths ?? []
+                );
                 var (extClearable, extHidden) = GetInlinedScopePaths(tablePlan, inlinedScopePathsByTable);
                 var augmentedHidden =
                     extHidden.Length > 0 ? hiddenMemberPaths.AddRange(extHidden) : hiddenMemberPaths;
@@ -746,7 +750,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             if (requestScopeState is { Visibility: ProfileVisibilityKind.VisiblePresent })
             {
                 // Visible present: classify bindings and overlay hidden values from current state
-                var hiddenMemberPaths = storedScopeState?.HiddenMemberPaths ?? [];
+                var hiddenMemberPaths = HiddenMemberPathVocabulary.ToJsonPathRelative(
+                    storedScopeState?.HiddenMemberPaths ?? []
+                );
 
                 // When inside a collection context, use per-instance inlined scope path
                 // computation so that different collection items can have different inlined
@@ -1220,7 +1226,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([collMismatch]);
             }
 
-            var hiddenMemberPaths = storedRow.HiddenMemberPaths;
+            var hiddenMemberPaths = HiddenMemberPathVocabulary.ToJsonPathRelative(
+                storedRow.HiddenMemberPaths
+            );
             var augmentedCollHidden =
                 collHidden.Length > 0 ? hiddenMemberPaths.AddRange(collHidden) : hiddenMemberPaths;
             var classifications = RelationalWriteBindingClassifier.Classify(

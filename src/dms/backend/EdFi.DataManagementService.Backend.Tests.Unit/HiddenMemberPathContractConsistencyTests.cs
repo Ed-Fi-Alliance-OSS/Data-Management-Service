@@ -65,7 +65,11 @@ public class Given_Core_Shaped_HiddenMemberPaths_Reach_The_Classifier
         // Core vocabulary: bare name, no "$." prefix.
         ImmutableArray<string> coreShapedHidden = ["name"];
 
-        var result = RelationalWriteBindingClassifier.Classify(_plan, coreShapedHidden);
+        // HiddenMemberPathVocabulary.ToJsonPathRelative normalizes Core-shaped bare
+        // names to the "$." vocabulary the classifier expects.  This is the same
+        // conversion that RelationalWriteMerge applies at every ingestion site.
+        var normalized = HiddenMemberPathVocabulary.ToJsonPathRelative(coreShapedHidden);
+        var result = RelationalWriteBindingClassifier.Classify(_plan, normalized);
 
         // index 1 = Scalar binding for "$.name"
         result[1].Should().Be(BindingClassification.HiddenPreserved);
