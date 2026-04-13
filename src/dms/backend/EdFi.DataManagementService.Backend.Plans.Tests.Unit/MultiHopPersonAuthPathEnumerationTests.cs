@@ -177,6 +177,46 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     }
 
     [Test]
+    public void It_should_find_StudentAssessmentRegistrationBatteryPartAssociation_Student_three_hop_path()
+    {
+        var entry = _multiHopEntries.Find(e =>
+            e.ResourceName == "StudentAssessmentRegistrationBatteryPartAssociation"
+            && e.PersonType == "Student"
+        );
+
+        entry
+            .Should()
+            .NotBeNull(
+                "StudentAssessmentRegistrationBatteryPartAssociation should have a multi-hop Student path"
+            );
+
+        entry!.HopCount.Should().Be(3);
+        entry
+            .SecurableElementJsonPaths.Should()
+            .Contain("$.studentAssessmentRegistrationReference.studentUniqueId");
+
+        entry.JoinPath.Should().HaveCount(3);
+
+        entry.JoinPath[0].SourceTable.Should().Be("edfi.StudentAssessmentRegistrationBatteryPartAssociation");
+        entry.JoinPath[0].SourceColumn.Should().Be("StudentAssessmentRegistration_DocumentId");
+        entry.JoinPath[0].TargetTable.Should().Be("edfi.StudentAssessmentRegistration");
+        entry.JoinPath[0].TargetColumn.Should().Be("DocumentId");
+
+        entry.JoinPath[1].SourceTable.Should().Be("edfi.StudentAssessmentRegistration");
+        entry
+            .JoinPath[1]
+            .SourceColumn.Should()
+            .Be("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea");
+        entry.JoinPath[1].TargetTable.Should().Be("edfi.StudentEducationOrganizationAssessmentAccommodation");
+        entry.JoinPath[1].TargetColumn.Should().Be("DocumentId");
+
+        entry.JoinPath[2].SourceTable.Should().Be("edfi.StudentEducationOrganizationAssessmentAccommodation");
+        entry.JoinPath[2].SourceColumn.Should().Be("Student_DocumentId");
+        entry.JoinPath[2].TargetTable.Should().Be("edfi.Student");
+        entry.JoinPath[2].TargetColumn.Should().Be("DocumentId");
+    }
+
+    [Test]
     public void It_should_exclude_single_hop_paths()
     {
         _multiHopEntries.Should().OnlyContain(e => e.HopCount > 1);
