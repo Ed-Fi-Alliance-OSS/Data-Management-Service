@@ -82,6 +82,7 @@ public static class DocumentReconstituter
         var rootTableRows = tableRowsInDependencyOrder[0];
         var rootTableModel = rootTableRows.TableModel;
         var rootRow = FindRootRow(documentId, rootTableRows);
+        var reconstitutionContext = new ReconstitutionContext(tableRowsInDependencyOrder);
 
         var result = new JsonObject();
 
@@ -101,7 +102,7 @@ public static class DocumentReconstituter
                 documentId,
                 null,
                 rootTableModel,
-                tableRowsInDependencyOrder,
+                reconstitutionContext,
                 referenceProjectionPlans,
                 descriptorProjectionSources,
                 descriptorUriLookup
@@ -299,13 +300,16 @@ public static class DocumentReconstituter
         long documentId,
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
     )
     {
-        var immediateChildren = FindImmediateChildTables(parentTableModel, tableRowsInDependencyOrder);
+        var immediateChildren = FindImmediateChildTables(
+            parentTableModel,
+            reconstitutionContext.TableRowsInDependencyOrder
+        );
 
         foreach (var childTableRows in immediateChildren)
         {
@@ -322,7 +326,7 @@ public static class DocumentReconstituter
                         parentCollectionItemId,
                         parentTableModel,
                         childTableRows,
-                        tableRowsInDependencyOrder,
+                        reconstitutionContext,
                         referenceProjectionPlans,
                         descriptorProjectionSources,
                         descriptorUriLookup
@@ -337,7 +341,7 @@ public static class DocumentReconstituter
                         parentCollectionItemId,
                         parentTableModel,
                         childTableRows,
-                        tableRowsInDependencyOrder,
+                        reconstitutionContext,
                         referenceProjectionPlans,
                         descriptorProjectionSources,
                         descriptorUriLookup
@@ -356,7 +360,7 @@ public static class DocumentReconstituter
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
         HydratedTableRows childTableRows,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
@@ -368,7 +372,8 @@ public static class DocumentReconstituter
             documentId,
             parentCollectionItemId,
             parentTableModel,
-            childTableRows
+            childTableRows,
+            reconstitutionContext
         );
 
         if (matchingRows.Count == 0)
@@ -381,18 +386,6 @@ public static class DocumentReconstituter
             childTableModel.JsonScope,
             parentTableModel.JsonScope
         );
-
-        // Sort by ordinal if an Ordinal column exists
-        var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
-        if (ordinalColumnOrdinal >= 0)
-        {
-            matchingRows.Sort(
-                (a, b) =>
-                    Convert
-                        .ToInt32(a[ordinalColumnOrdinal])
-                        .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal]))
-            );
-        }
 
         var array = new JsonArray();
 
@@ -427,7 +420,7 @@ public static class DocumentReconstituter
                     documentId,
                     collectionItemId,
                     childTableModel,
-                    tableRowsInDependencyOrder,
+                    reconstitutionContext,
                     referenceProjectionPlans,
                     descriptorProjectionSources,
                     descriptorUriLookup
@@ -451,7 +444,7 @@ public static class DocumentReconstituter
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
         HydratedTableRows childTableRows,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
@@ -463,7 +456,8 @@ public static class DocumentReconstituter
             documentId,
             parentCollectionItemId,
             parentTableModel,
-            childTableRows
+            childTableRows,
+            reconstitutionContext
         );
 
         if (matchingRows.Count == 0)
@@ -514,7 +508,7 @@ public static class DocumentReconstituter
             documentId,
             extensionScopeId,
             childTableModel,
-            tableRowsInDependencyOrder,
+            reconstitutionContext,
             referenceProjectionPlans,
             descriptorProjectionSources,
             descriptorUriLookup
@@ -537,27 +531,16 @@ public static class DocumentReconstituter
     /// <summary>
     /// Filters child rows to those matching the given parent scope.
     /// </summary>
-    private static List<object?[]> FilterChildRows(
+    private static IReadOnlyList<object?[]> FilterChildRows(
         long documentId,
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
-        HydratedTableRows childTableRows
+        HydratedTableRows childTableRows,
+        ReconstitutionContext reconstitutionContext
     )
     {
-        var childTableModel = childTableRows.TableModel;
-        var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
-
-        if (parentScopeColumns.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot filter child rows for table '{childTableModel.Table}': "
-                    + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
-            );
-        }
-
         // For root children, the parent scope locator is DocumentId
         // For nested children, the parent scope locator is the parent's CollectionItemId
-        var parentLocatorOrdinal = FindColumnOrdinalByName(childTableModel, parentScopeColumns[0]);
         long matchValue;
 
         if (
@@ -572,16 +555,7 @@ public static class DocumentReconstituter
             matchValue = documentId;
         }
 
-        List<object?[]> filtered = [];
-        foreach (var row in childTableRows.Rows)
-        {
-            if (Convert.ToInt64(row[parentLocatorOrdinal]) == matchValue)
-            {
-                filtered.Add(row);
-            }
-        }
-
-        return filtered;
+        return reconstitutionContext.GetRowsByParentLocator(childTableRows, matchValue);
     }
 
     /// <summary>
@@ -1084,6 +1058,88 @@ public static class DocumentReconstituter
         }
 
         return -1;
+    }
+
+    private sealed class ReconstitutionContext(IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder)
+    {
+        private readonly Dictionary<DbTableName, ChildRowIndex> _childRowIndexesByTable = [];
+
+        public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder => tableRowsInDependencyOrder;
+
+        public IReadOnlyList<object?[]> GetRowsByParentLocator(
+            HydratedTableRows childTableRows,
+            long parentLocatorValue
+        )
+        {
+            if (!_childRowIndexesByTable.TryGetValue(childTableRows.TableModel.Table, out var childRowIndex))
+            {
+                childRowIndex = ChildRowIndex.Create(childTableRows);
+                _childRowIndexesByTable[childTableRows.TableModel.Table] = childRowIndex;
+            }
+
+            return childRowIndex.GetRows(parentLocatorValue);
+        }
+    }
+
+    private sealed class ChildRowIndex(
+        IReadOnlyDictionary<long, IReadOnlyList<object?[]>> rowsByParentLocator
+    )
+    {
+        public IReadOnlyList<object?[]> GetRows(long parentLocatorValue) =>
+            rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows)
+                ? rows
+                : Array.Empty<object?[]>();
+
+        public static ChildRowIndex Create(HydratedTableRows childTableRows)
+        {
+            var childTableModel = childTableRows.TableModel;
+            var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
+
+            if (parentScopeColumns.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot filter child rows for table '{childTableModel.Table}': "
+                        + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
+                );
+            }
+
+            var parentLocatorOrdinal = FindColumnOrdinalByName(childTableModel, parentScopeColumns[0]);
+            var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
+            Dictionary<long, List<object?[]>> rowsByParentLocator = [];
+
+            foreach (var row in childTableRows.Rows)
+            {
+                var parentLocatorValue = Convert.ToInt64(row[parentLocatorOrdinal]);
+
+                if (!rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows))
+                {
+                    rows = [];
+                    rowsByParentLocator[parentLocatorValue] = rows;
+                }
+
+                rows.Add(row);
+            }
+
+            if (ordinalColumnOrdinal >= 0)
+            {
+                foreach (var rows in rowsByParentLocator.Values)
+                {
+                    rows.Sort(
+                        (a, b) =>
+                            Convert
+                                .ToInt32(a[ordinalColumnOrdinal])
+                                .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal]))
+                    );
+                }
+            }
+
+            return new ChildRowIndex(
+                rowsByParentLocator.ToDictionary(
+                    static entry => entry.Key,
+                    static entry => (IReadOnlyList<object?[]>)entry.Value
+                )
+            );
+        }
     }
 
     private sealed class PropertyOrderNode
