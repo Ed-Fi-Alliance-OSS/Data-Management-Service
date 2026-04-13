@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -3525,5 +3526,43 @@ public class Given_DocumentReconstituter_With_Empty_Collection_Extension_Scope
     public void It_should_not_emit_an_empty_extension_scope()
     {
         _result["addresses"]![0]!["_ext"].Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_PropertyOrderNode_Empty_Sentinel
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var propertyOrderNodeType = typeof(DocumentReconstituter).GetNestedType(
+            "PropertyOrderNode",
+            BindingFlags.NonPublic
+        );
+        propertyOrderNodeType.Should().NotBeNull();
+
+        var emptyField = propertyOrderNodeType!.GetField("Empty", BindingFlags.Public | BindingFlags.Static);
+        emptyField.Should().NotBeNull();
+
+        var getOrAddChildMethod = propertyOrderNodeType.GetMethod(
+            "GetOrAddChild",
+            BindingFlags.Public | BindingFlags.Instance
+        );
+        getOrAddChildMethod.Should().NotBeNull();
+
+        var emptyNode = emptyField!.GetValue(null);
+
+        var act = () => getOrAddChildMethod!.Invoke(emptyNode, ["unexpectedProperty"]);
+
+        _exception = act.Should().Throw<TargetInvocationException>().Which.InnerException!;
+    }
+
+    [Test]
+    public void It_should_reject_mutation()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception.Message.Should().Contain("read-only property-order sentinel");
     }
 }

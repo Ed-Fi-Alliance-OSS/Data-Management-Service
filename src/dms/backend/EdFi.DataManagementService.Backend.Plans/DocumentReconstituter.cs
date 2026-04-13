@@ -1088,15 +1088,28 @@ public static class DocumentReconstituter
 
     private sealed class PropertyOrderNode
     {
-        public static readonly PropertyOrderNode Empty = new();
+        public static readonly PropertyOrderNode Empty = new(isReadOnly: true);
 
         private readonly Dictionary<string, PropertyOrderNode> _childrenByName = new(StringComparer.Ordinal);
         private readonly List<KeyValuePair<string, PropertyOrderNode>> _childrenInOrder = [];
+        private readonly bool _isReadOnly;
+
+        public PropertyOrderNode(bool isReadOnly = false)
+        {
+            _isReadOnly = isReadOnly;
+        }
 
         public IReadOnlyList<KeyValuePair<string, PropertyOrderNode>> ChildrenInOrder => _childrenInOrder;
 
         public PropertyOrderNode GetOrAddChild(string propertyName)
         {
+            if (_isReadOnly)
+            {
+                throw new InvalidOperationException(
+                    "Cannot mutate the read-only property-order sentinel node."
+                );
+            }
+
             if (_childrenByName.TryGetValue(propertyName, out var existingChild))
             {
                 return existingChild;
