@@ -274,9 +274,7 @@ public class Given_A_Profiled_Relational_Post
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.UnknownFailure(
-                            "Profile-aware relational merge/persist pending DMS-1124."
-                        )
+                        new UpsertResult.InsertSuccess(documentUuid)
                     );
                 }
             );
@@ -380,9 +378,7 @@ public class Given_A_Profiled_Relational_Put
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UnknownFailure(
-                            "Profile-aware relational merge/persist pending DMS-1124."
-                        )
+                        new UpdateResult.UpdateSuccess(documentUuid)
                     );
                 }
             );

@@ -7,6 +7,7 @@ using System.Collections;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -18,14 +19,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Relational_Write_No_Profile_Persister
+public class Given_Relational_Write_Persister
 {
-    private RelationalWriteNoProfilePersister _sut = null!;
+    private RelationalWritePersister _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfilePersister();
+        _sut = new RelationalWritePersister();
     }
 
     [Test]
@@ -2017,9 +2018,9 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static RelationalWriteNoProfileTableRow CreateRow(params object?[] values)
+    private static MergeTableRow CreateRow(params object?[] values)
     {
-        return new RelationalWriteNoProfileTableRow(
+        return new MergeTableRow(
             values.Select(value =>
                 value switch
                 {
@@ -2253,5 +2254,214 @@ public class Given_Relational_Write_No_Profile_Persister
         public override void Commit() { }
 
         public override void Rollback() { }
+    }
+}
+
+internal sealed record RelationalWriteNoProfileMergeResult
+{
+    public RelationalWriteNoProfileMergeResult(
+        IEnumerable<RelationalWriteNoProfileTableState> tablesInDependencyOrder
+    )
+    {
+        TablesInDependencyOrder = [.. tablesInDependencyOrder];
+    }
+
+    public IReadOnlyList<RelationalWriteNoProfileTableState> TablesInDependencyOrder { get; init; }
+
+    public static implicit operator RelationalWriteMergeResult(
+        RelationalWriteNoProfileMergeResult legacyResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(legacyResult);
+
+        return new RelationalWriteMergeResult(
+            legacyResult.TablesInDependencyOrder.Select(tableState => tableState.ToUnifiedState())
+        );
+    }
+}
+
+internal sealed record RelationalWriteNoProfileTableState
+{
+    public RelationalWriteNoProfileTableState(
+        TableWritePlan tableWritePlan,
+        IEnumerable<MergeTableRow> currentRows,
+        IEnumerable<MergeTableRow> mergedRows
+    )
+    {
+        TableWritePlan = tableWritePlan;
+        CurrentRows = [.. currentRows];
+        MergedRows = [.. mergedRows];
+    }
+
+    public TableWritePlan TableWritePlan { get; init; }
+
+    public IReadOnlyList<MergeTableRow> CurrentRows { get; init; }
+
+    public IReadOnlyList<MergeTableRow> MergedRows { get; init; }
+
+    public RelationalWriteMergeTableState ToUnifiedState()
+    {
+        List<MergeRowInsert> inserts = [];
+        List<MergeRowUpdate> updates = [];
+        List<MergeRowDelete> deletes = [];
+
+        if (IsCollectionAlignedExtensionScope(TableWritePlan))
+        {
+            var currentRowsByPhysicalIdentity = CurrentRows.ToDictionary(currentRow =>
+                ResolvePhysicalRowIdentityKey(TableWritePlan, currentRow)
+            );
+            var mergedRowsByPhysicalIdentity = MergedRows.ToDictionary(mergedRow =>
+                ResolvePhysicalRowIdentityKey(TableWritePlan, mergedRow)
+            );
+
+            foreach (var currentRow in CurrentRows)
+            {
+                if (
+                    !mergedRowsByPhysicalIdentity.ContainsKey(
+                        ResolvePhysicalRowIdentityKey(TableWritePlan, currentRow)
+                    )
+                )
+                {
+                    deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
+                }
+            }
+
+            foreach (var mergedRow in MergedRows)
+            {
+                var physicalIdentity = ResolvePhysicalRowIdentityKey(TableWritePlan, mergedRow);
+
+                if (!currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow))
+                {
+                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+                    continue;
+                }
+
+                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
+                {
+                    updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
+                }
+            }
+        }
+        else if (TableWritePlan.CollectionMergePlan is not null)
+        {
+            var currentRowsByStableIdentity = CurrentRows.ToDictionary(currentRow =>
+                ResolveStableRowIdentityLiteral(
+                    TableWritePlan,
+                    currentRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                )
+            );
+
+            foreach (var currentRow in CurrentRows)
+            {
+                var stableRowIdentity = ResolveStableRowIdentityLiteral(
+                    TableWritePlan,
+                    currentRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                );
+
+                if (
+                    !MergedRows.Any(mergedRow =>
+                        mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                        is FlattenedWriteValue.Literal
+                        && ResolveStableRowIdentityLiteral(
+                                TableWritePlan,
+                                mergedRow.Values[
+                                    TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex
+                                ]
+                            )
+                            == stableRowIdentity
+                    )
+                )
+                {
+                    deletes.Add(new MergeRowDelete(stableRowIdentity));
+                }
+            }
+
+            foreach (var mergedRow in MergedRows)
+            {
+                var stableIdentityValue =
+                    mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex];
+
+                if (stableIdentityValue is FlattenedWriteValue.UnresolvedCollectionItemId)
+                {
+                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+                    continue;
+                }
+
+                var stableRowIdentity = ResolveStableRowIdentityLiteral(
+                    TableWritePlan,
+                    stableIdentityValue
+                );
+
+                if (!currentRowsByStableIdentity.TryGetValue(stableRowIdentity, out var currentRow))
+                {
+                    throw new InvalidOperationException(
+                        $"Compatibility merge result for table '{TableWritePlan.TableModel.Table}' produced stable identity '{stableRowIdentity}' without a matching current row."
+                    );
+                }
+
+                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
+                {
+                    updates.Add(
+                        new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: stableRowIdentity)
+                    );
+                }
+            }
+        }
+        else
+        {
+            var currentRow = CurrentRows.Count == 1 ? CurrentRows[0] : null;
+            var mergedRow = MergedRows.Count == 1 ? MergedRows[0] : null;
+
+            if (currentRow is null && mergedRow is not null)
+            {
+                inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+            }
+            else if (currentRow is not null && mergedRow is null)
+            {
+                deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
+            }
+            else if (
+                currentRow is not null
+                && mergedRow is not null
+                && !currentRow.Values.SequenceEqual(mergedRow.Values)
+            )
+            {
+                updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
+            }
+        }
+
+        return new RelationalWriteMergeTableState(
+            TableWritePlan,
+            inserts,
+            updates,
+            deletes,
+            preservedRows: [],
+            comparableCurrentRowset: CurrentRows,
+            comparableMergedRowset: MergedRows
+        );
+    }
+
+    private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
+        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
+
+    private static string ResolvePhysicalRowIdentityKey(TableWritePlan tableWritePlan, MergeTableRow row) =>
+        RelationalWritePersisterShared.ResolvePhysicalRowIdentityKey(tableWritePlan, row);
+
+    private static long ResolveStableRowIdentityLiteral(
+        TableWritePlan tableWritePlan,
+        FlattenedWriteValue stableRowIdentityValue
+    )
+    {
+        return stableRowIdentityValue switch
+        {
+            FlattenedWriteValue.Literal { Value: long stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: int stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: short stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: byte stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: var value } => Convert.ToInt64(value, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Collection table '{tableWritePlan.TableModel.Table}' expected a literal stable row identity."
+            ),
+        };
     }
 }

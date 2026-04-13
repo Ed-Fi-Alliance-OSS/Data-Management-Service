@@ -4,6 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -38,6 +41,13 @@ internal static class ProfileWriteContractValidator
             operation,
             failures
         );
+        // Scope completeness is not checked here because stored scope states are not yet
+        // available (C6 projection has not run); ValidateWriteContext performs that check
+        // after stored state is projected so it can correctly skip Hidden scopes.
+        // On CREATE there is no stored state, so hidden scopes are invisible to the
+        // flattener and merge. Any visible-scope gaps that reach the merge surface as a
+        // deterministic ContractMismatch outcome (mapped to a category-5 UnknownFailure
+        // by the executor) instead of an unstructured generic 500.
         return [.. failures];
     }
 
@@ -98,6 +108,37 @@ internal static class ProfileWriteContractValidator
         ValidateRequestContractCore(
             context.Request,
             catalogByJsonScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+
+        // Validate completeness: every non-root, non-collection scope has a RequestScopeState.
+        // Pass stored scope states so scopes with Hidden stored visibility can be skipped —
+        // hidden scopes do not emit RequestScopeStates because the merge handles them via
+        // StoredScopeState, not RequestScopeState.
+        ValidateRequestScopeCompleteness(
+            context.Request,
+            scopeCatalog,
+            context.StoredScopeStates,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+
+        // Validate completeness on the stored side: every compiled scope reachable through
+        // a visible stored collection-ancestor instance (plus the root scope) must have a
+        // corresponding StoredScopeState. Without this, a dropped StoredScopeState would
+        // silently default to "no hidden members" inside the merge's hidden-member overlay
+        // path and could overwrite hidden columns or delete existing rows on VisibleAbsent
+        // instead of surfacing a deterministic failure.
+        ValidateStoredScopeCompleteness(
+            context,
+            scopeCatalog,
             profileName,
             resourceName,
             method,
@@ -207,6 +248,381 @@ internal static class ProfileWriteContractValidator
         return invalidPaths.Count > 0 ? invalidPaths : null;
     }
 
+    /// <summary>
+    /// Validates that every non-root, non-collection compiled scope has a corresponding
+    /// <see cref="RequestScopeState"/> for each visible collection-ancestor instance
+    /// it is nested under, unless that specific instance is Hidden in stored state.
+    /// </summary>
+    /// <remarks>
+    /// Per-instance (not scope-name-only) completeness: a scope nested under a collection
+    /// must have one <see cref="RequestScopeState"/> per visible collection item. Without
+    /// this, Core can emit a <see cref="RequestScopeState"/> for one instance and silently
+    /// drop another, and the backend merge's per-instance lookup would surface only as a
+    /// <see cref="RelationalWriteMergeSynthesisOutcome.ContractMismatch"/> later in synthesis.
+    /// Catching the gap here provides a cleaner category-5 diagnostic with full profile
+    /// and resource context before the merge runs.
+    ///
+    /// Hidden visibility is also checked per-instance: a scope may be VisiblePresent for
+    /// one collection item and Hidden for another. A missing <see cref="RequestScopeState"/>
+    /// is only tolerated when that specific (scope, ancestor-chain) is Hidden in stored state.
+    /// </remarks>
+    private static void ValidateRequestScopeCompleteness(
+        ProfileAppliedWriteRequest request,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        ImmutableArray<StoredScopeState> storedScopeStates,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        // Build the set of emitted request-scope instance keys: (JsonScope, ancestorKey).
+        var existingRequestKeys = new HashSet<string>(
+            request.RequestScopeStates.Select(scopeState =>
+                BuildScopeInstanceKey(
+                    scopeState.Address.JsonScope,
+                    scopeState.Address.AncestorCollectionInstances
+                )
+            ),
+            StringComparer.Ordinal
+        );
+
+        // Build the set of Hidden stored-scope instance keys. Only the specific
+        // (scope, ancestor-chain) marked Hidden is exempt from requiring a RequestScopeState.
+        var hiddenStoredKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var storedState in storedScopeStates)
+        {
+            if (storedState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                hiddenStoredKeys.Add(
+                    BuildScopeInstanceKey(
+                        storedState.Address.JsonScope,
+                        storedState.Address.AncestorCollectionInstances
+                    )
+                );
+            }
+        }
+
+        // Group visible request collection items by their JsonScope so we can quickly
+        // enumerate the instance tuples for any non-collection scope's innermost
+        // collection ancestor.
+        var visibleItemsByCollectionScope = new Dictionary<string, List<VisibleRequestCollectionItem>>(
+            StringComparer.Ordinal
+        );
+        foreach (var item in request.VisibleRequestCollectionItems)
+        {
+            if (!visibleItemsByCollectionScope.TryGetValue(item.Address.JsonScope, out var list))
+            {
+                list = [];
+                visibleItemsByCollectionScope[item.Address.JsonScope] = list;
+            }
+            list.Add(item);
+        }
+
+        foreach (var scope in scopeCatalog)
+        {
+            if (scope.ScopeKind is ScopeKind.Root or ScopeKind.Collection)
+            {
+                continue;
+            }
+
+            foreach (
+                var expectedAncestors in EnumerateExpectedAncestorInstances(
+                    scope,
+                    visibleItemsByCollectionScope
+                )
+            )
+            {
+                var key = BuildScopeInstanceKey(scope.JsonScope, expectedAncestors);
+
+                if (hiddenStoredKeys.Contains(key))
+                {
+                    continue;
+                }
+
+                if (!existingRequestKeys.Contains(key))
+                {
+                    failures.Add(
+                        ProfileFailures.CoreBackendContractMismatch(
+                            ProfileFailureEmitter.BackendProfileWriteContext,
+                            $"Compiled non-collection scope '{scope.JsonScope}' has no corresponding "
+                                + $"RequestScopeState for collection-ancestor instance '{key}'.",
+                            new ProfileFailureContext(profileName, resourceName, method, operation)
+                        )
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validates that every non-root, non-collection compiled scope has a corresponding
+    /// <see cref="StoredScopeState"/> for each visible stored collection-ancestor instance
+    /// it is nested under.
+    /// </summary>
+    /// <remarks>
+    /// Stored-side mirror of <see cref="ValidateRequestScopeCompleteness"/>. The merge
+    /// reads <see cref="StoredScopeState.HiddenMemberPaths"/> via a null-coalescing fallback
+    /// to <c>[]</c>, so a missing entry silently degrades to "no hidden members" and can
+    /// overwrite preserved columns or drive a delete on VisibleAbsent against real data.
+    /// Surfacing the gap here as a category-5 contract mismatch keeps the failure
+    /// deterministic instead of letting it manifest as silent data corruption.
+    /// </remarks>
+    private static void ValidateStoredScopeCompleteness(
+        ProfileAppliedWriteContext context,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        // Build the set of emitted stored-scope instance keys: (JsonScope, ancestorKey).
+        var existingStoredKeys = new HashSet<string>(
+            context.StoredScopeStates.Select(scopeState =>
+                BuildScopeInstanceKey(
+                    scopeState.Address.JsonScope,
+                    scopeState.Address.AncestorCollectionInstances
+                )
+            ),
+            StringComparer.Ordinal
+        );
+
+        // Group visible stored collection rows by their JsonScope so we can quickly
+        // enumerate the instance tuples for any non-collection scope's innermost
+        // collection ancestor on the stored side.
+        var visibleStoredByCollectionScope = new Dictionary<string, List<VisibleStoredCollectionRow>>(
+            StringComparer.Ordinal
+        );
+        foreach (var row in context.VisibleStoredCollectionRows)
+        {
+            if (!visibleStoredByCollectionScope.TryGetValue(row.Address.JsonScope, out var list))
+            {
+                list = [];
+                visibleStoredByCollectionScope[row.Address.JsonScope] = list;
+            }
+            list.Add(row);
+        }
+
+        // Root scope is validated explicitly — unlike request-side completeness (where the
+        // request body itself signals the root is present), the merge reads root stored
+        // hidden-member paths at the very start of synthesis and a missing entry silently
+        // defaults to empty, potentially overwriting hidden root columns.
+        var rootScope = scopeCatalog.FirstOrDefault(s => s.ScopeKind == ScopeKind.Root);
+        if (rootScope is not null)
+        {
+            var rootKey = BuildScopeInstanceKey(rootScope.JsonScope, []);
+            if (!existingStoredKeys.Contains(rootKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Compiled root scope '{rootScope.JsonScope}' has no corresponding StoredScopeState.",
+                        new ProfileFailureContext(profileName, resourceName, method, operation)
+                    )
+                );
+            }
+        }
+
+        foreach (var scope in scopeCatalog)
+        {
+            if (scope.ScopeKind is ScopeKind.Root or ScopeKind.Collection)
+            {
+                continue;
+            }
+
+            foreach (
+                var expectedAncestors in EnumerateExpectedStoredAncestorInstances(
+                    scope,
+                    visibleStoredByCollectionScope
+                )
+            )
+            {
+                var key = BuildScopeInstanceKey(scope.JsonScope, expectedAncestors);
+
+                if (!existingStoredKeys.Contains(key))
+                {
+                    failures.Add(
+                        ProfileFailures.CoreBackendContractMismatch(
+                            ProfileFailureEmitter.BackendProfileWriteContext,
+                            $"Compiled non-collection scope '{scope.JsonScope}' has no corresponding "
+                                + $"StoredScopeState for collection-ancestor instance '{key}'.",
+                            new ProfileFailureContext(profileName, resourceName, method, operation)
+                        )
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stored-side analog of <see cref="EnumerateExpectedAncestorInstances"/>. Yields a
+    /// single empty chain for top-level scopes; yields one chain per visible STORED row of
+    /// the innermost collection ancestor for nested scopes.
+    /// </summary>
+    private static IEnumerable<
+        ImmutableArray<AncestorCollectionInstance>
+    > EnumerateExpectedStoredAncestorInstances(
+        CompiledScopeDescriptor scope,
+        Dictionary<string, List<VisibleStoredCollectionRow>> visibleStoredByCollectionScope
+    )
+    {
+        if (scope.CollectionAncestorsInOrder.IsDefaultOrEmpty)
+        {
+            yield return [];
+            yield break;
+        }
+
+        var innermostCollection = scope.CollectionAncestorsInOrder[^1];
+
+        if (!visibleStoredByCollectionScope.TryGetValue(innermostCollection, out var rows) || rows.Count == 0)
+        {
+            // Innermost collection has no visible stored rows: the collection is empty
+            // in storage or entirely Hidden, so the merge will not consult StoredScopeStates
+            // for descendants and there is nothing to validate.
+            yield break;
+        }
+
+        foreach (
+            var ancestors in rows.Select(row =>
+                row.Address.ParentAddress.AncestorCollectionInstances.Add(
+                    new AncestorCollectionInstance(row.Address.JsonScope, row.Address.SemanticIdentityInOrder)
+                )
+            )
+        )
+        {
+            yield return ancestors;
+        }
+    }
+
+    /// <summary>
+    /// Enumerates the expected ancestor-collection-instance chains for a non-collection
+    /// scope given the request's visible collection items. Yields a single empty chain
+    /// for top-level scopes; yields one chain per visible item of the innermost collection
+    /// ancestor for nested scopes.
+    /// </summary>
+    private static IEnumerable<ImmutableArray<AncestorCollectionInstance>> EnumerateExpectedAncestorInstances(
+        CompiledScopeDescriptor scope,
+        Dictionary<string, List<VisibleRequestCollectionItem>> visibleItemsByCollectionScope
+    )
+    {
+        if (scope.CollectionAncestorsInOrder.IsDefaultOrEmpty)
+        {
+            yield return [];
+            yield break;
+        }
+
+        var innermostCollection = scope.CollectionAncestorsInOrder[^1];
+
+        if (
+            !visibleItemsByCollectionScope.TryGetValue(innermostCollection, out var items)
+            || items.Count == 0
+        )
+        {
+            // No visible items for the innermost collection → no instances to validate.
+            // Either the collection is empty in the request or entirely Hidden; in either
+            // case the merge won't materialize these descendants.
+            yield break;
+        }
+
+        foreach (
+            var ancestors in items.Select(item =>
+                item.Address.ParentAddress.AncestorCollectionInstances.Add(
+                    new AncestorCollectionInstance(
+                        item.Address.JsonScope,
+                        item.Address.SemanticIdentityInOrder
+                    )
+                )
+            )
+        )
+        {
+            yield return ancestors;
+        }
+    }
+
+    /// <summary>
+    /// Builds a stable string key combining a scope's JsonScope and its ancestor-collection-instance
+    /// chain. Encodes IsPresent to distinguish absent from present-null identity members so keys
+    /// match candidates keyed elsewhere in the backend merge.
+    /// </summary>
+    private static string BuildScopeInstanceKey(
+        string jsonScope,
+        ImmutableArray<AncestorCollectionInstance> ancestors
+    )
+    {
+        var sb = new StringBuilder();
+        sb.Append(jsonScope);
+        sb.Append('|');
+
+        if (ancestors.IsDefaultOrEmpty)
+        {
+            return sb.ToString();
+        }
+
+        var first = true;
+        foreach (var ancestor in ancestors)
+        {
+            if (!first)
+            {
+                sb.Append('\0');
+            }
+            first = false;
+
+            sb.Append(ancestor.JsonScope);
+
+            foreach (var part in ancestor.SemanticIdentityInOrder)
+            {
+                sb.Append('\0');
+                sb.Append(part.IsPresent ? '1' : '0');
+                sb.Append('\0');
+                sb.Append(ExtractJsonNodeStringValue(part.Value));
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Extracts a stable string representation of a <see cref="JsonNode"/> for use in
+    /// instance-key building. Mirrors the encoding used in the backend merge's ancestor
+    /// key builder so keys are comparable end-to-end.
+    /// </summary>
+    private static string ExtractJsonNodeStringValue(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return "";
+        }
+
+        if (node is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue<string>(out var s))
+            {
+                return s;
+            }
+            if (jsonValue.TryGetValue<long>(out var l))
+            {
+                return l.ToString(CultureInfo.InvariantCulture);
+            }
+            if (jsonValue.TryGetValue<int>(out var i))
+            {
+                return i.ToString(CultureInfo.InvariantCulture);
+            }
+            if (jsonValue.TryGetValue<double>(out var d))
+            {
+                return d.ToString(CultureInfo.InvariantCulture);
+            }
+            if (jsonValue.TryGetValue<bool>(out var b))
+            {
+                return b ? "True" : "False";
+            }
+        }
+
+        return node.ToString();
+    }
+
     private static Dictionary<string, CompiledScopeDescriptor> BuildCatalogLookup(
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     ) => scopeCatalog.ToDictionary(d => d.JsonScope);
@@ -289,8 +705,20 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
-        // Validate ParentAddress.JsonScope is a known scope
-        if (!catalogByJsonScope.ContainsKey(address.ParentAddress.JsonScope))
+        // Validate ParentAddress.JsonScope is a known scope AND matches the compiled
+        // scope's ImmediateParentJsonScope. A wrong-but-known parent would produce
+        // incorrect row matching during merge.
+        if (
+            !catalogByJsonScope.ContainsKey(address.ParentAddress.JsonScope)
+            || (
+                compiledScope.ImmediateParentJsonScope is not null
+                && !string.Equals(
+                    address.ParentAddress.JsonScope,
+                    compiledScope.ImmediateParentJsonScope,
+                    StringComparison.Ordinal
+                )
+            )
+        )
         {
             failures.Add(
                 ProfileFailures.ParentScopeMismatch(

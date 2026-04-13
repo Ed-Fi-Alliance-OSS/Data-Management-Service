@@ -30,9 +30,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class Given_Relational_Write_Seam
 {
-    private const string ProfilePersistPendingMessage =
-        "Profile-aware relational merge/persist pending DMS-1124.";
-
     private RelationalWriteSeamFixture _fixture = null!;
 
     [SetUp]
@@ -154,12 +151,14 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
-    public async Task It_maps_profiled_post_requests_to_the_executor_level_fenced_500_response()
+    public async Task It_routes_profiled_post_requests_through_the_executor_and_returns_success()
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(ProfilePersistPendingMessage)
+            writeResultFactory: request => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.InsertSuccess(
+                    ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
+                )
             )
         );
 
@@ -172,22 +171,28 @@ public class Given_Relational_Write_Seam
             )
         );
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
-            .GetValue<string>()
-            .Should()
-            .Be(ProfilePersistPendingMessage);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(201);
         harness.WriteExecutor.Requests.Should().ContainSingle();
+        var request = harness.WriteExecutor.Requests.Single();
+        request.ProfileWriteContext.Should().NotBeNull();
+        var createdDocumentUuid = (
+            (RelationalWriteTargetRequest.Post)request.TargetRequest
+        ).CandidateDocumentUuid;
+        requestInfo
+            .FrontendResponse.LocationHeaderPath.Should()
+            .Be($"/ed-fi/students/{createdDocumentUuid.Value}");
     }
 
     [Test]
-    public async Task It_maps_profiled_put_requests_to_the_executor_level_fenced_500_response()
+    public async Task It_routes_profiled_put_requests_through_the_executor_and_returns_success()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
-            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(ProfilePersistPendingMessage)
+            writeResultFactory: request => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(
+                    ((RelationalWriteTargetRequest.Put)request.TargetRequest).DocumentUuid
+                )
             )
         );
 
@@ -201,12 +206,13 @@ public class Given_Relational_Write_Seam
             )
         );
 
-        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
-            .GetValue<string>()
-            .Should()
-            .Be(ProfilePersistPendingMessage);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(204);
         harness.WriteExecutor.Requests.Should().ContainSingle();
+        var request = harness.WriteExecutor.Requests.Single();
+        request.ProfileWriteContext.Should().NotBeNull();
+        requestInfo
+            .FrontendResponse.LocationHeaderPath.Should()
+            .Be($"/ed-fi/students/{existingDocumentUuid.Value}");
     }
 
     [TestCase(SqlDialect.Pgsql)]

@@ -335,6 +335,10 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     childPlan.TableWritePlan,
                     values
                 );
+                var semanticIdentityPresenceFlags = MaterializeSemanticIdentityPresenceFlags(
+                    childPlan.TableWritePlan,
+                    collectionScopeInstance.ScopeNode
+                );
 
                 if (
                     firstOrdinalPathBySemanticIdentity.TryGetValue(
@@ -381,7 +385,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         collectionScopeInstance.RequestOrder,
                         values,
                         semanticIdentityValues,
-                        attachedAlignedScopeData,
+                        semanticIdentityPresenceFlags: semanticIdentityPresenceFlags,
+                        attachedAlignedScopeData: attachedAlignedScopeData,
                         collectionCandidates: nestedCollectionCandidates
                     )
                 );
@@ -1178,6 +1183,35 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         }
 
         return semanticIdentityValues;
+    }
+
+    /// <summary>
+    /// Determines presence flags for each semantic identity member by checking whether the
+    /// corresponding JSON property exists in the scope node.
+    /// </summary>
+    private static bool[] MaterializeSemanticIdentityPresenceFlags(
+        TableWritePlan tableWritePlan,
+        JsonNode scopeNode
+    )
+    {
+        var collectionMergePlan =
+            tableWritePlan.CollectionMergePlan
+            ?? throw new InvalidOperationException(
+                $"Collection table '{FormatTable(tableWritePlan)}' does not have a compiled collection merge plan."
+            );
+
+        var flags = new bool[collectionMergePlan.SemanticIdentityBindings.Length];
+
+        for (var i = 0; i < collectionMergePlan.SemanticIdentityBindings.Length; i++)
+        {
+            flags[i] = TryGetRelativeLeafNode(
+                scopeNode,
+                collectionMergePlan.SemanticIdentityBindings[i].RelativePath,
+                out _
+            );
+        }
+
+        return flags;
     }
 
     private static IReadOnlyList<FlattenedWriteValue> GetPhysicalRowIdentityValues(

@@ -315,6 +315,7 @@ public sealed record CollectionWriteCandidate
         int requestOrder,
         IEnumerable<FlattenedWriteValue> values,
         IEnumerable<object?> semanticIdentityValues,
+        IEnumerable<bool>? semanticIdentityPresenceFlags = null,
         IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
         IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
@@ -326,6 +327,12 @@ public sealed record CollectionWriteCandidate
             semanticIdentityValues,
             nameof(semanticIdentityValues)
         );
+        SemanticIdentityPresenceFlags = semanticIdentityPresenceFlags is not null
+            ? FlattenedWriteContractSupport.ToImmutableArray(
+                semanticIdentityPresenceFlags,
+                nameof(semanticIdentityPresenceFlags)
+            )
+            : SemanticIdentityValues.Select(static v => v is not null).ToImmutableArray();
         AttachedAlignedScopeData = FlattenedWriteContractSupport.ToImmutableArray(
             attachedAlignedScopeData ?? [],
             nameof(attachedAlignedScopeData)
@@ -379,6 +386,15 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityValues)
             );
         }
+
+        if (SemanticIdentityPresenceFlags.Length != SemanticIdentityValues.Length)
+        {
+            throw new ArgumentException(
+                $"{nameof(semanticIdentityPresenceFlags)} must contain one entry per semantic identity value. "
+                    + $"Expected {SemanticIdentityValues.Length}, actual {SemanticIdentityPresenceFlags.Length}.",
+                nameof(semanticIdentityPresenceFlags)
+            );
+        }
     }
 
     /// <summary>
@@ -405,6 +421,12 @@ public sealed record CollectionWriteCandidate
     /// The compiled semantic-identity values in deterministic binding order.
     /// </summary>
     public ImmutableArray<object?> SemanticIdentityValues { get; init; }
+
+    /// <summary>
+    /// Per-identity-member presence flags in the same order as <see cref="SemanticIdentityValues"/>.
+    /// True when the JSON property exists (even if null); false when the property is absent.
+    /// </summary>
+    public ImmutableArray<bool> SemanticIdentityPresenceFlags { get; init; }
 
     /// <summary>
     /// Collection-aligned one-to-one scopes that remain attached to the owning collection candidate.
@@ -598,7 +620,7 @@ public sealed record RelationalWriteExecutorRequest
     /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// Null when no profile applies. Downstream stages use this to decide
-    /// whether to run the no-profile merge/persist path or fence for DMS-1124.
+    /// which unified merge inputs to supply for null-profile vs profile-constrained writes.
     /// </summary>
     public BackendProfileWriteContext? ProfileWriteContext { get; init; }
 }

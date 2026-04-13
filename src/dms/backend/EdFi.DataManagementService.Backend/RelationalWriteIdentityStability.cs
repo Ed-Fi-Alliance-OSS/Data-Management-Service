@@ -13,42 +13,42 @@ internal static class RelationalWriteIdentityStability
 {
     public static RelationalWriteExecutorResult? TryBuildFailureResult(
         RelationalWriteExecutorRequest request,
-        RelationalWriteNoProfileMergeResult noProfileMergeResult
+        RelationalWriteMergeResult mergeResult
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(noProfileMergeResult);
+        ArgumentNullException.ThrowIfNull(mergeResult);
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
         {
             return null;
         }
 
-        var rootTableState = noProfileMergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
+        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
             tableState.TableWritePlan.TableModel.Table.Equals(request.WritePlan.Model.Root.Table)
         );
 
         if (rootTableState is null)
         {
             throw new InvalidOperationException(
-                $"No-profile merge synthesis for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
+                $"Merge synthesis for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
                     + $"did not include root table '{request.WritePlan.Model.Root.Table}'. This indicates an internal merge-synthesis bug."
             );
         }
 
-        if (rootTableState.CurrentRows.Length != 1)
+        if (rootTableState.ComparableCurrentRowset.Length != 1)
         {
             throw new InvalidOperationException(
-                $"Existing-document write identity guard expected exactly 1 current root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
-                    + $"but found {rootTableState.CurrentRows.Length}."
+                $"Existing-document write identity guard expected exactly 1 comparable current root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
+                    + $"but found {rootTableState.ComparableCurrentRowset.Length}."
             );
         }
 
-        if (rootTableState.MergedRows.Length != 1)
+        if (rootTableState.ComparableMergedRowset.Length < 1)
         {
             throw new InvalidOperationException(
-                $"Existing-document write identity guard expected exactly 1 merged root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
-                    + $"but found {rootTableState.MergedRows.Length}."
+                $"Existing-document write identity guard expected at least 1 comparable merged root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
+                    + $"but found {rootTableState.ComparableMergedRowset.Length}."
             );
         }
 
@@ -56,8 +56,8 @@ internal static class RelationalWriteIdentityStability
             request.MappingSet,
             rootTableState.TableWritePlan
         );
-        var currentRootRow = rootTableState.CurrentRows[0];
-        var mergedRootRow = rootTableState.MergedRows[0];
+        var currentRootRow = rootTableState.ComparableCurrentRowset[0];
+        var mergedRootRow = rootTableState.ComparableMergedRowset[0];
 
         if (
             Array.TrueForAll(

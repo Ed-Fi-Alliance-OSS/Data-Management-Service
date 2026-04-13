@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
@@ -12,14 +13,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Collections
+public class Given_Unified_Merge_Synthesizer_Extension_Collections_Under_Null_Profile
 {
-    private RelationalWriteNoProfileMergeSynthesizer _sut = null!;
+    private RelationalWriteMergeSynthesizer _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfileMergeSynthesizer();
+        _sut = new RelationalWriteMergeSynthesizer();
     }
 
     [Test]
@@ -72,26 +73,57 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                 [44L, 345L, 1, "Tutor"],
             ]
         );
+        var selectedBody = JsonNode.Parse(
+            """
+            {
+              "name": "Lincoln High",
+              "_ext": {
+                "sample": {
+                  "extensionCode": "BLUE",
+                  "interventions": [
+                    { "interventionCode": "Mentor" },
+                    { "interventionCode": "Coach" }
+                  ]
+                }
+              }
+            }
+            """
+        )!;
 
-        var result = _sut.Synthesize(
-            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null,
+                SelectedBody: selectedBody
+            )
         );
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
 
         var state = RequireState(result, fixture.RootExtensionChildPlan);
 
-        state.CurrentRows.Should().HaveCount(2);
-        state.MergedRows.Should().HaveCount(2);
-        LiteralValue(state.MergedRows[0].Values[0]).Should().Be(45L);
-        LiteralValue(state.MergedRows[0].Values[1]).Should().Be(345L);
-        LiteralValue(state.MergedRows[0].Values[2]).Should().Be(0);
-        LiteralValue(state.MergedRows[0].Values[3]).Should().Be("Mentor");
-        state.MergedRows[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Mentor");
+        state.ComparableCurrentRowset.Should().HaveCount(2);
+        state.ComparableMergedRowset.Should().HaveCount(2);
+        LiteralValue(state.ComparableMergedRowset[0].Values[0]).Should().Be(45L);
+        LiteralValue(state.ComparableMergedRowset[0].Values[1]).Should().Be(345L);
+        LiteralValue(state.ComparableMergedRowset[0].Values[2]).Should().Be(0);
+        LiteralValue(state.ComparableMergedRowset[0].Values[3]).Should().Be("Mentor");
+        state.ComparableMergedRowset[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Mentor");
 
-        state.MergedRows[1].Values[0].Should().BeSameAs(coachCollectionItemId);
-        LiteralValue(state.MergedRows[1].Values[1]).Should().Be(345L);
-        LiteralValue(state.MergedRows[1].Values[2]).Should().Be(1);
-        LiteralValue(state.MergedRows[1].Values[3]).Should().Be("Coach");
-        state.MergedRows[1].ComparableValues.Select(LiteralValue).Should().Equal(1, "Coach");
+        state.ComparableMergedRowset[1].Values[0].Should().BeSameAs(coachCollectionItemId);
+        LiteralValue(state.ComparableMergedRowset[1].Values[1]).Should().Be(345L);
+        LiteralValue(state.ComparableMergedRowset[1].Values[2]).Should().Be(1);
+        LiteralValue(state.ComparableMergedRowset[1].Values[3]).Should().Be("Coach");
+        state.ComparableMergedRowset[1].ComparableValues.Select(LiteralValue).Should().Equal(1, "Coach");
+        state.Updates.Should().ContainSingle();
+        state.Updates[0].StableRowIdentityValue.Should().Be(45L);
+        state.Inserts.Should().ContainSingle();
+        state.Inserts[0].Values[0].Should().BeSameAs(coachCollectionItemId);
+        state.Deletes.Should().ContainSingle();
+        state.Deletes[0].StableRowIdentityValue.Should().Be(44L);
     }
 
     [Test]
@@ -151,27 +183,56 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                 [501L, 345L, 44L, 1, "Bus"],
             ]
         );
+        var selectedBody = JsonNode.Parse(
+            """
+            {
+              "name": "Lincoln High",
+              "addresses": [
+                {
+                  "addressType": "Home",
+                  "_ext": {
+                    "sample": {
+                      "favoriteColor": "Purple",
+                      "services": [
+                        { "serviceName": "Bus" }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+            """
+        )!;
 
-        var result = _sut.Synthesize(
-            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null,
+                SelectedBody: selectedBody
+            )
         );
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
 
         var addressState = RequireState(result, fixture.AddressPlan);
         var childState = RequireState(result, fixture.CollectionAlignedExtensionChildPlan);
 
-        addressState.MergedRows.Should().ContainSingle();
-        LiteralValue(addressState.MergedRows[0].Values[0]).Should().Be(44L);
-        LiteralValue(addressState.MergedRows[0].Values[2]).Should().Be(0);
-        LiteralValue(addressState.MergedRows[0].Values[3]).Should().Be("Home");
+        addressState.ComparableMergedRowset.Should().ContainSingle();
+        LiteralValue(addressState.ComparableMergedRowset[0].Values[0]).Should().Be(44L);
+        LiteralValue(addressState.ComparableMergedRowset[0].Values[2]).Should().Be(0);
+        LiteralValue(addressState.ComparableMergedRowset[0].Values[3]).Should().Be("Home");
 
-        childState.CurrentRows.Should().ContainSingle();
-        childState.MergedRows.Should().ContainSingle();
-        LiteralValue(childState.MergedRows[0].Values[0]).Should().Be(501L);
-        LiteralValue(childState.MergedRows[0].Values[1]).Should().Be(345L);
-        LiteralValue(childState.MergedRows[0].Values[2]).Should().Be(44L);
-        LiteralValue(childState.MergedRows[0].Values[3]).Should().Be(0);
-        LiteralValue(childState.MergedRows[0].Values[4]).Should().Be("Bus");
-        childState.MergedRows[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Bus");
+        childState.ComparableCurrentRowset.Should().ContainSingle();
+        childState.ComparableMergedRowset.Should().ContainSingle();
+        LiteralValue(childState.ComparableMergedRowset[0].Values[0]).Should().Be(501L);
+        LiteralValue(childState.ComparableMergedRowset[0].Values[1]).Should().Be(345L);
+        LiteralValue(childState.ComparableMergedRowset[0].Values[2]).Should().Be(44L);
+        LiteralValue(childState.ComparableMergedRowset[0].Values[3]).Should().Be(0);
+        LiteralValue(childState.ComparableMergedRowset[0].Values[4]).Should().Be("Bus");
+        childState.ComparableMergedRowset[0].ComparableValues.Select(LiteralValue).Should().Equal(0, "Bus");
     }
 
     [Test]
@@ -226,40 +287,74 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                 [45L, "Gold"],
             ]
         );
+        var selectedBody = JsonNode.Parse(
+            """
+            {
+              "name": "Lincoln High",
+              "addresses": [
+                {
+                  "addressType": "Mailing",
+                  "_ext": {
+                    "sample": {
+                      "favoriteColor": "Gold"
+                    }
+                  }
+                },
+                {
+                  "addressType": "Home",
+                  "_ext": {
+                    "sample": {
+                      "favoriteColor": "Purple"
+                    }
+                  }
+                }
+              ]
+            }
+            """
+        )!;
 
-        var result = _sut.Synthesize(
-            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null,
+                SelectedBody: selectedBody
+            )
         );
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
 
         var collectionExtensionState = RequireState(result, fixture.CollectionExtensionPlan);
 
-        collectionExtensionState.CurrentRows.Should().HaveCount(2);
-        collectionExtensionState.MergedRows.Should().HaveCount(2);
+        collectionExtensionState.ComparableCurrentRowset.Should().HaveCount(2);
+        collectionExtensionState.ComparableMergedRowset.Should().HaveCount(2);
         collectionExtensionState
-            .CurrentRows[0]
+            .ComparableCurrentRowset[0]
             .ComparableValues.Select(LiteralValue)
             .Should()
             .Equal(44L, "Purple");
         collectionExtensionState
-            .CurrentRows[1]
+            .ComparableCurrentRowset[1]
             .ComparableValues.Select(LiteralValue)
             .Should()
             .Equal(45L, "Gold");
         collectionExtensionState
-            .MergedRows[0]
+            .ComparableMergedRowset[0]
             .ComparableValues.Select(LiteralValue)
             .Should()
             .Equal(44L, "Purple");
         collectionExtensionState
-            .MergedRows[1]
+            .ComparableMergedRowset[1]
             .ComparableValues.Select(LiteralValue)
             .Should()
             .Equal(45L, "Gold");
         RelationalWriteGuardedNoOp.IsNoOpCandidate(result).Should().BeTrue();
     }
 
-    private static RelationalWriteNoProfileTableState RequireState(
-        RelationalWriteNoProfileMergeResult result,
+    private static RelationalWriteMergeTableState RequireState(
+        RelationalWriteMergeResult result,
         TableWritePlan tableWritePlan
     )
     {

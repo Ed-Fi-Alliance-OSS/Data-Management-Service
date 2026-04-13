@@ -10,23 +10,25 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteGuardedNoOp
 {
-    public static bool IsNoOpCandidate(RelationalWriteNoProfileMergeResult mergeResult)
+    public static bool IsNoOpCandidate(RelationalWriteMergeResult mergeResult)
     {
         ArgumentNullException.ThrowIfNull(mergeResult);
 
         foreach (var tableState in mergeResult.TablesInDependencyOrder)
         {
-            if (tableState.CurrentRows.Length != tableState.MergedRows.Length)
+            if (tableState.ComparableCurrentRowset.Length != tableState.ComparableMergedRowset.Length)
             {
                 return false;
             }
 
-            for (var rowIndex = 0; rowIndex < tableState.CurrentRows.Length; rowIndex++)
+            for (var rowIndex = 0; rowIndex < tableState.ComparableCurrentRowset.Length; rowIndex++)
             {
                 if (
                     !tableState
-                        .CurrentRows[rowIndex]
-                        .ComparableValues.SequenceEqual(tableState.MergedRows[rowIndex].ComparableValues)
+                        .ComparableCurrentRowset[rowIndex]
+                        .ComparableValues.SequenceEqual(
+                            tableState.ComparableMergedRowset[rowIndex].ComparableValues
+                        )
                 )
                 {
                     return false;
