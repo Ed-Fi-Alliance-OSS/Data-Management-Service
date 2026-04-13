@@ -175,30 +175,83 @@ public static class HydrationBatchBuilder
 
     private static void AddQueryParameters(DbCommand command, PageKeysetSpec.Query query)
     {
-        foreach (var param in query.Plan.PageParametersInOrder)
+        var requiredParameterNames = GetRequiredParameterNames(query.Plan);
+        ValidateRequiredParameterValues(query.ParameterValues, requiredParameterNames);
+
+        foreach (var parameterName in requiredParameterNames)
         {
-            if (query.ParameterValues.TryGetValue(param.ParameterName, out var value))
+            AddParameter(command, parameterName, query.ParameterValues[parameterName]);
+        }
+    }
+
+    private static string[] GetRequiredParameterNames(PageDocumentIdSqlPlan plan)
+    {
+        List<string> requiredParameterNames = [];
+
+        AddRequiredParameterNames(requiredParameterNames, plan.PageParametersInOrder);
+
+        if (plan.TotalCountParametersInOrder is { } totalCountParameters)
+        {
+            AddRequiredParameterNames(requiredParameterNames, totalCountParameters);
+        }
+
+        return [.. requiredParameterNames];
+    }
+
+    private static void AddRequiredParameterNames(
+        List<string> requiredParameterNames,
+        IReadOnlyList<QuerySqlParameter> parameters
+    )
+    {
+        foreach (var parameter in parameters)
+        {
+            if (!ContainsParameterName(requiredParameterNames, parameter.ParameterName))
             {
-                AddParameter(command, param.ParameterName, value);
+                requiredParameterNames.Add(parameter.ParameterName);
+            }
+        }
+    }
+
+    private static bool ContainsParameterName(
+        IReadOnlyList<string> parameterNames,
+        string candidateParameterName
+    )
+    {
+        foreach (var parameterName in parameterNames)
+        {
+            if (string.Equals(parameterName, candidateParameterName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
             }
         }
 
-        if (query.Plan.TotalCountParametersInOrder is { } totalCountParams)
-        {
-            foreach (var param in totalCountParams)
-            {
-                // Skip if already added from page parameters (same name, same value)
-                if (command.Parameters.Contains($"@{param.ParameterName}"))
-                {
-                    continue;
-                }
+        return false;
+    }
 
-                if (query.ParameterValues.TryGetValue(param.ParameterName, out var value))
-                {
-                    AddParameter(command, param.ParameterName, value);
-                }
+    private static void ValidateRequiredParameterValues(
+        IReadOnlyDictionary<string, object?> parameterValues,
+        IReadOnlyList<string> requiredParameterNames
+    )
+    {
+        List<string> missingParameterNames = [];
+
+        foreach (var parameterName in requiredParameterNames)
+        {
+            if (!parameterValues.ContainsKey(parameterName))
+            {
+                missingParameterNames.Add(parameterName);
             }
         }
+
+        if (missingParameterNames.Count == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Hydration query keyset is missing required parameter values for "
+                + $"[{string.Join(", ", missingParameterNames.ConvertAll(parameterName => $"'{parameterName}'"))}]."
+        );
     }
 
     private static void AddParameter(DbCommand command, string bareName, object? value)

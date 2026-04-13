@@ -308,6 +308,84 @@ public class Given_DocumentReconstituter_With_A_Date_Scalar_Read_As_DateTime
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_A_DateTime_Scalar_Read_As_Unspecified_DateTime
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "Meeting");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _meetingDateTimePath = new(
+        "$.meetingDateTime",
+        [new JsonPathSegment.Property("meetingDateTime")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("MeetingDateTime"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: _meetingDateTimePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Meeting",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        object?[] row = [1L, new DateTime(2024, 8, 20, 14, 5, 7, DateTimeKind.Unspecified)];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_treat_unspecified_datetime_values_as_utc_instants()
+    {
+        _result["meetingDateTime"]!.GetValue<string>().Should().Be("2024-08-20T14:05:07Z");
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_With_Collection
 {
     private JsonNode _result = null!;

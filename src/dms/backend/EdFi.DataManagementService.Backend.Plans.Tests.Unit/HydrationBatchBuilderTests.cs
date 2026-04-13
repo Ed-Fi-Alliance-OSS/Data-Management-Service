@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
@@ -271,6 +272,95 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
     {
         _pgsqlBatch.Should().NotContain("TotalCount");
     }
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_AddParameters_With_Query_Keyset
+{
+    [Test]
+    public void It_should_throw_when_a_required_page_parameter_value_is_missing()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(totalCountParameterNames: null),
+            new Dictionary<string, object?> { ["offset"] = 0L }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("'limit'");
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_throw_when_a_required_total_count_parameter_value_is_missing()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(totalCountParameterNames: ["schoolYear"]),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("'schoolYear'");
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_treat_present_null_values_as_bound_parameters()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParameterNames: ["schoolYear", "offset", "limit"],
+                totalCountParameterNames: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["schoolYear"] = null,
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        HydrationBatchBuilder.AddParameters(command, keyset);
+
+        command.Parameters.Count.Should().Be(3);
+        command.Parameters.Contains("@schoolYear").Should().BeTrue();
+    }
+
+    private static PageDocumentIdSqlPlan CreateQueryPlan(
+        string[]? pageParameterNames = null,
+        string[]? totalCountParameterNames = null
+    )
+    {
+        pageParameterNames ??= ["offset", "limit"];
+
+        return new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r ORDER BY r.\"DocumentId\" LIMIT @limit OFFSET @offset",
+            TotalCountSql: totalCountParameterNames is null
+                ? null
+                : "SELECT COUNT(*) AS TotalCount FROM \"edfi\".\"School\" r WHERE r.\"SchoolYear\" = @schoolYear",
+            PageParametersInOrder: [.. pageParameterNames.Select(CreatePageParameter)],
+            TotalCountParametersInOrder: totalCountParameterNames is null
+                ? null
+                : [.. totalCountParameterNames.Select(CreateTotalCountParameter)]
+        );
+    }
+
+    private static QuerySqlParameter CreatePageParameter(string parameterName) =>
+        parameterName switch
+        {
+            "offset" => new QuerySqlParameter(QuerySqlParameterRole.Offset, parameterName),
+            "limit" => new QuerySqlParameter(QuerySqlParameterRole.Limit, parameterName),
+            _ => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName),
+        };
+
+    private static QuerySqlParameter CreateTotalCountParameter(string parameterName) =>
+        new(QuerySqlParameterRole.Filter, parameterName);
 }
 
 [TestFixture]

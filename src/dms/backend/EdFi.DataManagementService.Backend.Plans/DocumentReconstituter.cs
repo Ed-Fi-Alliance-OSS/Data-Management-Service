@@ -1027,7 +1027,7 @@ public static class DocumentReconstituter
             bool b => JsonValue.Create(b),
             string str => JsonValue.Create(str),
             DateTime dt => JsonValue.Create(
-                dt.ToUniversalTime()
+                NormalizeUtcDateTime(dt)
                     .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
             ),
             DateTimeOffset dto => JsonValue.Create(
@@ -1042,6 +1042,14 @@ public static class DocumentReconstituter
             _ => JsonValue.Create(value.ToString() ?? string.Empty),
         };
     }
+
+    private static DateTime NormalizeUtcDateTime(DateTime dateTime) =>
+        dateTime.Kind switch
+        {
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc),
+            DateTimeKind.Utc => dateTime,
+            _ => dateTime.ToUniversalTime(),
+        };
 
     /// <summary>
     /// Finds the ordinal of a column by its <see cref="DbColumnName"/>.
