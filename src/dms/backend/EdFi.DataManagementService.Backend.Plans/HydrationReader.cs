@@ -166,9 +166,7 @@ public static class HydrationReader
         {
             rows.Add(
                 new DescriptorUriRow(
-                    DescriptorId: Convert.ToInt64(
-                        reader.GetValue(descriptorPlan.ResultShape.DescriptorIdOrdinal)
-                    ),
+                    DescriptorId: reader.GetInt64(descriptorPlan.ResultShape.DescriptorIdOrdinal),
                     Uri: reader.GetString(descriptorPlan.ResultShape.UriOrdinal)
                 )
             );

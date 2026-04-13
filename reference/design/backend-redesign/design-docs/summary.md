@@ -88,7 +88,7 @@ Source documents:
 - Journal (append-only):
   - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)` emitted when `ContentVersion` changes.
 - Served metadata:
-  - `_etag` is a deterministic `SHA-256` hash of the serialized JSON representation.
+  - `_etag` is a deterministic `SHA-256` hash of the canonical JSON form of the served response document.
   - `_lastModifiedDate` served from `ContentLastModifiedAt`.
 
 ### Per-project schemas and resource tables
@@ -210,7 +210,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
   2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
-  3. Hydrate relational tables and reconstitute JSON; compute `_etag` from the serialized JSON representation, serve `_lastModifiedDate/ChangeVersion` from `dms.Document`, and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
+  3. Hydrate relational tables and reconstitute JSON; compute `_etag` from the canonical JSON form of the response document, serve `_lastModifiedDate/ChangeVersion` from `dms.Document`, and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -219,7 +219,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
     - batch descriptor URI lookups,
-    - compute `_etag` from the serialized JSON representation and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
+    - compute `_etag` from the canonical JSON form of the response document and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
 
 ## Schema management and DDL generation
 

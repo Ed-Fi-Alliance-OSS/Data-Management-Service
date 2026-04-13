@@ -120,11 +120,11 @@ Notes:
 For a document `P`:
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
-- `_etag(P)` is a deterministic hash of the JSON representation:
-  - recommended: serialize the response document in deterministic property order after removing `id`, `_etag`, and `_lastModifiedDate`, compute `SHA-256` over the UTF-8 bytes, and encode the hash as base64.
+- `_etag(P)` is a deterministic hash of the canonical JSON form of the served response document:
+  - recommended: remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object properties using ordinal string ordering while preserving array order, serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode the hash as base64.
   - readable-profile responses recompute `_etag` from the projected document using the same rule.
 
-This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the final serialized JSON payload.
+This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the final response semantics rather than exact transport serializer bytes.
 
 ## Journaling for Change Queries
 
@@ -206,7 +206,7 @@ ORDER BY c.ChangeVersion, c.DocumentId;
 ## Optimistic concurrency (`If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current serialized JSON representation.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
 - PUT/DELETE validates `If-Match` by comparing the client’s `_etag` to the current deterministic hash for that `DocumentId`.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 

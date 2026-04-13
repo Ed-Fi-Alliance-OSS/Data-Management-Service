@@ -146,7 +146,7 @@ Implement JSON reconstitution from hydrated relational rows:
   1. Should readable profile projection always preserve id, _etag, and _lastModifiedDate regardless of profile member rules? src/dms/core/EdFi.DataManagementService.Core/Profile/
      ReadableProfileProjector.cs:18 currently only special-cases id plus identity fields, while src/dms/core/EdFi.DataManagementService.Core/OpenApi/ProfileOpenApiSpecificationFilter.cs:20 says
      readable schemas always include those metadata fields. If yes, should DMS-990 own that Core fix?
-  2. What exact wire format do you want for relational read metadata? We know _etag should come from the serialized JSON representation, but I still need the concrete string form, and whether _lastModifiedDate should
+  2. What exact format do you want for relational read metadata? We know _etag should come from the canonical JSON form of the response document, but I still need the concrete string form, and whether _lastModifiedDate should
      match the current write-side yyyy-MM-ddTHH:mm:ssZ format or preserve higher precision from stored ContentLastModifiedAt.
   3. While GET-many and descriptor endpoints remain deferred, what external behavior do you want under UseRelationalBackend=true for those unsupported reads? src/dms/backend/
      EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95 currently returns UnknownFailure, which Core maps to HTTP 500. If you want an explicit 501/503 style response
@@ -163,8 +163,8 @@ Implement JSON reconstitution from hydrated relational rows:
   1. Preserve id, _etag, and _lastModifiedDate unconditionally in readable projection.
      This should be true regardless of profile member rules. src/dms/core/EdFi.DataManagementService.Core/Profile/ReadableProfileProjector.cs:16 and src/dms/core/EdFi.DataManagementService.Core/
      OpenApi/ProfileOpenApiSpecificationFilter.cs:20 should agree. I would let DMS-990 own that fix because relational GET will bypass the legacy filter path.
-  2. Use `_etag = base64(SHA-256(serialized JSON))` and `_lastModifiedDate` in UTC second precision.
-     Serialize the deterministic external response shape after removing `id`, `_etag`, and `_lastModifiedDate`, then hash the UTF-8 bytes. That keeps read/write behavior aligned and preserves
+  2. Use `_etag = base64(SHA-256(canonical JSON))` and `_lastModifiedDate` in UTC second precision.
+     Remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object members while preserving array order, then hash the minified UTF-8 bytes. That keeps read/write behavior aligned without coupling `_etag` to exact frontend serializer bytes and preserves
      `_lastModifiedDate` formatting as yyyy-MM-ddTHH:mm:ssZ for now, even if the stored DB stamp has higher precision.
   3. Return an explicit “not implemented yet” result for unsupported relational reads.
      I would not leave intentional gaps as UnknownFailure/HTTP 500 from src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs:95. Add a NotImplemented-style read

@@ -326,13 +326,13 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic serialized JSON representation those stamps track.
+  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the served response document those stamps track.
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` as the deterministic `SHA-256` hash of the current serialized JSON representation.
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
 - PUT/DELETE `If-Match` validation is row-local:
   - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
   - if mismatched, return `412 Precondition Failed`.
