@@ -567,7 +567,7 @@ public static class DocumentReconstituter
     )
     {
         List<HydratedTableRows> children = [];
-        var parentScope = parentTableModel.JsonScope.Canonical;
+        var parentScope = parentTableModel.JsonScope;
 
         foreach (var tableRows in tableRowsInDependencyOrder)
         {
@@ -577,9 +577,9 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var childScope = childTableModel.JsonScope.Canonical;
+            var childScope = childTableModel.JsonScope;
 
-            if (!childScope.StartsWith(parentScope, StringComparison.Ordinal))
+            if (!IsScopePrefix(parentScope, childScope))
             {
                 continue;
             }
@@ -598,33 +598,38 @@ public static class DocumentReconstituter
     /// <summary>
     /// Determines whether a child scope is an immediate child of the parent scope.
     /// </summary>
-    private static bool IsImmediateChild(string parentScope, string childScope, DbTableKind childKind)
+    private static bool IsImmediateChild(
+        JsonPathExpression parentScope,
+        JsonPathExpression childScope,
+        DbTableKind childKind
+    )
     {
-        var suffix = childScope[parentScope.Length..];
-
-        // Remove leading dot if present (e.g., "$.addresses[*]" parent -> ".city" suffix)
-        if (suffix.StartsWith('.'))
+        if (!IsScopePrefix(parentScope, childScope))
         {
-            suffix = suffix[1..];
+            return false;
         }
+
+        var relativeSegments = GetRelativeScopeSegments(parentScope, childScope);
 
         return childKind switch
         {
             // Collections: one [*] deeper than parent
-            // e.g., parent "$" -> child "$.addresses[*]" => suffix = "addresses[*]"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]" => suffix = "periods[*]"
-            DbTableKind.Collection => IsOneArrayLevelDeeper(suffix),
+            // e.g., parent "$" -> child "$.addresses[*]"
+            // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]"
+            DbTableKind.Collection => IsOneArrayLevelDeeper(relativeSegments),
 
             // Extension collections must recurse through their owning _ext.projectName scope.
             // Without this guard, a base scope like "$.addresses[*]" incorrectly sees
             // "$.addresses[*]._ext.sample.deliveryNotes[*]" as a direct child.
-            DbTableKind.ExtensionCollection => !suffix.StartsWith("_ext.", StringComparison.Ordinal)
-                && IsOneArrayLevelDeeper(suffix),
+            DbTableKind.ExtensionCollection => !StartsWithExtensionScope(relativeSegments)
+                && IsOneArrayLevelDeeper(relativeSegments),
 
             // Extensions: _ext.projectName at same array depth
-            // e.g., parent "$" -> child "$._ext.sample" => suffix = "_ext.sample"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*]._ext.sample" => suffix = "_ext.sample"
-            DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope => IsExtensionScope(suffix),
+            // e.g., parent "$" -> child "$._ext.sample"
+            // e.g., parent "$.addresses[*]" -> child "$.addresses[*]._ext.sample"
+            DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope => IsExtensionScope(
+                relativeSegments
+            ),
 
             _ => false,
         };
@@ -632,23 +637,23 @@ public static class DocumentReconstituter
 
     /// <summary>
     /// Returns true if the suffix represents exactly one array level deeper.
-    /// Allows intermediate dots from inlined object paths (e.g., "contentStandard.authors[*]").
+    /// Allows intermediate property segments from inlined object paths
+    /// (e.g., "$" -> "$.contentStandard.authors[*]").
     /// </summary>
-    private static bool IsOneArrayLevelDeeper(string suffix)
+    private static bool IsOneArrayLevelDeeper(IReadOnlyList<JsonPathSegment> relativeSegments)
     {
-        if (!suffix.EndsWith("[*]", StringComparison.Ordinal))
+        if (relativeSegments.Count == 0 || relativeSegments[^1] is not JsonPathSegment.AnyArrayElement)
         {
             return false;
         }
 
-        // Count [*] occurrences — exactly one means one collection level deeper.
-        // Multiple [*] means a grandchild or deeper, not an immediate child.
         var count = 0;
-        var idx = 0;
-        while ((idx = suffix.IndexOf("[*]", idx, StringComparison.Ordinal)) >= 0)
+        foreach (var segment in relativeSegments)
         {
-            count++;
-            idx += 3;
+            if (segment is JsonPathSegment.AnyArrayElement)
+            {
+                count++;
+            }
         }
 
         return count == 1;
@@ -657,18 +662,137 @@ public static class DocumentReconstituter
     /// <summary>
     /// Returns true if the suffix represents an extension scope (_ext.projectName).
     /// </summary>
-    private static bool IsExtensionScope(string suffix)
+    private static bool IsExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments)
     {
-        if (!suffix.StartsWith("_ext.", StringComparison.Ordinal))
+        return relativeSegments.Count == 2
+            && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+            && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
+    }
+
+    private static bool StartsWithExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments) =>
+        relativeSegments.Count >= 2
+        && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+        && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
+
+    private static JsonPathSegment[] GetRelativeScopeSegments(
+        JsonPathExpression parentScope,
+        JsonPathExpression childScope
+    )
+    {
+        var parentSegments = GetRestrictedSegments(parentScope);
+        var childSegments = GetRestrictedSegments(childScope);
+
+        return [.. childSegments.Skip(parentSegments.Count)];
+    }
+
+    private static bool IsScopePrefix(JsonPathExpression parentScope, JsonPathExpression childScope)
+    {
+        var parentSegments = GetRestrictedSegments(parentScope);
+        var childSegments = GetRestrictedSegments(childScope);
+
+        if (parentSegments.Count > childSegments.Count)
         {
             return false;
         }
 
-        var projectName = suffix["_ext.".Length..];
+        for (var index = 0; index < parentSegments.Count; index++)
+        {
+            var parentSegment = parentSegments[index];
+            var childSegment = childSegments[index];
 
-        // Should be a simple project name (no further nesting)
-        return projectName.Length > 0 && !projectName.Contains('.') && !projectName.Contains('[');
+            if (parentSegment.GetType() != childSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                parentSegment is JsonPathSegment.Property parentProperty
+                && childSegment is JsonPathSegment.Property childProperty
+                && !string.Equals(parentProperty.Name, childProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
+
+    private static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
+    {
+        if (path.Canonical == "$")
+        {
+            return [];
+        }
+
+        if (path.Segments.Count > 0)
+        {
+            return path.Segments;
+        }
+
+        return ParseRestrictedCanonical(path.Canonical);
+    }
+
+    private static JsonPathSegment[] ParseRestrictedCanonical(string canonicalPath)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalPath) || canonicalPath[0] != '$')
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{canonicalPath}' must start with '$'."
+            );
+        }
+
+        List<JsonPathSegment> segments = [];
+        var index = 1;
+
+        while (index < canonicalPath.Length)
+        {
+            switch (canonicalPath[index])
+            {
+                case '.':
+                    index = AppendProperty(canonicalPath, index, segments);
+                    break;
+                case '[' when IsArrayWildcard(canonicalPath, index):
+                    segments.Add(new JsonPathSegment.AnyArrayElement());
+                    index += 3;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Restricted JSONPath '{canonicalPath}' contains an unsupported segment."
+                    );
+            }
+        }
+
+        return [.. segments];
+    }
+
+    private static int AppendProperty(string path, int dotIndex, ICollection<JsonPathSegment> segments)
+    {
+        var startIndex = dotIndex + 1;
+        var index = startIndex;
+
+        while (index < path.Length && path[index] is not ('.' or '['))
+        {
+            index++;
+        }
+
+        if (index == startIndex)
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{path}' contains an empty property segment."
+            );
+        }
+
+        segments.Add(new JsonPathSegment.Property(path[startIndex..index]));
+
+        return index;
+    }
+
+    private static bool IsArrayWildcard(string path, int openBracketIndex) =>
+        openBracketIndex + 2 < path.Length
+        && path[openBracketIndex] == '['
+        && path[openBracketIndex + 1] == '*'
+        && path[openBracketIndex + 2] == ']';
 
     /// <summary>
     /// Resolves the target JSON object and property name for a collection array, navigating
