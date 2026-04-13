@@ -11,10 +11,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
-// TODO(DMS-1124 Task 4d): Add a consistency test comparing SchemaInlinedScopeDiscovery.Discover output
-// to ContentTypeScopeDiscovery.DiscoverInlinedScopes for a fixture resource once the NoProfileSyntheticProfileAdapter
-// adapter surface stabilizes.
-
 [TestFixture]
 [Parallelizable]
 public class Given_SchemaInlinedScopeDiscovery_with_no_inlined_scopes
@@ -213,6 +209,186 @@ public class Given_SchemaInlinedScopeDiscovery_null_plan
     {
         var action = () => SchemaInlinedScopeDiscovery.Discover(null!);
         action.Should().Throw<ArgumentNullException>();
+    }
+}
+
+/// <summary>
+/// Pins the equivalence between backend-side scope discovery (walks column
+/// <c>SourceJsonPath</c>s) and Core-side scope discovery (walks a profile
+/// content-type tree). Even though the inputs differ, both must agree on the
+/// set of <see cref="ScopeKind.NonCollection"/> inlined scopes for a given
+/// resource when the profile is full-visibility. Drift here is exactly the
+/// kind of contract mismatch that invited the hidden-member-path vocabulary
+/// bug in DMS-1124.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_SchemaInlinedScopeDiscovery_and_ContentTypeScopeDiscovery_for_the_same_resource
+{
+    /// <summary>
+    /// Verifies that <see cref="SchemaInlinedScopeDiscovery.Discover"/> and
+    /// <see cref="ContentTypeScopeDiscovery.DiscoverInlinedScopes"/> agree on the
+    /// set of <see cref="ScopeKind.NonCollection"/> inlined scopes for a fixture
+    /// resource expressed under full-visibility in both representations.
+    /// </summary>
+    /// <remarks>
+    /// The fixture covers three canonical inlined-scope patterns:
+    /// <list type="bullet">
+    ///   <item>
+    ///     <description>
+    ///     A root-level inlined reference (<c>$.calendarReference</c>): root table
+    ///     holds columns <c>$.calendarReference.schoolId</c> and
+    ///     <c>$.calendarReference.calendarCode</c>; no table carries
+    ///     <c>$.calendarReference</c> as its scope.
+    ///     </description>
+    ///   </item>
+    ///   <item>
+    ///     <description>
+    ///     An inlined reference nested inside a collection
+    ///     (<c>$.classPeriods[*].somethingReference</c>): the collection table at
+    ///     <c>$.classPeriods[*]</c> holds a column
+    ///     <c>$.somethingReference.schoolId</c>; no table carries
+    ///     <c>$.classPeriods[*].somethingReference</c>.
+    ///     </description>
+    ///   </item>
+    ///   <item>
+    ///     <description>
+    ///     An inlined object nested within a table-backed extension scope
+    ///     (<c>$._ext.sample.nestedRef</c>): the extension table at
+    ///     <c>$._ext.sample</c> holds a column <c>$.nestedRef.someId</c>; the
+    ///     extension table scope itself is table-backed and therefore appears in
+    ///     <c>knownScopes</c>, but its nested object is inlined.
+    ///     </description>
+    ///   </item>
+    /// </list>
+    /// <para>
+    /// <see cref="ContentTypeScopeDiscovery.DiscoverInlinedScopes"/> may also emit
+    /// <see cref="ScopeKind.Collection"/> entries for collections that are absent
+    /// from <c>knownScopes</c>. Because well-formed schemas always table-back
+    /// collections, any such collection scopes would correspond to a table in the
+    /// backend plan. Filtering to <see cref="ScopeKind.NonCollection"/> before
+    /// comparing is therefore the correct equivalence boundary between the two
+    /// inputs.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void It_agrees_on_NonCollection_inlined_scopes_for_a_full_visibility_resource()
+    {
+        // ── Backend: ResourceWritePlan ────────────────────────────────────────────
+
+        // Root table: holds inlined calendarReference columns
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "School",
+            jsonScope: "$",
+            columns:
+            [
+                ("CalRef_SchoolId", "$.calendarReference.schoolId"),
+                ("CalRef_CalendarCode", "$.calendarReference.calendarCode"),
+                ("Name", "$.name"),
+            ]
+        );
+
+        // Collection table: holds an inlined somethingReference inside classPeriods
+        var classPeriodsPlan = PlanBuilder.CreateTablePlan(
+            tableName: "SchoolClassPeriod",
+            jsonScope: "$.classPeriods[*]",
+            columns: [("SomethingRef_SchoolId", "$.somethingReference.schoolId")]
+        );
+
+        // Extension table (table-backed at $._ext.sample): holds inlined nestedRef
+        var extensionPlan = PlanBuilder.CreateTablePlan(
+            tableName: "SchoolExt",
+            jsonScope: "$._ext.sample",
+            columns: [("NestedRef_SomeId", "$.nestedRef.someId")]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, classPeriodsPlan, extensionPlan]);
+
+        // ── knownScopes: table-backed scope paths from the write plan ─────────────
+        var knownScopes = plan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // ── Core: ContentTypeDefinition (full-visibility, same structure) ─────────
+        var contentType = new ContentTypeDefinition(
+            MemberSelection: MemberSelection.IncludeAll,
+            Properties: [new PropertyRule("name")],
+            Objects:
+            [
+                new ObjectRule(
+                    Name: "calendarReference",
+                    MemberSelection: MemberSelection.IncludeAll,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("schoolId"), new PropertyRule("calendarCode")],
+                    NestedObjects: null,
+                    Collections: null,
+                    Extensions: null
+                ),
+            ],
+            Collections:
+            [
+                new CollectionRule(
+                    Name: "classPeriods",
+                    MemberSelection: MemberSelection.IncludeAll,
+                    LogicalSchema: null,
+                    Properties: null,
+                    NestedObjects:
+                    [
+                        new ObjectRule(
+                            Name: "somethingReference",
+                            MemberSelection: MemberSelection.IncludeAll,
+                            LogicalSchema: null,
+                            Properties: [new PropertyRule("schoolId")],
+                            NestedObjects: null,
+                            Collections: null,
+                            Extensions: null
+                        ),
+                    ],
+                    NestedCollections: null,
+                    Extensions: null,
+                    ItemFilter: null
+                ),
+            ],
+            Extensions:
+            [
+                new ExtensionRule(
+                    Name: "sample",
+                    MemberSelection: MemberSelection.IncludeAll,
+                    LogicalSchema: null,
+                    Properties: null,
+                    Objects:
+                    [
+                        new ObjectRule(
+                            Name: "nestedRef",
+                            MemberSelection: MemberSelection.IncludeAll,
+                            LogicalSchema: null,
+                            Properties: [new PropertyRule("someId")],
+                            NestedObjects: null,
+                            Collections: null,
+                            Extensions: null
+                        ),
+                    ],
+                    Collections: null
+                ),
+            ]
+        );
+
+        // ── Act ───────────────────────────────────────────────────────────────────
+        var backend = SchemaInlinedScopeDiscovery.Discover(plan);
+        var core = ContentTypeScopeDiscovery.DiscoverInlinedScopes(contentType, knownScopes);
+
+        // ── Assert: NonCollection scopes must be identical ────────────────────────
+        // Filter Core output to NonCollection only (see <remarks> above).
+        var backendScopes = backend
+            .Where(r => r.Kind == ScopeKind.NonCollection)
+            .Select(r => r.JsonScope)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var coreScopes = core.Where(r => r.Kind == ScopeKind.NonCollection)
+            .Select(r => r.JsonScope)
+            .ToHashSet(StringComparer.Ordinal);
+
+        backendScopes.Should().BeEquivalentTo(coreScopes);
     }
 }
 

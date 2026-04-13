@@ -37,6 +37,7 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
+        <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Npgsql" />
