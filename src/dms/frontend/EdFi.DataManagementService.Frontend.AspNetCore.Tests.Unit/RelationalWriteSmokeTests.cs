@@ -688,6 +688,8 @@ public class Given_A_Host_Using_The_Relational_Backend
             TableWritePlan rootPlan
         )
         {
+            var readPlan = CreateReadPlan(resourceModel, rootPlan.TableModel, key.Dialect);
+
             return new MappingSet(
                 Key: key,
                 Model: new DerivedRelationalModelSet(
@@ -737,13 +739,37 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     [resource] = new ResourceWritePlan(resourceModel, [rootPlan]),
                 },
-                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+                {
+                    [resource] = readPlan,
+                },
                 ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short> { [resource] = 1 },
                 ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [1] = resourceKey },
                 SecurableElementColumnPathsByResource: new Dictionary<
                     QualifiedResourceName,
                     IReadOnlyList<ResolvedSecurableElementPath>
                 >()
+            );
+        }
+
+        private static ResourceReadPlan CreateReadPlan(
+            RelationalResourceModel resourceModel,
+            DbTableModel rootTable,
+            SqlDialect dialect
+        )
+        {
+            return new ResourceReadPlan(
+                Model: resourceModel,
+                KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
+                TablePlansInDependencyOrder:
+                [
+                    new TableReadPlan(
+                        rootTable,
+                        $"select * from {rootTable.Table.Schema.Value}.\"{rootTable.Table.Name}\""
+                    ),
+                ],
+                ReferenceIdentityProjectionPlansInDependencyOrder: [],
+                DescriptorProjectionPlansInOrder: []
             );
         }
 
