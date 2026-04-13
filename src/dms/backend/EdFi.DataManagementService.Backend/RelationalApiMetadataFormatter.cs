@@ -5,11 +5,10 @@
 
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -36,8 +35,7 @@ internal static class RelationalApiMetadataFormatter
         documentObject.Remove("_lastModifiedDate");
         documentObject.Remove("id");
 
-        var serializedDocument = JsonSerializer.Serialize(documentObject);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(serializedDocument));
+        var hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(documentObject));
 
         return Convert.ToBase64String(hash);
     }
