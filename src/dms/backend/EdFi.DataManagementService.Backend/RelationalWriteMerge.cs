@@ -1594,7 +1594,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
 
             // Compute the canonical scope key using the same format as buffer iteration tracking
-            var ancestorKey = BuildAncestorKeyFromScopeInstanceAddress(storedState.Address);
+            var ancestorKey = AncestorKeyHelpers.BuildAncestorKeyFromScopeInstanceAddress(
+                storedState.Address
+            );
             var scopeKey = $"{storedState.Address.JsonScope}|{ancestorKey}";
 
             // Skip if buffer iteration already handled this scope
@@ -1660,65 +1662,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         return null;
     }
-
-    /// <summary>
-    /// Canonical ancestor key builder. Operates on <see cref="AncestorCollectionInstance"/> values
-    /// (JSON-domain, <see cref="SemanticIdentityPart.Value"/> is <see cref="JsonNode?"/>) and uses
-    /// <see cref="ExtractJsonNodeStringValue"/> for serialization.
-    ///
-    /// This is the single implementation shared by all three JsonNode-based key-building sites:
-    /// <see cref="BuildAncestorKeyFromScopeInstanceAddress"/>,
-    /// <c>MergeScopeLookup.BuildAncestorKey</c>, and
-    /// <c>MergeCollectionLookup.BuildAncestorKeyFromAddress</c>.
-    ///
-    /// NOTE: <see cref="ExtendAncestorContextKey"/> operates on CLR-domain values
-    /// (<see cref="CollectionWriteCandidate.SemanticIdentityValues"/> as <c>object?</c>) and uses
-    /// <see cref="NormalizeClrValueForIdentity"/>. For simple types (string, int, long, bool) both
-    /// serializers produce the same output. A divergence is possible for decimal, double, DateOnly,
-    /// DateTime, and TimeOnly — but the write-side CLR path runs only when collection-nested
-    /// separate-table scopes are present, which does not occur in any current schema. Routing the
-    /// write side through this helper is deferred as a follow-on cleanup (it would require
-    /// <see cref="CollectionWriteCandidate"/> to carry <c>JsonNode?</c> identity values instead of
-    /// <c>object?</c>).
-    /// </summary>
-    private static string BuildAncestorKeyFromInstances(ImmutableArray<AncestorCollectionInstance> ancestors)
-    {
-        if (ancestors.IsEmpty)
-        {
-            return "";
-        }
-
-        var sb = new System.Text.StringBuilder();
-
-        foreach (var ancestor in ancestors)
-        {
-            if (sb.Length > 0)
-            {
-                sb.Append('\0');
-            }
-
-            sb.Append(ancestor.JsonScope);
-
-            foreach (var part in ancestor.SemanticIdentityInOrder)
-            {
-                sb.Append('\0');
-                sb.Append(part.IsPresent ? '1' : '0');
-                sb.Append('\0');
-                sb.Append(ExtractJsonNodeStringValue(part.Value));
-            }
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Builds the ancestor context key from a ScopeInstanceAddress for use in the
-    /// visitedScopeKeys canonical key format. Delegates to
-    /// <see cref="BuildAncestorKeyFromInstances"/> so all JSON-domain key sites share one
-    /// implementation.
-    /// </summary>
-    private static string BuildAncestorKeyFromScopeInstanceAddress(ScopeInstanceAddress address) =>
-        BuildAncestorKeyFromInstances(address.AncestorCollectionInstances);
 
     /// <summary>
     /// Discriminated union for interleaved collection row entries during ordinal recomputation.
@@ -1924,45 +1867,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         };
 
     /// <summary>
-    /// Extracts the raw string value from a JsonNode without JSON-encoding artifacts.
-    /// JsonNode.ToString() on a JsonValue wrapping a string produces quoted JSON (e.g. "\"foo\""),
-    /// so this method extracts the underlying value directly.
-    /// </summary>
-    private static string ExtractJsonNodeStringValue(JsonNode? node)
-    {
-        if (node is null)
-        {
-            return "";
-        }
-
-        if (node is JsonValue jsonValue)
-        {
-            if (jsonValue.TryGetValue<string>(out var s))
-            {
-                return s;
-            }
-            if (jsonValue.TryGetValue<long>(out var l))
-            {
-                return l.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<int>(out var i))
-            {
-                return i.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<double>(out var d))
-            {
-                return d.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<bool>(out var b))
-            {
-                return b ? "True" : "False";
-            }
-        }
-
-        return node.ToString();
-    }
-
-    /// <summary>
     /// Compares a FlattenedWriteValue from a current row to a SemanticIdentityPart from
     /// a VisibleStoredCollectionRow or VisibleRequestCollectionItem.
     /// </summary>
@@ -1992,7 +1896,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             return literal is null;
         }
 
-        var storedString = ExtractJsonNodeStringValue(storedPart.Value);
+        var storedString = AncestorKeyHelpers.ExtractJsonNodeStringValue(storedPart.Value);
         var currentString = NormalizeClrValueForIdentity(literal);
         return string.Equals(storedString, currentString, StringComparison.Ordinal);
     }
@@ -2031,7 +1935,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             return candidateValue is null;
         }
 
-        var partString = ExtractJsonNodeStringValue(part.Value);
+        var partString = AncestorKeyHelpers.ExtractJsonNodeStringValue(part.Value);
         var candidateString = NormalizeClrValueForIdentity(candidateValue);
         return string.Equals(partString, candidateString, StringComparison.Ordinal);
     }
@@ -2821,11 +2725,11 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         /// <summary>
-        /// Delegates to <see cref="RelationalWriteMergeSynthesizer.BuildAncestorKeyFromInstances"/>
+        /// Delegates to <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>
         /// so that all ancestor-key construction in the JSON domain shares a single implementation.
         /// </summary>
         private static string BuildAncestorKey(ImmutableArray<AncestorCollectionInstance> ancestors) =>
-            BuildAncestorKeyFromInstances(ancestors);
+            AncestorKeyHelpers.BuildAncestorKeyFromInstances(ancestors);
     }
 
     /// <summary>
@@ -2835,14 +2739,14 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// ENCODING NOTE: This method operates on CLR-domain values (<c>object?</c> from
     /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/>) and serializes them
     /// via <see cref="NormalizeClrValueForIdentity"/>. The corresponding JSON-domain builder,
-    /// <see cref="BuildAncestorKeyFromInstances"/>, uses <see cref="ExtractJsonNodeStringValue"/>.
+    /// <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>, uses <see cref="AncestorKeyHelpers.ExtractJsonNodeStringValue"/>.
     /// For string, int, long, and bool identity types (all current schemas), both serializers
     /// produce identical output. If a collection-nested separate-table scope ever uses decimal,
     /// double, DateOnly, DateTime, or TimeOnly as a semantic identity key, the keys built here
     /// and in <see cref="ApplyStoredScopeStatesSecondPass"/> could diverge, producing a spurious
     /// duplicate delete. Eliminate this risk as a follow-on by carrying <c>JsonNode?</c> identity
     /// values through <see cref="CollectionWriteCandidate"/> and routing this method through
-    /// <see cref="BuildAncestorKeyFromInstances"/>.
+    /// <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>.
     /// </summary>
     private static string ExtendAncestorContextKey(
         string currentKey,
@@ -2961,11 +2865,11 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         /// <summary>
         /// Builds an ancestor context key from a CollectionRowAddress.ParentAddress.
-        /// Delegates to <see cref="RelationalWriteMergeSynthesizer.BuildAncestorKeyFromInstances"/>
+        /// Delegates to <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>
         /// so all JSON-domain key construction shares a single implementation.
         /// </summary>
         private static string BuildAncestorKeyFromAddress(ScopeInstanceAddress parentAddress) =>
-            BuildAncestorKeyFromInstances(parentAddress.AncestorCollectionInstances);
+            AncestorKeyHelpers.BuildAncestorKeyFromInstances(parentAddress.AncestorCollectionInstances);
     }
 
     // --- Current state projection ---

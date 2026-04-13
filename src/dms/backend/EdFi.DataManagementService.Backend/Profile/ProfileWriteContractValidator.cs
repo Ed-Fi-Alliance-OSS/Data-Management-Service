@@ -4,9 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Text;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -577,50 +575,11 @@ internal static class ProfileWriteContractValidator
                 sb.Append('\0');
                 sb.Append(part.IsPresent ? '1' : '0');
                 sb.Append('\0');
-                sb.Append(ExtractJsonNodeStringValue(part.Value));
+                sb.Append(AncestorKeyHelpers.ExtractJsonNodeStringValue(part.Value));
             }
         }
 
         return sb.ToString();
-    }
-
-    /// <summary>
-    /// Extracts a stable string representation of a <see cref="JsonNode"/> for use in
-    /// instance-key building. Mirrors the encoding used in the backend merge's ancestor
-    /// key builder so keys are comparable end-to-end.
-    /// </summary>
-    private static string ExtractJsonNodeStringValue(JsonNode? node)
-    {
-        if (node is null)
-        {
-            return "";
-        }
-
-        if (node is JsonValue jsonValue)
-        {
-            if (jsonValue.TryGetValue<string>(out var s))
-            {
-                return s;
-            }
-            if (jsonValue.TryGetValue<long>(out var l))
-            {
-                return l.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<int>(out var i))
-            {
-                return i.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<double>(out var d))
-            {
-                return d.ToString(CultureInfo.InvariantCulture);
-            }
-            if (jsonValue.TryGetValue<bool>(out var b))
-            {
-                return b ? "True" : "False";
-            }
-        }
-
-        return node.ToString();
     }
 
     private static Dictionary<string, CompiledScopeDescriptor> BuildCatalogLookup(
