@@ -71,6 +71,9 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
                     continue;
                 }
 
+                // The resolver produces one shortest join chain per (resource, kind),
+                // so we aggregate all JSON paths for the kind here. This is accurate for
+                // DS 5.2 where no resource has divergent join chains for same-kind person elements.
                 var jsonPaths = resolvedPath.Kind switch
                 {
                     SecurableElementKind.Student => concreteResource.SecurableElements.Student,
@@ -126,10 +129,30 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     }
 
     [Test]
+    public void It_should_enumerate_all_expected_multi_hop_resources()
+    {
+        var expectedResources = new[]
+        {
+            "CourseTranscript",
+            "Grade",
+            "StudentAssessmentEducationOrganizationAssociation",
+            "StudentAssessmentRegistration",
+            "StudentAssessmentRegistrationBatteryPartAssociation",
+        };
+
+        var actualResources = _multiHopEntries.Select(e => e.ResourceName).Distinct().Order().ToArray();
+
+        actualResources
+            .Should()
+            .BeEquivalentTo(
+                expectedResources,
+                "the full set of DS 5.2 resources with multi-hop Person paths must be locked in"
+            );
+    }
+
+    [Test]
     public void It_should_generate_multi_hop_report_json()
     {
-        _multiHopEntries.Should().NotBeEmpty("there should be at least one multi-hop Person path in DS 5.2");
-
         var options = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -139,13 +162,6 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
 
         var json = JsonSerializer.Serialize(_multiHopEntries, options);
 
-        var outputPath = Path.Combine(
-            TestContext.CurrentContext.TestDirectory,
-            "multi-hop-person-auth-paths.json"
-        );
-        File.WriteAllText(outputPath, json);
-
-        TestContext.Out.WriteLine($"Report written to: {outputPath}");
         TestContext.Out.WriteLine($"Total multi-hop entries: {_multiHopEntries.Count}");
         TestContext.Out.WriteLine();
         TestContext.Out.WriteLine(json);
