@@ -286,7 +286,6 @@ public class Given_Default_Relational_Write_Executor
             ((RelationalWriteTargetContext.CreateNew)request.TargetContext).DocumentUuid
         );
         var committedResponse = CreateCommittedExternalResponse(
-            request,
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
@@ -302,7 +301,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.InsertSuccess(
                         persistedTarget.DocumentUuid,
-                        ExpectedCommittedResponseEtag(request, committedResponse)
+                        ExpectedCommittedResponseEtag(committedResponse)
                     ),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
@@ -394,7 +393,6 @@ public class Given_Default_Relational_Write_Executor
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
         );
         var committedResponse = CreateCommittedExternalResponse(
-            request,
             persistedTarget,
             JsonNode.Parse("""{"name":"Lincoln High","schoolId":255901}""")!
         );
@@ -408,7 +406,7 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateSuccess(
                         persistedTarget.DocumentUuid,
-                        ExpectedCommittedResponseEtag(request, committedResponse)
+                        ExpectedCommittedResponseEtag(committedResponse)
                     ),
                     RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                 )
@@ -1732,18 +1730,15 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static string ExpectedEtag(RelationalWriteExecutorRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody, request.ExistingDocumentReadPlan);
+        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody);
 
     private static string ExpectedSelectedBodyEtag(RelationalWriteExecutorRequest request) =>
-        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody, request.ExistingDocumentReadPlan);
+        RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody);
 
-    private static string ExpectedCommittedResponseEtag(
-        RelationalWriteExecutorRequest request,
-        JsonNode committedResponse
-    ) => RelationalApiMetadataFormatter.FormatEtag(committedResponse, request.ExistingDocumentReadPlan);
+    private static string ExpectedCommittedResponseEtag(JsonNode committedResponse) =>
+        RelationalApiMetadataFormatter.FormatEtag(committedResponse);
 
     private static JsonNode CreateCommittedExternalResponse(
-        RelationalWriteExecutorRequest request,
         RelationalWritePersistResult persistedTarget,
         JsonNode materializedBody
     )
@@ -1754,7 +1749,7 @@ public class Given_Default_Relational_Write_Executor
         var committedObject = (JsonObject)committedResponse;
         committedObject["id"] = persistedTarget.DocumentUuid.Value.ToString();
         committedObject["_lastModifiedDate"] = "2026-04-02T12:00:00Z";
-        committedObject["_etag"] = ExpectedCommittedResponseEtag(request, committedObject);
+        committedObject["_etag"] = ExpectedCommittedResponseEtag(committedObject);
 
         return committedObject;
     }
@@ -2334,8 +2329,7 @@ public class Given_Default_Relational_Write_Executor
             )?.CommitCallCount;
 
             return Task.FromResult(
-                ResultToReturn
-                    ?? CreateCommittedExternalResponse(request, persistedTarget, request.SelectedBody)
+                ResultToReturn ?? CreateCommittedExternalResponse(persistedTarget, request.SelectedBody)
             );
         }
     }

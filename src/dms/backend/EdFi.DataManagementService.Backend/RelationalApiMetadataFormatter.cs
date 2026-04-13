@@ -6,16 +6,13 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalApiMetadataFormatter
 {
-    public static string FormatEtag(JsonNode document) => FormatEtag(document, readPlan: null);
-
-    public static string FormatEtag(JsonNode document, ResourceReadPlan? readPlan)
+    public static string FormatEtag(JsonNode document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -44,9 +41,7 @@ internal static class RelationalApiMetadataFormatter
         return FormatEtag(BuildCanonicalDescriptorDocument(descriptorBody));
     }
 
-    public static void RefreshEtag(JsonNode document) => RefreshEtag(document, readPlan: null);
-
-    public static void RefreshEtag(JsonNode document, ResourceReadPlan? readPlan)
+    public static void RefreshEtag(JsonNode document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -57,7 +52,7 @@ internal static class RelationalApiMetadataFormatter
             );
         }
 
-        documentObject["_etag"] = FormatEtag(documentObject, readPlan);
+        documentObject["_etag"] = FormatEtag(documentObject);
     }
 
     private static JsonObject BuildCanonicalDescriptorDocument(ExtractedDescriptorBody descriptorBody)

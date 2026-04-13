@@ -230,8 +230,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var mappingSet = CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo);
         var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!,
-            readPlan
+            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!
         );
         var projectionContext = new ReadableProfileProjectionContext(
             new ContentTypeDefinition(

@@ -18,6 +18,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,7 +75,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
-        services.AddTestReadableProfileProjector();
+        services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
 
@@ -352,6 +353,44 @@ internal sealed record MssqlStudentSchoolAssociationDocumentMetadata(
 [NonParallelizable]
 public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture
 {
+    private static readonly ContentTypeDefinition ReadableProfileContentType = new(
+        MemberSelection.IncludeOnly,
+        [],
+        [],
+        [
+            new CollectionRule(
+                "alternativeGraduationPlans",
+                MemberSelection.IncludeOnly,
+                null,
+                [],
+                [
+                    new ObjectRule(
+                        "alternativeGraduationPlanReference",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("graduationSchoolYear")],
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                null,
+                null,
+                null
+            ),
+        ],
+        [
+            new ExtensionRule(
+                "sample",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("membershipTypeDescriptor")],
+                null,
+                null
+            ),
+        ]
+    );
+
     private const long SchoolId = 100;
     private const int SchoolYear = 2024;
     private const int FoundationGraduationSchoolYear = 2026;
@@ -433,6 +472,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private MssqlStudentSchoolAssociationSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
     private GetResult _getResultAfterCreate = null!;
+    private GetResult _profiledGetResultAfterCreate = null!;
     private MssqlStudentSchoolAssociationDocumentMetadata _documentMetadata = null!;
 
     [SetUp]
@@ -498,6 +538,11 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             StudentSchoolAssociationDocumentUuid,
             "mssql-authoritative-sample-student-school-association-get-after-create"
         );
+        _profiledGetResultAfterCreate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "mssql-authoritative-sample-student-school-association-get-after-create-readable-profile",
+            CreateReadableProfileProjectionContext()
+        );
     }
 
     [TearDown]
@@ -539,6 +584,53 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
     }
 
+    [Test]
+    public void It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection()
+    {
+        var expectedDocument = CreateExpectedReadableProfileExternalResponse(
+            CreateRequestBodyJson,
+            StudentSchoolAssociationDocumentUuid.Value,
+            _documentMetadata.ContentLastModifiedAt
+        );
+
+        _profiledGetResultAfterCreate.Should().BeOfType<GetResult.GetSuccess>();
+
+        var success = (GetResult.GetSuccess)_profiledGetResultAfterCreate;
+        var unprojectedSuccess = (GetResult.GetSuccess)_getResultAfterCreate;
+
+        success.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid);
+        success.LastModifiedTraceId.Should().BeNull();
+        success.LastModifiedDate.Should().Be(_documentMetadata.ContentLastModifiedAt.UtcDateTime);
+        success.EdfiDoc["educationPlans"].Should().BeNull();
+        success.EdfiDoc["entryGradeLevelDescriptor"].Should().BeNull();
+        success.EdfiDoc["alternativeGraduationPlans"]!
+            .AsArray()
+            .Select(plan =>
+                plan?["alternativeGraduationPlanReference"]?["graduationSchoolYear"]?.GetValue<int>()
+            )
+            .Should()
+            .Equal((int?)FoundationGraduationSchoolYear, EndorsementGraduationSchoolYear);
+        success.EdfiDoc["alternativeGraduationPlans"]!
+            .AsArray()
+            .Select(plan =>
+                plan?["alternativeGraduationPlanReference"]?["educationOrganizationId"]?.GetValue<long>()
+            )
+            .Should()
+            .Equal((long?)null, null);
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedDocument["_etag"]!.GetValue<string>());
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+        RelationalGetIntegrationTestHelper
+            .CanonicalizeJson(success.EdfiDoc)
+            .Should()
+            .Be(RelationalGetIntegrationTestHelper.CanonicalizeJson(expectedDocument));
+    }
+
     private async Task<UpsertResult> ExecuteCreateAsync(
         JsonNode requestBody,
         DocumentInfo documentInfo,
@@ -568,7 +660,11 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             .UpsertDocument(request);
     }
 
-    private async Task<GetResult> ExecuteGetByIdAsync(DocumentUuid documentUuid, string traceId)
+    private async Task<GetResult> ExecuteGetByIdAsync(
+        DocumentUuid documentUuid,
+        string traceId,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+    )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
@@ -578,12 +674,117 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
             ResourceAuthorizationHandler: new MssqlStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
-            TraceId: new TraceId(traceId)
+            TraceId: new TraceId(traceId),
+            ReadableProfileProjectionContext: readableProfileProjectionContext
         );
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .GetDocumentById(request);
+    }
+
+    private ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
+        new(
+            ReadableProfileContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(_resourceSchema.IdentityJsonPaths)
+        );
+
+    private JsonObject CreateExpectedReadableProfileExternalResponse(
+        string requestBodyJson,
+        Guid documentUuid,
+        DateTimeOffset lastModifiedAt
+    )
+    {
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            requestBodyJson,
+            _resourceInfo,
+            _mappingSet,
+            documentUuid,
+            lastModifiedAt
+        );
+        var identityPropertyNames = IReadableProfileProjector.ExtractIdentityPropertyNames(
+            _resourceSchema.IdentityJsonPaths
+        );
+        HashSet<string> retainedTopLevelPropertyNames =
+        [
+            .. identityPropertyNames,
+            "id",
+            "_etag",
+            "_lastModifiedDate",
+            "alternativeGraduationPlans",
+            "_ext",
+        ];
+
+        foreach (string propertyName in expectedDocument.Select(static property => property.Key).ToList())
+        {
+            if (!retainedTopLevelPropertyNames.Contains(propertyName))
+            {
+                expectedDocument.Remove(propertyName);
+            }
+        }
+
+        var alternativeGraduationPlans =
+            expectedDocument["alternativeGraduationPlans"] as JsonArray
+            ?? throw new InvalidOperationException(
+                "Expected projected document to retain alternativeGraduationPlans."
+            );
+
+        foreach (JsonNode? item in alternativeGraduationPlans)
+        {
+            var planObject =
+                item as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected alternativeGraduationPlans items to be JSON objects."
+                );
+            var referenceObject =
+                planObject["alternativeGraduationPlanReference"] as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected projected plan items to retain alternativeGraduationPlanReference."
+                );
+
+            foreach (string propertyName in referenceObject.Select(static property => property.Key).ToList())
+            {
+                if (!string.Equals(propertyName, "graduationSchoolYear", StringComparison.Ordinal))
+                {
+                    referenceObject.Remove(propertyName);
+                }
+            }
+
+            foreach (string propertyName in planObject.Select(static property => property.Key).ToList())
+            {
+                if (
+                    !string.Equals(
+                        propertyName,
+                        "alternativeGraduationPlanReference",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    planObject.Remove(propertyName);
+                }
+            }
+        }
+
+        var extensionObject =
+            expectedDocument["_ext"] as JsonObject
+            ?? throw new InvalidOperationException("Expected projected document to retain _ext.");
+        var sampleExtension =
+            extensionObject["sample"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected projected document to retain the sample extension namespace."
+            );
+
+        foreach (string propertyName in sampleExtension.Select(static property => property.Key).ToList())
+        {
+            if (!string.Equals(propertyName, "membershipTypeDescriptor", StringComparison.Ordinal))
+            {
+                sampleExtension.Remove(propertyName);
+            }
+        }
+
+        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
+
+        return expectedDocument;
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)

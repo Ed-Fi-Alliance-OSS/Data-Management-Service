@@ -555,7 +555,7 @@ public sealed class RelationalDocumentStoreRepository(
                 projectionContext.ContentTypeDefinition,
                 projectionContext.IdentityPropertyNames
             );
-            RelationalApiMetadataFormatter.RefreshEtag(edfiDoc, readPlan);
+            RelationalApiMetadataFormatter.RefreshEtag(edfiDoc);
         }
 
         return new GetResult.GetSuccess(
