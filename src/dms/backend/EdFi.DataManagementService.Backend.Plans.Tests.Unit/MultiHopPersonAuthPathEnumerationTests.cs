@@ -85,12 +85,26 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
                         PersonType: resolvedPath.Kind.ToString(),
                         SecurableElementJsonPaths: jsonPaths.ToArray(),
                         JoinPath: resolvedPath
-                            .Steps.Select(step => new JoinStep(
-                                SourceTable: step.SourceTable.ToString(),
-                                SourceColumn: step.SourceColumnName.Value,
-                                TargetTable: step.TargetTable?.ToString() ?? "",
-                                TargetColumn: step.TargetColumnName?.Value ?? ""
-                            ))
+                            .Steps.Select(step =>
+                            {
+                                var targetTable =
+                                    step.TargetTable
+                                    ?? throw new InvalidOperationException(
+                                        $"Multi-hop step for {resource.ResourceName} has null TargetTable"
+                                    );
+                                var targetColumn =
+                                    step.TargetColumnName
+                                    ?? throw new InvalidOperationException(
+                                        $"Multi-hop step for {resource.ResourceName} has null TargetColumnName"
+                                    );
+
+                                return new JoinStep(
+                                    SourceTable: step.SourceTable.ToString(),
+                                    SourceColumn: step.SourceColumnName.Value,
+                                    TargetTable: targetTable.ToString(),
+                                    TargetColumn: targetColumn.Value
+                                );
+                            })
                             .ToArray(),
                         HopCount: resolvedPath.Steps.Count
                     )
