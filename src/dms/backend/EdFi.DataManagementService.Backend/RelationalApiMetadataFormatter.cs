@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend;
@@ -20,9 +19,7 @@ internal static class RelationalApiMetadataFormatter
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var canonicalDocument = readPlan is null
-            ? document.DeepClone()
-            : DocumentReconstituter.ReorderToReadPlanOrder(document, readPlan);
+        var canonicalDocument = document.DeepClone();
 
         if (canonicalDocument is not JsonObject documentObject)
         {
