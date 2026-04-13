@@ -158,11 +158,12 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         var table = new DataTable();
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("DocumentUuid", typeof(Guid));
+        table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ContentVersion", typeof(long));
 
         foreach (var row in rows)
         {
-            table.Rows.Add(row.DocumentId, row.DocumentUuid, row.ContentVersion);
+            table.Rows.Add(row.DocumentId, row.DocumentUuid, (short)1, row.ContentVersion);
         }
 
         return table.CreateDataReader();

@@ -132,6 +132,49 @@ public static class HydrationReader
         return new HydratedTableRows(tablePlan.TableModel, rows);
     }
 
+    /// <summary>
+    /// Reads normalized descriptor URI rows from the current descriptor projection result set.
+    /// </summary>
+    /// <param name="reader">The data reader positioned at a descriptor projection result set.</param>
+    /// <param name="descriptorPlan">The descriptor projection plan describing the expected ordinals.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Descriptor URI rows in result-set order.</returns>
+    public static async Task<HydratedDescriptorRows> ReadDescriptorRowsAsync(
+        DbDataReader reader,
+        DescriptorProjectionPlan descriptorPlan,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(descriptorPlan);
+
+        var expectedColumnCount =
+            Math.Max(descriptorPlan.ResultShape.DescriptorIdOrdinal, descriptorPlan.ResultShape.UriOrdinal)
+            + 1;
+
+        if (reader.FieldCount != expectedColumnCount)
+        {
+            throw new InvalidOperationException(
+                "Descriptor projection result set has "
+                    + $"{reader.FieldCount} columns but expected {expectedColumnCount}."
+            );
+        }
+
+        var rows = new List<DescriptorUriRow>();
+
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(
+                new DescriptorUriRow(
+                    DescriptorId: reader.GetInt64(descriptorPlan.ResultShape.DescriptorIdOrdinal),
+                    Uri: reader.GetString(descriptorPlan.ResultShape.UriOrdinal)
+                )
+            );
+        }
+
+        return new HydratedDescriptorRows(rows);
+    }
+
     private static DateTimeOffset ReadDateTimeOffset(DbDataReader reader, int ordinal)
     {
         var value = reader.GetValue(ordinal);

@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,6 +86,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
@@ -422,6 +424,45 @@ internal sealed record PropagatedReferenceIdentityCascadeReferenceShape(
 [NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture
 {
+    private static readonly ContentTypeDefinition ReadableProfileContentType = new(
+        MemberSelection.IncludeOnly,
+        [],
+        [],
+        [
+            new CollectionRule(
+                "addresses",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("addressTypeDescriptor")],
+                null,
+                null,
+                [
+                    new ExtensionRule(
+                        "sample",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("onBusRoute")],
+                        null,
+                        [
+                            new CollectionRule(
+                                "schoolDistricts",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                [new PropertyRule("schoolDistrict")],
+                                null,
+                                null,
+                                null,
+                                null
+                            ),
+                        ]
+                    ),
+                ],
+                null
+            ),
+        ],
+        []
+    );
+
     private const string CreateRequestBodyJson = """
         {
           "educationOrganizationReference": {
@@ -531,11 +572,14 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private AuthoritativeSampleWriteSeedData _seedData = null!;
     private DbTableModel _schoolDistrictTable = null!;
     private UpsertResult _createResult = null!;
+    private GetResult _getResultAfterCreate = null!;
+    private GetResult _profiledGetResultAfterCreate = null!;
     private UpdateResult _changedUpdateResult = null!;
     private UpdateResult _noOpUpdateResult = null!;
     private AuthoritativeSampleWritePersistedState _stateAfterCreate = null!;
     private AuthoritativeSampleWritePersistedState _stateAfterChangedUpdate = null!;
     private AuthoritativeSampleWritePersistedState _stateAfterNoOpUpdate = null!;
+    private DateTimeOffset _lastModifiedAtAfterCreate;
 
     [SetUp]
     public async Task Setup()
@@ -589,6 +633,16 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
+        _lastModifiedAtAfterCreate = await ReadContentLastModifiedAtAsync(AssociationDocumentUuid.Value);
+        _getResultAfterCreate = await ExecuteGetByIdAsync(
+            AssociationDocumentUuid,
+            "pg-authoritative-sample-get-after-create"
+        );
+        _profiledGetResultAfterCreate = await ExecuteGetByIdAsync(
+            AssociationDocumentUuid,
+            "pg-authoritative-sample-get-after-create-readable-profile",
+            CreateReadableProfileProjectionContext()
+        );
 
         _changedUpdateResult = await ExecuteChangedUpdateAsync();
         _changedUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
@@ -765,6 +819,64 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateAfterChangedUpdate);
     }
 
+    [Test]
+    public void It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection_for_collection_aligned_extensions()
+    {
+        var expectedDocument = CreateExpectedReadableProfileExternalResponse(
+            CreateRequestBodyJson,
+            AssociationDocumentUuid.Value,
+            _lastModifiedAtAfterCreate
+        );
+
+        _profiledGetResultAfterCreate.Should().BeOfType<GetResult.GetSuccess>();
+
+        var success = (GetResult.GetSuccess)_profiledGetResultAfterCreate;
+        var unprojectedSuccess = (GetResult.GetSuccess)_getResultAfterCreate;
+        var address =
+            success.EdfiDoc["addresses"]?[0] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected projected document to retain the first address."
+            );
+        var sampleExtension =
+            address["_ext"]?["sample"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected projected address to retain the sample extension namespace."
+            );
+
+        success.DocumentUuid.Should().Be(AssociationDocumentUuid);
+        success.LastModifiedTraceId.Should().BeNull();
+        success.LastModifiedDate.Should().Be(_lastModifiedAtAfterCreate.UtcDateTime);
+        success.EdfiDoc["hispanicLatinoEthnicity"].Should().BeNull();
+        success.EdfiDoc["_ext"].Should().BeNull();
+        success.EdfiDoc["educationOrganizationReference"].Should().NotBeNull();
+        success.EdfiDoc["studentReference"].Should().NotBeNull();
+        address["addressTypeDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be("uri://ed-fi.org/AddressTypeDescriptor#Home");
+        address["city"].Should().BeNull();
+        sampleExtension["onBusRoute"]!.GetValue<bool>().Should().BeTrue();
+        sampleExtension["complex"].Should().BeNull();
+        sampleExtension["terms"].Should().BeNull();
+        sampleExtension["schoolDistricts"]!
+            .AsArray()
+            .Select(district => district?["schoolDistrict"]?.GetValue<string>())
+            .Should()
+            .Equal("District Nine");
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedDocument["_etag"]!.GetValue<string>());
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+        RelationalGetIntegrationTestHelper
+            .CanonicalizeJson(success.EdfiDoc)
+            .Should()
+            .Be(RelationalGetIntegrationTestHelper.CanonicalizeJson(expectedDocument));
+    }
+
     private async Task<UpsertResult> ExecuteCreateAsync()
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -895,6 +1007,147 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpdateDocumentById(request);
+    }
+
+    private async Task<GetResult> ExecuteGetByIdAsync(
+        DocumentUuid documentUuid,
+        string traceId,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+    )
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlRelationalWriteAuthoritativeSampleSmoke",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: _resourceInfo,
+            MappingSet: _mappingSet,
+            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
+            TraceId: new TraceId(traceId),
+            ReadableProfileProjectionContext: readableProfileProjectionContext
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
+    private ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
+        new(
+            ReadableProfileContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(_baseResourceSchema.IdentityJsonPaths)
+        );
+
+    private JsonObject CreateExpectedReadableProfileExternalResponse(
+        string requestBodyJson,
+        Guid documentUuid,
+        DateTimeOffset lastModifiedAt
+    )
+    {
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            requestBodyJson,
+            _resourceInfo,
+            _mappingSet,
+            documentUuid,
+            lastModifiedAt
+        );
+        var identityPropertyNames = IReadableProfileProjector.ExtractIdentityPropertyNames(
+            _baseResourceSchema.IdentityJsonPaths
+        );
+        HashSet<string> retainedTopLevelPropertyNames =
+        [
+            .. identityPropertyNames,
+            "addresses",
+            "id",
+            "_etag",
+            "_lastModifiedDate",
+        ];
+
+        foreach (string propertyName in expectedDocument.Select(static property => property.Key).ToList())
+        {
+            if (!retainedTopLevelPropertyNames.Contains(propertyName))
+            {
+                expectedDocument.Remove(propertyName);
+            }
+        }
+
+        var addresses =
+            expectedDocument["addresses"] as JsonArray
+            ?? throw new InvalidOperationException("Expected projected document to retain addresses.");
+
+        foreach (JsonNode? item in addresses)
+        {
+            var address =
+                item as JsonObject
+                ?? throw new InvalidOperationException("Expected address items to be JSON objects.");
+            var sampleExtension =
+                address["_ext"]?["sample"] as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected projected address items to retain the sample extension namespace."
+                );
+
+            foreach (string propertyName in address.Select(static property => property.Key).ToList())
+            {
+                if (
+                    !string.Equals(propertyName, "addressTypeDescriptor", StringComparison.Ordinal)
+                    && !string.Equals(propertyName, "_ext", StringComparison.Ordinal)
+                )
+                {
+                    address.Remove(propertyName);
+                }
+            }
+
+            foreach (string propertyName in sampleExtension.Select(static property => property.Key).ToList())
+            {
+                if (
+                    !string.Equals(propertyName, "onBusRoute", StringComparison.Ordinal)
+                    && !string.Equals(propertyName, "schoolDistricts", StringComparison.Ordinal)
+                )
+                {
+                    sampleExtension.Remove(propertyName);
+                }
+            }
+
+            var schoolDistricts =
+                sampleExtension["schoolDistricts"] as JsonArray
+                ?? throw new InvalidOperationException(
+                    "Expected projected sample extension to retain schoolDistricts."
+                );
+
+            foreach (JsonNode? schoolDistrictItem in schoolDistricts)
+            {
+                var schoolDistrict =
+                    schoolDistrictItem as JsonObject
+                    ?? throw new InvalidOperationException(
+                        "Expected schoolDistricts items to be JSON objects."
+                    );
+
+                foreach (
+                    string propertyName in schoolDistrict.Select(static property => property.Key).ToList()
+                )
+                {
+                    if (!string.Equals(propertyName, "schoolDistrict", StringComparison.Ordinal))
+                    {
+                        schoolDistrict.Remove(propertyName);
+                    }
+                }
+            }
+        }
+
+        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
+
+        return expectedDocument;
     }
 
     private async Task<AuthoritativeSampleWriteSeedData> SeedReferenceDataAsync()
@@ -1273,6 +1526,34 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             (projectName, resourceName, true),
             (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
         );
+    }
+
+    private async Task<DateTimeOffset> ReadContentLastModifiedAtAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? rows[0]["ContentLastModifiedAt"] switch
+            {
+                DateTimeOffset value => value,
+                DateTime value => new DateTimeOffset(
+                    DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                    TimeSpan.Zero
+                ),
+                _ => throw new InvalidOperationException(
+                    "Expected ContentLastModifiedAt to be a DateTimeOffset-compatible value."
+                ),
+            }
+            : throw new InvalidOperationException(
+                $"Expected exactly one document metadata row for '{documentUuid}', but found {rows.Count}."
+            );
     }
 
     private async Task<AuthoritativeSampleWritePersistedState> ReadPersistedStateAsync(Guid documentUuid)

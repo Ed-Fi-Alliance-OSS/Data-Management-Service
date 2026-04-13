@@ -31,6 +31,7 @@ public class Given_No_Profile_Relational_Post
     [SetUp]
     public async Task Setup()
     {
+        const string committedEtag = "\"51\"";
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
         _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
@@ -38,7 +39,8 @@ public class Given_No_Profile_Relational_Post
         _documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
         A.CallTo(() =>
@@ -60,7 +62,7 @@ public class Given_No_Profile_Relational_Post
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Upsert(
-                        new UpsertResult.InsertSuccess(_documentUuid)
+                        new UpsertResult.InsertSuccess(_documentUuid, committedEtag)
                     );
                 }
             );
@@ -69,7 +71,11 @@ public class Given_No_Profile_Relational_Post
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
-            _descriptorWriteHandler
+            _descriptorWriteHandler,
+            A.Fake<IDocumentHydrator>(),
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -87,7 +93,7 @@ public class Given_No_Profile_Relational_Post
     [Test]
     public void It_routes_through_the_executor()
     {
-        _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid));
+        _result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(_documentUuid, "\"51\""));
         A.CallTo(() =>
                 _targetLookupService.ResolveForPostAsync(
                     A<MappingSet>._,
@@ -133,6 +139,7 @@ public class Given_No_Profile_Relational_Put
     [SetUp]
     public async Task Setup()
     {
+        const string committedEtag = "\"52\"";
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = A.Fake<IRelationalWriteTargetLookupService>();
         _descriptorWriteHandler = A.Fake<IDescriptorWriteHandler>();
@@ -140,14 +147,7 @@ public class Given_No_Profile_Relational_Put
         _documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var rootTable = writePlan.Model.Root;
-        var readPlan = new ResourceReadPlan(
-            writePlan.Model,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(rootTable, "select 1")],
-            [],
-            []
-        );
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
@@ -169,7 +169,7 @@ public class Given_No_Profile_Relational_Put
                 {
                     _capturedExecutorRequest = req;
                     return new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(_documentUuid)
+                        new UpdateResult.UpdateSuccess(_documentUuid, committedEtag)
                     );
                 }
             );
@@ -178,7 +178,11 @@ public class Given_No_Profile_Relational_Put
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
-            _descriptorWriteHandler
+            _descriptorWriteHandler,
+            A.Fake<IDocumentHydrator>(),
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -196,7 +200,7 @@ public class Given_No_Profile_Relational_Put
     [Test]
     public void It_routes_through_the_executor()
     {
-        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid));
+        _result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(_documentUuid, "\"52\""));
         A.CallTo(() =>
                 _targetLookupService.ResolveForPutAsync(
                     A<MappingSet>._,
@@ -246,7 +250,8 @@ public class Given_A_Profiled_Relational_Post
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan);
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
+        var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
 
@@ -280,7 +285,11 @@ public class Given_A_Profiled_Relational_Post
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
-            _descriptorWriteHandler
+            _descriptorWriteHandler,
+            A.Fake<IDocumentHydrator>(),
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -348,14 +357,7 @@ public class Given_A_Profiled_Relational_Put
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var writePlan = AdapterFactoryTestFixtures.BuildRootOnlyPlan();
         var resourceInfo = OrchestrationTestHelpers.CreateResourceInfo();
-        var rootTable = writePlan.Model.Root;
-        var readPlan = new ResourceReadPlan(
-            writePlan.Model,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(rootTable, "select 1")],
-            [],
-            []
-        );
+        var readPlan = OrchestrationTestHelpers.CreateReadPlan(writePlan);
         var mappingSet = OrchestrationTestHelpers.CreateMappingSet(resourceInfo, writePlan, readPlan);
         var edfiDoc = JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!;
         var writableRequestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
@@ -389,7 +391,11 @@ public class Given_A_Profiled_Relational_Put
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
-            _descriptorWriteHandler
+            _descriptorWriteHandler,
+            A.Fake<IDocumentHydrator>(),
+            A.Fake<IRelationalReadTargetLookupService>(),
+            A.Fake<IRelationalReadMaterializer>(),
+            A.Fake<IReadableProfileProjector>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -520,6 +526,19 @@ internal static class OrchestrationTestHelpers
                     new FlattenedWriteValue.Literal(255901),
                 ]
             )
+        );
+    }
+
+    public static ResourceReadPlan CreateReadPlan(ResourceWritePlan writePlan)
+    {
+        var rootTable = writePlan.Model.Root;
+
+        return new ResourceReadPlan(
+            writePlan.Model,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(rootTable, "select 1")],
+            [],
+            []
         );
     }
 

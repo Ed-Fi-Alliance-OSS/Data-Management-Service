@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -17,7 +18,11 @@ public sealed class RelationalDocumentStoreRepository(
     ILogger<RelationalDocumentStoreRepository> logger,
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
-    IDescriptorWriteHandler descriptorWriteHandler
+    IDescriptorWriteHandler descriptorWriteHandler,
+    IDocumentHydrator documentHydrator,
+    IRelationalReadTargetLookupService readTargetLookupService,
+    IRelationalReadMaterializer readMaterializer,
+    IReadableProfileProjector readableProfileProjector
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -28,8 +33,16 @@ public sealed class RelationalDocumentStoreRepository(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
+    private readonly IDocumentHydrator _documentHydrator =
+        documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
+    private readonly IRelationalReadTargetLookupService _readTargetLookupService =
+        readTargetLookupService ?? throw new ArgumentNullException(nameof(readTargetLookupService));
+    private readonly IRelationalReadMaterializer _readMaterializer =
+        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
+    private readonly IReadableProfileProjector _readableProfileProjector =
+        readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
 
-    public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
         var relationalUpsertRequest = RequireRelationalRequest<IRelationalUpsertRequest>(
@@ -48,67 +61,94 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return _descriptorWriteHandler.HandlePostAsync(
-                new DescriptorWriteRequest(
-                    mappingSet,
-                    resource,
-                    relationalUpsertRequest.EdfiDoc,
-                    relationalUpsertRequest.DocumentUuid,
-                    relationalUpsertRequest.DocumentInfo.ReferentialId,
-                    relationalUpsertRequest.TraceId
+            return await _descriptorWriteHandler
+                .HandlePostAsync(
+                    new DescriptorWriteRequest(
+                        mappingSet,
+                        resource,
+                        relationalUpsertRequest.EdfiDoc,
+                        relationalUpsertRequest.DocumentUuid,
+                        relationalUpsertRequest.DocumentInfo.ReferentialId,
+                        relationalUpsertRequest.TraceId
+                    )
                 )
-            );
+                .ConfigureAwait(false);
         }
 
         var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
 
-        return ExecuteWriteGuardRails<UpsertResult>(
-            requestBody: selectedBody,
-            traceId: relationalUpsertRequest.TraceId,
-            mappingSet,
-            relationalUpsertRequest.ResourceInfo,
-            RelationalWriteOperationKind.Post,
-            new RelationalWriteTargetRequest.Post(
-                relationalUpsertRequest.DocumentInfo.ReferentialId,
-                relationalUpsertRequest.DocumentUuid
-            ),
-            relationalUpsertRequest.DocumentInfo.DocumentReferences,
-            relationalUpsertRequest.DocumentInfo.DescriptorReferences,
-            static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
-            static executorResult =>
-                executorResult switch
-                {
-                    RelationalWriteExecutorResult.Upsert(var result) => result,
-                    RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
-                        "Relational write executor returned an update result for a POST request."
-                    ),
-                    _ => throw new InvalidOperationException(
-                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
-                    ),
-                },
-            profileWriteContext
-        );
+        var result = await ExecuteWriteGuardRails<UpsertResult>(
+                requestBody: selectedBody,
+                traceId: relationalUpsertRequest.TraceId,
+                mappingSet,
+                relationalUpsertRequest.ResourceInfo,
+                RelationalWriteOperationKind.Post,
+                new RelationalWriteTargetRequest.Post(
+                    relationalUpsertRequest.DocumentInfo.ReferentialId,
+                    relationalUpsertRequest.DocumentUuid
+                ),
+                relationalUpsertRequest.DocumentInfo.DocumentReferences,
+                relationalUpsertRequest.DocumentInfo.DescriptorReferences,
+                static failureMessage => new UpsertResult.UnknownFailure(failureMessage),
+                static executorResult =>
+                    executorResult switch
+                    {
+                        RelationalWriteExecutorResult.Upsert(var result) => result,
+                        RelationalWriteExecutorResult.Update => throw new InvalidOperationException(
+                            "Relational write executor returned an update result for a POST request."
+                        ),
+                        _ => throw new InvalidOperationException(
+                            $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a POST request."
+                        ),
+                    },
+                profileWriteContext
+            )
+            .ConfigureAwait(false);
+
+        return result;
     }
 
     public Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         ArgumentNullException.ThrowIfNull(getRequest);
+        var relationalGetRequest = RequireRelationalRequest<IRelationalGetRequest>(
+            getRequest,
+            nameof(getRequest)
+        );
+        var mappingSet = relationalGetRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalGetRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.GetDocumentById - {TraceId}",
-            getRequest.TraceId.Value
+            relationalGetRequest.TraceId.Value
         );
 
-        return Task.FromResult<GetResult>(
-            new GetResult.UnknownFailure(
-                $"Relational GET by id is not implemented for resource '{getRequest.ResourceName.Value}'."
-            )
-        );
+        if (relationalGetRequest.ResourceInfo.IsDescriptor)
+        {
+            return Task.FromResult<GetResult>(BuildDescriptorGetNotImplementedResult(resource));
+        }
+
+        ResourceReadPlan readPlan;
+
+        try
+        {
+            readPlan = GetReadPlanOrThrow(mappingSet, resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
+        }
+
+        return GetDocumentByIdAsync(relationalGetRequest, mappingSet, resource, readPlan);
     }
 
-    public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+    public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         ArgumentNullException.ThrowIfNull(updateRequest);
         var relationalUpdateRequest = RequireRelationalRequest<IRelationalUpdateRequest>(
@@ -127,45 +167,50 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return _descriptorWriteHandler.HandlePutAsync(
-                new DescriptorWriteRequest(
-                    mappingSet,
-                    resource,
-                    relationalUpdateRequest.EdfiDoc,
-                    relationalUpdateRequest.DocumentUuid,
-                    referentialId: null,
-                    relationalUpdateRequest.TraceId
+            return await _descriptorWriteHandler
+                .HandlePutAsync(
+                    new DescriptorWriteRequest(
+                        mappingSet,
+                        resource,
+                        relationalUpdateRequest.EdfiDoc,
+                        relationalUpdateRequest.DocumentUuid,
+                        referentialId: null,
+                        relationalUpdateRequest.TraceId
+                    )
                 )
-            );
+                .ConfigureAwait(false);
         }
 
         var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
         var selectedBody =
             profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
 
-        return ExecuteWriteGuardRails<UpdateResult>(
-            requestBody: selectedBody,
-            traceId: relationalUpdateRequest.TraceId,
-            mappingSet,
-            relationalUpdateRequest.ResourceInfo,
-            RelationalWriteOperationKind.Put,
-            new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
-            relationalUpdateRequest.DocumentInfo.DocumentReferences,
-            relationalUpdateRequest.DocumentInfo.DescriptorReferences,
-            static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
-            static executorResult =>
-                executorResult switch
-                {
-                    RelationalWriteExecutorResult.Update(var result) => result,
-                    RelationalWriteExecutorResult.Upsert => throw new InvalidOperationException(
-                        "Relational write executor returned an upsert result for a PUT request."
-                    ),
-                    _ => throw new InvalidOperationException(
-                        $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
-                    ),
-                },
-            profileWriteContext
-        );
+        var result = await ExecuteWriteGuardRails<UpdateResult>(
+                requestBody: selectedBody,
+                traceId: relationalUpdateRequest.TraceId,
+                mappingSet,
+                relationalUpdateRequest.ResourceInfo,
+                RelationalWriteOperationKind.Put,
+                new RelationalWriteTargetRequest.Put(relationalUpdateRequest.DocumentUuid),
+                relationalUpdateRequest.DocumentInfo.DocumentReferences,
+                relationalUpdateRequest.DocumentInfo.DescriptorReferences,
+                static failureMessage => new UpdateResult.UnknownFailure(failureMessage),
+                static executorResult =>
+                    executorResult switch
+                    {
+                        RelationalWriteExecutorResult.Update(var result) => result,
+                        RelationalWriteExecutorResult.Upsert => throw new InvalidOperationException(
+                            "Relational write executor returned an upsert result for a PUT request."
+                        ),
+                        _ => throw new InvalidOperationException(
+                            $"Relational write executor returned unsupported result type '{executorResult.GetType().Name}' for a PUT request."
+                        ),
+                    },
+                profileWriteContext
+            )
+            .ConfigureAwait(false);
+
+        return result;
     }
 
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
@@ -202,7 +247,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
 
         return Task.FromResult<QueryResult>(
-            new QueryResult.UnknownFailure(
+            new QueryResult.QueryFailureNotImplemented(
                 $"Relational query handling is not implemented for resource '{FormatResource(RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo))}'."
             )
         );
@@ -262,10 +307,7 @@ public sealed class RelationalDocumentStoreRepository(
                 return executorResultProjector(targetResolution.ImmediateResult);
             }
 
-            if (
-                targetResolution.TargetContext is RelationalWriteTargetContext.ExistingDocument
-                && readPlanPreparation.ReadPlan is null
-            )
+            if (readPlanPreparation.ReadPlan is null)
             {
                 return failureFactory(
                     readPlanPreparation.FailureMessage
@@ -431,14 +473,118 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteExecutorResult? ImmediateResult
     );
 
+    private async Task<GetResult> GetDocumentByIdAsync(
+        IRelationalGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        // Relational authorization is pending a later story. Do not route GET-by-id
+        // through the legacy authorization handler while the relational auth seam lands.
+        var targetLookupResult = await _readTargetLookupService
+            .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
+            .ConfigureAwait(false);
+
+        if (
+            targetLookupResult
+            is RelationalReadTargetLookupResult.NotFound
+                or RelationalReadTargetLookupResult.WrongResource
+        )
+        {
+            return new GetResult.GetFailureNotExists();
+        }
+
+        if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+        {
+            throw new InvalidOperationException(
+                $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+            );
+        }
+
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(readPlan, new PageKeysetSpec.Single(existingDocument.DocumentId), default)
+            .ConfigureAwait(false);
+
+        if (hydratedPage.DocumentMetadata.Count == 0)
+        {
+            return new GetResult.GetFailureNotExists();
+        }
+
+        if (hydratedPage.DocumentMetadata.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration for document id {existingDocument.DocumentId} returned "
+                    + $"{hydratedPage.DocumentMetadata.Count} metadata rows, but exactly 1 was expected."
+            );
+        }
+
+        var documentMetadata = hydratedPage.DocumentMetadata[0];
+
+        if (documentMetadata.DocumentId != existingDocument.DocumentId)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration returned metadata for document id {documentMetadata.DocumentId}, "
+                    + $"but target document id was {existingDocument.DocumentId}."
+            );
+        }
+
+        if (documentMetadata.DocumentUuid != existingDocument.DocumentUuid.Value)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET hydration returned document uuid '{documentMetadata.DocumentUuid}', "
+                    + $"but target document uuid was '{existingDocument.DocumentUuid.Value}'."
+            );
+        }
+
+        var edfiDoc = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                relationalGetRequest.ReadMode
+            )
+        );
+
+        if (ShouldApplyReadableProfileProjection(relationalGetRequest))
+        {
+            var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
+            edfiDoc = _readableProfileProjector.Project(
+                edfiDoc,
+                projectionContext.ContentTypeDefinition,
+                projectionContext.IdentityPropertyNames
+            );
+            RelationalApiMetadataFormatter.RefreshEtag(edfiDoc);
+        }
+
+        return new GetResult.GetSuccess(
+            new DocumentUuid(documentMetadata.DocumentUuid),
+            edfiDoc,
+            documentMetadata.ContentLastModifiedAt.UtcDateTime,
+            null
+        );
+    }
+
     private static string FormatResource(QualifiedResourceName resource) =>
         RelationalWriteSupport.FormatResource(resource);
+
+    private static GetResult BuildDescriptorGetNotImplementedResult(QualifiedResourceName resource)
+    {
+        return new GetResult.GetFailureNotImplemented(
+            $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
+        );
+    }
+
+    private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
+        relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
+        && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
     private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
         object request,
         string paramName
     )
-        where TRelationalRequest : class, IRelationalWriteRequest
+        where TRelationalRequest : class
     {
         return request as TRelationalRequest
             ?? throw new ArgumentException(

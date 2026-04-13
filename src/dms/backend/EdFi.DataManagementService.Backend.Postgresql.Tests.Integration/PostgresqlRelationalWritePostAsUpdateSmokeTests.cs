@@ -149,6 +149,7 @@ file static class PostAsUpdateIntegrationTestSupport
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
 
         if (raceCoordinator is not null)
@@ -2928,7 +2929,18 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     [Test]
     public void It_converts_the_stale_create_candidate_into_post_as_update_after_the_competing_create_commits()
     {
-        _createWinnerResult.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(CreateWinnerDocumentUuid));
+        _createWinnerResult
+            .Should()
+            .BeEquivalentTo(
+                new UpsertResult.InsertSuccess(
+                    CreateWinnerDocumentUuid,
+                    RelationalGetIntegrationTestHelper.CreateExpectedEtag(
+                        CreateWinnerRequestBodyJson,
+                        SchoolResourceInfo,
+                        _mappingSet
+                    )
+                )
+            );
         _staleCreateCandidateResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
         _staleCreateCandidateResult
             .As<UpsertResult.UpdateSuccess>()

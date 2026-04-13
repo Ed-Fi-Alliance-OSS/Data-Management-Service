@@ -4,9 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -19,9 +18,7 @@ internal static class DocumentComparer
         parsedBody!.Remove("_lastModifiedDate");
         parsedBody!.Remove("id");
 
-        var parsedJson = JsonSerializer.Serialize(parsedBody);
-
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(parsedJson));
+        byte[] hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(parsedBody));
         return Convert.ToBase64String(hash);
     }
 }

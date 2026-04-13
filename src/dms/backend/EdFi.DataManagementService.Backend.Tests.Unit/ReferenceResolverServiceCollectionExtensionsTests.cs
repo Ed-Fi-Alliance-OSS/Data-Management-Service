@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -51,6 +52,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             ExecutorBackedReferenceResolverAdapterFactory,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
+            TestDocumentHydrator,
             TestSessionDocumentHydrator
         >();
 
@@ -59,8 +61,12 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
+        var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();
         var sessionDocumentHydrator = scope.ServiceProvider.GetRequiredService<ISessionDocumentHydrator>();
+        var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var readTargetLookupService =
+            scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var writeFreshnessChecker =
@@ -90,8 +96,11 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
         writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
+        documentHydrator.Should().BeOfType<TestDocumentHydrator>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         sessionDocumentHydrator.Should().BeOfType<TestSessionDocumentHydrator>();
+        readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
@@ -200,7 +209,20 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             DbTransaction transaction,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class TestDocumentHydrator : IDocumentHydrator
+    {
+        public Task<HydratedPage> HydrateAsync(
+            ResourceReadPlan plan,
+            PageKeysetSpec keyset,
+            CancellationToken ct
         )
         {
             throw new NotSupportedException();

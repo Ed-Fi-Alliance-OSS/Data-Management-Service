@@ -200,7 +200,10 @@ internal sealed class DescriptorWriteHandler(
                 request.TraceId.Value
             );
 
-            return new UpdateResult.UpdateSuccess(documentUuid);
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(body)
+            );
         }
 
         _logger.LogDebug(
@@ -221,11 +224,12 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
 
-            await _commandExecutor
-                .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
-                .ConfigureAwait(false);
+            await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
-            return new UpdateResult.UpdateSuccess(documentUuid);
+            return new UpdateResult.UpdateSuccess(
+                documentUuid,
+                RelationalApiMetadataFormatter.FormatEtag(body)
+            );
         }
         catch (DbException ex)
         {
@@ -353,11 +357,9 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await _commandExecutor
-            .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
-            .ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
-        return new UpsertResult.InsertSuccess(documentUuid);
+        return new UpsertResult.InsertSuccess(documentUuid, RelationalApiMetadataFormatter.FormatEtag(body));
     }
 
     private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
@@ -395,11 +397,30 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        await _commandExecutor
-            .ExecuteReaderAsync(command, static (_, _) => Task.FromResult(true), cancellationToken)
-            .ConfigureAwait(false);
+        await ExecuteWriteCommandAsync(command, cancellationToken).ConfigureAwait(false);
 
-        return new UpsertResult.UpdateSuccess(existingDocumentUuid);
+        return new UpsertResult.UpdateSuccess(
+            existingDocumentUuid,
+            RelationalApiMetadataFormatter.FormatEtag(body)
+        );
+    }
+
+    private async Task ExecuteWriteCommandAsync(
+        RelationalCommand command,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = await _commandExecutor
+            .ExecuteReaderAsync(
+                command,
+                static (_, ct) =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(0);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     // ── PostgreSQL SQL builders ──────────────────────────────────────────
@@ -468,6 +489,7 @@ internal sealed class DescriptorWriteHandler(
 
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @newDocumentId, @resourceKeyId);
+
             """;
 
         return new RelationalCommand(
@@ -498,6 +520,7 @@ internal sealed class DescriptorWriteHandler(
             SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
                 "ContentLastModifiedAt" = now()
             WHERE "DocumentId" = @documentId;
+
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -520,6 +543,7 @@ internal sealed class DescriptorWriteHandler(
             SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
                 [ContentLastModifiedAt] = GETUTCDATE()
             WHERE [DocumentId] = @documentId;
+
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -555,6 +579,7 @@ internal sealed class DescriptorWriteHandler(
             ON CONFLICT ("ReferentialId") DO UPDATE
             SET "DocumentId" = EXCLUDED."DocumentId",
                 "ResourceKeyId" = EXCLUDED."ResourceKeyId";
+
             """;
 
         return new RelationalCommand(
@@ -596,6 +621,7 @@ internal sealed class DescriptorWriteHandler(
             WHEN NOT MATCHED THEN
                 INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
                 VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
+
             """;
 
         return new RelationalCommand(

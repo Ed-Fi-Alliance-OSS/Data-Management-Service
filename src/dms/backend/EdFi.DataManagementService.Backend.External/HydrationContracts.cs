@@ -38,6 +38,23 @@ public sealed record DocumentMetadataRow(
 public sealed record HydratedTableRows(DbTableModel TableModel, IReadOnlyList<object?[]> Rows);
 
 /// <summary>
+/// One resolved descriptor URI row from a descriptor projection result set.
+/// </summary>
+/// <param name="DescriptorId">The descriptor <c>DocumentId</c> referenced by hydrated rows.</param>
+/// <param name="Uri">The canonical descriptor URI.</param>
+public sealed record DescriptorUriRow(long DescriptorId, string Uri);
+
+/// <summary>
+/// Hydrated descriptor URI rows for a single descriptor projection plan.
+/// </summary>
+/// <remarks>
+/// Instances in <see cref="HydratedPage.DescriptorRowsInPlanOrder"/> align by index with
+/// <see cref="ResourceReadPlan.DescriptorProjectionPlansInOrder"/>.
+/// </remarks>
+/// <param name="Rows">Resolved descriptor URI rows in result-set order.</param>
+public sealed record HydratedDescriptorRows(IReadOnlyList<DescriptorUriRow> Rows);
+
+/// <summary>
 /// Full hydration result for a page of documents.
 /// </summary>
 /// <param name="TotalCount">
@@ -49,10 +66,14 @@ public sealed record HydratedTableRows(DbTableModel TableModel, IReadOnlyList<ob
 /// <param name="TableRowsInDependencyOrder">
 /// Per-table hydrated rows in deterministic dependency order (root table first, then children).
 /// </param>
+/// <param name="DescriptorRowsInPlanOrder">
+/// Per-plan descriptor URI rows in deterministic compiled-plan order.
+/// </param>
 public sealed record HydratedPage(
     long? TotalCount,
     IReadOnlyList<DocumentMetadataRow> DocumentMetadata,
-    IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder
+    IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder,
+    IReadOnlyList<HydratedDescriptorRows> DescriptorRowsInPlanOrder
 );
 
 /// <summary>

@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -998,12 +999,25 @@ internal class ProfileWriteValidationMiddleware(
         );
 
         var getResult = await documentStoreRepository.GetDocumentById(
-            new GetRequest(
-                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                ResourceName: requestInfo.ResourceSchema.ResourceName,
-                ResourceAuthorizationHandler: bypassAuthHandler,
-                TraceId: requestInfo.FrontendRequest.TraceId
-            )
+            requestInfo.MappingSet is not null
+                ? new RelationalGetRequest(
+                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                    ResourceInfo: new BaseResourceInfo(
+                        requestInfo.ProjectSchema.ProjectName,
+                        requestInfo.ResourceSchema.ResourceName,
+                        requestInfo.ResourceSchema.IsDescriptor
+                    ),
+                    MappingSet: requestInfo.MappingSet,
+                    ResourceAuthorizationHandler: bypassAuthHandler,
+                    TraceId: requestInfo.FrontendRequest.TraceId,
+                    ReadMode: RelationalGetRequestReadMode.StoredDocument
+                )
+                : new GetRequest(
+                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                    ResourceName: requestInfo.ResourceSchema.ResourceName,
+                    ResourceAuthorizationHandler: bypassAuthHandler,
+                    TraceId: requestInfo.FrontendRequest.TraceId
+                )
         );
 
         if (getResult is GetFailureNotExists)

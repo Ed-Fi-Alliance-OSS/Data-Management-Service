@@ -5,6 +5,7 @@
 
 using System;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -22,6 +23,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreApiSchemaModel = EdFi.DataManagementService.Core.ApiSchema.Model;
+using RelationalWriteSeamFixture = EdFi.DataManagementService.Core.Tests.Unit.Handler.RelationalWriteSeamFixture;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -115,6 +117,7 @@ public class ProfileWriteValidationMiddlewareTests
             new JsonObject
             {
                 ["resourceName"] = resourceName,
+                ["isDescriptor"] = false,
                 ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
                 ["jsonSchemaForInsert"] = jsonSchemaForInsert,
             }
@@ -504,6 +507,7 @@ public class ProfileWriteValidationMiddlewareTests
                 new JsonObject
                 {
                     ["resourceName"] = "School",
+                    ["isDescriptor"] = false,
                     ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
                 }
             );
@@ -1952,6 +1956,7 @@ public class ProfileWriteValidationMiddlewareTests
                 new JsonObject
                 {
                     ["resourceName"] = "School",
+                    ["isDescriptor"] = false,
                     ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
                 }
             );
@@ -2318,6 +2323,105 @@ public class ProfileWriteValidationMiddlewareTests
             var body = _requestInfo.ParsedBody as JsonObject;
             body!["lastName"].Should().BeNull();
             body["firstName"]?.GetValue<string>().Should().Be("John");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_Merge_Loading_The_Existing_Document : ProfileWriteValidationMiddlewareTests
+    {
+        private sealed class CapturingRepository : IDocumentStoreRepository
+        {
+            public IRelationalGetRequest? CapturedRequest { get; private set; }
+
+            public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+                throw new NotImplementedException();
+
+            public Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            {
+                CapturedRequest = getRequest as IRelationalGetRequest;
+
+                return Task.FromResult<GetResult>(
+                    new GetResult.GetSuccess(
+                        DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012")),
+                        EdfiDoc: new JsonObject
+                        {
+                            ["id"] = "12345678-1234-1234-1234-123456789012",
+                            ["studentUniqueId"] = "STU001",
+                            ["firstName"] = "Existing",
+                            ["lastName"] = "Preserved",
+                        },
+                        LastModifiedDate: DateTime.UtcNow,
+                        LastModifiedTraceId: "existing-trace-id"
+                    )
+                );
+            }
+
+            public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+                throw new NotImplementedException();
+
+            public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+                throw new NotImplementedException();
+        }
+
+        private readonly CapturingRepository _repository = new();
+        private readonly MappingSet _mappingSet = RelationalWriteSeamFixture
+            .Create()
+            .CreateSupportedMappingSet(SqlDialect.Pgsql);
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(
+                method: RequestMethod.PUT,
+                scopedServiceProvider: BuildScopedServiceProvider(_repository)
+            );
+            _requestInfo.PathComponents = new PathComponents(
+                ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
+                EndpointName: new CoreApiSchemaModel.EndpointName("students"),
+                DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012"))
+            );
+            _requestInfo.MappingSet = _mappingSet;
+            _requestInfo.ProfileContext = CreateWriteProfileContext(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")]
+            );
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["studentUniqueId"] = "STU001",
+                ["firstName"] = "Updated",
+                ["lastName"] = "ShouldBeMergedBack",
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_loads_the_existing_document_using_the_stored_document_read_mode()
+        {
+            _nextCalled.Should().BeTrue();
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.MappingSet.Should().BeSameAs(_mappingSet);
+            _repository
+                .CapturedRequest.ResourceInfo.Should()
+                .BeEquivalentTo(
+                    new BaseResourceInfo(new ProjectName("Ed-Fi"), new ResourceName("Student"), false)
+                );
+            _repository.CapturedRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+            _repository.CapturedRequest.ReadableProfileProjectionContext.Should().BeNull();
         }
     }
 }

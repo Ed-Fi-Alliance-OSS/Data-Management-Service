@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Configuration;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -30,6 +32,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             MssqlReferenceResolverAdapterFactory,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
+            MssqlDocumentHydrator,
             MssqlSessionDocumentHydrator
         >();
     }
@@ -54,6 +57,52 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
     }
 }
 
+internal sealed class MssqlDocumentHydrator : IDocumentHydrator
+{
+    private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
+
+    public MssqlDocumentHydrator(IDmsInstanceSelection dmsInstanceSelection)
+        : this(dmsInstanceSelection, connectionString => new SqlConnection(connectionString)) { }
+
+    internal MssqlDocumentHydrator(
+        IDmsInstanceSelection dmsInstanceSelection,
+        Func<string, DbConnection> createConnection
+    )
+    {
+        ArgumentNullException.ThrowIfNull(dmsInstanceSelection);
+        ArgumentNullException.ThrowIfNull(createConnection);
+
+        _openConnectionAsync = async cancellationToken =>
+        {
+            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            var connectionString = selectedInstance.ConnectionString;
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    $"Selected DMS instance '{selectedInstance.Id}' does not have a valid connection string."
+                );
+            }
+
+            var connection = createConnection(connectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            return connection;
+        };
+    }
+
+    public async Task<HydratedPage> HydrateAsync(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        CancellationToken ct
+    )
+    {
+        await using var connection = await _openConnectionAsync(ct).ConfigureAwait(false);
+
+        return await HydrationExecutor.ExecuteAsync(connection, plan, keyset, SqlDialect.Mssql, null, ct);
+    }
+}
+
 internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
 {
     public Task<HydratedPage> HydrateAsync(
@@ -61,6 +110,7 @@ internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
         DbTransaction transaction,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
     ) =>
         HydrationExecutor.ExecuteAsync(
@@ -69,6 +119,7 @@ internal sealed class MssqlSessionDocumentHydrator : ISessionDocumentHydrator
             keyset,
             SqlDialect.Mssql,
             transaction,
+            executionOptions,
             cancellationToken
         );
 }

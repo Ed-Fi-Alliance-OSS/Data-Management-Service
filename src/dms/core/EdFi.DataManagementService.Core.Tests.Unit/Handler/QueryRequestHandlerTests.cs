@@ -147,4 +147,50 @@ public class QueryRequestHandlerTests
                 );
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Not_Implemented : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public static readonly string ResponseBody = "FailureMessage";
+
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            {
+                return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
+            }
+        }
+
+        private static readonly string _traceId = "xyz";
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+
+            var expected = ToJsonError(Repository.ResponseBody, new TraceId(_traceId));
+
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_requestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
 }

@@ -87,6 +87,48 @@ public class ReadableProfileProjectorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Metadata_Fields_Are_Not_Explicitly_In_Profile : ReadableProfileProjectorTests
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var source = new JsonObject
+            {
+                ["id"] = "abc-123",
+                ["_etag"] = "\"17\"",
+                ["_lastModifiedDate"] = "2026-04-11T17:30:45Z",
+                ["schoolId"] = 100,
+                ["nameOfInstitution"] = "Test School",
+                ["webSite"] = "https://example.com",
+            };
+
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("nameOfInstitution")]
+            );
+
+            _result = _projector.Project(source, contentType, IdentityNames("schoolId"));
+        }
+
+        [Test]
+        public void It_preserves_id_etag_and_last_modified_date()
+        {
+            _result["id"]?.GetValue<string>().Should().Be("abc-123");
+            _result["_etag"]?.GetValue<string>().Should().Be("\"17\"");
+            _result["_lastModifiedDate"]?.GetValue<string>().Should().Be("2026-04-11T17:30:45Z");
+        }
+
+        [Test]
+        public void It_still_filters_hidden_non_metadata_fields()
+        {
+            _result["webSite"].Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_ExcludeOnly_Hides_Listed_Scalars : ReadableProfileProjectorTests
     {
         private JsonNode _result = null!;

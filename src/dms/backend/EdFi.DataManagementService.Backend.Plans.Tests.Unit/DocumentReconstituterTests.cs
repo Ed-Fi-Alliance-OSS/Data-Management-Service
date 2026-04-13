@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -226,6 +227,162 @@ public class Given_DocumentReconstituter_With_Null_Scalar
     public void It_should_not_emit_DocumentId()
     {
         _result["DocumentId"].Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_A_Date_Scalar_Read_As_DateTime
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "StudentSchoolAssociation");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _entryDatePath = new(
+        "$.entryDate",
+        [new JsonPathSegment.Property("entryDate")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("EntryDate"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.Date),
+                IsNullable: false,
+                SourceJsonPath: _entryDatePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        object?[] row = [1L, new DateTime(2024, 8, 20, 0, 0, 0, DateTimeKind.Unspecified)];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_the_date_in_date_only_format()
+    {
+        _result["entryDate"]!.GetValue<string>().Should().Be("2024-08-20");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_A_DateTime_Scalar_Read_As_Unspecified_DateTime
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "Meeting");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _meetingDateTimePath = new(
+        "$.meetingDateTime",
+        [new JsonPathSegment.Property("meetingDateTime")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("MeetingDateTime"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: _meetingDateTimePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Meeting",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        object?[] row = [1L, new DateTime(2024, 8, 20, 14, 5, 7, DateTimeKind.Unspecified)];
+
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: [tableRows],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_treat_unspecified_datetime_values_as_utc_instants()
+    {
+        _result["meetingDateTime"]!.GetValue<string>().Should().Be("2024-08-20T14:05:07Z");
     }
 }
 
@@ -1233,6 +1390,9 @@ public class Given_DocumentReconstituter_With_Nested_Collection_And_Root_Extensi
 public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Child_Extension_Collection
 {
     private JsonNode _result = null!;
+    private IReadOnlyList<HydratedTableRows> _tableRowsInDependencyOrder = null!;
+    private DbTableModel _addressTableModel = null!;
+    private DbTableModel _extensionScopeTableModel = null!;
 
     private static readonly DbSchemaName _schema = new("edfi");
     private static readonly DbTableName _rootTableName = new(_schema, "Contact");
@@ -1391,7 +1551,7 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             ),
         };
 
-        var addressTableModel = new DbTableModel(
+        _addressTableModel = new DbTableModel(
             Table: _addressTableName,
             JsonScope: _addressesScope,
             Key: new TableKey(
@@ -1440,7 +1600,7 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             ),
         };
 
-        var extensionScopeTableModel = new DbTableModel(
+        _extensionScopeTableModel = new DbTableModel(
             Table: _extensionScopeTableName,
             JsonScope: _extensionScope,
             Key: new TableKey(
@@ -1536,25 +1696,34 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
         object?[] extScopeRow1 = [10L, 1L, true];
         // Extension scope for address 2: BaseCollectionItemId=20, Contact_DocumentId=1, IsUrban=false
         object?[] extScopeRow2 = [20L, 1L, false];
-        // Delivery note under address 1 ext scope: CollectionItemId=100, Contact_DocumentId=1, BaseCollectionItemId=10, Ordinal=0, Note="Ring bell"
-        object?[] noteRow1 = [100L, 1L, 10L, 0, "Ring bell"];
+        // Delivery notes under address 1 ext scope arrive out of ordinal order.
+        object?[] noteRow1 = [101L, 1L, 10L, 1, "Ring bell"];
+        object?[] noteRow2 = [100L, 1L, 10L, 0, "Call ahead"];
         // Delivery note under address 2 ext scope: CollectionItemId=200, Contact_DocumentId=1, BaseCollectionItemId=20, Ordinal=0, Note="Leave at door"
-        object?[] noteRow2 = [200L, 1L, 20L, 0, "Leave at door"];
+        object?[] noteRow3 = [200L, 1L, 20L, 0, "Leave at door"];
 
         var rootTableRows = new HydratedTableRows(rootTableModel, [rootRow]);
-        var addressTableRows = new HydratedTableRows(addressTableModel, [addressRow1, addressRow2]);
-        var extScopeTableRows = new HydratedTableRows(extensionScopeTableModel, [extScopeRow1, extScopeRow2]);
-        var extCollectionTableRows = new HydratedTableRows(extCollectionTableModel, [noteRow1, noteRow2]);
+        var addressTableRows = new HydratedTableRows(_addressTableModel, [addressRow1, addressRow2]);
+        var extScopeTableRows = new HydratedTableRows(
+            _extensionScopeTableModel,
+            [extScopeRow1, extScopeRow2]
+        );
+        var extCollectionTableRows = new HydratedTableRows(
+            extCollectionTableModel,
+            [noteRow1, noteRow2, noteRow3]
+        );
+
+        _tableRowsInDependencyOrder =
+        [
+            rootTableRows,
+            addressTableRows,
+            extScopeTableRows,
+            extCollectionTableRows,
+        ];
 
         _result = DocumentReconstituter.Reconstitute(
             documentId: 1L,
-            tableRowsInDependencyOrder:
-            [
-                rootTableRows,
-                addressTableRows,
-                extScopeTableRows,
-                extCollectionTableRows,
-            ],
+            tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
             descriptorUriLookup: new Dictionary<long, string>()
@@ -1604,15 +1773,44 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
     }
 
     [Test]
-    public void It_should_emit_address_0_ext_sample_deliveryNotes_with_one_item()
+    public void It_should_not_discover_deliveryNotes_directly_from_the_address_scope()
     {
-        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(1);
+        DocumentReconstituter
+            .FindImmediateChildTables(_addressTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extensionScopeTableName);
+    }
+
+    [Test]
+    public void It_should_discover_deliveryNotes_from_the_extension_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extCollectionTableName);
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_with_two_items()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(2);
     }
 
     [Test]
     public void It_should_emit_address_0_ext_sample_deliveryNotes_0_note()
     {
         _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Call ahead");
+    }
+
+    [Test]
+    public void It_should_emit_address_0_ext_sample_deliveryNotes_1_note()
+    {
+        _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![1]!["note"]!
             .GetValue<string>()
             .Should()
             .Be("Ring bell");
@@ -1631,6 +1829,670 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             .GetValue<string>()
             .Should()
             .Be("Leave at door");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Root_Extension_And_Child_Extension_Collection
+{
+    private JsonNode _result = null!;
+    private IReadOnlyList<HydratedTableRows> _tableRowsInDependencyOrder = null!;
+    private DbTableModel _rootTableModel = null!;
+    private DbTableModel _extensionScopeTableModel = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "School");
+    private static readonly DbTableName _extensionScopeTableName = new(_schema, "SchoolExtension");
+    private static readonly DbTableName _interventionTableName = new(_schema, "SchoolExtensionIntervention");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _extensionScope = new(
+        "$._ext.sample",
+        [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample")]
+    );
+
+    private static readonly JsonPathExpression _interventionsScope = new(
+        "$._ext.sample.interventions[*]",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _schoolIdPath = new(
+        "$.schoolId",
+        [new JsonPathSegment.Property("schoolId")]
+    );
+
+    private static readonly JsonPathExpression _isExemplaryPath = new(
+        "$._ext.sample.isExemplary",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("isExemplary"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _interventionCodePath = new(
+        "$._ext.sample.interventions[*].code",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("code"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        _rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _schoolIdPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        _extensionScopeTableModel = new DbTableModel(
+            Table: _extensionScopeTableName,
+            JsonScope: _extensionScope,
+            Key: new TableKey(
+                "PK_SchoolExtension",
+                [new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("IsExemplary"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    false,
+                    _isExemplaryPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var interventionTableModel = new DbTableModel(
+            Table: _interventionTableName,
+            JsonScope: _interventionsScope,
+            Key: new TableKey(
+                "PK_SchoolExtensionIntervention",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Code"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _interventionCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var rootTableRows = new HydratedTableRows(
+            _rootTableModel,
+            [
+                [1L, 255901],
+            ]
+        );
+        var extensionScopeTableRows = new HydratedTableRows(
+            _extensionScopeTableModel,
+            [
+                [1L, true],
+            ]
+        );
+        var interventionTableRows = new HydratedTableRows(
+            interventionTableModel,
+            [
+                [102L, 1L, 1, "Tier 2"],
+                [101L, 1L, 0, "Attendance"],
+            ]
+        );
+
+        _tableRowsInDependencyOrder = [rootTableRows, extensionScopeTableRows, interventionTableRows];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_not_discover_interventions_directly_from_the_root_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_rootTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_extensionScopeTableName);
+    }
+
+    [Test]
+    public void It_should_discover_interventions_from_the_root_extension_scope()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.Table)
+            .Should()
+            .Equal(_interventionTableName);
+    }
+
+    [Test]
+    public void It_should_emit_ext_sample_isExemplary_as_true()
+    {
+        _result["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Test]
+    public void It_should_emit_interventions_in_ordinal_order()
+    {
+        _result["_ext"]!["sample"]!["interventions"]!.AsArray().Should().HaveCount(2);
+        _result["_ext"]!["sample"]!["interventions"]![0]!["code"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Attendance");
+        _result["_ext"]!["sample"]!["interventions"]![1]!["code"]!.GetValue<string>().Should().Be("Tier 2");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Overlapping_Root_Extension_Project_Names
+{
+    private JsonNode _result = null!;
+    private IReadOnlyList<HydratedTableRows> _tableRowsInDependencyOrder = null!;
+    private DbTableModel _sampleExtensionScopeTableModel = null!;
+    private DbTableModel _sample2ExtensionScopeTableModel = null!;
+
+    private static readonly DbSchemaName _coreSchema = new("edfi");
+    private static readonly DbSchemaName _sampleSchema = new("sample");
+    private static readonly DbSchemaName _sample2Schema = new("sample2");
+    private static readonly DbTableName _rootTableName = new(_coreSchema, "School");
+    private static readonly DbTableName _sampleExtensionScopeTableName = new(
+        _sampleSchema,
+        "SchoolExtension"
+    );
+    private static readonly DbTableName _sampleInterventionTableName = new(
+        _sampleSchema,
+        "SchoolExtensionIntervention"
+    );
+    private static readonly DbTableName _sample2ExtensionScopeTableName = new(
+        _sample2Schema,
+        "SchoolExtension"
+    );
+    private static readonly DbTableName _sample2InterventionTableName = new(
+        _sample2Schema,
+        "SchoolExtensionIntervention"
+    );
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _sampleExtensionScope = new(
+        "$._ext.sample",
+        [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample")]
+    );
+    private static readonly JsonPathExpression _sample2ExtensionScope = new(
+        "$._ext.sample2",
+        [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample2")]
+    );
+    private static readonly JsonPathExpression _sampleInterventionsScope = new(
+        "$._ext.sample.interventions[*]",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+    private static readonly JsonPathExpression _sample2InterventionsScope = new(
+        "$._ext.sample2.interventions[*]",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample2"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _schoolIdPath = new(
+        "$.schoolId",
+        [new JsonPathSegment.Property("schoolId")]
+    );
+    private static readonly JsonPathExpression _sampleIsExemplaryPath = new(
+        "$._ext.sample.isExemplary",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("isExemplary"),
+        ]
+    );
+    private static readonly JsonPathExpression _sample2ProgramCodePath = new(
+        "$._ext.sample2.programCode",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample2"),
+            new JsonPathSegment.Property("programCode"),
+        ]
+    );
+    private static readonly JsonPathExpression _sampleInterventionCodePath = new(
+        "$._ext.sample.interventions[*].code",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("code"),
+        ]
+    );
+    private static readonly JsonPathExpression _sample2InterventionCodePath = new(
+        "$._ext.sample2.interventions[*].code",
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample2"),
+            new JsonPathSegment.Property("interventions"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("code"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _schoolIdPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        _sampleExtensionScopeTableModel = new DbTableModel(
+            Table: _sampleExtensionScopeTableName,
+            JsonScope: _sampleExtensionScope,
+            Key: new TableKey(
+                "PK_SchoolExtension_Sample",
+                [new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("IsExemplary"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    false,
+                    _sampleIsExemplaryPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var sampleInterventionTableModel = new DbTableModel(
+            Table: _sampleInterventionTableName,
+            JsonScope: _sampleInterventionsScope,
+            Key: new TableKey(
+                "PK_SchoolExtensionIntervention_Sample",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Code"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _sampleInterventionCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        _sample2ExtensionScopeTableModel = new DbTableModel(
+            Table: _sample2ExtensionScopeTableName,
+            JsonScope: _sample2ExtensionScope,
+            Key: new TableKey(
+                "PK_SchoolExtension_Sample2",
+                [new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ProgramCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    false,
+                    _sample2ProgramCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var sample2InterventionTableModel = new DbTableModel(
+            Table: _sample2InterventionTableName,
+            JsonScope: _sample2InterventionsScope,
+            Key: new TableKey(
+                "PK_SchoolExtensionIntervention_Sample2",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Code"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _sample2InterventionCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.ExtensionCollection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        _tableRowsInDependencyOrder =
+        [
+            new HydratedTableRows(
+                rootTableModel,
+                [
+                    [1L, 255901],
+                ]
+            ),
+            new HydratedTableRows(
+                _sampleExtensionScopeTableModel,
+                [
+                    [1L, true],
+                ]
+            ),
+            new HydratedTableRows(
+                sampleInterventionTableModel,
+                [
+                    [101L, 1L, 0, "Attendance"],
+                ]
+            ),
+            new HydratedTableRows(
+                _sample2ExtensionScopeTableModel,
+                [
+                    [1L, "Mentor"],
+                ]
+            ),
+            new HydratedTableRows(
+                sample2InterventionTableModel,
+                [
+                    [201L, 1L, 0, "Mentoring"],
+                ]
+            ),
+        ];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_not_treat_sample2_children_as_children_of_sample()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_sampleExtensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.JsonScope.Canonical)
+            .Should()
+            .Equal("$._ext.sample.interventions[*]");
+    }
+
+    [Test]
+    public void It_should_not_treat_sample_children_as_children_of_sample2()
+    {
+        DocumentReconstituter
+            .FindImmediateChildTables(_sample2ExtensionScopeTableModel, _tableRowsInDependencyOrder)
+            .Select(tableRows => tableRows.TableModel.JsonScope.Canonical)
+            .Should()
+            .Equal("$._ext.sample2.interventions[*]");
+    }
+
+    [Test]
+    public void It_should_emit_sample_interventions_under_sample_only()
+    {
+        _result["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
+        _result["_ext"]!["sample"]!["interventions"]![0]!["code"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Attendance");
+    }
+
+    [Test]
+    public void It_should_emit_sample2_interventions_under_sample2_only()
+    {
+        _result["_ext"]!["sample2"]!["programCode"]!.GetValue<string>().Should().Be("Mentor");
+        _result["_ext"]!["sample2"]!["interventions"]![0]!["code"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Mentoring");
     }
 }
 
@@ -2424,5 +3286,690 @@ public class Given_DocumentReconstituter_With_Null_Optional_Reference
     public void It_should_return_a_json_object()
     {
         _result.Should().BeOfType<JsonObject>();
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Physical_Order_Different_From_Compiled_Json_Paths
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "School");
+    private static readonly DbTableName _omegaTableName = new(_schema, "SchoolOmega");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _omegaScope = new(
+        "$.omega[*]",
+        [new JsonPathSegment.Property("omega"), new JsonPathSegment.AnyArrayElement()]
+    );
+
+    private static readonly JsonPathExpression _alphaBetaPath = new(
+        "$.alpha.beta",
+        [new JsonPathSegment.Property("alpha"), new JsonPathSegment.Property("beta")]
+    );
+
+    private static readonly JsonPathExpression _alphaReferencePath = new(
+        "$.alphaReference",
+        [new JsonPathSegment.Property("alphaReference")]
+    );
+
+    private static readonly JsonPathExpression _alphaReferenceCodePath = new(
+        "$.alphaReference.code",
+        [new JsonPathSegment.Property("alphaReference"), new JsonPathSegment.Property("code")]
+    );
+
+    private static readonly JsonPathExpression _alphaReferenceNamespacePath = new(
+        "$.alphaReference.namespace",
+        [new JsonPathSegment.Property("alphaReference"), new JsonPathSegment.Property("namespace")]
+    );
+
+    private static readonly JsonPathExpression _gammaDescriptorPath = new(
+        "$.gammaDescriptor",
+        [new JsonPathSegment.Property("gammaDescriptor")]
+    );
+
+    private static readonly JsonPathExpression _omegaDeltaPath = new(
+        "$.omega[*].delta",
+        [
+            new JsonPathSegment.Property("omega"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("delta"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _zetaPath = new(
+        "$.zeta",
+        [new JsonPathSegment.Property("zeta")]
+    );
+
+    private static readonly QualifiedResourceName _alphaResource = new("Ed-Fi", "Alpha");
+    private static readonly QualifiedResourceName _gammaDescriptorResource = new("Ed-Fi", "GammaDescriptor");
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Zeta"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 20),
+                    false,
+                    _zetaPath,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AlphaReference_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    _alphaResource
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AlphaBeta"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _alphaBetaPath,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AlphaReferenceNamespace"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _alphaReferenceNamespacePath,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("GammaDescriptor_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    _gammaDescriptorResource
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AlphaReferenceCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    _alphaReferenceCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var omegaTableModel = new DbTableModel(
+            Table: _omegaTableName,
+            JsonScope: _omegaScope,
+            Key: new TableKey(
+                "PK_SchoolOmega",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Delta"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 20),
+                    false,
+                    _omegaDeltaPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var referencePlan = new ReferenceIdentityProjectionTablePlan(
+            Table: _rootTableName,
+            BindingsInOrder:
+            [
+                new ReferenceIdentityProjectionBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: _alphaReferencePath,
+                    TargetResource: _alphaResource,
+                    FkColumnOrdinal: 2,
+                    IdentityFieldOrdinalsInOrder:
+                    [
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _alphaReferenceNamespacePath,
+                            ColumnOrdinal: 4
+                        ),
+                        new ReferenceIdentityProjectionFieldOrdinal(
+                            ReferenceJsonPath: _alphaReferenceCodePath,
+                            ColumnOrdinal: 6
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        object?[] rootRow = [1L, "z-value", 55L, 3, "uri-space", 99L, "code-1"];
+        object?[] omegaRow = [2001L, 1L, 0, "delta-1"];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                new HydratedTableRows(rootTableModel, [rootRow]),
+                new HydratedTableRows(omegaTableModel, [omegaRow]),
+            ],
+            referenceProjectionPlans: [referencePlan],
+            descriptorProjectionSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: _gammaDescriptorPath,
+                    Table: _rootTableName,
+                    FkColumn: new DbColumnName("GammaDescriptor_DescriptorId"),
+                    DescriptorResource: _gammaDescriptorResource
+                ),
+            ],
+            descriptorUriLookup: new Dictionary<long, string> { [99L] = "uri://gamma" }
+        );
+    }
+
+    [Test]
+    public void It_should_emit_root_properties_in_compiled_json_path_order()
+    {
+        GetPropertyNames(_result.AsObject())
+            .Should()
+            .Equal("alpha", "alphaReference", "gammaDescriptor", "omega", "zeta");
+    }
+
+    [Test]
+    public void It_should_emit_reference_fields_in_compiled_json_path_order()
+    {
+        GetPropertyNames(_result["alphaReference"]!.AsObject()).Should().Equal("code", "namespace");
+    }
+
+    private static string[] GetPropertyNames(JsonObject jsonObject)
+    {
+        List<string> propertyNames = [];
+
+        foreach (var property in jsonObject)
+        {
+            propertyNames.Add(property.Key);
+        }
+
+        return [.. propertyNames];
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Empty_Collection_Under_Inlined_Object
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "Course");
+    private static readonly DbTableName _authorTableName = new(_schema, "CourseAuthor");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _authorsScope = new(
+        "$.contentStandard.authors[*]",
+        [
+            new JsonPathSegment.Property("contentStandard"),
+            new JsonPathSegment.Property("authors"),
+            new JsonPathSegment.AnyArrayElement(),
+        ]
+    );
+
+    private static readonly JsonPathExpression _courseCodePath = new(
+        "$.courseCode",
+        [new JsonPathSegment.Property("courseCode")]
+    );
+
+    private static readonly JsonPathExpression _authorPath = new(
+        "$.contentStandard.authors[*].author",
+        [
+            new JsonPathSegment.Property("contentStandard"),
+            new JsonPathSegment.Property("authors"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("author"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Course",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CourseCode"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    false,
+                    _courseCodePath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var authorTableModel = new DbTableModel(
+            Table: _authorTableName,
+            JsonScope: _authorsScope,
+            Key: new TableKey(
+                "PK_CourseAuthor",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Course_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Author"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    _authorPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("Course_DocumentId")],
+                [new DbColumnName("Course_DocumentId")],
+                []
+            ),
+        };
+
+        object?[] rootRow = [1L, "ELA-1"];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                new HydratedTableRows(rootTableModel, [rootRow]),
+                new HydratedTableRows(authorTableModel, []),
+            ],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_courseCode()
+    {
+        _result["courseCode"]!.GetValue<string>().Should().Be("ELA-1");
+    }
+
+    [Test]
+    public void It_should_not_emit_contentStandard_when_the_optional_collection_is_empty()
+    {
+        _result["contentStandard"].Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_With_Empty_Collection_Extension_Scope
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "Contact");
+    private static readonly DbTableName _addressTableName = new(_schema, "ContactAddress");
+    private static readonly DbTableName _extensionScopeTableName = new(_schema, "ContactAddressSample");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+    private static readonly JsonPathExpression _addressesScope = new(
+        "$.addresses[*]",
+        [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
+    );
+    private static readonly JsonPathExpression _extensionScope = new(
+        "$.addresses[*]._ext.sample",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _contactIdPath = new(
+        "$.contactId",
+        [new JsonPathSegment.Property("contactId")]
+    );
+
+    private static readonly JsonPathExpression _cityPath = new(
+        "$.addresses[*].city",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("city"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _isUrbanPath = new(
+        "$.addresses[*]._ext.sample.isUrban",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("isUrban"),
+        ]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_Contact",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ContactId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _contactIdPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var addressTableModel = new DbTableModel(
+            Table: _addressTableName,
+            JsonScope: _addressesScope,
+            Key: new TableKey(
+                "PK_ContactAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("City"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    _cityPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                []
+            ),
+        };
+
+        var extensionScopeTableModel = new DbTableModel(
+            Table: _extensionScopeTableName,
+            JsonScope: _extensionScope,
+            Key: new TableKey(
+                "PK_ContactAddressSample",
+                [new DbKeyColumn(new DbColumnName("BaseCollectionItemId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("BaseCollectionItemId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("IsUrban"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    true,
+                    _isUrbanPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.CollectionExtensionScope,
+                [new DbColumnName("BaseCollectionItemId")],
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("BaseCollectionItemId")],
+                []
+            ),
+        };
+
+        object?[] rootRow = [1L, 123];
+        object?[] addressRow = [1L, 2001L, 0, "Austin"];
+        object?[] extensionScopeRow = [1L, 2001L, null];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                new HydratedTableRows(rootTableModel, [rootRow]),
+                new HydratedTableRows(addressTableModel, [addressRow]),
+                new HydratedTableRows(extensionScopeTableModel, [extensionScopeRow]),
+            ],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [],
+            descriptorUriLookup: new Dictionary<long, string>()
+        );
+    }
+
+    [Test]
+    public void It_should_emit_the_address()
+    {
+        _result["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Austin");
+    }
+
+    [Test]
+    public void It_should_not_emit_an_empty_extension_scope()
+    {
+        _result["addresses"]![0]!["_ext"].Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_DocumentReconstituter_PropertyOrderNode_Empty_Sentinel
+{
+    private Exception _exception = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var propertyOrderNodeType = typeof(DocumentReconstituter).GetNestedType(
+            "PropertyOrderNode",
+            BindingFlags.NonPublic
+        );
+        propertyOrderNodeType.Should().NotBeNull();
+
+        var emptyField = propertyOrderNodeType!.GetField("Empty", BindingFlags.Public | BindingFlags.Static);
+        emptyField.Should().NotBeNull();
+
+        var getOrAddChildMethod = propertyOrderNodeType.GetMethod(
+            "GetOrAddChild",
+            BindingFlags.Public | BindingFlags.Instance
+        );
+        getOrAddChildMethod.Should().NotBeNull();
+
+        var emptyNode = emptyField!.GetValue(null);
+
+        var act = () => getOrAddChildMethod!.Invoke(emptyNode, ["unexpectedProperty"]);
+
+        _exception = act.Should().Throw<TargetInvocationException>().Which.InnerException!;
+    }
+
+    [Test]
+    public void It_should_reject_mutation()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception.Message.Should().Contain("read-only property-order sentinel");
     }
 }

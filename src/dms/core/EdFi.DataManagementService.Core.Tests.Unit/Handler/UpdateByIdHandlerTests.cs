@@ -96,6 +96,41 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Success_With_Etag : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(new UpdateSuccess(updateRequest.DocumentUuid, "\"72\""));
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.ParsedBody = JsonNode.Parse("""{"_etag":"\"stale\""}""")!;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_uses_the_repository_etag_header()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"72\"");
+            requestInfo
+                .FrontendResponse.Headers["etag"]
+                .Should()
+                .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Exists : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

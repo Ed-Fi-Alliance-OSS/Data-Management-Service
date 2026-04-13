@@ -326,15 +326,15 @@ because relationships are stored as stable `DocumentId` FKs. Identity propagatio
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - Representation metadata is served from stored stamps on `dms.Document`.
+  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`; `_etag` is computed from the deterministic canonical JSON form of the served response document those stamps track.
   - Because identity propagation is materialized as row updates, the same per-table stamping triggers cover indirect changes (no read-time dependency derivation).
 
 ### Concurrency (optimistic `If-Match`)
 
 With stored representation stamps:
-- GET returns `_etag` derived from `dms.Document.ContentVersion` (or an equivalent stored representation-stamp column).
+- GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
 - PUT/DELETE `If-Match` validation is row-local:
-  - compare the request `_etag` to the current stored stamp for that `DocumentId`;
+  - compare the request `_etag` to the current deterministic hash for that `DocumentId`;
   - if mismatched, return `412 Precondition Failed`.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
@@ -487,7 +487,7 @@ Correctness must not depend on this table:
 ### Freshness contract (recommended)
 
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached representation stamp (e.g., `dms.DocumentCache.Etag`, derived from `dms.Document.ContentVersion`) to the current `dms.Document` stamp,
+- compare the cached representation stamp (for example, cached `ContentVersion` plus the cached materialized `_etag`) to the current `dms.Document` stamp,
 - if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
 
 ### Rebuild/invalidation triggers (eventual consistency)
@@ -499,7 +499,7 @@ Because indirect representation changes are materialized as local updates (via c
 So the projector does not require reverse dependency expansion. A minimal approach:
 1. Consume `dms.DocumentChangeEvent` in `ChangeVersion` order.
 2. Rebuild `dms.DocumentCache` for `(DocumentId, ChangeVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (e.g., `ContentVersion` and/or the derived `_etag`) to enforce freshness.
+3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (for example, `ContentVersion` plus the derived materialized `_etag`) to enforce freshness.
 
 ---
 

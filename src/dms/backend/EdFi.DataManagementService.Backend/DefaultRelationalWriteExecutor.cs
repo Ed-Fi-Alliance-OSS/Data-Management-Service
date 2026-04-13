@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
@@ -18,6 +19,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteCurrentStateLoader currentStateLoader,
+    IRelationalCommittedRepresentationReader committedRepresentationReader,
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
@@ -38,6 +40,10 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteCurrentStateLoader _currentStateLoader =
         currentStateLoader ?? throw new ArgumentNullException(nameof(currentStateLoader));
+
+    private readonly IRelationalCommittedRepresentationReader _committedRepresentationReader =
+        committedRepresentationReader
+        ?? throw new ArgumentNullException(nameof(committedRepresentationReader));
 
     private readonly IRelationalWriteTargetLookupResolver _targetLookupResolver =
         targetLookupResolver ?? throw new ArgumentNullException(nameof(targetLookupResolver));
@@ -183,16 +189,43 @@ internal sealed class DefaultRelationalWriteExecutor(
                     return BuildStaleNoOpCompareResult(request.OperationKind);
                 }
 
+                var guardedNoOpCommittedResponse = await _committedRepresentationReader
+                    .ReadAsync(
+                        executionRequest,
+                        new RelationalWritePersistResult(
+                            guardedTarget.DocumentId,
+                            guardedTarget.DocumentUuid
+                        ),
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
                 await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return BuildGuardedNoOpSuccessResult(request.OperationKind, guardedTarget.DocumentUuid);
+                return BuildGuardedNoOpSuccessResult(
+                    request.OperationKind,
+                    guardedTarget.DocumentUuid,
+                    guardedNoOpCommittedResponse
+                );
             }
 
-            await _noProfilePersister
+            var persistedTarget = await _noProfilePersister
                 .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
+            ValidatePersistedTargetIdentity(executionRequest.TargetContext, persistedTarget);
+
+            var committedResponse = await _committedRepresentationReader
+                .ReadAsync(executionRequest, persistedTarget, writeSession, cancellationToken)
+                .ConfigureAwait(false);
+
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return BuildAppliedWriteSuccessResult(request.OperationKind, executionRequest.TargetContext);
+            return BuildAppliedWriteSuccessResult(
+                request.OperationKind,
+                executionRequest.TargetContext,
+                persistedTarget,
+                committedResponse
+            );
         }
         catch (RelationalWriteRequestValidationException ex)
         {
@@ -235,17 +268,20 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static RelationalWriteExecutorResult BuildGuardedNoOpSuccessResult(
         RelationalWriteOperationKind operationKind,
-        DocumentUuid documentUuid
+        DocumentUuid documentUuid,
+        JsonNode committedResponse
     )
     {
+        var etag = GetCommittedResponseEtag(committedResponse);
+
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpdateSuccess(documentUuid),
+                new UpsertResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateSuccess(documentUuid),
+                new UpdateResult.UpdateSuccess(documentUuid, etag),
                 RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
@@ -254,34 +290,85 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private static RelationalWriteExecutorResult BuildAppliedWriteSuccessResult(
         RelationalWriteOperationKind operationKind,
-        RelationalWriteTargetContext targetContext
+        RelationalWriteTargetContext targetContext,
+        RelationalWritePersistResult persistedTarget,
+        JsonNode committedResponse
     )
     {
+        var etag = GetCommittedResponseEtag(committedResponse);
+        var documentUuid = persistedTarget.DocumentUuid;
+
         return (operationKind, targetContext) switch
         {
-            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.CreateNew(var documentUuid)) =>
+            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.CreateNew) =>
                 new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(documentUuid),
+                    new UpsertResult.InsertSuccess(documentUuid, etag),
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 ),
-            (
-                RelationalWriteOperationKind.Post,
-                RelationalWriteTargetContext.ExistingDocument
-                (_, var documentUuid, _)
-            ) => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UpdateSuccess(documentUuid),
-                RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-            ),
-            (
-                RelationalWriteOperationKind.Put,
-                RelationalWriteTargetContext.ExistingDocument
-                (_, var documentUuid, _)
-            ) => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UpdateSuccess(documentUuid),
-                RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-            ),
+            (RelationalWriteOperationKind.Post, RelationalWriteTargetContext.ExistingDocument) =>
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(documentUuid, etag),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
+            (RelationalWriteOperationKind.Put, RelationalWriteTargetContext.ExistingDocument) =>
+                new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateSuccess(documentUuid, etag),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                ),
             _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
         };
+    }
+
+    private static void ValidatePersistedTargetIdentity(
+        RelationalWriteTargetContext targetContext,
+        RelationalWritePersistResult persistedTarget
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetContext);
+        ArgumentNullException.ThrowIfNull(persistedTarget);
+
+        if (persistedTarget.DocumentId <= 0)
+        {
+            throw new InvalidOperationException(
+                "Relational write persistence completed without returning a valid committed DocumentId."
+            );
+        }
+
+        switch (targetContext)
+        {
+            case RelationalWriteTargetContext.CreateNew(var documentUuid)
+                when persistedTarget.DocumentUuid != documentUuid:
+                throw new InvalidOperationException(
+                    $"Relational write create completed for document uuid '{documentUuid.Value}', "
+                        + $"but persistence returned committed uuid '{persistedTarget.DocumentUuid.Value}'."
+                );
+
+            case RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _)
+                when persistedTarget.DocumentId != documentId || persistedTarget.DocumentUuid != documentUuid:
+                throw new InvalidOperationException(
+                    $"Relational write targeted existing document id {documentId} / uuid '{documentUuid.Value}', "
+                        + "but persistence returned a different committed target identity."
+                );
+        }
+    }
+
+    private static string GetCommittedResponseEtag(JsonNode committedResponse)
+    {
+        ArgumentNullException.ThrowIfNull(committedResponse);
+
+        if (
+            committedResponse is not JsonObject documentObject
+            || documentObject["_etag"] is not JsonValue etagValue
+            || !etagValue.TryGetValue(out string? etag)
+            || string.IsNullOrWhiteSpace(etag)
+        )
+        {
+            throw new InvalidOperationException(
+                "Committed relational write readback did not produce an external response _etag."
+            );
+        }
+
+        return etag;
     }
 
     private static RelationalWriteExecutorResult BuildStaleNoOpCompareResult(

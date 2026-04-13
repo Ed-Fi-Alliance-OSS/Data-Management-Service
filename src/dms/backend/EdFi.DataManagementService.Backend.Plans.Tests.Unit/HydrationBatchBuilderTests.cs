@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
@@ -273,9 +274,171 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
     }
 }
 
+[TestFixture]
+public class Given_HydrationBatchBuilder_AddParameters_With_Query_Keyset
+{
+    [Test]
+    public void It_should_throw_when_a_required_page_parameter_value_is_missing()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(totalCountParameterNames: null),
+            new Dictionary<string, object?> { ["offset"] = 0L }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("'limit'");
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_throw_when_a_required_total_count_parameter_value_is_missing()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(totalCountParameterNames: ["schoolYear"]),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+        );
+
+        var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("'schoolYear'");
+        command.Parameters.Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_treat_present_null_values_as_bound_parameters()
+    {
+        var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParameterNames: ["schoolYear", "offset", "limit"],
+                totalCountParameterNames: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["schoolYear"] = null,
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            }
+        );
+
+        HydrationBatchBuilder.AddParameters(command, keyset);
+
+        command.Parameters.Count.Should().Be(3);
+        command.Parameters.Contains("@schoolYear").Should().BeTrue();
+    }
+
+    private static PageDocumentIdSqlPlan CreateQueryPlan(
+        string[]? pageParameterNames = null,
+        string[]? totalCountParameterNames = null
+    )
+    {
+        pageParameterNames ??= ["offset", "limit"];
+
+        return new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r ORDER BY r.\"DocumentId\" LIMIT @limit OFFSET @offset",
+            TotalCountSql: totalCountParameterNames is null
+                ? null
+                : "SELECT COUNT(*) AS TotalCount FROM \"edfi\".\"School\" r WHERE r.\"SchoolYear\" = @schoolYear",
+            PageParametersInOrder: [.. pageParameterNames.Select(CreatePageParameter)],
+            TotalCountParametersInOrder: totalCountParameterNames is null
+                ? null
+                : [.. totalCountParameterNames.Select(CreateTotalCountParameter)]
+        );
+    }
+
+    private static QuerySqlParameter CreatePageParameter(string parameterName) =>
+        parameterName switch
+        {
+            "offset" => new QuerySqlParameter(QuerySqlParameterRole.Offset, parameterName),
+            "limit" => new QuerySqlParameter(QuerySqlParameterRole.Limit, parameterName),
+            _ => new QuerySqlParameter(QuerySqlParameterRole.Filter, parameterName),
+        };
+
+    private static QuerySqlParameter CreateTotalCountParameter(string parameterName) =>
+        new(QuerySqlParameterRole.Filter, parameterName);
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Descriptor_Projection_Plans
+{
+    private string _pgsqlBatch = null!;
+    private string _pgsqlBatchWithoutDescriptorProjection = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var descriptorPlans = new[]
+        {
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM root_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM child_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+        };
+
+        _pgsqlBatch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql
+        );
+        _pgsqlBatchWithoutDescriptorProjection = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(IncludeDescriptorProjection: false)
+        );
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_projection_result_sets_after_table_hydration()
+    {
+        var childSelectIndex = _pgsqlBatch.IndexOf(
+            "SELECT child columns FROM child;",
+            StringComparison.Ordinal
+        );
+        var firstDescriptorIndex = _pgsqlBatch.IndexOf(
+            "SELECT descriptor rows FROM root_descriptor;",
+            StringComparison.Ordinal
+        );
+        var secondDescriptorIndex = _pgsqlBatch.IndexOf(
+            "SELECT descriptor rows FROM child_descriptor;",
+            StringComparison.Ordinal
+        );
+
+        childSelectIndex.Should().BePositive();
+        firstDescriptorIndex.Should().BeGreaterThan(childSelectIndex);
+        secondDescriptorIndex.Should().BeGreaterThan(firstDescriptorIndex);
+    }
+
+    [Test]
+    public void It_should_allow_descriptor_projection_to_be_omitted()
+    {
+        _pgsqlBatchWithoutDescriptorProjection
+            .Should()
+            .NotContain("SELECT descriptor rows FROM root_descriptor;");
+        _pgsqlBatchWithoutDescriptorProjection
+            .Should()
+            .NotContain("SELECT descriptor rows FROM child_descriptor;");
+        _pgsqlBatchWithoutDescriptorProjection.Should().Contain("SELECT child columns FROM child;");
+    }
+}
+
 internal static class HydrationBatchBuilderTestHelper
 {
-    public static ResourceReadPlan BuildTestReadPlan(SqlDialect dialect = SqlDialect.Pgsql)
+    public static ResourceReadPlan BuildTestReadPlan(
+        SqlDialect dialect = SqlDialect.Pgsql,
+        IReadOnlyList<DescriptorProjectionPlan>? descriptorProjectionPlans = null
+    )
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "School"),
@@ -387,7 +550,7 @@ internal static class HydrationBatchBuilderTestHelper
             KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
             TablePlansInDependencyOrder: [rootTablePlan, childTablePlan],
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans ?? []
         );
     }
 }

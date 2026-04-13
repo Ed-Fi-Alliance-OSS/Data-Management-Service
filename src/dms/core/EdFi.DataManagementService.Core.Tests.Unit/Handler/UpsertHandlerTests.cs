@@ -76,6 +76,41 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Insert_Success_With_Etag : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(new InsertSuccess(upsertRequest.DocumentUuid, "\"71\""));
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.ParsedBody = JsonNode.Parse("""{"_etag":"\"stale\""}""")!;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_uses_the_repository_etag_header()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(201);
+            requestInfo.FrontendResponse.Headers["etag"].Should().Be("\"71\"");
+            requestInfo
+                .FrontendResponse.Headers["etag"]
+                .Should()
+                .NotBe(requestInfo.ParsedBody["_etag"]!.GetValue<string>());
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_References : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

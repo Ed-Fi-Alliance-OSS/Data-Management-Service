@@ -3,10 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +38,14 @@ internal class GetByIdHandler(
         var documentStoreRepository =
             requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
+        var resourceAuthorizationHandler = new ResourceAuthorizationHandler(
+            requestInfo.AuthorizationStrategyEvaluators,
+            requestInfo.AuthorizationSecurableInfo,
+            authorizationServiceFactory,
+            requestInfo.ScopedServiceProvider,
+            _logger
+        );
+
         var getResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
             _logger,
@@ -43,18 +55,7 @@ internal class GetByIdHandler(
             r => r is GetSuccess,
             async ct =>
                 await documentStoreRepository.GetDocumentById(
-                    new GetRequest(
-                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                        ResourceName: requestInfo.ResourceInfo.ResourceName,
-                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                            requestInfo.AuthorizationStrategyEvaluators,
-                            requestInfo.AuthorizationSecurableInfo,
-                            authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider,
-                            _logger
-                        ),
-                        TraceId: requestInfo.FrontendRequest.TraceId
-                    )
+                    CreateGetRequest(requestInfo, resourceAuthorizationHandler)
                 ),
             requestInfo
         );
@@ -66,8 +67,13 @@ internal class GetByIdHandler(
 
         requestInfo.FrontendResponse = getResult switch
         {
-            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
+            GetSuccess success => CreateSuccessResponse(requestInfo, success.EdfiDoc),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            GetFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             GetFailureRetryable => new FrontendResponse(
@@ -95,5 +101,61 @@ internal class GetByIdHandler(
                 Headers: []
             ),
         };
+    }
+
+    private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, JsonNode edfiDoc)
+    {
+        var contentType =
+            requestInfo.MappingSet is not null
+            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+                ? ProfileHeaderParser.BuildProfileContentType(
+                    requestInfo.ResourceSchema.ResourceName.Value,
+                    requestInfo.ProfileContext.ProfileName,
+                    ProfileUsageType.Readable
+                )
+                : "application/json";
+
+        return new FrontendResponse(StatusCode: 200, Body: edfiDoc, Headers: [], ContentType: contentType);
+    }
+
+    private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
+        RequestInfo requestInfo
+    )
+    {
+        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
+
+        if (readContentType is null)
+        {
+            return null;
+        }
+
+        return new ReadableProfileProjectionContext(
+            readContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(
+                requestInfo.ResourceSchema.IdentityJsonPaths
+            )
+        );
+    }
+
+    private static IGetRequest CreateGetRequest(
+        RequestInfo requestInfo,
+        IResourceAuthorizationHandler resourceAuthorizationHandler
+    )
+    {
+        return requestInfo.MappingSet is not null
+            ? new RelationalGetRequest(
+                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                ResourceInfo: requestInfo.ResourceInfo,
+                MappingSet: requestInfo.MappingSet,
+                ResourceAuthorizationHandler: resourceAuthorizationHandler,
+                TraceId: requestInfo.FrontendRequest.TraceId,
+                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+            )
+            : new GetRequest(
+                DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                ResourceName: requestInfo.ResourceInfo.ResourceName,
+                ResourceAuthorizationHandler: resourceAuthorizationHandler,
+                TraceId: requestInfo.FrontendRequest.TraceId
+            );
     }
 }

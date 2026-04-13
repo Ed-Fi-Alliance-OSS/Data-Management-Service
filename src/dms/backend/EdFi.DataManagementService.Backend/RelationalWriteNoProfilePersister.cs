@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal interface IRelationalWriteNoProfilePersister
 {
-    Task PersistAsync(
+    Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteNoProfileMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -24,7 +24,7 @@ internal interface IRelationalWriteNoProfilePersister
 
 internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
 {
-    public async Task PersistAsync(
+    public async Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
         RelationalWriteNoProfileMergeResult mergeResult,
         IRelationalWriteSession writeSession,
@@ -69,7 +69,17 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        return new RelationalWritePersistResult(rootDocumentId, GetTargetDocumentUuid(targetContext));
     }
+
+    private static DocumentUuid GetTargetDocumentUuid(RelationalWriteTargetContext targetContext) =>
+        targetContext switch
+        {
+            RelationalWriteTargetContext.CreateNew(var documentUuid) => documentUuid,
+            RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) => documentUuid,
+            _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
+        };
 
     private static async Task ExecuteDeletesAsync(
         SqlDialect dialect,

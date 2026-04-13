@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -19,54 +18,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Relational_Write_Current_State_Loader
 {
-    [Test]
-    public async Task It_skips_reconstitution_when_not_required()
-    {
-        var writePlan = CreateRootPlan();
-        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
-        var readPlan = new ResourceReadPlan(
-            resourceModel,
-            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
-            [],
-            []
-        );
-        var nonReconstitutionRequest = new RelationalWriteCurrentStateLoadRequest(
-            readPlan,
-            new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                ObservedContentVersion: 44L
-            ),
-            requiresReconstitution: false
-        );
-        var command = new RecordingDbCommand(
-            CreateReader(
-                CreateDocumentMetadataTable(
-                    (
-                        345L,
-                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
-                        44L,
-                        45L,
-                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
-                    )
-                ),
-                CreateRootTableRows((345L, "Lincoln High"))
-            )
-        );
-        var connection = new RecordingDbConnection(command);
-        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
-        var session = new TestRelationalWriteSession(connection, transaction);
-        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
-
-        var result = (await sut.LoadAsync(nonReconstitutionRequest, session))!;
-
-        result.DocumentMetadata.DocumentId.Should().Be(345L);
-        result.TableRowsInDependencyOrder.Should().ContainSingle();
-        result.ReconstitutedDocument.Should().BeNull("reconstitution was not requested");
-    }
-
     [Test]
     public async Task It_loads_a_single_existing_document_through_the_session_connection_and_transaction()
     {
@@ -105,8 +56,43 @@ public class Given_Relational_Write_Current_State_Loader
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].ParameterName.Should().Be("@DocumentId");
         command.Parameters[0].Value.Should().Be(345L);
-        result.ReconstitutedDocument.Should().NotBeNull("the loader should reconstitute the stored document");
-        result.ReconstitutedDocument!["name"]!.GetValue<string>().Should().Be("Lincoln High");
+    }
+
+    [Test]
+    public async Task It_ignores_descriptor_result_sets_when_loading_current_state()
+    {
+        var readPlan = CreateReadPlanWithDescriptor();
+        var request = CreateLoadRequest(readPlan);
+        var command = new RecordingDbCommand(
+            CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        345L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateDescriptorRootTableRows((345L, 601L)),
+                CreateDescriptorRowsTable((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"))
+            )
+        );
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var session = new TestRelationalWriteSession(connection, transaction);
+        var sut = new RelationalWriteCurrentStateLoader(new HydrationBackedSessionDocumentHydrator());
+
+        var result = (await sut.LoadAsync(request, session))!;
+
+        result.DocumentMetadata.DocumentId.Should().Be(345L);
+        result.TableRowsInDependencyOrder.Should().ContainSingle();
+        result.TableRowsInDependencyOrder[0].Rows.Should().ContainSingle();
+        ((long)result.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(601L);
+        command.CommandText.Should().NotContain("select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"");
+        connection.CreateCommandCallCount.Should().Be(1);
+        command.ExecuteReaderCallCount.Should().Be(1);
     }
 
     [Test]
@@ -165,29 +151,82 @@ public class Given_Relational_Write_Current_State_Loader
             );
     }
 
-    private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest()
+    private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(ResourceReadPlan? readPlan = null)
+    {
+        var effectiveReadPlan = readPlan ?? CreateReadPlan();
+
+        return new RelationalWriteCurrentStateLoadRequest(
+            effectiveReadPlan,
+            new RelationalWriteTargetContext.ExistingDocument(
+                345L,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+                ObservedContentVersion: 44L
+            )
+        );
+    }
+
+    private static ResourceReadPlan CreateReadPlan()
     {
         var writePlan = CreateRootPlan();
-        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel);
-        var readPlan = new ResourceReadPlan(
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel, []);
+
+        return new ResourceReadPlan(
             resourceModel,
             KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
             [new TableReadPlan(resourceModel.Root, "select \"DocumentId\", \"Name\" from edfi.\"School\"")],
             [],
             []
         );
-        return new RelationalWriteCurrentStateLoadRequest(
-            readPlan,
-            new RelationalWriteTargetContext.ExistingDocument(
-                345L,
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                ObservedContentVersion: 44L
-            ),
-            requiresReconstitution: true
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDescriptor()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var descriptorValuePath = new JsonPathExpression(
+            "$.entryGradeLevelDescriptor",
+            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+        );
+        var writePlan = CreateRootPlanWithDescriptor(descriptorResource);
+        var descriptorSource = new DescriptorEdgeSource(
+            IsIdentityComponent: true,
+            DescriptorValuePath: descriptorValuePath,
+            Table: writePlan.TableModel.Table,
+            FkColumn: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
+            DescriptorResource: descriptorResource
+        );
+        var resourceModel = CreateRelationalResourceModel(writePlan.TableModel, [descriptorSource]);
+        var descriptorPlan = new DescriptorProjectionPlan(
+            SelectByKeysetSql: "select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"",
+            ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+            SourcesInOrder:
+            [
+                new DescriptorProjectionSource(
+                    DescriptorValuePath: descriptorValuePath,
+                    Table: writePlan.TableModel.Table,
+                    DescriptorResource: descriptorResource,
+                    DescriptorIdColumnOrdinal: 1
+                ),
+            ]
+        );
+
+        return new ResourceReadPlan(
+            resourceModel,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [
+                new TableReadPlan(
+                    writePlan.TableModel,
+                    "select \"DocumentId\", \"EntryGradeLevelDescriptor_DescriptorId\" from edfi.\"School\""
+                ),
+            ],
+            [],
+            [descriptorPlan]
         );
     }
 
-    private static RelationalResourceModel CreateRelationalResourceModel(DbTableModel rootTable)
+    private static RelationalResourceModel CreateRelationalResourceModel(
+        DbTableModel rootTable,
+        IReadOnlyList<DescriptorEdgeSource> descriptorEdgeSources
+    )
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
 
@@ -198,7 +237,7 @@ public class Given_Relational_Write_Current_State_Loader
             Root: rootTable,
             TablesInDependencyOrder: [rootTable],
             DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
+            DescriptorEdgeSources: descriptorEdgeSources
         );
     }
 
@@ -269,6 +308,81 @@ public class Given_Relational_Write_Current_State_Loader
         );
     }
 
+    private static TableWritePlan CreateRootPlanWithDescriptor(QualifiedResourceName descriptorResource)
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    descriptorResource,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@DocumentId, @EntryGradeLevelDescriptor_DescriptorId)",
+            UpdateSql: "update edfi.\"School\" set \"EntryGradeLevelDescriptor_DescriptorId\" = @EntryGradeLevelDescriptor_DescriptorId "
+                + "where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 2, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.DescriptorReference(
+                        descriptorResource,
+                        new JsonPathExpression(
+                            "$.entryGradeLevelDescriptor",
+                            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+                        ),
+                        new JsonPathExpression(
+                            "$.entryGradeLevelDescriptor",
+                            [new JsonPathSegment.Property("entryGradeLevelDescriptor")]
+                        )
+                    ),
+                    "EntryGradeLevelDescriptor_DescriptorId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
     private static DataTableReader CreateReader(params DataTable[] tables)
     {
         var dataSet = new DataSet();
@@ -329,6 +443,34 @@ public class Given_Relational_Write_Current_State_Loader
         return table;
     }
 
+    private static DataTable CreateDescriptorRootTableRows(params (long DocumentId, long DescriptorId)[] rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("DocumentId", typeof(long));
+        table.Columns.Add("EntryGradeLevelDescriptor_DescriptorId", typeof(long));
+
+        foreach (var row in rows)
+        {
+            table.Rows.Add(row.DocumentId, row.DescriptorId);
+        }
+
+        return table;
+    }
+
+    private static DataTable CreateDescriptorRowsTable(params (long DescriptorId, string Uri)[] rows)
+    {
+        var table = new DataTable();
+        table.Columns.Add("DescriptorId", typeof(long));
+        table.Columns.Add("Uri", typeof(string));
+
+        foreach (var row in rows)
+        {
+            table.Rows.Add(row.DescriptorId, row.Uri);
+        }
+
+        return table;
+    }
+
     private sealed class TestRelationalWriteSession(
         RecordingDbConnection connection,
         RecordingDbTransaction transaction
@@ -356,6 +498,7 @@ public class Given_Relational_Write_Current_State_Loader
             DbTransaction transaction,
             ResourceReadPlan plan,
             PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
             CancellationToken cancellationToken = default
         ) =>
             HydrationExecutor.ExecuteAsync(
@@ -364,6 +507,7 @@ public class Given_Relational_Write_Current_State_Loader
                 keyset,
                 SqlDialect.Pgsql,
                 transaction,
+                executionOptions,
                 cancellationToken
             );
     }

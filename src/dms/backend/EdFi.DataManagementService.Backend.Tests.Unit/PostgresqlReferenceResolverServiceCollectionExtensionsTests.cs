@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Old.Postgresql;
@@ -50,9 +51,13 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
+        var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
         var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
         var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
+        var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
+        var readTargetLookupService =
+            scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var writeExceptionClassifier =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var writeConstraintResolver =
@@ -68,9 +73,12 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<PostgresqlRelationalWriteSessionFactory>();
+        documentHydrator.Should().BeOfType<PostgresqlDocumentHydrator>();
         factory.Should().BeOfType<PostgresqlReferenceResolverAdapterFactory>();
         adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
+        readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
+        readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         writeExceptionClassifier.Should().BeOfType<PostgresqlRelationalWriteExceptionClassifier>();
         writeConstraintResolver.Should().BeOfType<RelationalWriteConstraintResolver>();
     }

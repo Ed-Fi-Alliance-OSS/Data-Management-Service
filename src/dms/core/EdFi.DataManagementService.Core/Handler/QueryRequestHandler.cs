@@ -63,6 +63,11 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
             ),
+            QueryFailureNotImplemented failure => new FrontendResponse(
+                StatusCode: 501,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             QueryFailureRetryable => new FrontendResponse(

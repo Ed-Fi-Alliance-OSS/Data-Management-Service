@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -90,6 +91,7 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddSingleton<IReadableProfileProjector, ReadableProfileProjector>();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddPostgresqlReferenceResolver();
 
@@ -218,6 +220,22 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
             DateTime value => DateOnly.FromDateTime(value),
             _ => throw new InvalidOperationException(
                 $"Expected column '{columnName}' to contain a DateOnly value."
+            ),
+        };
+
+    public static DateTimeOffset GetDateTimeOffset(
+        IReadOnlyDictionary<string, object?> row,
+        string columnName
+    ) =>
+        GetRequiredValue(row, columnName) switch
+        {
+            DateTimeOffset value => value,
+            DateTime value => new DateTimeOffset(
+                DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                TimeSpan.Zero
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected column '{columnName}' to contain a DateTimeOffset value."
             ),
         };
 
@@ -430,6 +448,44 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationRejectedWriteS
 [NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture
 {
+    private static readonly ContentTypeDefinition ReadableProfileContentType = new(
+        MemberSelection.IncludeOnly,
+        [],
+        [],
+        [
+            new CollectionRule(
+                "alternativeGraduationPlans",
+                MemberSelection.IncludeOnly,
+                null,
+                [],
+                [
+                    new ObjectRule(
+                        "alternativeGraduationPlanReference",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("graduationSchoolYear")],
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                null,
+                null,
+                null
+            ),
+        ],
+        [
+            new ExtensionRule(
+                "sample",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("membershipTypeDescriptor")],
+                null,
+                null
+            ),
+        ]
+    );
+
     private const long SchoolId = 100;
     private const long ConflictSchoolId = 200;
     private const int SchoolYear = 2024;
@@ -572,9 +628,14 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private UpsertResult _createResult = null!;
     private UpdateResult _changedUpdateResult = null!;
     private UpdateResult _noOpUpdateResult = null!;
+    private GetResult _getResultAfterCreate = null!;
+    private GetResult _profiledGetResultAfterCreate = null!;
+    private GetResult _getResultAfterChangedUpdate = null!;
+    private GetResult _getResultAfterNoOpUpdate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterCreate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterChangedUpdate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterNoOpUpdate = null!;
+    private DateTimeOffset _lastModifiedAtAfterCreate;
 
     [SetUp]
     public async Task Setup()
@@ -616,6 +677,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _lastModifiedAtAfterCreate = await ReadContentLastModifiedAtAsync(
+            StudentSchoolAssociationDocumentUuid.Value
+        );
+        _getResultAfterCreate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-create"
+        );
+        _profiledGetResultAfterCreate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-create-readable-profile",
+            CreateReadableProfileProjectionContext()
+        );
 
         _changedUpdateResult = await ExecuteUpdateAsync(
             ChangedUpdateRequestBodyJson,
@@ -631,6 +704,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _changedUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _stateAfterChangedUpdate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterChangedUpdate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-changed-update"
+        );
 
         _noOpUpdateResult = await ExecuteUpdateAsync(
             ChangedUpdateRequestBodyJson,
@@ -646,6 +723,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _noOpUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _getResultAfterNoOpUpdate = await ExecuteGetByIdAsync(
+            StudentSchoolAssociationDocumentUuid,
+            "pg-authoritative-sample-student-school-association-get-after-no-op-update"
+        );
     }
 
     [TearDown]
@@ -926,6 +1007,243 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             .ExistingDocumentUuid.Should()
             .Be(StudentSchoolAssociationDocumentUuid);
         _stateAfterNoOpUpdate.Should().BeEquivalentTo(_stateAfterChangedUpdate);
+    }
+
+    [Test]
+    public void It_returns_the_create_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(_createResult, _getResultAfterCreate);
+
+    [Test]
+    public void It_returns_the_changed_put_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            _changedUpdateResult,
+            _getResultAfterChangedUpdate
+        );
+
+    [Test]
+    public void It_returns_the_repeat_put_etag_from_follow_up_get_by_id() =>
+        RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
+            _noOpUpdateResult,
+            _getResultAfterNoOpUpdate
+        );
+
+    [Test]
+    public void It_reads_back_the_written_document_via_relational_get_by_id_with_readable_profile_projection()
+    {
+        var expectedDocument = CreateExpectedReadableProfileExternalResponse(
+            CreateRequestBodyJson,
+            StudentSchoolAssociationDocumentUuid.Value,
+            _lastModifiedAtAfterCreate
+        );
+
+        _profiledGetResultAfterCreate.Should().BeOfType<GetResult.GetSuccess>();
+
+        var success = (GetResult.GetSuccess)_profiledGetResultAfterCreate;
+        var unprojectedSuccess = (GetResult.GetSuccess)_getResultAfterCreate;
+
+        success.DocumentUuid.Should().Be(StudentSchoolAssociationDocumentUuid);
+        success.LastModifiedTraceId.Should().BeNull();
+        success.LastModifiedDate.Should().Be(_lastModifiedAtAfterCreate.UtcDateTime);
+        success.EdfiDoc["educationPlans"].Should().BeNull();
+        success.EdfiDoc["entryGradeLevelDescriptor"].Should().BeNull();
+        success.EdfiDoc["alternativeGraduationPlans"]!
+            .AsArray()
+            .Select(plan =>
+                plan?["alternativeGraduationPlanReference"]?["graduationSchoolYear"]?.GetValue<int>()
+            )
+            .Should()
+            .Equal((int?)FoundationGraduationSchoolYear, EndorsementGraduationSchoolYear);
+        success.EdfiDoc["alternativeGraduationPlans"]!
+            .AsArray()
+            .Select(plan =>
+                plan?["alternativeGraduationPlanReference"]?["educationOrganizationId"]?.GetValue<long>()
+            )
+            .Should()
+            .Equal((long?)null, null);
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedDocument["_etag"]!.GetValue<string>());
+        success.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(unprojectedSuccess.EdfiDoc["_etag"]!.GetValue<string>());
+        RelationalGetIntegrationTestHelper
+            .CanonicalizeJson(success.EdfiDoc)
+            .Should()
+            .Be(RelationalGetIntegrationTestHelper.CanonicalizeJson(expectedDocument));
+    }
+
+    [Test]
+    public async Task It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
+    {
+        var expectedLastModifiedAt = await ReadContentLastModifiedAtAsync(
+            StudentSchoolAssociationDocumentUuid.Value
+        );
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            ChangedUpdateRequestBodyJson,
+            _resourceInfo,
+            _mappingSet,
+            _stateAfterNoOpUpdate.Document.DocumentUuid,
+            expectedLastModifiedAt
+        );
+
+        RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
+            _getResultAfterNoOpUpdate,
+            StudentSchoolAssociationDocumentUuid,
+            expectedLastModifiedAt,
+            expectedDocument,
+            [EndorsementGraduationSchoolYear, StemGraduationSchoolYear],
+            [InterventionEducationPlanDescriptorUri, CareerEducationPlanDescriptorUri]
+        );
+    }
+
+    private async Task<GetResult> ExecuteGetByIdAsync(
+        DocumentUuid documentUuid,
+        string traceId,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+    )
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: _resourceInfo,
+            MappingSet: _mappingSet,
+            ResourceAuthorizationHandler: new AuthoritativeSampleStudentSchoolAssociationAllowAllResourceAuthorizationHandler(),
+            TraceId: new TraceId(traceId),
+            ReadableProfileProjectionContext: readableProfileProjectionContext
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
+    }
+
+    private async Task<DateTimeOffset> ReadContentLastModifiedAtAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
+                rows[0],
+                "ContentLastModifiedAt"
+            )
+            : throw new InvalidOperationException(
+                $"Expected exactly one document metadata row for '{documentUuid}', but found {rows.Count}."
+            );
+    }
+
+    private ReadableProfileProjectionContext CreateReadableProfileProjectionContext() =>
+        new(
+            ReadableProfileContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(_baseResourceSchema.IdentityJsonPaths)
+        );
+
+    private JsonObject CreateExpectedReadableProfileExternalResponse(
+        string requestBodyJson,
+        Guid documentUuid,
+        DateTimeOffset lastModifiedAt
+    )
+    {
+        var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            requestBodyJson,
+            _resourceInfo,
+            _mappingSet,
+            documentUuid,
+            lastModifiedAt
+        );
+        var identityPropertyNames = IReadableProfileProjector.ExtractIdentityPropertyNames(
+            _baseResourceSchema.IdentityJsonPaths
+        );
+        HashSet<string> retainedTopLevelPropertyNames =
+        [
+            .. identityPropertyNames,
+            "id",
+            "_etag",
+            "_lastModifiedDate",
+            "alternativeGraduationPlans",
+            "_ext",
+        ];
+
+        foreach (string propertyName in expectedDocument.Select(static property => property.Key).ToList())
+        {
+            if (!retainedTopLevelPropertyNames.Contains(propertyName))
+            {
+                expectedDocument.Remove(propertyName);
+            }
+        }
+
+        var alternativeGraduationPlans =
+            expectedDocument["alternativeGraduationPlans"] as JsonArray
+            ?? throw new InvalidOperationException(
+                "Expected projected document to retain alternativeGraduationPlans."
+            );
+
+        foreach (JsonNode? item in alternativeGraduationPlans)
+        {
+            var planObject =
+                item as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected alternativeGraduationPlans items to be JSON objects."
+                );
+            var referenceObject =
+                planObject["alternativeGraduationPlanReference"] as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected projected plan items to retain alternativeGraduationPlanReference."
+                );
+
+            foreach (string propertyName in referenceObject.Select(static property => property.Key).ToList())
+            {
+                if (!string.Equals(propertyName, "graduationSchoolYear", StringComparison.Ordinal))
+                {
+                    referenceObject.Remove(propertyName);
+                }
+            }
+
+            foreach (string propertyName in planObject.Select(static property => property.Key).ToList())
+            {
+                if (
+                    !string.Equals(
+                        propertyName,
+                        "alternativeGraduationPlanReference",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    planObject.Remove(propertyName);
+                }
+            }
+        }
+
+        var extensionObject =
+            expectedDocument["_ext"] as JsonObject
+            ?? throw new InvalidOperationException("Expected projected document to retain _ext.");
+        var sampleExtension =
+            extensionObject["sample"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected projected document to retain the sample extension namespace."
+            );
+
+        foreach (string propertyName in sampleExtension.Select(static property => property.Key).ToList())
+        {
+            if (!string.Equals(propertyName, "membershipTypeDescriptor", StringComparison.Ordinal))
+            {
+                sampleExtension.Remove(propertyName);
+            }
+        }
+
+        expectedDocument["_etag"] = DocumentComparer.GenerateContentHash(expectedDocument);
+
+        return expectedDocument;
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(

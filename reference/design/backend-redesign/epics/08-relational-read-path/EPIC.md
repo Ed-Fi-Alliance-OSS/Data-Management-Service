@@ -19,7 +19,7 @@ per:
 - `reference/design/backend-redesign/design-docs/data-model.md` (abstract identity tables, descriptor model)
 - `reference/design/backend-redesign/design-docs/extensions.md` (read-time `_ext` overlay)
 - `reference/design/backend-redesign/design-docs/profiles.md` (readable profile projection ownership boundary)
-- `reference/design/backend-redesign/design-docs/update-tracking.md` (stored stamps for `_etag/_lastModifiedDate/ChangeVersion`)
+- `reference/design/backend-redesign/design-docs/update-tracking.md` (stored stamps for `_lastModifiedDate/ChangeVersion`, hash-based `_etag`)
 
 The backend reconstitutes the full stored document. When readable profile semantics apply, Core owns the final readable projection; backend serializers do not reimplement profile filtering.
 

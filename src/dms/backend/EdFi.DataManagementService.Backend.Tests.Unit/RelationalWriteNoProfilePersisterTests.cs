@@ -53,7 +53,16 @@ public class Given_Relational_Write_No_Profile_Persister
             new CommandResponse(),
         ]);
 
-        await _sut.PersistAsync(request, mergeResult, writeSession);
+        var result = await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        result
+            .Should()
+            .Be(
+                new RelationalWritePersistResult(
+                    910L,
+                    new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"))
+                )
+            );
         writeSession.Commands.Should().HaveCount(3);
         writeSession.Commands[0].CommandText.Should().Contain("INSERT INTO dms.\"Document\"");
         GetParameterValue(writeSession.Commands[0], "@documentUuid")
@@ -86,7 +95,16 @@ public class Given_Relational_Write_No_Profile_Persister
         ]);
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
-        await _sut.PersistAsync(request, mergeResult, writeSession);
+        var result = await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        result
+            .Should()
+            .Be(
+                new RelationalWritePersistResult(
+                    345L,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
+                )
+            );
         writeSession.Commands.Should().ContainSingle();
         writeSession.Commands[0].CommandText.Should().Be(rootPlan.UpdateSql);
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);

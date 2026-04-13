@@ -18,6 +18,32 @@ namespace EdFi.DataManagementService.Backend.Plans;
 public static class DocumentReconstituter
 {
     /// <summary>
+    /// Reorders an existing JSON document into the deterministic member order defined by the
+    /// compiled read plan.
+    /// </summary>
+    public static JsonNode ReorderToReadPlanOrder(JsonNode document, ResourceReadPlan readPlan)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(readPlan);
+
+        List<DbTableModel> tableModelsInDependencyOrder = [];
+
+        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        {
+            tableModelsInDependencyOrder.Add(tablePlan.TableModel);
+        }
+
+        return ReorderNode(
+            document,
+            BuildPropertyOrderTree(
+                tableModelsInDependencyOrder,
+                readPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
+                readPlan.Model.DescriptorEdgeSources
+            )
+        );
+    }
+
+    /// <summary>
     /// Reconstitutes a single JSON document from hydrated row data.
     /// </summary>
     /// <param name="documentId">The root document identity to reconstitute.</param>
@@ -56,6 +82,7 @@ public static class DocumentReconstituter
         var rootTableRows = tableRowsInDependencyOrder[0];
         var rootTableModel = rootTableRows.TableModel;
         var rootRow = FindRootRow(documentId, rootTableRows);
+        var reconstitutionContext = new ReconstitutionContext(tableRowsInDependencyOrder);
 
         var result = new JsonObject();
 
@@ -75,14 +102,28 @@ public static class DocumentReconstituter
                 documentId,
                 null,
                 rootTableModel,
-                tableRowsInDependencyOrder,
+                reconstitutionContext,
                 referenceProjectionPlans,
                 descriptorProjectionSources,
                 descriptorUriLookup
             );
         }
 
-        return result;
+        List<DbTableModel> tableModelsInDependencyOrder = [];
+
+        foreach (var tableRows in tableRowsInDependencyOrder)
+        {
+            tableModelsInDependencyOrder.Add(tableRows.TableModel);
+        }
+
+        return ReorderNode(
+            result,
+            BuildPropertyOrderTree(
+                tableModelsInDependencyOrder,
+                referenceProjectionPlans,
+                descriptorProjectionSources
+            )
+        );
     }
 
     /// <summary>
@@ -146,7 +187,7 @@ public static class DocumentReconstituter
                 column.SourceJsonPath.Value,
                 tableModel.JsonScope
             );
-            targetObject[propertyName] = ConvertToJsonValue(value);
+            targetObject[propertyName] = ConvertToJsonValue(value, column.ScalarType);
         }
     }
 
@@ -259,13 +300,16 @@ public static class DocumentReconstituter
         long documentId,
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
     )
     {
-        var immediateChildren = FindImmediateChildTables(parentTableModel, tableRowsInDependencyOrder);
+        var immediateChildren = FindImmediateChildTables(
+            parentTableModel,
+            reconstitutionContext.TableRowsInDependencyOrder
+        );
 
         foreach (var childTableRows in immediateChildren)
         {
@@ -282,7 +326,7 @@ public static class DocumentReconstituter
                         parentCollectionItemId,
                         parentTableModel,
                         childTableRows,
-                        tableRowsInDependencyOrder,
+                        reconstitutionContext,
                         referenceProjectionPlans,
                         descriptorProjectionSources,
                         descriptorUriLookup
@@ -297,7 +341,7 @@ public static class DocumentReconstituter
                         parentCollectionItemId,
                         parentTableModel,
                         childTableRows,
-                        tableRowsInDependencyOrder,
+                        reconstitutionContext,
                         referenceProjectionPlans,
                         descriptorProjectionSources,
                         descriptorUriLookup
@@ -316,24 +360,20 @@ public static class DocumentReconstituter
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
         HydratedTableRows childTableRows,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
     )
     {
         var childTableModel = childTableRows.TableModel;
-        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
-            parentObject,
-            childTableModel.JsonScope,
-            parentTableModel.JsonScope
-        );
 
         var matchingRows = FilterChildRows(
             documentId,
             parentCollectionItemId,
             parentTableModel,
-            childTableRows
+            childTableRows,
+            reconstitutionContext
         );
 
         if (matchingRows.Count == 0)
@@ -341,17 +381,11 @@ public static class DocumentReconstituter
             return;
         }
 
-        // Sort by ordinal if an Ordinal column exists
-        var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
-        if (ordinalColumnOrdinal >= 0)
-        {
-            matchingRows.Sort(
-                (a, b) =>
-                    Convert
-                        .ToInt32(a[ordinalColumnOrdinal])
-                        .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal]))
-            );
-        }
+        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
+            parentObject,
+            childTableModel.JsonScope,
+            parentTableModel.JsonScope
+        );
 
         var array = new JsonArray();
 
@@ -386,7 +420,7 @@ public static class DocumentReconstituter
                     documentId,
                     collectionItemId,
                     childTableModel,
-                    tableRowsInDependencyOrder,
+                    reconstitutionContext,
                     referenceProjectionPlans,
                     descriptorProjectionSources,
                     descriptorUriLookup
@@ -410,7 +444,7 @@ public static class DocumentReconstituter
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
         HydratedTableRows childTableRows,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        ReconstitutionContext reconstitutionContext,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
         IReadOnlyDictionary<long, string> descriptorUriLookup
@@ -422,7 +456,8 @@ public static class DocumentReconstituter
             documentId,
             parentCollectionItemId,
             parentTableModel,
-            childTableRows
+            childTableRows,
+            reconstitutionContext
         );
 
         if (matchingRows.Count == 0)
@@ -435,13 +470,6 @@ public static class DocumentReconstituter
             childTableModel.JsonScope,
             parentTableModel.JsonScope
         );
-
-        // Ensure _ext object exists on parent
-        if (parentObject[extPropertyName] is not JsonObject extObject)
-        {
-            extObject = new JsonObject();
-            parentObject[extPropertyName] = extObject;
-        }
 
         // Extension scope rows are 1:1 with the parent (for root extensions) or
         // 1:1 with each collection item (for collection extension scopes)
@@ -480,11 +508,22 @@ public static class DocumentReconstituter
             documentId,
             extensionScopeId,
             childTableModel,
-            tableRowsInDependencyOrder,
+            reconstitutionContext,
             referenceProjectionPlans,
             descriptorProjectionSources,
             descriptorUriLookup
         );
+
+        if (!HasMeaningfulContent(projectObject))
+        {
+            return;
+        }
+
+        if (parentObject[extPropertyName] is not JsonObject extObject)
+        {
+            extObject = new JsonObject();
+            parentObject[extPropertyName] = extObject;
+        }
 
         extObject[projectName] = projectObject;
     }
@@ -492,27 +531,16 @@ public static class DocumentReconstituter
     /// <summary>
     /// Filters child rows to those matching the given parent scope.
     /// </summary>
-    private static List<object?[]> FilterChildRows(
+    private static IReadOnlyList<object?[]> FilterChildRows(
         long documentId,
         long? parentCollectionItemId,
         DbTableModel parentTableModel,
-        HydratedTableRows childTableRows
+        HydratedTableRows childTableRows,
+        ReconstitutionContext reconstitutionContext
     )
     {
-        var childTableModel = childTableRows.TableModel;
-        var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
-
-        if (parentScopeColumns.Count != 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot filter child rows for table '{childTableModel.Table}': "
-                    + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
-            );
-        }
-
         // For root children, the parent scope locator is DocumentId
         // For nested children, the parent scope locator is the parent's CollectionItemId
-        var parentLocatorOrdinal = FindColumnOrdinalByName(childTableModel, parentScopeColumns[0]);
         long matchValue;
 
         if (
@@ -527,28 +555,19 @@ public static class DocumentReconstituter
             matchValue = documentId;
         }
 
-        List<object?[]> filtered = [];
-        foreach (var row in childTableRows.Rows)
-        {
-            if (Convert.ToInt64(row[parentLocatorOrdinal]) == matchValue)
-            {
-                filtered.Add(row);
-            }
-        }
-
-        return filtered;
+        return reconstitutionContext.GetRowsByParentLocator(childTableRows, matchValue);
     }
 
     /// <summary>
     /// Finds immediate child tables of the given parent table in the dependency-ordered list.
     /// </summary>
-    private static List<HydratedTableRows> FindImmediateChildTables(
+    internal static IReadOnlyList<HydratedTableRows> FindImmediateChildTables(
         DbTableModel parentTableModel,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
     )
     {
         List<HydratedTableRows> children = [];
-        var parentScope = parentTableModel.JsonScope.Canonical;
+        var parentScope = parentTableModel.JsonScope;
 
         foreach (var tableRows in tableRowsInDependencyOrder)
         {
@@ -558,9 +577,9 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var childScope = childTableModel.JsonScope.Canonical;
+            var childScope = childTableModel.JsonScope;
 
-            if (!childScope.StartsWith(parentScope, StringComparison.Ordinal))
+            if (!IsScopePrefix(parentScope, childScope))
             {
                 continue;
             }
@@ -579,27 +598,38 @@ public static class DocumentReconstituter
     /// <summary>
     /// Determines whether a child scope is an immediate child of the parent scope.
     /// </summary>
-    private static bool IsImmediateChild(string parentScope, string childScope, DbTableKind childKind)
+    private static bool IsImmediateChild(
+        JsonPathExpression parentScope,
+        JsonPathExpression childScope,
+        DbTableKind childKind
+    )
     {
-        var suffix = childScope[parentScope.Length..];
-
-        // Remove leading dot if present (e.g., "$.addresses[*]" parent -> ".city" suffix)
-        if (suffix.StartsWith('.'))
+        if (!IsScopePrefix(parentScope, childScope))
         {
-            suffix = suffix[1..];
+            return false;
         }
+
+        var relativeSegments = GetRelativeScopeSegments(parentScope, childScope);
 
         return childKind switch
         {
             // Collections: one [*] deeper than parent
-            // e.g., parent "$" -> child "$.addresses[*]" => suffix = "addresses[*]"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]" => suffix = "periods[*]"
-            DbTableKind.Collection or DbTableKind.ExtensionCollection => IsOneArrayLevelDeeper(suffix),
+            // e.g., parent "$" -> child "$.addresses[*]"
+            // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]"
+            DbTableKind.Collection => IsOneArrayLevelDeeper(relativeSegments),
+
+            // Extension collections must recurse through their owning _ext.projectName scope.
+            // Without this guard, a base scope like "$.addresses[*]" incorrectly sees
+            // "$.addresses[*]._ext.sample.deliveryNotes[*]" as a direct child.
+            DbTableKind.ExtensionCollection => !StartsWithExtensionScope(relativeSegments)
+                && IsOneArrayLevelDeeper(relativeSegments),
 
             // Extensions: _ext.projectName at same array depth
-            // e.g., parent "$" -> child "$._ext.sample" => suffix = "_ext.sample"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*]._ext.sample" => suffix = "_ext.sample"
-            DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope => IsExtensionScope(suffix),
+            // e.g., parent "$" -> child "$._ext.sample"
+            // e.g., parent "$.addresses[*]" -> child "$.addresses[*]._ext.sample"
+            DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope => IsExtensionScope(
+                relativeSegments
+            ),
 
             _ => false,
         };
@@ -607,23 +637,23 @@ public static class DocumentReconstituter
 
     /// <summary>
     /// Returns true if the suffix represents exactly one array level deeper.
-    /// Allows intermediate dots from inlined object paths (e.g., "contentStandard.authors[*]").
+    /// Allows intermediate property segments from inlined object paths
+    /// (e.g., "$" -> "$.contentStandard.authors[*]").
     /// </summary>
-    private static bool IsOneArrayLevelDeeper(string suffix)
+    private static bool IsOneArrayLevelDeeper(IReadOnlyList<JsonPathSegment> relativeSegments)
     {
-        if (!suffix.EndsWith("[*]", StringComparison.Ordinal))
+        if (relativeSegments.Count == 0 || relativeSegments[^1] is not JsonPathSegment.AnyArrayElement)
         {
             return false;
         }
 
-        // Count [*] occurrences — exactly one means one collection level deeper.
-        // Multiple [*] means a grandchild or deeper, not an immediate child.
         var count = 0;
-        var idx = 0;
-        while ((idx = suffix.IndexOf("[*]", idx, StringComparison.Ordinal)) >= 0)
+        foreach (var segment in relativeSegments)
         {
-            count++;
-            idx += 3;
+            if (segment is JsonPathSegment.AnyArrayElement)
+            {
+                count++;
+            }
         }
 
         return count == 1;
@@ -632,18 +662,137 @@ public static class DocumentReconstituter
     /// <summary>
     /// Returns true if the suffix represents an extension scope (_ext.projectName).
     /// </summary>
-    private static bool IsExtensionScope(string suffix)
+    private static bool IsExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments)
     {
-        if (!suffix.StartsWith("_ext.", StringComparison.Ordinal))
+        return relativeSegments.Count == 2
+            && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+            && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
+    }
+
+    private static bool StartsWithExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments) =>
+        relativeSegments.Count >= 2
+        && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+        && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
+
+    private static JsonPathSegment[] GetRelativeScopeSegments(
+        JsonPathExpression parentScope,
+        JsonPathExpression childScope
+    )
+    {
+        var parentSegments = GetRestrictedSegments(parentScope);
+        var childSegments = GetRestrictedSegments(childScope);
+
+        return [.. childSegments.Skip(parentSegments.Count)];
+    }
+
+    private static bool IsScopePrefix(JsonPathExpression parentScope, JsonPathExpression childScope)
+    {
+        var parentSegments = GetRestrictedSegments(parentScope);
+        var childSegments = GetRestrictedSegments(childScope);
+
+        if (parentSegments.Count > childSegments.Count)
         {
             return false;
         }
 
-        var projectName = suffix["_ext.".Length..];
+        for (var index = 0; index < parentSegments.Count; index++)
+        {
+            var parentSegment = parentSegments[index];
+            var childSegment = childSegments[index];
 
-        // Should be a simple project name (no further nesting)
-        return projectName.Length > 0 && !projectName.Contains('.') && !projectName.Contains('[');
+            if (parentSegment.GetType() != childSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                parentSegment is JsonPathSegment.Property parentProperty
+                && childSegment is JsonPathSegment.Property childProperty
+                && !string.Equals(parentProperty.Name, childProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
+
+    private static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
+    {
+        if (path.Canonical == "$")
+        {
+            return [];
+        }
+
+        if (path.Segments.Count > 0)
+        {
+            return path.Segments;
+        }
+
+        return ParseRestrictedCanonical(path.Canonical);
+    }
+
+    private static JsonPathSegment[] ParseRestrictedCanonical(string canonicalPath)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalPath) || canonicalPath[0] != '$')
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{canonicalPath}' must start with '$'."
+            );
+        }
+
+        List<JsonPathSegment> segments = [];
+        var index = 1;
+
+        while (index < canonicalPath.Length)
+        {
+            switch (canonicalPath[index])
+            {
+                case '.':
+                    index = AppendProperty(canonicalPath, index, segments);
+                    break;
+                case '[' when IsArrayWildcard(canonicalPath, index):
+                    segments.Add(new JsonPathSegment.AnyArrayElement());
+                    index += 3;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Restricted JSONPath '{canonicalPath}' contains an unsupported segment."
+                    );
+            }
+        }
+
+        return [.. segments];
+    }
+
+    private static int AppendProperty(string path, int dotIndex, ICollection<JsonPathSegment> segments)
+    {
+        var startIndex = dotIndex + 1;
+        var index = startIndex;
+
+        while (index < path.Length && path[index] is not ('.' or '['))
+        {
+            index++;
+        }
+
+        if (index == startIndex)
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{path}' contains an empty property segment."
+            );
+        }
+
+        segments.Add(new JsonPathSegment.Property(path[startIndex..index]));
+
+        return index;
+    }
+
+    private static bool IsArrayWildcard(string path, int openBracketIndex) =>
+        openBracketIndex + 2 < path.Length
+        && path[openBracketIndex] == '['
+        && path[openBracketIndex + 1] == '*'
+        && path[openBracketIndex + 2] == ']';
 
     /// <summary>
     /// Resolves the target JSON object and property name for a collection array, navigating
@@ -778,10 +927,193 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
+    /// Builds a deterministic member-order tree from the compiled JSON paths that participate in
+    /// scalar, reference, descriptor, collection, and extension reconstitution.
+    /// </summary>
+    private static PropertyOrderNode BuildPropertyOrderTree(
+        IReadOnlyList<DbTableModel> tableModelsInDependencyOrder,
+        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
+        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
+    )
+    {
+        List<JsonPathExpression> orderedPaths = [];
+
+        foreach (var tableModel in tableModelsInDependencyOrder)
+        {
+            if (!string.Equals(tableModel.JsonScope.Canonical, "$", StringComparison.Ordinal))
+            {
+                orderedPaths.Add(tableModel.JsonScope);
+            }
+
+            foreach (var column in tableModel.Columns)
+            {
+                if (column.SourceJsonPath is JsonPathExpression sourcePath)
+                {
+                    orderedPaths.Add(sourcePath);
+                }
+            }
+        }
+
+        foreach (var plan in referenceProjectionPlans)
+        {
+            foreach (var binding in plan.BindingsInOrder)
+            {
+                orderedPaths.Add(binding.ReferenceObjectPath);
+
+                foreach (var field in binding.IdentityFieldOrdinalsInOrder)
+                {
+                    orderedPaths.Add(field.ReferenceJsonPath);
+                }
+            }
+        }
+
+        foreach (var descriptorSource in descriptorProjectionSources)
+        {
+            orderedPaths.Add(descriptorSource.DescriptorValuePath);
+        }
+
+        orderedPaths.Sort(
+            static (left, right) => string.Compare(left.Canonical, right.Canonical, StringComparison.Ordinal)
+        );
+
+        var root = new PropertyOrderNode();
+        HashSet<string> seenPaths = new(StringComparer.Ordinal);
+
+        foreach (var path in orderedPaths)
+        {
+            if (!seenPaths.Add(path.Canonical))
+            {
+                continue;
+            }
+
+            AddPath(root, path);
+        }
+
+        return root;
+    }
+
+    private static void AddPath(PropertyOrderNode root, JsonPathExpression path)
+    {
+        var current = root;
+
+        foreach (var segment in path.Segments)
+        {
+            if (segment is JsonPathSegment.Property property)
+            {
+                current = current.GetOrAddChild(property.Name);
+            }
+        }
+    }
+
+    private static JsonNode ReorderNode(JsonNode node, PropertyOrderNode propertyOrder)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => ReorderObject(jsonObject, propertyOrder),
+            JsonArray jsonArray => ReorderArray(jsonArray, propertyOrder),
+            _ => node.DeepClone(),
+        };
+    }
+
+    private static JsonObject ReorderObject(JsonObject jsonObject, PropertyOrderNode propertyOrder)
+    {
+        var reordered = new JsonObject();
+        HashSet<string> emittedProperties = new(StringComparer.Ordinal);
+
+        foreach (var (propertyName, childOrder) in propertyOrder.ChildrenInOrder)
+        {
+            if (!jsonObject.TryGetPropertyValue(propertyName, out var propertyValue))
+            {
+                continue;
+            }
+
+            reordered[propertyName] = propertyValue is null ? null : ReorderNode(propertyValue, childOrder);
+            emittedProperties.Add(propertyName);
+        }
+
+        foreach (var property in jsonObject)
+        {
+            if (!emittedProperties.Add(property.Key))
+            {
+                continue;
+            }
+
+            reordered[property.Key] = property.Value is null
+                ? null
+                : ReorderNode(property.Value, PropertyOrderNode.Empty);
+        }
+
+        return reordered;
+    }
+
+    private static JsonArray ReorderArray(JsonArray jsonArray, PropertyOrderNode propertyOrder)
+    {
+        var reordered = new JsonArray();
+
+        foreach (var item in jsonArray)
+        {
+            reordered.Add(item is null ? null : ReorderNode(item, propertyOrder));
+        }
+
+        return reordered;
+    }
+
+    private static bool HasMeaningfulContent(JsonNode? node)
+    {
+        return node switch
+        {
+            null => false,
+            JsonObject jsonObject => JsonObjectHasMeaningfulContent(jsonObject),
+            JsonArray jsonArray => jsonArray.Count > 0,
+            _ => true,
+        };
+    }
+
+    private static bool JsonObjectHasMeaningfulContent(JsonObject jsonObject)
+    {
+        foreach (var property in jsonObject)
+        {
+            if (HasMeaningfulContent(property.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Converts a CLR value from a hydrated row to a <see cref="JsonValue"/>.
     /// </summary>
-    private static JsonNode ConvertToJsonValue(object value)
+    private static JsonNode ConvertToJsonValue(object value, RelationalScalarType? scalarType = null)
     {
+        if (scalarType?.Kind == ScalarKind.Date)
+        {
+            return value switch
+            {
+                DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
+                DateTime dateTime => JsonValue.Create(DateOnly.FromDateTime(dateTime).ToString("yyyy-MM-dd")),
+                DateTimeOffset dateTimeOffset => JsonValue.Create(
+                    DateOnly.FromDateTime(dateTimeOffset.DateTime).ToString("yyyy-MM-dd")
+                ),
+                _ => JsonValue.Create(value.ToString() ?? string.Empty),
+            };
+        }
+
+        if (scalarType?.Kind == ScalarKind.Time)
+        {
+            return value switch
+            {
+                TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
+                TimeSpan timeSpan => JsonValue.Create(TimeOnly.FromTimeSpan(timeSpan).ToString("HH:mm:ss")),
+                DateTime dateTime => JsonValue.Create(TimeOnly.FromDateTime(dateTime).ToString("HH:mm:ss")),
+                DateTimeOffset dateTimeOffset => JsonValue.Create(
+                    TimeOnly.FromDateTime(dateTimeOffset.DateTime).ToString("HH:mm:ss")
+                ),
+                _ => JsonValue.Create(value.ToString() ?? string.Empty),
+            };
+        }
+
         return value switch
         {
             int i => JsonValue.Create(i),
@@ -793,7 +1125,7 @@ public static class DocumentReconstituter
             bool b => JsonValue.Create(b),
             string str => JsonValue.Create(str),
             DateTime dt => JsonValue.Create(
-                dt.ToUniversalTime()
+                NormalizeUtcDateTime(dt)
                     .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
             ),
             DateTimeOffset dto => JsonValue.Create(
@@ -808,6 +1140,14 @@ public static class DocumentReconstituter
             _ => JsonValue.Create(value.ToString() ?? string.Empty),
         };
     }
+
+    private static DateTime NormalizeUtcDateTime(DateTime dateTime) =>
+        dateTime.Kind switch
+        {
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc),
+            DateTimeKind.Utc => dateTime,
+            _ => dateTime.ToUniversalTime(),
+        };
 
     /// <summary>
     /// Finds the ordinal of a column by its <see cref="DbColumnName"/>.
@@ -842,5 +1182,124 @@ public static class DocumentReconstituter
         }
 
         return -1;
+    }
+
+    private sealed class ReconstitutionContext(IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder)
+    {
+        private readonly Dictionary<DbTableName, ChildRowIndex> _childRowIndexesByTable = [];
+
+        public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder => tableRowsInDependencyOrder;
+
+        public IReadOnlyList<object?[]> GetRowsByParentLocator(
+            HydratedTableRows childTableRows,
+            long parentLocatorValue
+        )
+        {
+            if (!_childRowIndexesByTable.TryGetValue(childTableRows.TableModel.Table, out var childRowIndex))
+            {
+                childRowIndex = ChildRowIndex.Create(childTableRows);
+                _childRowIndexesByTable[childTableRows.TableModel.Table] = childRowIndex;
+            }
+
+            return childRowIndex.GetRows(parentLocatorValue);
+        }
+    }
+
+    private sealed class ChildRowIndex(
+        IReadOnlyDictionary<long, IReadOnlyList<object?[]>> rowsByParentLocator
+    )
+    {
+        public IReadOnlyList<object?[]> GetRows(long parentLocatorValue) =>
+            rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows)
+                ? rows
+                : Array.Empty<object?[]>();
+
+        public static ChildRowIndex Create(HydratedTableRows childTableRows)
+        {
+            var childTableModel = childTableRows.TableModel;
+            var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
+
+            if (parentScopeColumns.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot filter child rows for table '{childTableModel.Table}': "
+                        + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
+                );
+            }
+
+            var parentLocatorOrdinal = FindColumnOrdinalByName(childTableModel, parentScopeColumns[0]);
+            var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
+            Dictionary<long, List<object?[]>> rowsByParentLocator = [];
+
+            foreach (var row in childTableRows.Rows)
+            {
+                var parentLocatorValue = Convert.ToInt64(row[parentLocatorOrdinal]);
+
+                if (!rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows))
+                {
+                    rows = [];
+                    rowsByParentLocator[parentLocatorValue] = rows;
+                }
+
+                rows.Add(row);
+            }
+
+            if (ordinalColumnOrdinal >= 0)
+            {
+                foreach (var rows in rowsByParentLocator.Values)
+                {
+                    rows.Sort(
+                        (a, b) =>
+                            Convert
+                                .ToInt32(a[ordinalColumnOrdinal])
+                                .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal]))
+                    );
+                }
+            }
+
+            return new ChildRowIndex(
+                rowsByParentLocator.ToDictionary(
+                    static entry => entry.Key,
+                    static entry => (IReadOnlyList<object?[]>)entry.Value
+                )
+            );
+        }
+    }
+
+    private sealed class PropertyOrderNode
+    {
+        public static readonly PropertyOrderNode Empty = new(isReadOnly: true);
+
+        private readonly Dictionary<string, PropertyOrderNode> _childrenByName = new(StringComparer.Ordinal);
+        private readonly List<KeyValuePair<string, PropertyOrderNode>> _childrenInOrder = [];
+        private readonly bool _isReadOnly;
+
+        public PropertyOrderNode(bool isReadOnly = false)
+        {
+            _isReadOnly = isReadOnly;
+        }
+
+        public IReadOnlyList<KeyValuePair<string, PropertyOrderNode>> ChildrenInOrder => _childrenInOrder;
+
+        public PropertyOrderNode GetOrAddChild(string propertyName)
+        {
+            if (_isReadOnly)
+            {
+                throw new InvalidOperationException(
+                    "Cannot mutate the read-only property-order sentinel node."
+                );
+            }
+
+            if (_childrenByName.TryGetValue(propertyName, out var existingChild))
+            {
+                return existingChild;
+            }
+
+            var child = new PropertyOrderNode();
+            _childrenByName[propertyName] = child;
+            _childrenInOrder.Add(new KeyValuePair<string, PropertyOrderNode>(propertyName, child));
+
+            return child;
+        }
     }
 }

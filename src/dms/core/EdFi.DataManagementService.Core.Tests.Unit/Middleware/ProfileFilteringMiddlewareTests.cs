@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -14,6 +15,7 @@ using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using RelationalWriteSeamFixture = EdFi.DataManagementService.Core.Tests.Unit.Handler.RelationalWriteSeamFixture;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -260,6 +262,69 @@ public class ProfileFilteringMiddlewareTests
             _requestInfo
                 .FrontendResponse.ContentType.Should()
                 .Be("application/vnd.ed-fi.student.testprofile.readable+json");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Relational_Read_Response : ProfileFilteringMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo();
+            _requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+            _requestInfo.ProfileContext = CreateProfileContext(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")]
+            );
+
+            _requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 200,
+                Body: new JsonObject
+                {
+                    ["id"] = "12345",
+                    ["studentUniqueId"] = "STU001",
+                    ["firstName"] = "John",
+                    ["lastName"] = "Doe",
+                },
+                Headers: []
+            );
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_bypasses_the_legacy_profile_response_filter()
+        {
+            _requestInfo.FrontendResponse.Body!["lastName"]?.GetValue<string>().Should().Be("Doe");
+        }
+
+        [Test]
+        public void It_leaves_profile_content_type_ownership_to_the_relational_get_path()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
         }
     }
 

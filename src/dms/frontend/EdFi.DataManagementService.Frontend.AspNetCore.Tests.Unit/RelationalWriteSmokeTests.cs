@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Startup;
@@ -197,8 +198,13 @@ public class Given_A_Host_Using_The_Relational_Backend
             )
         );
         var responseBody = await response.Content.ReadAsStringAsync();
+        var expectedEtag = RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse("""{"widgetId":101,"widgetName":"Smoke Widget"}""")!
+        );
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, responseBody);
+        response.Headers.TryGetValues("ETag", out var etagValues).Should().BeTrue();
+        etagValues.Should().ContainSingle().Which.Should().Be(expectedEtag);
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Location!.AbsolutePath.Should().StartWith("/data/testproject/widgets/");
         _flattener.Inputs.Should().ContainSingle();
@@ -399,6 +405,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IMappingSetProvider>();
                 services.RemoveAll<IRelationalWriteTargetLookupService>();
                 services.RemoveAll<IRelationalWriteExecutor>();
+                services.RemoveAll<IDocumentHydrator>();
+                services.RemoveAll<IRelationalReadTargetLookupService>();
+                services.RemoveAll<IRelationalReadMaterializer>();
+                services.RemoveAll<IReadableProfileProjector>();
 
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
@@ -411,6 +421,10 @@ public class Given_A_Host_Using_The_Relational_Backend
                     new CapturingRelationalWriteTargetLookupService()
                 );
                 services.AddSingleton<IRelationalWriteExecutor>(writeExecutor);
+                services.AddSingleton(A.Fake<IDocumentHydrator>());
+                services.AddSingleton(A.Fake<IRelationalReadTargetLookupService>());
+                services.AddSingleton(A.Fake<IRelationalReadMaterializer>());
+                services.AddSingleton(A.Fake<IReadableProfileProjector>());
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });
@@ -516,11 +530,17 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     RelationalWriteTargetContext.CreateNew(var documentUuid) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.InsertSuccess(documentUuid)
+                            new UpsertResult.InsertSuccess(
+                                documentUuid,
+                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
+                            )
                         ),
                     RelationalWriteTargetContext.ExistingDocument(_, var documentUuid, _) =>
                         new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(documentUuid)
+                            new UpsertResult.UpdateSuccess(
+                                documentUuid,
+                                RelationalApiMetadataFormatter.FormatEtag(request.SelectedBody)
+                            )
                         ),
                     _ => throw new InvalidOperationException(
                         $"Unsupported target context type '{targetContext.GetType().Name}'."
@@ -668,6 +688,8 @@ public class Given_A_Host_Using_The_Relational_Backend
             TableWritePlan rootPlan
         )
         {
+            var readPlan = CreateReadPlan(resourceModel, rootPlan.TableModel, key.Dialect);
+
             return new MappingSet(
                 Key: key,
                 Model: new DerivedRelationalModelSet(
@@ -717,13 +739,37 @@ public class Given_A_Host_Using_The_Relational_Backend
                 {
                     [resource] = new ResourceWritePlan(resourceModel, [rootPlan]),
                 },
-                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+                {
+                    [resource] = readPlan,
+                },
                 ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short> { [resource] = 1 },
                 ResourceKeyById: new Dictionary<short, ResourceKeyEntry> { [1] = resourceKey },
                 SecurableElementColumnPathsByResource: new Dictionary<
                     QualifiedResourceName,
                     IReadOnlyList<ResolvedSecurableElementPath>
                 >()
+            );
+        }
+
+        private static ResourceReadPlan CreateReadPlan(
+            RelationalResourceModel resourceModel,
+            DbTableModel rootTable,
+            SqlDialect dialect
+        )
+        {
+            return new ResourceReadPlan(
+                Model: resourceModel,
+                KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
+                TablePlansInDependencyOrder:
+                [
+                    new TableReadPlan(
+                        rootTable,
+                        $"select * from {rootTable.Table.Schema.Value}.\"{rootTable.Table.Name}\""
+                    ),
+                ],
+                ReferenceIdentityProjectionPlansInDependencyOrder: [],
+                DescriptorProjectionPlansInOrder: []
             );
         }
 

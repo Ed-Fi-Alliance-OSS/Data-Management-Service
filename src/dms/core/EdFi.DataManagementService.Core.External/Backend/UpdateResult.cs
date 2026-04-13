@@ -15,7 +15,8 @@ public record UpdateResult
     /// A successful update request
     /// </summary>
     /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
-    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpdateResult();
+    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string? ETag = null) : UpdateResult();
 
     /// <summary>
     /// A failure because the document does not exist

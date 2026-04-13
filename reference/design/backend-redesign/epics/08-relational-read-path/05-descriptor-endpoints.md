@@ -20,7 +20,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
   - resolves `DocumentUuid → DocumentId`,
   - verifies the document is of the expected descriptor resource type,
   - returns JSON reconstituted from `dms.Descriptor` columns plus `id` from `dms.Document.DocumentUuid`,
-  - serves `_etag/_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps.
+  - computes `_etag` from the serialized descriptor JSON representation and serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps.
 - Query for a descriptor resource:
   - compiles filters for descriptor fields to `dms.Descriptor` columns (root-only semantics),
   - pages deterministically using `DocumentId` ordering,

@@ -106,6 +106,11 @@ public abstract record RelationalWriteTargetLookupResult
 }
 
 /// <summary>
+/// The committed root document identity returned by a successful persistence pass.
+/// </summary>
+internal sealed record RelationalWritePersistResult(long DocumentId, DocumentUuid DocumentUuid);
+
+/// <summary>
 /// Backend-local input contract for flattening a validated write body into relational buffers and candidates.
 /// </summary>
 public sealed record FlatteningInput

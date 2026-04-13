@@ -5,13 +5,12 @@
 
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -100,8 +99,7 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
                 cloneForHash.Remove("_lastModifiedDate");
 
                 // Compute _etag from clone
-                string json = JsonSerializer.Serialize(cloneForHash);
-                byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+                byte[] hash = SHA256.HashData(CanonicalJsonSerializer.SerializeToUtf8Bytes(cloneForHash));
                 var reverseEtag = Convert.ToBase64String(hash);
                 reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
             }

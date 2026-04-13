@@ -16,13 +16,15 @@ public record UpsertResult
     /// A successful upsert request that took the form of an insert
     /// </summary>
     /// <param name="NewDocumentUuid">The DocumentUuid of the new document</param>
-    public record InsertSuccess(DocumentUuid NewDocumentUuid) : UpsertResult();
+    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
+    public record InsertSuccess(DocumentUuid NewDocumentUuid, string? ETag = null) : UpsertResult();
 
     /// <summary>
     /// A successful upsert request that took the form of an update
     /// </summary>
     /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
-    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpsertResult();
+    /// <param name="ETag">The response ETag to emit for the committed representation, when available.</param>
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid, string? ETag = null) : UpsertResult();
 
     /// <summary>
     /// A failure because referenced documents and/or descriptors in the upserted document are invalid

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -15,26 +14,16 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
 {
     public RelationalWriteCurrentStateLoadRequest(
         ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext,
-        bool requiresReconstitution = false
+        RelationalWriteTargetContext.ExistingDocument targetContext
     )
     {
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
-        RequiresReconstitution = requiresReconstitution;
     }
 
     public ResourceReadPlan ReadPlan { get; init; }
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
-
-    /// <summary>
-    /// When <c>true</c>, the loader performs descriptor projection and JSON reconstitution
-    /// so the result includes <see cref="RelationalWriteCurrentState.ReconstitutedDocument"/>.
-    /// When <c>false</c> (the default), the extra SQL round-trip and in-memory assembly are skipped
-    /// because the reconstituted document is not needed for non-profiled writes.
-    /// </summary>
-    public bool RequiresReconstitution { get; init; }
 }
 
 internal sealed record RelationalWriteCurrentState
@@ -52,14 +41,6 @@ internal sealed record RelationalWriteCurrentState
     public DocumentMetadataRow DocumentMetadata { get; init; }
 
     public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder { get; init; }
-
-    /// <summary>
-    /// The fully reconstituted stored JSON document, including reference identity values,
-    /// descriptor URIs, nested collections, and <c>_ext</c> overlays.
-    /// Populated when the current-state loader has projection metadata available.
-    /// Consumed by Core's stored-state projector (C6) for profile-constrained write flows.
-    /// </summary>
-    public JsonNode? ReconstitutedDocument { get; init; }
 }
 
 internal interface IRelationalWriteCurrentStateLoader
@@ -78,6 +59,7 @@ internal interface ISessionDocumentHydrator
         DbTransaction transaction,
         ResourceReadPlan plan,
         PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
         CancellationToken cancellationToken = default
     );
 }
@@ -107,6 +89,7 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                 writeSession.Transaction,
                 request.ReadPlan,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
+                new HydrationExecutionOptions(IncludeDescriptorProjection: false),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -134,33 +117,6 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             );
         }
 
-        if (!request.RequiresReconstitution)
-        {
-            return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
-        }
-
-        // Reconstitute the stored JSON document from hydrated rows
-        var descriptorUriLookup = await DescriptorProjectionExecutor
-            .ExecuteAsync(
-                writeSession.Connection,
-                writeSession.Transaction,
-                request.ReadPlan.DescriptorProjectionPlansInOrder,
-                new PageKeysetSpec.Single(request.TargetContext.DocumentId),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var reconstitutedDocument = DocumentReconstituter.Reconstitute(
-            documentMetadata.DocumentId,
-            hydratedPage.TableRowsInDependencyOrder,
-            request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
-            request.ReadPlan.Model.DescriptorEdgeSources,
-            descriptorUriLookup
-        );
-
-        return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder)
-        {
-            ReconstitutedDocument = reconstitutedDocument,
-        };
+        return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
     }
 }

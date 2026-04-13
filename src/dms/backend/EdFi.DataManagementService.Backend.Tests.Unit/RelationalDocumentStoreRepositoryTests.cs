@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,6 +39,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private RelationalDocumentStoreRepository _sut = null!;
     private IRelationalWriteExecutor _writeExecutor = null!;
     private RecordingRelationalWriteTargetLookupService _targetLookupService = null!;
+    private IDocumentHydrator _documentHydrator = null!;
+    private IRelationalReadTargetLookupService _readTargetLookupService = null!;
+    private IRelationalReadMaterializer _readMaterializer = null!;
+    private IReadableProfileProjector _readableProfileProjector = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
@@ -46,6 +51,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = new RecordingRelationalWriteTargetLookupService();
+        _documentHydrator = A.Fake<IDocumentHydrator>();
+        _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
+        _readMaterializer = A.Fake<IRelationalReadMaterializer>();
+        _readableProfileProjector = A.Fake<IReadableProfileProjector>();
         _capturedExecutorRequests = [];
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -67,23 +76,367 @@ public class Given_RelationalDocumentStoreRepositoryTests
             NullLogger<RelationalDocumentStoreRepository>.Instance,
             _writeExecutor,
             _targetLookupService,
-            new DefaultDescriptorWriteHandler()
+            new DefaultDescriptorWriteHandler(),
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
         );
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_get_requests()
+    public async Task It_materializes_successful_get_requests_through_the_single_document_read_path()
     {
-        var getRequest = A.Fake<IGetRequest>();
-        A.CallTo(() => getRequest.ResourceName).Returns(_schoolResourceInfo.ResourceName);
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var resourceAuthorizationHandler = new RecordingResourceAuthorizationHandler();
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            resourceAuthorizationHandler
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+        var materializedDocument = JsonNode.Parse("""{"id":"hydrated","name":"Lincoln High"}""")!;
+        RelationalReadMaterializationRequest capturedReadRequest = null!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call => capturedReadRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!)
+            .Returns(materializedDocument);
 
         var result = await _sut.GetDocumentById(getRequest);
 
         result
             .Should()
             .BeEquivalentTo(
-                new GetResult.UnknownFailure("Relational GET by id is not implemented for resource 'School'.")
+                new GetResult.GetSuccess(
+                    documentUuid,
+                    materializedDocument,
+                    new DateTime(2026, 4, 11, 17, 30, 45, DateTimeKind.Utc),
+                    null
+                )
             );
+        capturedReadRequest.ReadPlan.Should().BeSameAs(readPlan);
+        capturedReadRequest.DocumentMetadata.Should().Be(hydratedPage.DocumentMetadata[0]);
+        capturedReadRequest
+            .TableRowsInDependencyOrder.Should()
+            .BeSameAs(hydratedPage.TableRowsInDependencyOrder);
+        capturedReadRequest
+            .DescriptorRowsInPlanOrder.Should()
+            .BeSameAs(hydratedPage.DescriptorRowsInPlanOrder);
+        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+        resourceAuthorizationHandler.CallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_a_precise_not_implemented_failure_for_descriptor_get_requests()
+    {
+        var getRequest = A.Fake<IRelationalGetRequest>();
+        A.CallTo(() => getRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => getRequest.ResourceInfo)
+            .Returns(
+                new BaseResourceInfo(
+                    _descriptorResourceInfo.ProjectName,
+                    _descriptorResourceInfo.ResourceName,
+                    _descriptorResourceInfo.IsDescriptor
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new GetResult.GetFailureNotImplemented(
+                    "Relational descriptor GET by id is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor'."
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_passes_stored_document_mode_through_for_internal_get_requests()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            RelationalGetRequestReadMode.StoredDocument
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 92L),
+            (345L, "Roosevelt High")
+        );
+        RelationalReadMaterializationRequest capturedReadRequest = null!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call => capturedReadRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!)
+            .Returns(JsonNode.Parse("""{"name":"Roosevelt High"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.StoredDocument);
+    }
+
+    [Test]
+    public async Task It_applies_readable_profile_projection_after_external_materialization()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var mappingSet = CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!
+        );
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("nameOfInstitution")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "schoolId" }
+        );
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler(),
+            readableProfileProjectionContext: projectionContext
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 93L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High"],
+                    ]
+                ),
+            ],
+            []
+        );
+        var materializedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "cccccccc-1111-2222-3333-dddddddddddd",
+              "_etag": "\"93\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
+              "webSite": "https://example.com"
+            }
+            """
+        )!;
+        var projectedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "cccccccc-1111-2222-3333-dddddddddddd",
+              "_etag": "\"93\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High"
+            }
+            """
+        )!;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(materializedDocument);
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedDocument,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .Returns(projectedDocument);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        var success = (GetResult.GetSuccess)result;
+        success.EdfiDoc.Should().BeSameAs(projectedDocument);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedProjectedEtag);
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBe("\"93\"");
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedDocument,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_for_missing_get_targets()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler()
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(new RelationalReadTargetLookupResult.NotFound());
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_translates_wrong_resource_get_targets_to_not_exists()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler()
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.WrongResource(
+                    documentUuid,
+                    new QualifiedResourceName("Ed-Fi", "LocalEducationAgency")
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_read_plan_guard_rail_for_get_requests()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        const string expectedFailureMessage =
+            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
+            + "but no entry was found. This indicates an internal compilation/selection bug.";
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            CreateMissingReadPlanMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            new RecordingResourceAuthorizationHandler()
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeEquivalentTo(new GetResult.UnknownFailure(expectedFailureMessage));
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -104,7 +457,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_unknown_failure_for_query_requests()
+    public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
     {
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -114,7 +467,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result
             .Should()
             .BeEquivalentTo(
-                new QueryResult.UnknownFailure(
+                new QueryResult.QueryFailureNotImplemented(
                     "Relational query handling is not implemented for resource 'Ed-Fi.School'."
                 )
             );
@@ -123,6 +476,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_requests_through_the_executor_with_reference_resolution_inputs()
     {
+        const string committedEtag = "\"91\"";
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -132,6 +486,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             "$.schoolCategoryDescriptor"
         );
         var requestBody = CreateRequestBody();
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var traceId = new TraceId("post-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var documentInfo = CreateDocumentInfo([documentReference], [descriptorReference]);
@@ -146,7 +501,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -161,7 +518,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
+        ((UpsertResult.InsertSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
@@ -192,14 +550,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
+        const string committedEtag = "\"92\"";
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
         var expectedReadPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var documentInfo = CreateDocumentInfo();
@@ -218,7 +579,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpdateSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -232,7 +595,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, committedEtag));
+        ((UpsertResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
@@ -245,11 +609,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
     }
 
     [Test]
     public async Task It_routes_put_requests_through_the_executor_with_reference_resolution_inputs()
     {
+        const string committedEtag = "\"93\"";
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -261,6 +627,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var traceId = new TraceId("put-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
+        requestBody["_etag"] = "\"stale-request-etag\"";
         var documentInfo = CreateDocumentInfo([documentReference], [descriptorReference]);
 
         A.CallTo(() =>
@@ -273,7 +640,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
             })
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateSuccess(documentUuid))
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
                 )
             );
 
@@ -289,7 +658,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
+        ((UpdateResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest
@@ -311,6 +681,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Which.Should()
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(1);
     }
 
     [Test]
@@ -349,6 +720,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.PutResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
         );
+        _targetLookupService.PutResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
+        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -367,7 +741,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
                         ),
                         1 => new RelationalWriteExecutorResult.Update(
-                            new UpdateResult.UpdateSuccess(documentUuid),
+                            new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
                             RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                         ),
                         _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
@@ -384,7 +758,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().HaveCount(2);
         _capturedExecutorRequests
             .Select(request => request.ExistingDocumentReadPlan)
@@ -418,9 +792,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _targetLookupService.PutResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L)
         );
-        _targetLookupService.PutResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 45L)
-        );
 
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -433,7 +804,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 Task.FromResult<RelationalWriteExecutorResult>(
                     new RelationalWriteExecutorResult.Update(
-                        new UpdateResult.UpdateSuccess(documentUuid),
+                        new UpdateResult.UpdateSuccess(documentUuid, "\"45\""),
                         RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                     )
                 )
@@ -448,13 +819,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().ContainSingle();
         _capturedExecutorRequests[0]
             .TargetContext.Should()
             .BeEquivalentTo(new RelationalWriteTargetContext.ExistingDocument(345L, documentUuid, 44L));
         _targetLookupService.ResolveForPutCallCount.Should().Be(1);
-        _targetLookupService.PutResults.Count.Should().Be(1);
+        _targetLookupService.PutResults.Count.Should().Be(0);
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
             )
@@ -492,7 +863,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             RelationalWriteExecutorAttemptOutcome.StaleNoOpCompare.Instance
                         ),
                         1 => new RelationalWriteExecutorResult.Upsert(
-                            new UpsertResult.UpdateSuccess(documentUuid),
+                            new UpsertResult.UpdateSuccess(documentUuid, "\"45\""),
                             RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance
                         ),
                         _ => throw new InvalidOperationException("Unexpected extra executor attempt."),
@@ -509,7 +880,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid));
+        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, "\"45\""));
         _capturedExecutorRequests.Should().HaveCount(2);
         _capturedExecutorRequests
             .Select(request => request.ExistingDocumentReadPlan)
@@ -782,6 +1153,78 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_preserves_descriptor_post_etags_returned_by_the_handler_without_a_follow_up_lookup()
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
+        );
+
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_preserves_descriptor_put_etags_returned_by_the_handler_without_a_follow_up_lookup()
+    {
+        var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
+        _sut = new RelationalDocumentStoreRepository(
+            NullLogger<RelationalDocumentStoreRepository>.Instance,
+            _writeExecutor,
+            _targetLookupService,
+            descriptorHandler,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector
+        );
+
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .Returns(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+        _targetLookupService.ResolveForPostCallCount.Should().Be(0);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_routes_descriptor_delete_requests_to_the_descriptor_write_handler()
     {
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -883,25 +1326,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_allows_create_new_post_requests_to_bypass_missing_read_plan_guard_rails()
+    public async Task It_returns_the_missing_read_plan_guard_rail_for_create_new_post_requests()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var requestBody = CreateRequestBody("Create without read plan");
         var documentInfo = CreateDocumentInfo();
-
-        A.CallTo(() =>
-                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
-            )
-            .Invokes(call =>
-            {
-                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
-                _capturedExecutorRequests.Add(_capturedExecutorRequest);
-            })
-            .Returns(
-                Task.FromResult<RelationalWriteExecutorResult>(
-                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.InsertSuccess(documentUuid))
-                )
-            );
+        const string expectedFailureMessage =
+            "Read plan lookup failed for resource 'Ed-Fi.School' in mapping set "
+            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have a compiled relational-table read plan, "
+            + "but no entry was found. This indicates an internal compilation/selection bug.";
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -909,17 +1341,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateMissingReadPlanMappingSet(_schoolResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(documentInfo);
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Create without read plan"));
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid));
-        _capturedExecutorRequests.Should().ContainSingle();
-        _capturedExecutorRequest
-            .TargetContext.Should()
-            .BeEquivalentTo(new RelationalWriteTargetContext.CreateNew(documentUuid));
-        _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeNull();
+        result.Should().BeEquivalentTo(new UpsertResult.UnknownFailure(expectedFailureMessage));
+        _capturedExecutorRequests.Should().BeEmpty();
         _targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        _targetLookupService.ResolveForPutCallCount.Should().Be(0);
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -1007,6 +1440,85 @@ public class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
+    private sealed class RecordingResourceAuthorizationHandler : IResourceAuthorizationHandler
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ResourceAuthorizationResult> Authorize(
+            DocumentSecurityElements documentSecurityElements,
+            OperationType operationType,
+            TraceId traceId
+        )
+        {
+            CallCount++;
+
+            return Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
+        }
+    }
+
+    private static IRelationalGetRequest CreateGetRequest(
+        DocumentUuid documentUuid,
+        MappingSet mappingSet,
+        ResourceInfo resourceInfo,
+        IResourceAuthorizationHandler resourceAuthorizationHandler,
+        RelationalGetRequestReadMode readMode = RelationalGetRequestReadMode.ExternalResponse,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
+    )
+    {
+        var getRequest = A.Fake<IRelationalGetRequest>();
+        A.CallTo(() => getRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => getRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => getRequest.ResourceInfo)
+            .Returns(
+                new BaseResourceInfo(
+                    resourceInfo.ProjectName,
+                    resourceInfo.ResourceName,
+                    resourceInfo.IsDescriptor
+                )
+            );
+        A.CallTo(() => getRequest.ResourceAuthorizationHandler).Returns(resourceAuthorizationHandler);
+        A.CallTo(() => getRequest.TraceId).Returns(new TraceId("get-trace"));
+        A.CallTo(() => getRequest.ReadMode).Returns(readMode);
+        A.CallTo(() => getRequest.ReadableProfileProjectionContext).Returns(readableProfileProjectionContext);
+
+        return getRequest;
+    }
+
+    private static DocumentMetadataRow CreateDocumentMetadataRow(
+        DocumentUuid documentUuid,
+        long documentId,
+        long contentVersion
+    )
+    {
+        return new DocumentMetadataRow(
+            documentId,
+            documentUuid.Value,
+            contentVersion,
+            contentVersion,
+            new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.FromHours(-5)),
+            new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.FromHours(-5))
+        );
+    }
+
+    private static HydratedPage CreateHydratedPage(
+        ResourceReadPlan readPlan,
+        DocumentMetadataRow documentMetadata,
+        params (long DocumentId, string Name)[] rows
+    )
+    {
+        return new HydratedPage(
+            null,
+            [documentMetadata],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    rows.Select(row => new object?[] { row.DocumentId, row.Name }).ToArray()
+                ),
+            ],
+            []
+        );
+    }
+
     private static ResourceInfo CreateResourceInfo(string resourceName, bool isDescriptor = false)
     {
         return new ResourceInfo(
@@ -1090,6 +1602,86 @@ public class Given_RelationalDocumentStoreRepositoryTests
             {
                 [resourceKey.Resource] = writePlan,
             },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resourceKey.Resource] = readPlan,
+            },
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private static MappingSet CreateProfileProjectionOrderSensitiveMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("NameOfInstitution"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression(
+                        "$.nameOfInstitution",
+                        [new JsonPathSegment.Property("nameOfInstitution")]
+                    ),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+        var readPlan = CreateReadPlan(resourceModel, rootTable);
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
             {
                 [resourceKey.Resource] = readPlan,
