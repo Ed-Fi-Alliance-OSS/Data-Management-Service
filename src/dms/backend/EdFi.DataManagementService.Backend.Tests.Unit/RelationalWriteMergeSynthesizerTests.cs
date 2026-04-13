@@ -12,6 +12,27 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
+/// <remarks>
+/// <para>
+/// <b>HiddenMemberPaths vocabulary note:</b>
+/// In production, <c>HiddenMemberPaths</c> on <c>StoredScopeState</c> and
+/// <c>VisibleStoredCollectionRow</c> contains bare, scope-relative member names
+/// (e.g. <c>"code"</c>, <c>"hiddenExt"</c>, <c>"primaryType"</c>, <c>"hiddenField"</c>),
+/// matching exactly what <see cref="Backend.External.Profile.CompiledScopeAdapterFactory"/>
+/// writes into the profile context.
+/// </para>
+/// <para>
+/// Most tests in this file pre-date that vocabulary clarification and still supply
+/// <c>$.</c>-prefixed inputs (e.g. <c>"$.code"</c>). They remain green only because
+/// <see cref="HiddenMemberPathVocabulary.ToJsonPathRelative"/> idempotently passes
+/// already-prefixed strings through. The Core contract is the <b>bare</b> form.
+/// </para>
+/// <para>
+/// Representative tests using the real Core-shape vocabulary are individually marked
+/// with their own <c>&lt;remarks&gt;</c> block. Task 4 adds end-to-end consistency
+/// coverage against <c>CompiledScopeAdapterFactory</c> output.
+/// </para>
+/// </remarks>
 [TestFixture]
 [Parallelizable]
 public class Given_Relational_Write_Profile_Merge_Synthesizer
@@ -24,6 +45,15 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         _sut = new RelationalWriteMergeSynthesizer();
     }
 
+    /// <remarks>
+    /// This test uses Core's real <c>HiddenMemberPaths</c> vocabulary: bare
+    /// scope-relative member names (e.g. <c>"code"</c>), matching what
+    /// <see cref="Backend.External.Profile.CompiledScopeAdapterFactory"/> produces.
+    /// Most tests in this file still use the legacy <c>$.</c>-prefixed shape;
+    /// they pass only because <see cref="HiddenMemberPathVocabulary.ToJsonPathRelative"/>
+    /// idempotently passes already-prefixed inputs through. The Core contract
+    /// is the bare form.
+    /// </remarks>
     [Test]
     public void It_overlays_hidden_scalar_from_current_state_on_root_table_update()
     {
@@ -55,7 +85,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                 new StoredScopeState(
                     RootAddress(),
                     ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: ["$.code"]
+                    HiddenMemberPaths: ["code"]
                 ),
             ]
         );
@@ -137,6 +167,15 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         LiteralValue(insert.Values[2]).Should().Be("NEW_CODE");
     }
 
+    /// <remarks>
+    /// This test uses Core's real <c>HiddenMemberPaths</c> vocabulary: bare
+    /// scope-relative member names (e.g. <c>"hiddenExt"</c>), matching what
+    /// <see cref="Backend.External.Profile.CompiledScopeAdapterFactory"/> produces.
+    /// Most tests in this file still use the legacy <c>$.</c>-prefixed shape;
+    /// they pass only because <see cref="HiddenMemberPathVocabulary.ToJsonPathRelative"/>
+    /// idempotently passes already-prefixed inputs through. The Core contract
+    /// is the bare form.
+    /// </remarks>
     [Test]
     public void It_updates_extension_table_overlaying_hidden_value_when_scope_is_visible_present()
     {
@@ -186,7 +225,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                 new StoredScopeState(
                     ScopeAddress(extensionScope),
                     ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: ["$.hiddenExt"]
+                    HiddenMemberPaths: ["hiddenExt"]
                 ),
             ]
         );
@@ -449,6 +488,15 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
 
     // --- Key-unification tests ---
 
+    /// <remarks>
+    /// This test uses Core's real <c>HiddenMemberPaths</c> vocabulary: bare
+    /// scope-relative member names (e.g. <c>"primaryType"</c>), matching what
+    /// <see cref="Backend.External.Profile.CompiledScopeAdapterFactory"/> produces.
+    /// Most tests in this file still use the legacy <c>$.</c>-prefixed shape;
+    /// they pass only because <see cref="HiddenMemberPathVocabulary.ToJsonPathRelative"/>
+    /// idempotently passes already-prefixed inputs through. The Core contract
+    /// is the bare form.
+    /// </remarks>
     [Test]
     public void It_preserves_key_unification_canonical_when_visible_member_absent_and_hidden_member_present_in_stored()
     {
@@ -511,7 +559,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                 new StoredScopeState(
                     RootAddress(),
                     ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: ["$.primaryType"]
+                    HiddenMemberPaths: ["primaryType"]
                 ),
             ]
         );
@@ -541,6 +589,15 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
 
     // --- Collection merge tests ---
 
+    /// <remarks>
+    /// This test uses Core's real <c>HiddenMemberPaths</c> vocabulary: bare
+    /// scope-relative member names (e.g. <c>"hiddenField"</c>), matching what
+    /// <see cref="Backend.External.Profile.CompiledScopeAdapterFactory"/> produces.
+    /// Most tests in this file still use the legacy <c>$.</c>-prefixed shape;
+    /// they pass only because <see cref="HiddenMemberPathVocabulary.ToJsonPathRelative"/>
+    /// idempotently passes already-prefixed inputs through. The Core contract
+    /// is the bare form.
+    /// </remarks>
     [Test]
     public void It_updates_matched_visible_collection_row_and_preserves_hidden_row()
     {
@@ -618,8 +675,8 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                 ),
             ],
             [
-                CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", ["$.hiddenField"]),
-                CreateVisibleStoredCollectionRow("$.classPeriods", "Period3", ["$.hiddenField"]),
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", ["hiddenField"]),
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period3", ["hiddenField"]),
             ]
         );
 
