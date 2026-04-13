@@ -227,11 +227,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_applies_readable_profile_projection_after_external_materialization()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
-        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
-            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!
-        );
-        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var mappingSet = CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo);
         var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var expectedProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse("""{"schoolId":255901,"nameOfInstitution":"Lincoln High"}""")!,
+            readPlan
+        );
         var projectionContext = new ReadableProfileProjectionContext(
             new ContentTypeDefinition(
                 MemberSelection.IncludeOnly,
@@ -249,10 +250,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
             new RecordingResourceAuthorizationHandler(),
             readableProfileProjectionContext: projectionContext
         );
-        var hydratedPage = CreateHydratedPage(
-            readPlan,
-            CreateDocumentMetadataRow(documentUuid, 345L, 93L),
-            (345L, "Lincoln High")
+        var hydratedPage = new HydratedPage(
+            null,
+            [CreateDocumentMetadataRow(documentUuid, 345L, 93L)],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High"],
+                    ]
+                ),
+            ],
+            []
         );
         var materializedDocument = JsonNode.Parse(
             """
@@ -1594,6 +1603,86 @@ public class Given_RelationalDocumentStoreRepositoryTests
             {
                 [resourceKey.Resource] = writePlan,
             },
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resourceKey.Resource] = readPlan,
+            },
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
+
+    private static MappingSet CreateProfileProjectionOrderSensitiveMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("NameOfInstitution"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression(
+                        "$.nameOfInstitution",
+                        [new JsonPathSegment.Property("nameOfInstitution")]
+                    ),
+                    null
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+        var readPlan = CreateReadPlan(resourceModel, rootTable);
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
             {
                 [resourceKey.Resource] = readPlan,

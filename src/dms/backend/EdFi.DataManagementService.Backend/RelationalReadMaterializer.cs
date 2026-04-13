@@ -50,7 +50,8 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             RelationalGetRequestReadMode.StoredDocument => materializedDocument,
             RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
-                request.DocumentMetadata
+                request.DocumentMetadata,
+                request.ReadPlan
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(request),
@@ -62,10 +63,12 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
 
     private static JsonNode InjectApiMetadata(
         JsonNode materializedDocument,
-        DocumentMetadataRow documentMetadata
+        DocumentMetadataRow documentMetadata,
+        ResourceReadPlan readPlan
     )
     {
         ArgumentNullException.ThrowIfNull(materializedDocument);
+        ArgumentNullException.ThrowIfNull(readPlan);
 
         if (materializedDocument is not JsonObject documentObject)
         {
@@ -74,7 +77,7 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             );
         }
 
-        var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument);
+        var etag = RelationalApiMetadataFormatter.FormatEtag(materializedDocument, readPlan);
         documentObject[IdPropertyName] = documentMetadata.DocumentUuid.ToString();
         documentObject[EtagPropertyName] = etag;
         documentObject[LastModifiedDatePropertyName] = documentMetadata

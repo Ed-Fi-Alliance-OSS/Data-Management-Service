@@ -49,7 +49,9 @@ internal static class RelationalApiMetadataFormatter
         return FormatEtag(BuildCanonicalDescriptorDocument(descriptorBody));
     }
 
-    public static void RefreshEtag(JsonNode document)
+    public static void RefreshEtag(JsonNode document) => RefreshEtag(document, readPlan: null);
+
+    public static void RefreshEtag(JsonNode document, ResourceReadPlan? readPlan)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -60,7 +62,7 @@ internal static class RelationalApiMetadataFormatter
             );
         }
 
-        documentObject["_etag"] = FormatEtag(documentObject);
+        documentObject["_etag"] = FormatEtag(documentObject, readPlan);
     }
 
     private static JsonObject BuildCanonicalDescriptorDocument(ExtractedDescriptorBody descriptorBody)
