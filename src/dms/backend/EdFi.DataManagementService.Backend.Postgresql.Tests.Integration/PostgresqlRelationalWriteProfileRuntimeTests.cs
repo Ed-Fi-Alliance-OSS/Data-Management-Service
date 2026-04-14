@@ -3,23 +3,29 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
@@ -594,5 +600,1021 @@ file static class ProfileRuntimeTestSupport
         }
 
         return value;
+    }
+}
+
+file sealed class ProfileRuntimeFixedStoredStateProjectionInvoker(
+    ImmutableArray<StoredScopeState> storedScopeStates,
+    ImmutableArray<VisibleStoredCollectionRow> visibleStoredCollectionRows
+) : IStoredStateProjectionInvoker
+{
+    private readonly ImmutableArray<StoredScopeState> _storedScopeStates = storedScopeStates;
+    private readonly ImmutableArray<VisibleStoredCollectionRow> _visibleStoredCollectionRows =
+        visibleStoredCollectionRows;
+
+    public ProfileAppliedWriteContext ProjectStoredState(
+        JsonNode storedDocument,
+        ProfileAppliedWriteRequest request,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+    ) =>
+        new(
+            Request: request,
+            VisibleStoredBody: storedDocument.DeepClone(),
+            StoredScopeStates: _storedScopeStates,
+            VisibleStoredCollectionRows: _visibleStoredCollectionRows
+        );
+}
+
+file static class ProfileRuntimeContextFactory
+{
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+
+    private static VisibleRequestCollectionItem CreateVisibleAddressCollectionItem(
+        ScopeInstanceAddress parentAddress,
+        string city,
+        int requestIndex
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*]",
+                parentAddress,
+                [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+            ),
+            Creatable: true,
+            RequestJsonPath: $"$.addresses[{requestIndex}]"
+        );
+
+    private static VisibleStoredCollectionRow CreateVisibleStoredAddressCollectionRow(
+        ScopeInstanceAddress parentAddress,
+        string city
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*]",
+                parentAddress,
+                [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+            ),
+            HiddenMemberPaths: []
+        );
+
+    public static BackendProfileWriteContext CreateVisibleRowUpdateWithHiddenRowPreservationContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
+            CreateVisibleAddressCollectionItem(rootAddress, "Houston", 1)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateVisibleRowDeleteWithHiddenRowPreservationContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateVisibleButAbsentNonCollectionScopeContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                ]
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateHiddenInlinedColumnPreservationContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: ["$.shortName"]
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                ]
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Visible_Row_Update_With_Hidden_Row_Preservation
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000101")
+    );
+
+    private const string UpdateBodyJson = """
+        { "schoolId": 255901, "shortName": "LHS", "addresses": [{ "city": "Austin", "periods": [{ "periodName": "Fall" }] }, { "city": "Houston" }] }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterCreate = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+        _stateAfterCreate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleRowUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-row-update-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleRowUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-row-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateVisibleRowUpdateWithHiddenRowPreservationContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled visible-row update should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_has_three_address_rows_with_visible_first_in_request_order_then_hidden()
+    {
+        _stateAfterUpdate.Addresses.Should().HaveCount(3);
+        _stateAfterUpdate.Addresses[0].City.Should().Be("Austin");
+        _stateAfterUpdate.Addresses[0].Ordinal.Should().Be(0);
+        _stateAfterUpdate.Addresses[1].City.Should().Be("Houston");
+        _stateAfterUpdate.Addresses[1].Ordinal.Should().Be(1);
+        _stateAfterUpdate.Addresses[2].City.Should().Be("Dallas");
+        _stateAfterUpdate.Addresses[2].Ordinal.Should().Be(2);
+    }
+
+    [Test]
+    public void It_preserves_address_periods_for_visible_and_hidden_rows()
+    {
+        // Austin's "Fall" period preserved (matched update)
+        var austinPeriods = _stateAfterUpdate
+            .AddressPeriods.Where(p =>
+                _stateAfterUpdate.Addresses.Any(a =>
+                    a.City == "Austin" && a.CollectionItemId == p.ParentCollectionItemId
+                )
+            )
+            .ToArray();
+        austinPeriods.Should().HaveCount(1);
+        austinPeriods[0].PeriodName.Should().Be("Fall");
+
+        // Dallas's "Spring" period preserved (hidden row)
+        var dallasPeriods = _stateAfterUpdate
+            .AddressPeriods.Where(p =>
+                _stateAfterUpdate.Addresses.Any(a =>
+                    a.City == "Dallas" && a.CollectionItemId == p.ParentCollectionItemId
+                )
+            )
+            .ToArray();
+        dallasPeriods.Should().HaveCount(1);
+        dallasPeriods[0].PeriodName.Should().Be("Spring");
+
+        // Houston has no periods
+        var houstonPeriods = _stateAfterUpdate
+            .AddressPeriods.Where(p =>
+                _stateAfterUpdate.Addresses.Any(a =>
+                    a.City == "Houston" && a.CollectionItemId == p.ParentCollectionItemId
+                )
+            )
+            .ToArray();
+        houstonPeriods.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_preserves_hidden_extension_data()
+    {
+        _stateAfterUpdate.SchoolExtension.Should().NotBeNull();
+        _stateAfterUpdate.SchoolExtension!.CampusCode.Should().Be("North");
+    }
+
+    [Test]
+    public void It_preserves_hidden_extension_interventions()
+    {
+        _stateAfterUpdate.Interventions.Should().HaveCount(2);
+        _stateAfterUpdate.Interventions[0].InterventionCode.Should().Be("INT-A");
+        _stateAfterUpdate.Interventions[0].Ordinal.Should().Be(0);
+        _stateAfterUpdate.Interventions[1].InterventionCode.Should().Be("INT-B");
+        _stateAfterUpdate.Interventions[1].Ordinal.Should().Be(1);
+    }
+
+    [Test]
+    public void It_preserves_hidden_extension_intervention_visits()
+    {
+        _stateAfterUpdate.InterventionVisits.Should().HaveCount(3);
+
+        var intAVisits = _stateAfterUpdate
+            .InterventionVisits.Where(v =>
+                _stateAfterUpdate.Interventions.Any(i =>
+                    i.InterventionCode == "INT-A" && i.CollectionItemId == v.ParentCollectionItemId
+                )
+            )
+            .OrderBy(v => v.Ordinal)
+            .ToArray();
+        intAVisits.Should().HaveCount(2);
+        intAVisits[0].VisitCode.Should().Be("V1");
+        intAVisits[1].VisitCode.Should().Be("V2");
+
+        var intBVisits = _stateAfterUpdate
+            .InterventionVisits.Where(v =>
+                _stateAfterUpdate.Interventions.Any(i =>
+                    i.InterventionCode == "INT-B" && i.CollectionItemId == v.ParentCollectionItemId
+                )
+            )
+            .ToArray();
+        intBVisits.Should().HaveCount(1);
+        intBVisits[0].VisitCode.Should().Be("V3");
+    }
+
+    [Test]
+    public void It_preserves_hidden_extension_addresses()
+    {
+        _stateAfterUpdate.ExtensionAddresses.Should().HaveCount(2);
+
+        // Central under Austin
+        var austinExtAddr = _stateAfterUpdate
+            .ExtensionAddresses.Where(ea =>
+                _stateAfterUpdate.Addresses.Any(a =>
+                    a.City == "Austin" && a.CollectionItemId == ea.BaseCollectionItemId
+                )
+            )
+            .ToArray();
+        austinExtAddr.Should().HaveCount(1);
+        austinExtAddr[0].Zone.Should().Be("Central");
+
+        // East under Dallas
+        var dallasExtAddr = _stateAfterUpdate
+            .ExtensionAddresses.Where(ea =>
+                _stateAfterUpdate.Addresses.Any(a =>
+                    a.City == "Dallas" && a.CollectionItemId == ea.BaseCollectionItemId
+                )
+            )
+            .ToArray();
+        dallasExtAddr.Should().HaveCount(1);
+        dallasExtAddr[0].Zone.Should().Be("East");
+    }
+
+    [Test]
+    public void It_increments_content_version()
+    {
+        _stateAfterUpdate
+            .Document.ContentVersion.Should()
+            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Visible_Row_Delete_With_Hidden_Row_Preservation
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000102")
+    );
+
+    private const string UpdateBodyJson = """
+        { "schoolId": 255901, "shortName": "LHS", "addresses": [] }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleRowDelete",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-row-delete-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleRowDelete",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-row-delete",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateVisibleRowDeleteWithHiddenRowPreservationContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled visible-row delete should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_keeps_only_the_hidden_dallas_address_row()
+    {
+        _stateAfterUpdate.Addresses.Should().HaveCount(1);
+        _stateAfterUpdate.Addresses[0].City.Should().Be("Dallas");
+        _stateAfterUpdate.Addresses[0].Ordinal.Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_only_the_hidden_dallas_address_period()
+    {
+        _stateAfterUpdate.AddressPeriods.Should().HaveCount(1);
+        _stateAfterUpdate.AddressPeriods[0].PeriodName.Should().Be("Spring");
+    }
+
+    [Test]
+    public void It_keeps_only_the_hidden_dallas_extension_address()
+    {
+        _stateAfterUpdate.ExtensionAddresses.Should().HaveCount(1);
+        _stateAfterUpdate.ExtensionAddresses[0].Zone.Should().Be("East");
+    }
+
+    [Test]
+    public void It_preserves_hidden_extension_and_interventions()
+    {
+        _stateAfterUpdate.SchoolExtension.Should().NotBeNull();
+        _stateAfterUpdate.SchoolExtension!.CampusCode.Should().Be("North");
+        _stateAfterUpdate.Interventions.Should().HaveCount(2);
+        _stateAfterUpdate.InterventionVisits.Should().HaveCount(3);
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Visible_But_Absent_Non_Collection_Scope
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000103")
+    );
+
+    private const string UpdateBodyJson = """
+        { "schoolId": 255901, "shortName": "LHS", "addresses": [{ "city": "Austin", "periods": [{ "periodName": "Fall" }] }, { "city": "Dallas", "periods": [{ "periodName": "Spring" }] }] }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleAbsentScope",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-absent-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledVisibleAbsentScope",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-visible-absent-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateVisibleButAbsentNonCollectionScopeContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled visible-absent scope update should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_deletes_the_visible_absent_extension_row()
+    {
+        _stateAfterUpdate.SchoolExtension.Should().BeNull();
+    }
+
+    [Test]
+    public void It_cascades_deletion_of_extension_children()
+    {
+        _stateAfterUpdate.Interventions.Should().BeEmpty();
+        _stateAfterUpdate.InterventionVisits.Should().BeEmpty();
+        _stateAfterUpdate.ExtensionAddresses.Should().BeEmpty();
+        _stateAfterUpdate.SponsorReferences.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_preserves_the_root_school_row()
+    {
+        _stateAfterUpdate.School.SchoolId.Should().Be(255901);
+        _stateAfterUpdate.School.ShortName.Should().Be("LHS");
+    }
+
+    [Test]
+    public void It_preserves_the_address_collection_rows()
+    {
+        _stateAfterUpdate.Addresses.Should().HaveCount(2);
+        _stateAfterUpdate.Addresses[0].City.Should().Be("Austin");
+        _stateAfterUpdate.Addresses[1].City.Should().Be("Dallas");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Hidden_Inlined_Column_Preservation
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000104")
+    );
+
+    private const string UpdateBodyJson = """
+        { "schoolId": 255901, "addresses": [{ "city": "Austin", "periods": [{ "periodName": "Fall" }] }, { "city": "Dallas", "periods": [{ "periodName": "Spring" }] }] }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledHiddenInlinedColumn",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-hidden-inlined-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledHiddenInlinedColumn",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-runtime-hidden-inlined-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateHiddenInlinedColumnPreservationContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled hidden-inlined-column update should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_preserves_the_hidden_short_name_column()
+    {
+        _stateAfterUpdate.School.ShortName.Should().Be("LHS");
+    }
+
+    [Test]
+    public void It_preserves_the_hidden_extension_campus_code()
+    {
+        _stateAfterUpdate.SchoolExtension.Should().NotBeNull();
+        _stateAfterUpdate.SchoolExtension!.CampusCode.Should().Be("North");
+    }
+
+    [Test]
+    public void It_preserves_the_address_rows_unchanged()
+    {
+        _stateAfterUpdate.Addresses.Should().HaveCount(2);
+        _stateAfterUpdate.Addresses[0].City.Should().Be("Austin");
+        _stateAfterUpdate.Addresses[1].City.Should().Be("Dallas");
     }
 }
