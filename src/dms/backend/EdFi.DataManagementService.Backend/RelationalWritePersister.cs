@@ -122,6 +122,7 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
             }
 
             await DeleteNonCollectionRowByParentAsync(
+                    dialect,
                     tableState,
                     rootDocumentId,
                     writeSession,
@@ -446,6 +447,7 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
     }
 
     private static async Task DeleteNonCollectionRowByParentAsync(
+        SqlDialect dialect,
         RelationalWriteMergeTableState tableState,
         long rootDocumentId,
         IRelationalWriteSession writeSession,
@@ -459,22 +461,56 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
             );
         }
 
-        if (tableState.ComparableCurrentRowset.Length == 1)
+        var rowsToDelete = tableState
+            .Deletes.Select(delete => delete.Values)
+            .Where(static values => values is not null)
+            .Select(static values => new MergeTableRow(values!, ImmutableArray<FlattenedWriteValue>.Empty))
+            .ToList();
+
+        if (
+            rowsToDelete.Count == 0
+            && tableState.ComparableCurrentRowset.Length == tableState.Deletes.Length
+            && tableState.ComparableCurrentRowset.Length > 0
+        )
+        {
+            rowsToDelete = [.. tableState.ComparableCurrentRowset];
+        }
+
+        if (rowsToDelete.Count == tableState.Deletes.Length && rowsToDelete.Count > 0)
         {
             Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> emptyReservedIds = [];
 
-            await ExecuteNonQueryAsync(
-                    writeSession,
-                    BuildRowCommandFromValues(
+            if (rowsToDelete.Count == 1)
+            {
+                await ExecuteNonQueryAsync(
+                        writeSession,
+                        BuildRowCommandFromValues(
+                            tableState.TableWritePlan,
+                            tableState.TableWritePlan.DeleteByParentSql,
+                            rowsToDelete[0].Values,
+                            rootDocumentId,
+                            emptyReservedIds
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await ExecuteParameterizedBatchesAsync(
+                        dialect,
                         tableState.TableWritePlan,
                         tableState.TableWritePlan.DeleteByParentSql,
-                        tableState.ComparableCurrentRowset[0].Values,
+                        (batchSqlEmitter, rowCount) =>
+                            batchSqlEmitter.EmitDeleteByParentBatch(tableState.TableWritePlan, rowCount),
+                        rowsToDelete,
                         rootDocumentId,
-                        emptyReservedIds
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+                        emptyReservedIds,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
 
             return;
         }

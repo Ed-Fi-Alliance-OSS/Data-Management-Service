@@ -49,9 +49,13 @@ internal sealed record MergeRowUpdate(
 );
 
 /// <summary>
-/// A row to delete. StableRowIdentityValue for collection rows, null for scope rows.
+/// A row to delete. StableRowIdentityValue is used for collection rows. Values carries the
+/// concrete current-row bindings for non-collection delete-by-parent operations.
 /// </summary>
-internal sealed record MergeRowDelete(long? StableRowIdentityValue);
+internal sealed record MergeRowDelete(
+    long? StableRowIdentityValue,
+    ImmutableArray<FlattenedWriteValue>? Values = null
+);
 
 /// <summary>
 /// A hidden row preserved unchanged. Not consumed by the persister at runtime —
@@ -262,10 +266,11 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     public RelationalWriteMergeSynthesisOutcome Synthesize(RelationalWriteMergeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var isNullProfile = request.ProfileRequest is null;
 
         // Null-profile callers: use the adapter to synthesize profile-shape inputs so
         // the rest of this method runs a single code path for both modes.
-        if (request.ProfileRequest is null)
+        if (isNullProfile)
         {
             var synthetic = NoProfileSyntheticProfileAdapter.Build(
                 request.WritePlan,
@@ -380,6 +385,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             inlinedScopePathsByTable,
             request.WritePlan,
             compiledScopeCatalog,
+            useLegacyRequestOrderForVisibleRows: isNullProfile,
             visitedScopeKeys
         );
 
@@ -401,6 +407,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             inlinedScopePathsByTable,
             request.WritePlan,
             compiledScopeCatalog,
+            useLegacyRequestOrderForVisibleRows: isNullProfile,
             visitedScopeKeys: visitedScopeKeys
         );
 
@@ -475,6 +482,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         > inlinedScopePathsByTable,
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
+        bool useLegacyRequestOrderForVisibleRows,
         HashSet<string>? visitedScopeKeys = null
     )
     {
@@ -608,6 +616,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     inlinedScopePathsByTable,
                     writePlan,
                     compiledScopeCatalog,
+                    useLegacyRequestOrderForVisibleRows: useLegacyRequestOrderForVisibleRows,
                     parentJsonScope: jsonScope,
                     visitedScopeKeys: visitedScopeKeys
                 );
@@ -625,7 +634,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 if (currentValues is not null)
                 {
                     tableStateBuilders[tablePlan.TableModel.Table]
-                        .AddDelete(new MergeRowDelete(StableRowIdentityValue: null));
+                        .AddDelete(
+                            new MergeRowDelete(StableRowIdentityValue: null, Values: currentValues.Value)
+                        );
                 }
 
                 // No comparable merged row when deleting; child collections are implicitly removed
@@ -671,6 +682,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         > inlinedScopePathsByTable,
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
+        bool useLegacyRequestOrderForVisibleRows,
         string ancestorContextKey = "",
         HashSet<string>? visitedScopeKeys = null
     )
@@ -852,6 +864,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     inlinedScopePathsByTable,
                     writePlan,
                     compiledScopeCatalog,
+                    useLegacyRequestOrderForVisibleRows: useLegacyRequestOrderForVisibleRows,
                     parentJsonScope: jsonScope,
                     ancestorContextKey: ancestorContextKey,
                     visitedScopeKeys: visitedScopeKeys
@@ -909,6 +922,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         > inlinedScopePathsByTable,
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
+        bool useLegacyRequestOrderForVisibleRows,
         string parentJsonScope = "$",
         string ancestorContextKey = "",
         HashSet<string>? visitedScopeKeys = null
@@ -1002,6 +1016,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 inlinedScopePathsByTable,
                 writePlan,
                 compiledScopeCatalog,
+                useLegacyRequestOrderForVisibleRows,
                 ancestorContextKey,
                 visitedScopeKeys
             );
@@ -1035,6 +1050,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         > inlinedScopePathsByTable,
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
+        bool useLegacyRequestOrderForVisibleRows,
         string ancestorContextKey = "",
         HashSet<string>? visitedScopeKeys = null
     )
@@ -1340,99 +1356,126 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         // Step 5: Ordinal recomputation — build interleaved sequence, then emit to builder
-        var visibleCurrentIndexSet = new HashSet<int>(visibleCurrentRows.Select(v => v.CurrentIndex));
-        var deletedVisibleIndexSet = new HashSet<int>(
-            unmatchedVisibleCurrentRows.Select(v => v.CurrentIndex)
-        );
-        var hiddenIndexSet = new HashSet<int>(hiddenCurrentRows.Select(h => h.CurrentIndex));
+        List<CollectionInterleavedEntry> interleavedEntries;
 
-        // Order current rows by existing ordinal
-        var orderedCurrentIndexes = Enumerable
-            .Range(0, allCurrentRows.Count)
-            .OrderBy(i => ExtractOrdinalFromRow(allCurrentRows[i], mergePlan))
-            .ToList();
-
-        // Matched updates in request order
-        var orderedUpdates = mergedUpdates.OrderBy(u => u.Candidate.RequestOrder).ToList();
-        var orderedInserts = mergedInserts.OrderBy(ins => ins.Candidate.RequestOrder).ToList();
-
-        // Build the interleaved sequence
-        var interleavedEntries = new List<CollectionInterleavedEntry>();
-        var updateCursor = 0;
-
-        // Tracks the index in the interleaved list where new inserts should be placed.
-        // For surviving visible rows this is one past the just-added entry; for deleted
-        // visible rows it is the current Count (where the entry would have been). This
-        // ensures hidden rows that follow deleted visible rows keep their relative gaps.
-        int visibleInsertPoint = -1;
-
-        foreach (var currentIndex in orderedCurrentIndexes)
+        if (useLegacyRequestOrderForVisibleRows && hiddenCurrentRows.Count == 0)
         {
-            if (hiddenIndexSet.Contains(currentIndex))
-            {
-                // Hidden row: preserve in place
-                interleavedEntries.Add(
-                    new CollectionInterleavedEntry.Hidden(allCurrentRows[currentIndex].Values)
-                );
-            }
-            else if (visibleCurrentIndexSet.Contains(currentIndex))
-            {
-                // Surviving visible position: substitute next matched update
-                if (!deletedVisibleIndexSet.Contains(currentIndex) && updateCursor < orderedUpdates.Count)
-                {
-                    var update = orderedUpdates[updateCursor];
-                    interleavedEntries.Add(
-                        new CollectionInterleavedEntry.Update(
-                            update.Values,
-                            update.StableRowIdentityValue,
-                            update.Candidate
+            interleavedEntries =
+            [
+                .. mergedUpdates
+                    .Select(update =>
+                        (CollectionInterleavedEntry)
+                            new CollectionInterleavedEntry.Update(
+                                update.Values,
+                                update.StableRowIdentityValue,
+                                update.Candidate
+                            )
+                    )
+                    .Concat(
+                        mergedInserts.Select(insert =>
+                            (CollectionInterleavedEntry)
+                                new CollectionInterleavedEntry.Insert(insert.Values, insert.Candidate)
                         )
-                    );
-                    updateCursor++;
-                }
+                    )
+                    .OrderBy(GetRequestOrder),
+            ];
+        }
+        else
+        {
+            var visibleCurrentIndexSet = new HashSet<int>(visibleCurrentRows.Select(v => v.CurrentIndex));
+            var deletedVisibleIndexSet = new HashSet<int>(
+                unmatchedVisibleCurrentRows.Select(v => v.CurrentIndex)
+            );
+            var hiddenIndexSet = new HashSet<int>(hiddenCurrentRows.Select(h => h.CurrentIndex));
 
-                // Track insert point for ALL originally-visible rows (surviving and deleted)
+            // Order current rows by existing ordinal
+            var orderedCurrentIndexes = Enumerable
+                .Range(0, allCurrentRows.Count)
+                .OrderBy(i => ExtractOrdinalFromRow(allCurrentRows[i], mergePlan))
+                .ToList();
+
+            // Matched updates in request order
+            var orderedUpdates = mergedUpdates.OrderBy(u => u.Candidate.RequestOrder).ToList();
+            var orderedInserts = mergedInserts.OrderBy(ins => ins.Candidate.RequestOrder).ToList();
+
+            // Build the interleaved sequence
+            interleavedEntries = [];
+            var updateCursor = 0;
+
+            // Tracks the index in the interleaved list where new inserts should be placed.
+            // For surviving visible rows this is one past the just-added entry; for deleted
+            // visible rows it is the current Count (where the entry would have been). This
+            // ensures hidden rows that follow deleted visible rows keep their relative gaps.
+            int visibleInsertPoint = -1;
+
+            foreach (var currentIndex in orderedCurrentIndexes)
+            {
+                if (hiddenIndexSet.Contains(currentIndex))
+                {
+                    // Hidden row: preserve in place
+                    interleavedEntries.Add(
+                        new CollectionInterleavedEntry.Hidden(allCurrentRows[currentIndex].Values)
+                    );
+                }
+                else if (visibleCurrentIndexSet.Contains(currentIndex))
+                {
+                    // Surviving visible position: substitute next matched update
+                    if (!deletedVisibleIndexSet.Contains(currentIndex) && updateCursor < orderedUpdates.Count)
+                    {
+                        var update = orderedUpdates[updateCursor];
+                        interleavedEntries.Add(
+                            new CollectionInterleavedEntry.Update(
+                                update.Values,
+                                update.StableRowIdentityValue,
+                                update.Candidate
+                            )
+                        );
+                        updateCursor++;
+                    }
+
+                    // Track insert point for ALL originally-visible rows (surviving and deleted)
+                    visibleInsertPoint = interleavedEntries.Count;
+                }
+            }
+
+            // Append remaining updates beyond surviving visible positions
+            while (updateCursor < orderedUpdates.Count)
+            {
+                var update = orderedUpdates[updateCursor];
+                interleavedEntries.Add(
+                    new CollectionInterleavedEntry.Update(
+                        update.Values,
+                        update.StableRowIdentityValue,
+                        update.Candidate
+                    )
+                );
+                updateCursor++;
                 visibleInsertPoint = interleavedEntries.Count;
             }
-        }
 
-        // Append remaining updates beyond surviving visible positions
-        while (updateCursor < orderedUpdates.Count)
-        {
-            var update = orderedUpdates[updateCursor];
-            interleavedEntries.Add(
-                new CollectionInterleavedEntry.Update(
-                    update.Values,
-                    update.StableRowIdentityValue,
-                    update.Candidate
-                )
-            );
-            updateCursor++;
-            visibleInsertPoint = interleavedEntries.Count;
-        }
-
-        // Place new inserts after the last originally-visible row's position
-        if (visibleInsertPoint >= 0)
-        {
-            var insertPosition = visibleInsertPoint;
-
-            foreach (var insert in orderedInserts)
+            // Place new inserts after the last originally-visible row's position
+            if (visibleInsertPoint >= 0)
             {
-                interleavedEntries.Insert(
-                    insertPosition,
-                    new CollectionInterleavedEntry.Insert(insert.Values, insert.Candidate)
-                );
-                insertPosition++;
+                var insertPosition = visibleInsertPoint;
+
+                foreach (var insert in orderedInserts)
+                {
+                    interleavedEntries.Insert(
+                        insertPosition,
+                        new CollectionInterleavedEntry.Insert(insert.Values, insert.Candidate)
+                    );
+                    insertPosition++;
+                }
             }
-        }
-        else if (orderedInserts.Count > 0)
-        {
-            // No previously-visible rows: append at the end
-            foreach (var insert in orderedInserts)
+            else if (orderedInserts.Count > 0)
             {
-                interleavedEntries.Add(
-                    new CollectionInterleavedEntry.Insert(insert.Values, insert.Candidate)
-                );
+                // No previously-visible rows: append at the end
+                foreach (var insert in orderedInserts)
+                {
+                    interleavedEntries.Add(
+                        new CollectionInterleavedEntry.Insert(insert.Values, insert.Candidate)
+                    );
+                }
             }
         }
 
@@ -1514,6 +1557,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 inlinedScopePathsByTable,
                 writePlan,
                 compiledScopeCatalog,
+                useLegacyRequestOrderForVisibleRows,
                 childAncestorContextKey,
                 visitedScopeKeys
             );
@@ -1535,6 +1579,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 inlinedScopePathsByTable,
                 writePlan,
                 compiledScopeCatalog,
+                useLegacyRequestOrderForVisibleRows,
                 parentJsonScope: jsonScope,
                 ancestorContextKey: childAncestorContextKey,
                 visitedScopeKeys: visitedScopeKeys
@@ -1584,6 +1629,11 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         HashSet<string> visitedScopeKeys
     )
     {
+        var tablePlansByJsonScope = writePlan.TablePlansInDependencyOrder.ToDictionary(
+            plan => plan.TableModel.JsonScope.Canonical,
+            StringComparer.Ordinal
+        );
+
         foreach (var storedState in storedScopeStates)
         {
             // Only process VisibleAbsent scopes — all other visibilities are handled
@@ -1606,13 +1656,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
 
             // Find the matching table plan — separate-table scopes have their own TableWritePlan
-            var matchedTablePlan = writePlan.TablePlansInDependencyOrder.FirstOrDefault(twp =>
-                string.Equals(
-                    twp.TableModel.JsonScope.Canonical,
-                    storedState.Address.JsonScope,
-                    StringComparison.Ordinal
-                )
-            );
+            var matchedTablePlan = tablePlansByJsonScope.GetValueOrDefault(storedState.Address.JsonScope);
 
             if (matchedTablePlan is null)
             {
@@ -1649,12 +1693,16 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
 
             // Separate-table non-collection scope: emit delete if current state has data
-            var currentValues = currentStateProjection.GetCurrentRowValues(matchedTablePlan);
+            var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
+                matchedTablePlan,
+                storedState.Address,
+                tablePlansByJsonScope
+            );
 
-            if (currentValues is not null)
+            if (currentRow is not null)
             {
                 tableStateBuilders[matchedTablePlan.TableModel.Table]
-                    .AddDelete(new MergeRowDelete(StableRowIdentityValue: null));
+                    .AddDelete(new MergeRowDelete(StableRowIdentityValue: null, Values: currentRow.Values));
             }
 
             // No comparable merged row when deleting — child collections are implicitly removed
@@ -1702,6 +1750,14 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 + $"'{ordinalValue.GetType().Name}' (expected int or long literal)."
         );
     }
+
+    private static int GetRequestOrder(CollectionInterleavedEntry entry) =>
+        entry switch
+        {
+            CollectionInterleavedEntry.Update update => update.Candidate.RequestOrder,
+            CollectionInterleavedEntry.Insert insert => insert.Candidate.RequestOrder,
+            _ => int.MaxValue,
+        };
 
     private static ImmutableArray<FlattenedWriteValue> SetOrdinalValue(
         ImmutableArray<FlattenedWriteValue> values,
@@ -2926,6 +2982,55 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         /// <summary>
+        /// Resolves the concrete current row for a non-collection scope instance using the
+        /// scope address's ancestor collection identities. This is required for profiled
+        /// second-pass deletes, where multiple rows can exist in the same table under
+        /// different collection parents.
+        /// </summary>
+        public MergeTableRow? TryMatchScopeInstanceRow(
+            TableWritePlan tableWritePlan,
+            ScopeInstanceAddress address,
+            IReadOnlyDictionary<string, TableWritePlan> tablePlansByJsonScope
+        )
+        {
+            var rows = GetCurrentRows(tableWritePlan);
+
+            if (rows.IsEmpty)
+            {
+                return null;
+            }
+
+            if (address.AncestorCollectionInstances.IsEmpty)
+            {
+                return rows[0];
+            }
+
+            var parentPhysicalRowIdentityValues = TryResolveAncestorPhysicalRowIdentityValues(
+                address.AncestorCollectionInstances,
+                tablePlansByJsonScope
+            );
+
+            if (parentPhysicalRowIdentityValues is null)
+            {
+                return null;
+            }
+
+            var parentLocatorColumns = tableWritePlan
+                .TableModel
+                .IdentityMetadata
+                .ImmediateParentScopeLocatorColumns;
+
+            return rows.FirstOrDefault(row =>
+                MatchesParentLocator(
+                    tableWritePlan,
+                    row,
+                    parentLocatorColumns,
+                    parentPhysicalRowIdentityValues
+                )
+            );
+        }
+
+        /// <summary>
         /// Gets current rows for a collection table filtered by parent scope locator columns
         /// matching the given parent physical row identity values.
         /// </summary>
@@ -3005,6 +3110,85 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     parentPhysicalRowIdentityValues
                 )
             );
+        }
+
+        private ImmutableArray<FlattenedWriteValue>? TryResolveAncestorPhysicalRowIdentityValues(
+            ImmutableArray<AncestorCollectionInstance> ancestors,
+            IReadOnlyDictionary<string, TableWritePlan> tablePlansByJsonScope
+        )
+        {
+            var rootPlan = tablePlansByJsonScope.GetValueOrDefault("$");
+
+            if (rootPlan is null)
+            {
+                return null;
+            }
+
+            var rootRows = GetCurrentRows(rootPlan);
+
+            if (rootRows.IsEmpty)
+            {
+                return null;
+            }
+
+            IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues =
+                ExtractPhysicalRowIdentityValues(rootPlan, rootRows[0].Values);
+
+            foreach (var ancestor in ancestors)
+            {
+                var collectionPlan = tablePlansByJsonScope.GetValueOrDefault(ancestor.JsonScope);
+                var mergePlan = collectionPlan?.CollectionMergePlan;
+
+                if (collectionPlan is null || mergePlan is null)
+                {
+                    return null;
+                }
+
+                var matchedRow = GetCurrentRowsForParent(collectionPlan, parentPhysicalRowIdentityValues)
+                    .FirstOrDefault(row => MatchesAncestorCollectionInstance(mergePlan, row, ancestor));
+
+                if (matchedRow is null)
+                {
+                    return null;
+                }
+
+                parentPhysicalRowIdentityValues = ExtractPhysicalRowIdentityValues(
+                    collectionPlan,
+                    matchedRow.Values
+                );
+            }
+
+            return [.. parentPhysicalRowIdentityValues];
+        }
+
+        private static bool MatchesAncestorCollectionInstance(
+            CollectionMergePlan mergePlan,
+            MergeTableRow row,
+            AncestorCollectionInstance ancestorInstance
+        )
+        {
+            if (ancestorInstance.SemanticIdentityInOrder.Length != mergePlan.SemanticIdentityBindings.Length)
+            {
+                throw new InvalidOperationException(
+                    $"AncestorCollectionInstance semantic identity length "
+                        + $"({ancestorInstance.SemanticIdentityInOrder.Length}) does not match "
+                        + $"merge plan binding count ({mergePlan.SemanticIdentityBindings.Length})."
+                );
+            }
+
+            for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
+            {
+                var binding = mergePlan.SemanticIdentityBindings[i];
+                var rowValue = row.Values[binding.BindingIndex];
+                var ancestorPart = ancestorInstance.SemanticIdentityInOrder[i];
+
+                if (!CompareSemanticIdentityValue(rowValue, ancestorPart))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static bool MatchesParentLocator(

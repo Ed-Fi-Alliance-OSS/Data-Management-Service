@@ -139,6 +139,38 @@ public class Given_Relational_Write_Persister
     }
 
     [Test]
+    public async Task It_binds_unified_non_collection_scope_deletes_from_delete_values()
+    {
+        var rootPlan = CreateRootPlan();
+        var rootExtensionPlan = CreateRootExtensionPlan();
+        var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateUnifiedTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            CreateUnifiedTableState(
+                rootExtensionPlan,
+                [CreateRow(345L, "BLUE")],
+                [],
+                deletes:
+                [
+                    new MergeRowDelete(StableRowIdentityValue: null, Values: CreateRow(345L, "BLUE").Values),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Be(rootExtensionPlan.DeleteByParentSql);
+        GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[0], "@ExtensionCode").Should().Be("BLUE");
+    }
+
+    [Test]
     public async Task It_deletes_root_extension_child_collection_rows_when_root_extension_scope_is_omitted_in_unified_merge_results()
     {
         var rootPlan = CreateRootPlan();

@@ -336,6 +336,11 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         extensionState.Updates.Should().BeEmpty();
         extensionState.Deletes.Should().ContainSingle();
         extensionState.PreservedRows.Should().BeEmpty();
+        var deleteValues = extensionState.Deletes[0].Values;
+        deleteValues.Should().NotBeNull();
+        LiteralValue(deleteValues!.Value[0]).Should().Be(345L);
+        LiteralValue(deleteValues.Value[1]).Should().Be("stored-ext");
+        LiteralValue(deleteValues.Value[2]).Should().Be("STORED_HIDDEN");
     }
 
     [Test]
@@ -5646,6 +5651,162 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_matches_the_correct_collection_aligned_scope_row_for_StoredScopeState_VisibleAbsent()
+    {
+        var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("UpdatedValue1"),
+                        ],
+                        attachedAlignedScopeData:
+                        [
+                            new CandidateAttachedAlignedScopeData(
+                                fixture.AlignedExtensionScopePlan,
+                                [
+                                    Literal(345L),
+                                    Literal(100L),
+                                    Literal("requested-ext-1"),
+                                    Literal("REQ_REF_1"),
+                                ]
+                            ),
+                        ]
+                    ),
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 1,
+                        semanticIdentityValues: ["Period2"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(1),
+                            Literal("Period2"),
+                            Literal("UpdatedValue2"),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithCollectionAndAlignedExtensionScope(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "OrigValue1"],
+                [345L, 101L, 1, "Period2", "OrigValue2"],
+            ],
+            alignedExtensionScopeRows:
+            [
+                [345L, 100L, "stored-ext-1", "STORED_REF_1"],
+                [345L, 101L, "stored-ext-2", "STORED_REF_2"],
+            ]
+        );
+
+        var period1Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period1"),
+                    IsPresent: true
+                ),
+            ]
+        );
+        var period2Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period2"),
+                    IsPresent: true
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [
+                new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period1"),
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period2"),
+            ]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period2Ancestor]),
+                    ProfileVisibilityKind.VisibleAbsent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            [
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", []),
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period2", []),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var extScopeState = result.TablesInDependencyOrder[2];
+
+        extScopeState.Deletes.Should().ContainSingle();
+        var deleteValues = extScopeState.Deletes[0].Values;
+        deleteValues.Should().NotBeNull();
+        LiteralValue(deleteValues!.Value[0]).Should().Be(345L);
+        LiteralValue(deleteValues.Value[1]).Should().Be(101L);
+        LiteralValue(deleteValues.Value[2]).Should().Be("stored-ext-2");
+        LiteralValue(deleteValues.Value[3]).Should().Be("STORED_REF_2");
+    }
+
+    [Test]
     public void It_returns_ContractMismatch_when_StoredScopeState_references_unknown_scope()
     {
         // Scenario: StoredScopeStates contains a VisibleAbsent entry for a scope that
@@ -6030,6 +6191,194 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
         LiteralValue(addressState.Inserts[0].Values[2]).Should().Be(1);
         LiteralValue(addressState.Inserts[0].Values[3]).Should().Be("Physical");
         LiteralValue(addressState.Inserts[0].Values[4]).Should().Be("New");
+    }
+
+    [Test]
+    public void It_honors_request_order_when_a_new_collection_row_precedes_a_retained_row_under_null_profile()
+    {
+        var fixture = CreateNoProfileFixture();
+        var temporaryCollectionItemId = NewCollectionItemId();
+        var homeCollectionItemId = NewCollectionItemId();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    CreateNoProfileAddressCandidate(
+                        fixture,
+                        requestOrder: 0,
+                        collectionItemId: temporaryCollectionItemId,
+                        addressType: "Temporary",
+                        city: "Dallas"
+                    ),
+                    CreateNoProfileAddressCandidate(
+                        fixture,
+                        requestOrder: 1,
+                        collectionItemId: homeCollectionItemId,
+                        addressType: "Home",
+                        city: "Oak Updated"
+                    ),
+                ]
+            )
+        );
+        var currentState = CreateNoProfileCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                [10L, 345L, 0, "Home", "Oak"],
+                [11L, 345L, 1, "Work", "Austin"],
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var addressState = result.TablesInDependencyOrder[2];
+
+        addressState.PreservedRows.Should().BeEmpty();
+        addressState.Deletes.Should().ContainSingle();
+        addressState.Deletes[0].StableRowIdentityValue.Should().Be(11L);
+
+        addressState.ComparableMergedRowset.Should().HaveCount(2);
+        addressState
+            .ComparableMergedRowset[0]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(0, "Temporary", "Dallas");
+        addressState
+            .ComparableMergedRowset[1]
+            .ComparableValues.Select(LiteralValue)
+            .Should()
+            .Equal(1, "Home", "Oak Updated");
+
+        addressState.Inserts.Should().ContainSingle();
+        addressState.Inserts[0].Values[0].Should().BeSameAs(temporaryCollectionItemId);
+        LiteralValue(addressState.Inserts[0].Values[2]).Should().Be(0);
+        LiteralValue(addressState.Inserts[0].Values[3]).Should().Be("Temporary");
+
+        addressState.Updates.Should().ContainSingle();
+        addressState.Updates[0].StableRowIdentityValue.Should().Be(10L);
+        LiteralValue(addressState.Updates[0].Values[2]).Should().Be(1);
+        LiteralValue(addressState.Updates[0].Values[3]).Should().Be("Home");
+        LiteralValue(addressState.Updates[0].Values[4]).Should().Be("Oak Updated");
+    }
+
+    [Test]
+    public void It_preserves_interleaved_request_order_for_large_null_profile_collection_updates()
+    {
+        var fixture = CreateNoProfileFixture();
+        IReadOnlyList<string> currentAddressTypes =
+        [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "A6",
+            "A7",
+            "A8",
+            "A9",
+            "A10",
+            "A11",
+            "A12",
+        ];
+        IReadOnlyList<string> requestAddressTypes =
+        [
+            "A8",
+            "A3",
+            "A11",
+            "A1",
+            "A12",
+            "A5",
+            "A13",
+            "A9",
+            "A2",
+            "A14",
+            "A10",
+            "A4",
+        ];
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    .. requestAddressTypes.Select(
+                        (addressType, index) =>
+                            CreateNoProfileAddressCandidate(
+                                fixture,
+                                requestOrder: index,
+                                collectionItemId: NewCollectionItemId(),
+                                addressType: addressType,
+                                city: $"City {addressType}"
+                            )
+                    ),
+                ]
+            )
+        );
+        var currentState = CreateNoProfileCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                .. currentAddressTypes.Select(
+                    (addressType, index) =>
+                        new object?[] { 100L + index, 345L, index, addressType, $"City {addressType}" }
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var addressState = result.TablesInDependencyOrder[2];
+
+        addressState.Updates.Should().HaveCount(10);
+        addressState.Inserts.Should().HaveCount(2);
+        addressState.Deletes.Should().HaveCount(2);
+        addressState
+            .ComparableMergedRowset.Select(row => (string)LiteralValue(row.Values[3])!)
+            .Should()
+            .Equal(requestAddressTypes);
+        addressState
+            .ComparableMergedRowset.Select(row => (int)LiteralValue(row.Values[2])!)
+            .Should()
+            .Equal(Enumerable.Range(0, requestAddressTypes.Count));
+
+        var insertsByAddressType = addressState.Inserts.ToDictionary(insert =>
+            (string)LiteralValue(insert.Values[3])!
+        );
+        LiteralValue(insertsByAddressType["A13"].Values[2]).Should().Be(6);
+        LiteralValue(insertsByAddressType["A14"].Values[2]).Should().Be(9);
     }
 
     [Test]
