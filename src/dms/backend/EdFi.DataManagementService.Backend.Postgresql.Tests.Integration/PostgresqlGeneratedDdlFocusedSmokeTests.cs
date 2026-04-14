@@ -48,14 +48,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _interventionVisitForeignKeys = null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _sponsorReferenceForeignKeys = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-
-        // Reapply the emitted DDL so each smoke test also covers idempotent apply.
-        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
         _schoolAddressTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
@@ -116,8 +113,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
             "BaseCollectionItemId",
             "School_DocumentId"
         );
-
-        _seedData = await SeedSmokeRowsAsync();
         _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync(
             _addressPeriodTable.Table.Schema.Value,
             _addressPeriodTable.Table.Name
@@ -136,8 +131,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _seedData = await SeedSmokeRowsAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {

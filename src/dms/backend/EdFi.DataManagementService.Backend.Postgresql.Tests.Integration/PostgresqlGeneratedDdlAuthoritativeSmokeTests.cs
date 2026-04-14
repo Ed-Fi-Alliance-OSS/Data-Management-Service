@@ -68,14 +68,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     private string? _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictCollectionItemDefault;
     private string? _studentEducationOrganizationAssociationExtensionAddressTermCollectionItemDefault;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-
-        // Reapply the emitted DDL so each smoke test also covers idempotent apply.
-        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
 
         _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
         _schoolExtensionTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
@@ -146,7 +143,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "StudentEducationOrganizationAssociation_DocumentId"
             );
 
-        _seedData = await SeedSmokeRowsAsync();
         _schoolExtensionDirectlyOwnedBusForeignKeys = await _database.GetForeignKeyMetadataAsync(
             _schoolExtensionDirectlyOwnedBusTable.Table.Schema.Value,
             _schoolExtensionDirectlyOwnedBusTable.Table.Name
@@ -198,8 +194,15 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _seedData = await SeedSmokeRowsAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
@@ -252,6 +255,34 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         generatedCollectionItemIds.Should().OnlyContain(collectionItemId => collectionItemId > 0);
         generatedCollectionItemIds.Should().OnlyHaveUniqueItems();
+    }
+
+    [Test]
+    public async Task It_should_reapply_the_same_generated_ddl_without_duplicate_generated_seed_rows()
+    {
+        await _database.ResetAsync();
+
+        var effectiveSchemaCountBefore = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "dms"."EffectiveSchema";"""
+        );
+        var resourceKeyCountBefore = await CountRowsAsync("""SELECT COUNT(*) FROM "dms"."ResourceKey";""");
+        var schemaComponentCountBefore = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "dms"."SchemaComponent";"""
+        );
+
+        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
+
+        var effectiveSchemaCountAfter = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "dms"."EffectiveSchema";"""
+        );
+        var resourceKeyCountAfter = await CountRowsAsync("""SELECT COUNT(*) FROM "dms"."ResourceKey";""");
+        var schemaComponentCountAfter = await CountRowsAsync(
+            """SELECT COUNT(*) FROM "dms"."SchemaComponent";"""
+        );
+
+        effectiveSchemaCountAfter.Should().Be(effectiveSchemaCountBefore);
+        resourceKeyCountAfter.Should().Be(resourceKeyCountBefore);
+        schemaComponentCountAfter.Should().Be(schemaComponentCountBefore);
     }
 
     [Test]

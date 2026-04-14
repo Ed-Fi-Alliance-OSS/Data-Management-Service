@@ -60,7 +60,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(|ApplyGeneratedDdlAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlGeneratedDdlFocusedSmokeTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlGeneratedDdlHarnessTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlGeneratedDdlAuthoritativeSmokeTests.cs`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Generated_Ddl\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Generated DDL",
