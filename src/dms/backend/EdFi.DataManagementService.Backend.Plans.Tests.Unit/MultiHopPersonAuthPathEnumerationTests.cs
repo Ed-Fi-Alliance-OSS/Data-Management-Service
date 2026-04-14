@@ -270,10 +270,13 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration(SqlDialect dialect)
     {
         // Person resources (Student, Contact, Staff) have securable elements but
         // don't produce mapping entries because they ARE the authorization anchor.
-        var personResourceNames = new HashSet<string>(
-            ["Student", "Contact", "Staff"],
-            StringComparer.Ordinal
-        );
+        // Use fully-qualified names to match production's homograph-safe comparison.
+        var personResources = new HashSet<QualifiedResourceName>
+        {
+            new("Ed-Fi", "Student"),
+            new("Ed-Fi", "Contact"),
+            new("Ed-Fi", "Staff"),
+        };
 
         var resourcesWithPersonSecurableElements = _modelSet
             .ConcreteResourcesInNameOrder.Where(r =>
@@ -282,7 +285,7 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration(SqlDialect dialect)
                 || r.SecurableElements.Staff.Count > 0
             )
             .Select(r => r.RelationalModel.Resource)
-            .Where(r => !personResourceNames.Contains(r.ResourceName))
+            .Where(r => !personResources.Contains(r))
             .ToHashSet();
 
         var resourcesInMapping = _mappingSet.SecurableElementColumnPathsByResource.Keys.ToHashSet();
