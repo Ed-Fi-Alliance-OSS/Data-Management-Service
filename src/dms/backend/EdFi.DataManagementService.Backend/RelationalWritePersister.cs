@@ -102,11 +102,6 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
                 continue;
             }
 
-            if (tableState.Deletes.Length == 0)
-            {
-                continue;
-            }
-
             if (tableState.TableWritePlan.CollectionMergePlan is not null)
             {
                 await DeleteCollectionRowsByStableIdentityAsync(
@@ -117,17 +112,22 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+
+                continue;
             }
-            else
+
+            if (tableState.Deletes.Length == 0)
             {
-                await DeleteNonCollectionRowByParentAsync(
-                        tableState,
-                        rootDocumentId,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                continue;
             }
+
+            await DeleteNonCollectionRowByParentAsync(
+                    tableState,
+                    rootDocumentId,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
     }
 
@@ -352,8 +352,41 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
                     $"Collection table '{FormatTable(tableState.TableWritePlan)}' expected a literal stable row identity in ComparableCurrentRowset."
                 )
         );
+        HashSet<long> mergedStableRowIds = [];
+
+        foreach (var mergedRow in tableState.ComparableMergedRowset)
+        {
+            if (
+                mergedRow.Values[mergePlan.StableRowIdentityBindingIndex] is FlattenedWriteValue.Literal
+                {
+                    Value: long stableId
+                }
+            )
+            {
+                mergedStableRowIds.Add(stableId);
+            }
+        }
 
         List<MergeTableRow> rowsToDelete = [];
+        HashSet<long> queuedStableRowIds = [];
+
+        foreach (var currentRow in tableState.ComparableCurrentRowset)
+        {
+            var stableRowIdentityValue = currentRow.Values[mergePlan.StableRowIdentityBindingIndex]
+                is FlattenedWriteValue.Literal { Value: long stableId }
+                ? stableId
+                : throw new InvalidOperationException(
+                    $"Collection table '{FormatTable(tableState.TableWritePlan)}' expected a literal stable row identity in ComparableCurrentRowset."
+                );
+
+            if (mergedStableRowIds.Contains(stableRowIdentityValue))
+            {
+                continue;
+            }
+
+            rowsToDelete.Add(currentRow);
+            queuedStableRowIds.Add(stableRowIdentityValue);
+        }
 
         foreach (var delete in tableState.Deletes)
         {
@@ -363,9 +396,15 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
                     $"Collection table '{FormatTable(tableState.TableWritePlan)}' received a profile delete without a StableRowIdentityValue."
                 );
 
+            if (queuedStableRowIds.Contains(stableRowIdentityValue))
+            {
+                continue;
+            }
+
             if (comparableCurrentRowsByStableId.TryGetValue(stableRowIdentityValue, out var currentRow))
             {
                 rowsToDelete.Add(currentRow);
+                queuedStableRowIds.Add(stableRowIdentityValue);
                 continue;
             }
 
@@ -380,6 +419,7 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
             }
 
             rowsToDelete.Add(new MergeTableRow([.. values], ImmutableArray<FlattenedWriteValue>.Empty));
+            queuedStableRowIds.Add(stableRowIdentityValue);
         }
 
         if (rowsToDelete.Count == 0)

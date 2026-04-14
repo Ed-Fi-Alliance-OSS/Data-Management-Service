@@ -139,6 +139,53 @@ public class Given_Relational_Write_Persister
     }
 
     [Test]
+    public async Task It_deletes_root_extension_child_collection_rows_when_root_extension_scope_is_omitted_in_unified_merge_results()
+    {
+        var rootPlan = CreateRootPlan();
+        var rootExtensionPlan = CreateRootExtensionPlan();
+        var extensionCollectionPlan = CreateExtensionCollectionPlan();
+        var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan, extensionCollectionPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateUnifiedTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            CreateUnifiedTableState(
+                rootExtensionPlan,
+                [CreateRow(345L, "BLUE")],
+                [],
+                deletes: [new MergeRowDelete(StableRowIdentityValue: null)]
+            ),
+            CreateUnifiedTableState(
+                extensionCollectionPlan,
+                [CreateRow(44L, 345L, 0, "Tutor"), CreateRow(45L, 345L, 1, "Mentor")],
+                []
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().HaveCount(2);
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(extensionCollectionPlan, 2));
+        writeSession.Commands[0].Parameters.Should().HaveCount(8);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(45L);
+
+        writeSession.Commands[1].CommandText.Should().Be(rootExtensionPlan.DeleteByParentSql);
+        GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[1], "@ExtensionCode").Should().Be("BLUE");
+    }
+
+    [Test]
     public async Task It_updates_collection_aligned_one_to_one_extension_scopes_when_base_collection_rows_are_unchanged()
     {
         var rootPlan = CreateRootPlan();
@@ -403,6 +450,64 @@ public class Given_Relational_Write_Persister
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_0").Should().Be("Orange");
         GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId_1").Should().Be(47L);
         GetParameterValue(writeSession.Commands[1], "@FavoriteColor_1").Should().Be("Purple");
+    }
+
+    [Test]
+    public async Task It_deletes_collection_aligned_extension_child_rows_when_scope_is_omitted_in_unified_merge_results()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
+        var collectionAlignedExtensionChildPlan = CreateCollectionAlignedExtensionChildCollectionPlan();
+        var writePlan = CreateWritePlan([
+            rootPlan,
+            collectionPlan,
+            collectionExtensionScopePlan,
+            collectionAlignedExtensionChildPlan,
+        ]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateUnifiedTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            CreateUnifiedTableState(
+                collectionPlan,
+                [CreateRow(44L, 345L, 0, "Home")],
+                [CreateRow(44L, 345L, 0, "Home")]
+            ),
+            CreateUnifiedTableState(collectionExtensionScopePlan, [CreateRow(44L, "Blue")], []),
+            CreateUnifiedTableState(
+                collectionAlignedExtensionChildPlan,
+                [CreateRow(500L, 345L, 44L, 0, "Bus"), CreateRow(501L, 345L, 44L, 1, "Meal")],
+                []
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(),
+        ]);
+        var batchSqlEmitter = new WritePlanBatchSqlEmitter(SqlDialect.Pgsql);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().HaveCount(2);
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(
+                batchSqlEmitter.EmitCollectionDeleteByStableRowIdentityBatch(
+                    collectionAlignedExtensionChildPlan,
+                    2
+                )
+            );
+        writeSession.Commands[0].Parameters.Should().HaveCount(10);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_0").Should().Be(500L);
+        GetParameterValue(writeSession.Commands[0], "@CollectionItemId_1").Should().Be(501L);
+
+        writeSession.Commands[1].CommandText.Should().Be(collectionExtensionScopePlan.DeleteByParentSql);
+        GetParameterValue(writeSession.Commands[1], "@BaseCollectionItemId").Should().Be(44L);
+        GetParameterValue(writeSession.Commands[1], "@FavoriteColor").Should().Be("Blue");
     }
 
     [Test]
@@ -2038,6 +2143,27 @@ public class Given_Relational_Write_Persister
         );
     }
 
+    private static RelationalWriteMergeTableState CreateUnifiedTableState(
+        TableWritePlan tableWritePlan,
+        IEnumerable<MergeTableRow> currentRows,
+        IEnumerable<MergeTableRow> mergedRows,
+        IEnumerable<MergeRowInsert>? inserts = null,
+        IEnumerable<MergeRowUpdate>? updates = null,
+        IEnumerable<MergeRowDelete>? deletes = null,
+        IEnumerable<MergePreservedRow>? preservedRows = null
+    )
+    {
+        return new RelationalWriteMergeTableState(
+            tableWritePlan,
+            inserts ?? [],
+            updates ?? [],
+            deletes ?? [],
+            preservedRows ?? [],
+            currentRows,
+            mergedRows
+        );
+    }
+
     private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
         FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
@@ -2361,14 +2487,11 @@ internal sealed record RelationalWriteNoProfileTableState
                 if (
                     !MergedRows.Any(mergedRow =>
                         mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
-                        is FlattenedWriteValue.Literal
+                            is FlattenedWriteValue.Literal
                         && ResolveStableRowIdentityLiteral(
-                                TableWritePlan,
-                                mergedRow.Values[
-                                    TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex
-                                ]
-                            )
-                            == stableRowIdentity
+                            TableWritePlan,
+                            mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                        ) == stableRowIdentity
                     )
                 )
                 {
@@ -2378,8 +2501,9 @@ internal sealed record RelationalWriteNoProfileTableState
 
             foreach (var mergedRow in MergedRows)
             {
-                var stableIdentityValue =
-                    mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex];
+                var stableIdentityValue = mergedRow.Values[
+                    TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex
+                ];
 
                 if (stableIdentityValue is FlattenedWriteValue.UnresolvedCollectionItemId)
                 {
@@ -2387,10 +2511,7 @@ internal sealed record RelationalWriteNoProfileTableState
                     continue;
                 }
 
-                var stableRowIdentity = ResolveStableRowIdentityLiteral(
-                    TableWritePlan,
-                    stableIdentityValue
-                );
+                var stableRowIdentity = ResolveStableRowIdentityLiteral(TableWritePlan, stableIdentityValue);
 
                 if (!currentRowsByStableIdentity.TryGetValue(stableRowIdentity, out var currentRow))
                 {
@@ -2458,7 +2579,10 @@ internal sealed record RelationalWriteNoProfileTableState
             FlattenedWriteValue.Literal { Value: int stableId } => stableId,
             FlattenedWriteValue.Literal { Value: short stableId } => stableId,
             FlattenedWriteValue.Literal { Value: byte stableId } => stableId,
-            FlattenedWriteValue.Literal { Value: var value } => Convert.ToInt64(value, CultureInfo.InvariantCulture),
+            FlattenedWriteValue.Literal { Value: var value } => Convert.ToInt64(
+                value,
+                CultureInfo.InvariantCulture
+            ),
             _ => throw new InvalidOperationException(
                 $"Collection table '{tableWritePlan.TableModel.Table}' expected a literal stable row identity."
             ),
