@@ -581,8 +581,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private AuthoritativeSampleWritePersistedState _stateAfterNoOpUpdate = null!;
     private DateTimeOffset _lastModifiedAtAfterCreate;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeSampleWriteIntegrationTestSupport.FixtureRelativePath
@@ -653,8 +653,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

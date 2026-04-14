@@ -96,7 +96,7 @@
       "Run: `rg -n \"\\[SetUp\\]|\\[OneTimeSetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteAuthoritativeSampleSmokeTests.cs`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~AuthoritativeSample\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Write Smoke",
