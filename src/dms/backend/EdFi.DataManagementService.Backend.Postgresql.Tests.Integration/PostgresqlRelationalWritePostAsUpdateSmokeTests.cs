@@ -344,8 +344,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
@@ -389,8 +389,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
@@ -728,11 +728,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             + CreateGradePointAverageSpecs.Count
             + CreateRecognitionSpecs.Count;
         _createCollectionInsertParameterCount = CalculateCreateCollectionInsertParameterCount();
-    }
-
-    [SetUp]
-    public async Task Setup()
-    {
         _database = await _baselineDatabase.CreateIsolatedDatabaseAsync();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
         _seedData = await SeedReferenceDataAsync();
@@ -756,8 +751,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(StudentAcademicRecordDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
@@ -768,11 +763,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         {
             await _database.DisposeAsync();
         }
-    }
 
-    [OneTimeTearDown]
-    public async Task OneTimeTearDown()
-    {
         if (_baselineDatabase is not null)
         {
             await _baselineDatabase.DisposeAsync();
@@ -2495,8 +2486,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
@@ -2542,8 +2533,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(IncomingPostAsUpdateDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
@@ -2888,8 +2879,8 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     private long _documentCount;
     private long _staleCreateCandidateDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
@@ -2929,8 +2920,8 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         _raceCoordinator?.ReleaseFirstResolverCall();
 
@@ -3250,8 +3241,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
@@ -3291,8 +3282,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _incomingDocumentUuidCount = await ReadDocumentCountAsync(IncomingSchoolYearTypeDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
@@ -3772,8 +3763,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private long _incomingDocumentUuidCount;
     private long _repeatIncomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
@@ -3864,8 +3855,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
