@@ -78,7 +78,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteGuardedNoOpTests.cs` and confirm database creation moved out of per-test setup.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~Guarded_No_Op\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Write Smoke",
