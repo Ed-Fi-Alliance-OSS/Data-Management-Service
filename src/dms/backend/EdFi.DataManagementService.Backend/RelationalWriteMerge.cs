@@ -1699,9 +1699,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     ]);
                 }
 
-                // Either a known inlined scope (shortcut: handled by buffer iteration only),
-                // or the catalog is not yet populated for this caller (pre-Task 4c path).
-                // Skip in either case.
+                // Known inlined scope — handled by buffer iteration only, not the second pass.
                 continue;
             }
 
@@ -1900,19 +1898,17 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// Tries to match a request candidate to a VisibleRequestCollectionItem by semantic identity.
     /// Returns true if the candidate is visible in the request.
     /// </summary>
+    /// <remarks>
+    /// Callers guarantee <paramref name="visibleRequestItems"/> is non-empty: the contract
+    /// mismatch guard in <see cref="SynthesizeProfileCollectionScopeInstance"/> rejects requests
+    /// with candidates but zero visible items before the matching loop runs.
+    /// </remarks>
     private static bool TryMatchCandidateToVisibleRequest(
         CollectionMergePlan mergePlan,
         CollectionWriteCandidate candidate,
         IReadOnlyList<VisibleRequestCollectionItem> visibleRequestItems
     )
     {
-        // If no visible request items exist for this scope, treat all request candidates as visible
-        // (no-profile fallback behavior for when profile doesn't constrain collections)
-        if (visibleRequestItems.Count == 0)
-        {
-            return true;
-        }
-
         return visibleRequestItems.Any(requestItem =>
             MatchesSemanticIdentity(
                 mergePlan,
@@ -1925,19 +1921,19 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
     /// <summary>
     /// Finds the VisibleRequestCollectionItem that matches a candidate by semantic identity.
-    /// Returns null if no visible request items exist (no-profile fallback) or no match is found.
+    /// Returns null if no match is found.
     /// </summary>
+    /// <remarks>
+    /// Callers guarantee <paramref name="visibleRequestItems"/> is non-empty: only unmatched
+    /// candidates reach this method, and candidates only exist when visible items exist (enforced
+    /// by the contract mismatch guard in <see cref="SynthesizeProfileCollectionScopeInstance"/>).
+    /// </remarks>
     private static VisibleRequestCollectionItem? TryFindMatchedVisibleRequestItem(
         CollectionMergePlan mergePlan,
         CollectionWriteCandidate candidate,
         IReadOnlyList<VisibleRequestCollectionItem> visibleRequestItems
     )
     {
-        if (visibleRequestItems.Count == 0)
-        {
-            return null;
-        }
-
         return visibleRequestItems.FirstOrDefault(requestItem =>
             MatchesSemanticIdentity(
                 mergePlan,
@@ -2653,15 +2649,13 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 continue;
             }
 
-            // Inlined scope — check if it belongs to this parent table
-            if (
-                scopeDescriptor.ImmediateParentJsonScope is null
-                || !string.Equals(
-                    scopeDescriptor.ImmediateParentJsonScope,
-                    parentJsonScope,
-                    StringComparison.Ordinal
-                )
-            )
+            // Inlined scope — check if it belongs to this parent table.
+            // Walk the scope hierarchy: the inlined scope belongs here when it is
+            // a path-descendant of the table scope and no intermediate table-backed
+            // scope sits between them. This catches nested inlined common-type
+            // scopes (e.g. $.parentObject.nestedCommonType under root table $)
+            // whose ImmediateParentJsonScope is another inlined scope, not the table.
+            if (!IsInlinedIntoTable(scopeDescriptor.JsonScope, parentJsonScope, tableBackedScopes))
             {
                 continue;
             }
@@ -2739,6 +2733,46 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             hiddenPaths is not null ? [.. hiddenPaths] : [],
             null
         );
+    }
+
+    /// <summary>
+    /// Determines whether an inlined (non-table-backed) scope's columns are stored in the
+    /// given table. True when the inlined scope is a path-descendant of the table scope and
+    /// no intermediate table-backed scope exists between them in the hierarchy. This correctly
+    /// handles nested inlined common-type scopes (e.g. <c>$.address.nestedCommonType</c> under
+    /// root table <c>$</c>) whose <c>ImmediateParentJsonScope</c> is another inlined scope.
+    /// </summary>
+    private static bool IsInlinedIntoTable(
+        string inlinedJsonScope,
+        string tableJsonScope,
+        HashSet<string> tableBackedScopes
+    )
+    {
+        var tablePrefix = tableJsonScope == "$" ? "$." : tableJsonScope + ".";
+
+        if (!inlinedJsonScope.StartsWith(tablePrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Verify no intermediate table-backed scope sits between the table and this scope
+        foreach (var tbScope in tableBackedScopes)
+        {
+            if (string.Equals(tbScope, tableJsonScope, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (
+                tbScope.StartsWith(tablePrefix, StringComparison.Ordinal)
+                && inlinedJsonScope.StartsWith(tbScope + ".", StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

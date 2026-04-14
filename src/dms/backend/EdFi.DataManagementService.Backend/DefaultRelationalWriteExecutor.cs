@@ -256,7 +256,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            var mergeResult = ((RelationalWriteMergeSynthesisOutcome.Success)mergeOutcome).MergeResult;
+            if (mergeOutcome is not RelationalWriteMergeSynthesisOutcome.Success(var mergeResult))
+            {
+                throw new InvalidOperationException(
+                    $"Unexpected merge synthesis outcome type '{mergeOutcome.GetType().Name}' after ContractMismatch/ValidationFailure checks."
+                );
+            }
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
                 executionRequest,

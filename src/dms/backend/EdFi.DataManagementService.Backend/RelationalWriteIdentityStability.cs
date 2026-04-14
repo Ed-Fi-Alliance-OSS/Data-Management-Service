@@ -44,10 +44,10 @@ internal static class RelationalWriteIdentityStability
             );
         }
 
-        if (rootTableState.ComparableMergedRowset.Length < 1)
+        if (rootTableState.ComparableMergedRowset.Length != 1)
         {
             throw new InvalidOperationException(
-                $"Existing-document write identity guard expected at least 1 comparable merged root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
+                $"Existing-document write identity guard expected exactly 1 comparable merged root row for table '{rootTableState.TableWritePlan.TableModel.Table}', "
                     + $"but found {rootTableState.ComparableMergedRowset.Length}."
             );
         }
