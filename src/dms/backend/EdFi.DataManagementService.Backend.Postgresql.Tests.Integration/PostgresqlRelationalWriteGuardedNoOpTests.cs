@@ -963,6 +963,13 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_St
             )
         );
 
+        if (createResult is UpsertResult.UnknownFailure diagnosticFailure)
+        {
+            Assert.Fail(
+                $"[DIAGNOSTIC] Expected InsertSuccess but got UnknownFailure. "
+                    + $"Message: '{diagnosticFailure.FailureMessage}'"
+            );
+        }
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
