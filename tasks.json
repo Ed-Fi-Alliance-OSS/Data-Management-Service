@@ -42,7 +42,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlReferenceResolverTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlReferenceResolverTestDatabaseTests.cs` and confirm `CreateProvisionedAsync()` is not used from `[SetUp]`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~PostgresqlReferenceResolver\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Reference Resolver",
