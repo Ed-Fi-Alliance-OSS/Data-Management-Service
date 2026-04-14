@@ -90,6 +90,8 @@ public class Given_MssqlReferenceResolverTestDatabase
     public async Task It_seeds_and_resets_repeatable_fixture_data_between_test_runs()
     {
         await _database.SeedAsync();
+        var firstSeedState = await ReadFixtureTableStateAsync(_database.ConnectionString);
+        var firstNextChangeVersion = await ReadNextChangeVersionAsync(_database.ConnectionString);
         await ExecuteNonQueryAsync(
             _database.ConnectionString,
             """INSERT INTO [edfi].[Student] ([DocumentId]) VALUES (999);"""
@@ -104,6 +106,7 @@ public class Given_MssqlReferenceResolverTestDatabase
         await _database.ResetAsync();
 
         var resetCounts = await ReadFixtureTableCountsAsync(_database.ConnectionString);
+        var resetState = await ReadFixtureTableStateAsync(_database.ConnectionString);
         var resetStudentTableCount = await ReadTableCountAsync(
             _database.ConnectionString,
             "[edfi].[Student]"
@@ -112,6 +115,8 @@ public class Given_MssqlReferenceResolverTestDatabase
         await _database.SeedAsync();
 
         var secondSeedCounts = await ReadFixtureTableCountsAsync(_database.ConnectionString);
+        var secondSeedState = await ReadFixtureTableStateAsync(_database.ConnectionString);
+        var secondNextChangeVersion = await ReadNextChangeVersionAsync(_database.ConnectionString);
 
         firstSeedCounts
             .Should()
@@ -127,9 +132,12 @@ public class Given_MssqlReferenceResolverTestDatabase
         firstStudentTableCount.Should().Be(1);
 
         resetCounts.Values.Should().OnlyContain(count => count == 0);
+        resetState.Values.Should().OnlyContain(state => state == "[]");
         resetStudentTableCount.Should().Be(0);
 
         secondSeedCounts.Should().BeEquivalentTo(firstSeedCounts);
+        secondSeedState.Should().BeEquivalentTo(firstSeedState);
+        secondNextChangeVersion.Should().Be(firstNextChangeVersion);
     }
 
     private static async Task<IDictionary<string, long>> ReadFixtureTableCountsAsync(string connectionString)
@@ -146,6 +154,67 @@ public class Given_MssqlReferenceResolverTestDatabase
         };
     }
 
+    private static async Task<IDictionary<string, string>> ReadFixtureTableStateAsync(string connectionString)
+    {
+        return new Dictionary<string, string>
+        {
+            ["dms.ResourceKey"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion]
+                FROM [dms].[ResourceKey]
+                ORDER BY [ResourceKeyId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+            ["dms.Document"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [DocumentId], [DocumentUuid], [ResourceKeyId]
+                FROM [dms].[Document]
+                ORDER BY [DocumentId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+            ["dms.ReferentialIdentity"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
+                FROM [dms].[ReferentialIdentity]
+                ORDER BY [ResourceKeyId], [DocumentId], [ReferentialId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+            ["dms.Descriptor"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]
+                FROM [dms].[Descriptor]
+                ORDER BY [DocumentId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+            ["edfi.School"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [DocumentId], [SchoolId]
+                FROM [edfi].[School]
+                ORDER BY [DocumentId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+            ["edfi.LocalEducationAgency"] = await ReadJsonAsync(
+                connectionString,
+                """
+                SELECT [DocumentId], [LocalEducationAgencyId]
+                FROM [edfi].[LocalEducationAgency]
+                ORDER BY [DocumentId]
+                FOR JSON PATH, INCLUDE_NULL_VALUES;
+                """
+            ),
+        };
+    }
+
     private static async Task<long> ReadTableCountAsync(string connectionString, string qualifiedTableName)
     {
         await using SqlConnection connection = new(connectionString);
@@ -154,6 +223,27 @@ public class Given_MssqlReferenceResolverTestDatabase
         command.CommandText = $"""SELECT COUNT(*) FROM {qualifiedTableName};""";
 
         return Convert.ToInt64((await command.ExecuteScalarAsync())!);
+    }
+
+    private static async Task<long> ReadNextChangeVersionAsync(string connectionString)
+    {
+        await using SqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = """SELECT NEXT VALUE FOR [dms].[ChangeVersionSequence];""";
+
+        return Convert.ToInt64((await command.ExecuteScalarAsync())!);
+    }
+
+    private static async Task<string> ReadJsonAsync(string connectionString, string sql)
+    {
+        await using SqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        var json = Convert.ToString(await command.ExecuteScalarAsync());
+        return string.IsNullOrWhiteSpace(json) ? "[]" : json;
     }
 
     private static async Task<string[]> ReadRelationNamesAsync(string connectionString, string sql)

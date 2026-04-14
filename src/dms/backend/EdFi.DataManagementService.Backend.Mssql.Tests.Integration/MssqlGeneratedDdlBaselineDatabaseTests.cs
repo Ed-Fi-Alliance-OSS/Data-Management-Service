@@ -42,7 +42,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     public async Task It_restores_a_single_generated_ddl_database_to_a_clean_snapshot_baseline()
     {
         await using var baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
-            FixtureRelativePath,
+            CreateFixtureSignature("clean-snapshot-baseline"),
             _fixture.GeneratedDdl
         );
 
@@ -80,6 +80,58 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         resetMutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
+    }
+
+    [Test]
+    public async Task It_reuses_a_shared_baseline_until_the_last_handle_is_disposed()
+    {
+        var fixtureSignature = CreateFixtureSignature("shared-baseline-reuse");
+        MssqlGeneratedDdlBaselineDatabase? firstBaseline =
+            await MssqlGeneratedDdlBaselineDatabase.CreateAsync(fixtureSignature, _fixture.GeneratedDdl);
+        MssqlGeneratedDdlBaselineDatabase? secondBaseline = null;
+        var databaseName = firstBaseline.Database.DatabaseName;
+        var snapshotName = firstBaseline.SnapshotName;
+
+        try
+        {
+            secondBaseline = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+                fixtureSignature,
+                _fixture.GeneratedDdl
+            );
+            secondBaseline.Database.DatabaseName.Should().Be(databaseName);
+            secondBaseline.SnapshotName.Should().Be(snapshotName);
+
+            await firstBaseline.DisposeAsync();
+            firstBaseline = null;
+
+            var databaseExistsAfterFirstDispose = await DatabaseExistsAsync(databaseName);
+            var snapshotExistsAfterFirstDispose = await DatabaseExistsAsync(snapshotName);
+            databaseExistsAfterFirstDispose.Should().BeTrue();
+            snapshotExistsAfterFirstDispose.Should().BeTrue();
+
+            var restoredDatabase = await secondBaseline.RestoreAsync();
+            restoredDatabase.DatabaseName.Should().Be(databaseName);
+
+            var mutableCounts = await ReadMutableCountsAsync(restoredDatabase);
+            mutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
+        }
+        finally
+        {
+            if (secondBaseline is not null)
+            {
+                await secondBaseline.DisposeAsync();
+            }
+
+            if (firstBaseline is not null)
+            {
+                await firstBaseline.DisposeAsync();
+            }
+        }
+
+        var databaseExistsAfterLastDispose = await DatabaseExistsAsync(databaseName);
+        var snapshotExistsAfterLastDispose = await DatabaseExistsAsync(snapshotName);
+        databaseExistsAfterLastDispose.Should().BeFalse();
+        snapshotExistsAfterLastDispose.Should().BeFalse();
     }
 
     private static async Task<MssqlGeneratedDdlBaselineCounts> ReadBaselineCountsAsync(
@@ -202,5 +254,31 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@ordinal", ordinal)
         );
+    }
+
+    private static string CreateFixtureSignature(string scenario)
+    {
+        return $"{FixtureRelativePath}#{scenario}";
+    }
+
+    private static async Task<bool> DatabaseExistsAsync(string databaseName)
+    {
+        await using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.databases
+                    WHERE [name] = @databaseName
+                )
+                THEN CAST(1 AS bit)
+                ELSE CAST(0 AS bit)
+            END;
+            """;
+        command.Parameters.Add(new SqlParameter("@databaseName", databaseName));
+
+        return (bool)(await command.ExecuteScalarAsync() ?? false);
     }
 }

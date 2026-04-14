@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -297,7 +296,7 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             RollbackSafetyIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
     }
 

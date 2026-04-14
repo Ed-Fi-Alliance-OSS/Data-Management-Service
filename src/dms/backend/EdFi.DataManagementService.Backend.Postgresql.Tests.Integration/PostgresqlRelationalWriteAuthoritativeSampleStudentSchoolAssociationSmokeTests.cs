@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -636,13 +635,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterNoOpUpdate = null!;
     private DateTimeOffset _lastModifiedAtAfterCreate;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider =
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
@@ -728,8 +727,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {
@@ -2414,7 +2413,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider =
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
@@ -3549,13 +3548,13 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     private AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot _snapshotBefore = null!;
     private AuthoritativeSampleStudentSchoolAssociationRejectedWriteSnapshot _snapshotAfter = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider =
             AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
@@ -3591,8 +3590,8 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         _snapshotAfter = await ReadRejectedWriteSnapshotAsync();
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

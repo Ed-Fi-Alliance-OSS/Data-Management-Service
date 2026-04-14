@@ -10,7 +10,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -488,7 +487,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
             MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath,
             _fixture.GeneratedDdl

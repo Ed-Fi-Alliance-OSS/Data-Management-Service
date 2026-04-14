@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using NUnit.Framework;
 
@@ -16,6 +17,7 @@ internal sealed record MssqlGeneratedDdlFixture(
     string FixtureDirectory,
     EffectiveSchemaSet EffectiveSchemaSet,
     DerivedRelationalModelSet ModelSet,
+    MappingSet MappingSet,
     string GeneratedDdl
 );
 
@@ -61,7 +63,8 @@ internal static class MssqlGeneratedDdlFixtureLoader
             effectiveSchemaSet,
             SqlDialect.Mssql
         );
+        var mappingSet = new MappingSetCompiler().Compile(modelSet);
 
-        return new(fixtureDirectory, effectiveSchemaSet, modelSet, generatedDdl);
+        return new(fixtureDirectory, effectiveSchemaSet, modelSet, mappingSet, generatedDdl);
     }
 }

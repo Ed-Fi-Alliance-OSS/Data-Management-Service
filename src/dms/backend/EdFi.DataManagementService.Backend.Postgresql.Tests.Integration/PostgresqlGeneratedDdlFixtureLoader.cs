@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using NUnit.Framework;
 
@@ -14,11 +17,16 @@ internal sealed record PostgresqlGeneratedDdlFixture(
     string FixtureDirectory,
     EffectiveSchemaSet EffectiveSchemaSet,
     DerivedRelationalModelSet ModelSet,
+    MappingSet MappingSet,
     string GeneratedDdl
 );
 
 internal static class PostgresqlGeneratedDdlFixtureLoader
 {
+    private static readonly ConcurrentDictionary<string, Lazy<PostgresqlGeneratedDdlFixture>> _cache = new(
+        StringComparer.Ordinal
+    );
+
     public static PostgresqlGeneratedDdlFixture LoadFromRepositoryRelativePath(string relativePath)
     {
         return LoadFromFixtureDirectory(
@@ -32,14 +40,31 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
     public static PostgresqlGeneratedDdlFixture LoadFromFixtureDirectory(string fixtureDirectory)
     {
         var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
-        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
-            resolvedFixtureDirectory
+        var lazyFixture = _cache.GetOrAdd(
+            resolvedFixtureDirectory,
+            static path => new(() => LoadFixture(path), LazyThreadSafetyMode.ExecutionAndPublication)
         );
+
+        try
+        {
+            return lazyFixture.Value;
+        }
+        catch
+        {
+            _cache.TryRemove(new(resolvedFixtureDirectory, lazyFixture));
+            throw;
+        }
+    }
+
+    private static PostgresqlGeneratedDdlFixture LoadFixture(string fixtureDirectory)
+    {
+        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
         var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
             SqlDialect.Pgsql
         );
+        var mappingSet = new MappingSetCompiler().Compile(modelSet);
 
-        return new(resolvedFixtureDirectory, effectiveSchemaSet, modelSet, generatedDdl);
+        return new(fixtureDirectory, effectiveSchemaSet, modelSet, mappingSet, generatedDdl);
     }
 }

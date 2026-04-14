@@ -554,7 +554,7 @@ public abstract class MultiBatchCollectionsGeneratedDdlFixtureTestBase
         var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+        _mappingSet = fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
         await OneTimeSetUpTestAsync();
     }

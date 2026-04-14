@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -389,13 +388,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     private AuthoritativeDs52SchoolPersistedState _stateAfterChangedUpdate = null!;
     private AuthoritativeDs52SchoolPersistedState _stateAfterNoOpUpdate = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             AuthoritativeDs52WriteIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = AuthoritativeDs52WriteIntegrationTestSupport.CreateServiceProvider();
 
@@ -431,8 +430,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(SchoolDocumentUuid.Value);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

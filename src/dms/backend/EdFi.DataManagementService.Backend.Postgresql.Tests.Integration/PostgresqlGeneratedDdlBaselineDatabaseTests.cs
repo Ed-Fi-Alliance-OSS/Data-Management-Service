@@ -29,7 +29,7 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
     public async Task It_creates_clean_isolated_clones_from_a_single_generated_ddl_baseline()
     {
         await using var baselineDatabase = await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(
-            FixtureRelativePath,
+            CreateFixtureSignature("isolated-clones"),
             _fixture.GeneratedDdl
         );
 
@@ -75,6 +75,50 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
         secondMutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
         secondCollectionItemId.Should().Be(firstCollectionItemId);
+    }
+
+    [Test]
+    public async Task It_reuses_a_shared_baseline_until_the_last_handle_is_disposed()
+    {
+        var fixtureSignature = CreateFixtureSignature("shared-baseline-reuse");
+        PostgresqlGeneratedDdlBaselineDatabase? firstBaseline =
+            await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(fixtureSignature, _fixture.GeneratedDdl);
+        PostgresqlGeneratedDdlBaselineDatabase? secondBaseline = null;
+        var baselineDatabaseName = firstBaseline.BaselineDatabaseName;
+
+        try
+        {
+            secondBaseline = await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(
+                fixtureSignature,
+                _fixture.GeneratedDdl
+            );
+            secondBaseline.BaselineDatabaseName.Should().Be(baselineDatabaseName);
+
+            await firstBaseline.DisposeAsync();
+            firstBaseline = null;
+
+            var existsAfterFirstDispose = await DatabaseExistsAsync(baselineDatabaseName);
+            existsAfterFirstDispose.Should().BeTrue();
+
+            await using var isolatedDatabase = await secondBaseline.CreateIsolatedDatabaseAsync();
+            var mutableCounts = await ReadMutableCountsAsync(isolatedDatabase);
+            mutableCounts.Should().Be(new PostgresqlGeneratedDdlMutableCounts(0, 0, 0));
+        }
+        finally
+        {
+            if (secondBaseline is not null)
+            {
+                await secondBaseline.DisposeAsync();
+            }
+
+            if (firstBaseline is not null)
+            {
+                await firstBaseline.DisposeAsync();
+            }
+        }
+
+        var existsAfterLastDispose = await DatabaseExistsAsync(baselineDatabaseName);
+        existsAfterLastDispose.Should().BeFalse();
     }
 
     private static async Task<PostgresqlGeneratedDdlBaselineCounts> ReadBaselineCountsAsync(
@@ -169,5 +213,32 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
             new NpgsqlParameter("city", city)
         );
+    }
+
+    private static string CreateFixtureSignature(string scenario)
+    {
+        return $"{FixtureRelativePath}#{scenario}";
+    }
+
+    private static async Task<bool> DatabaseExistsAsync(string databaseName)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(Configuration.DatabaseConnectionString)
+        {
+            Database = "postgres",
+        };
+
+        await using var connection = new NpgsqlConnection(builder.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_database
+                WHERE datname = @databaseName
+            );
+            """;
+        command.Parameters.Add(new NpgsqlParameter("databaseName", databaseName));
+
+        return (bool)(await command.ExecuteScalarAsync() ?? false);
     }
 }

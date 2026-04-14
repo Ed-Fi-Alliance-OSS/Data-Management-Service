@@ -7,11 +7,11 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
-[Category("MssqlIntegration")]
-public class Given_MssqlGeneratedDdlFixtureLoader
+[Category("PostgresqlIntegration")]
+public class Given_PostgresqlGeneratedDdlFixtureLoader
 {
     private const string AuthoritativeFixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const string FocusedFixtureRelativePath =
@@ -19,10 +19,10 @@ public class Given_MssqlGeneratedDdlFixtureLoader
 
     private string _authoritativeFixtureDirectory = null!;
     private string _focusedFixtureDirectory = null!;
-    private MssqlGeneratedDdlFixture _authoritativeFixtureFromRelativePath = null!;
-    private MssqlGeneratedDdlFixture _authoritativeFixtureFromDirectory = null!;
-    private IReadOnlyList<MssqlGeneratedDdlFixture> _parallelFocusedFixtures = null!;
-    private MssqlGeneratedDdlFixture _focusedFixtureFromDirectory = null!;
+    private PostgresqlGeneratedDdlFixture _authoritativeFixtureFromRelativePath = null!;
+    private PostgresqlGeneratedDdlFixture _authoritativeFixtureFromDirectory = null!;
+    private IReadOnlyList<PostgresqlGeneratedDdlFixture> _parallelFocusedFixtures = null!;
+    private PostgresqlGeneratedDdlFixture _focusedFixtureFromDirectory = null!;
 
     [SetUp]
     public async Task Setup()
@@ -36,10 +36,11 @@ public class Given_MssqlGeneratedDdlFixtureLoader
             FocusedFixtureRelativePath
         );
 
-        _authoritativeFixtureFromRelativePath = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            AuthoritativeFixtureRelativePath
-        );
-        _authoritativeFixtureFromDirectory = MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+        _authoritativeFixtureFromRelativePath =
+            PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+                AuthoritativeFixtureRelativePath
+            );
+        _authoritativeFixtureFromDirectory = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
             _authoritativeFixtureDirectory
         );
         _parallelFocusedFixtures = await Task.WhenAll(
@@ -47,7 +48,7 @@ public class Given_MssqlGeneratedDdlFixtureLoader
                 .Range(0, 8)
                 .Select(_ =>
                     Task.Run(() =>
-                        MssqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(_focusedFixtureDirectory)
+                        PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(_focusedFixtureDirectory)
                     )
                 )
         );

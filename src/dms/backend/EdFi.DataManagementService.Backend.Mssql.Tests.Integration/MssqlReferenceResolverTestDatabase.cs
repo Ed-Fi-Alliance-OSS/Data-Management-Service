@@ -13,13 +13,11 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposable
 {
+    private const int DefaultCommandTimeoutSeconds = 300;
     private const int MaximumSeedInsertParameters = 2000;
     private static readonly MssqlDialect _dialect = new(new MssqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
-    private static readonly DbTableName _changeVersionSequence = new(
-        new DbSchemaName("dms"),
-        "ChangeVersionSequence"
-    );
+    private static readonly string _resetSql = MssqlDatabaseResetSql.Build();
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private bool _disposed;
 
@@ -80,56 +78,10 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
     {
         await using SqlConnection connection = new(ConnectionString);
         await connection.OpenAsync();
-
-        var tableNames = await ReadObjectNamesAsync(connection, "U");
-        var identityTableNames = await ReadIdentityTableNamesAsync(connection);
-
-        foreach (var tableName in tableNames)
-        {
-            await ExecuteNonQueryAsync(connection, $"DISABLE TRIGGER ALL ON {tableName};");
-        }
-
-        foreach (var tableName in tableNames)
-        {
-            await ExecuteNonQueryAsync(connection, $"ALTER TABLE {tableName} NOCHECK CONSTRAINT ALL;");
-        }
-
-        foreach (var tableName in tableNames)
-        {
-            await ExecuteNonQueryAsync(connection, $"DELETE FROM {tableName};");
-        }
-
-        foreach (var identityTableName in identityTableNames)
-        {
-            var escapedIdentityTableName = identityTableName.Replace("'", "''");
-            await ExecuteNonQueryAsync(
-                connection,
-                $"DBCC CHECKIDENT ('{escapedIdentityTableName}', RESEED, 0);"
-            );
-        }
-
-        await ExecuteNonQueryAsync(
-            connection,
-            $"""
-            ALTER SEQUENCE {SqlIdentifierQuoter.QuoteTableName(
-                SqlDialect.Mssql,
-                _changeVersionSequence
-            )} RESTART WITH 1;
-            """
-        );
-
-        foreach (var tableName in tableNames)
-        {
-            await ExecuteNonQueryAsync(
-                connection,
-                $"ALTER TABLE {tableName} WITH CHECK CHECK CONSTRAINT ALL;"
-            );
-        }
-
-        foreach (var tableName in tableNames)
-        {
-            await ExecuteNonQueryAsync(connection, $"ENABLE TRIGGER ALL ON {tableName};");
-        }
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = _resetSql;
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
+        await command.ExecuteNonQueryAsync();
     }
 
     public Task SeedAsync()
@@ -312,64 +264,6 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
                 batch.Rows.Skip(startIndex).Take(rowCount).ToArray()
             );
         }
-    }
-
-    private static async Task<string[]> ReadObjectNamesAsync(SqlConnection connection, string objectType)
-    {
-        const string Sql = """
-            SELECT QUOTENAME(s.name) + N'.' + QUOTENAME(o.name)
-            FROM sys.objects o
-            JOIN sys.schemas s ON o.schema_id = s.schema_id
-            WHERE o.type = @objectType
-              AND s.name IN (N'dms', N'edfi', N'auth')
-            ORDER BY s.name, o.name;
-            """;
-
-        await using SqlCommand command = connection.CreateCommand();
-        command.CommandText = Sql;
-        command.Parameters.AddWithValue("@objectType", objectType);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        List<string> objectNames = [];
-
-        while (await reader.ReadAsync())
-        {
-            objectNames.Add(reader.GetString(0));
-        }
-
-        return [.. objectNames];
-    }
-
-    private static async Task<string[]> ReadIdentityTableNamesAsync(SqlConnection connection)
-    {
-        const string Sql = """
-            SELECT DISTINCT QUOTENAME(s.name) + N'.' + QUOTENAME(t.name)
-            FROM sys.identity_columns ic
-            JOIN sys.tables t ON ic.object_id = t.object_id
-            JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE s.name IN (N'dms', N'edfi', N'auth')
-            ORDER BY QUOTENAME(s.name) + N'.' + QUOTENAME(t.name);
-            """;
-
-        await using SqlCommand command = connection.CreateCommand();
-        command.CommandText = Sql;
-
-        await using var reader = await command.ExecuteReaderAsync();
-        List<string> identityTableNames = [];
-
-        while (await reader.ReadAsync())
-        {
-            identityTableNames.Add(reader.GetString(0));
-        }
-
-        return [.. identityTableNames];
-    }
-
-    private static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
-    {
-        await using SqlCommand command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync();
     }
 
     private static IEnumerable<string> SplitOnGoBatchSeparator(string sql) =>

@@ -347,7 +347,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
 
@@ -699,7 +699,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _baselineDatabase = await PostgresqlGeneratedDdlBaselineDatabase.CreateAsync(
             FixtureRelativePath,
             _fixture.GeneratedDdl
@@ -2487,7 +2487,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
 
@@ -2879,7 +2879,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
@@ -3240,7 +3240,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
 
@@ -3761,7 +3761,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
 

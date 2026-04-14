@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
@@ -10,24 +12,31 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private static readonly object _sync = new();
+    private static readonly Dictionary<string, SharedBaselineEntry> _sharedBaselines = new(
+        StringComparer.Ordinal
+    );
+
+    private readonly SharedBaselineEntry _sharedBaselineEntry;
+    private readonly SharedBaselineState _sharedBaselineState;
     private bool _disposed;
 
     private MssqlGeneratedDdlBaselineDatabase(
         string fixtureSignature,
-        string snapshotName,
-        MssqlGeneratedDdlTestDatabase database
+        SharedBaselineEntry sharedBaselineEntry,
+        SharedBaselineState sharedBaselineState
     )
     {
         FixtureSignature = fixtureSignature;
-        SnapshotName = snapshotName;
-        Database = database;
+        _sharedBaselineEntry = sharedBaselineEntry;
+        _sharedBaselineState = sharedBaselineState;
     }
 
     public string FixtureSignature { get; }
 
-    public string SnapshotName { get; }
+    public string SnapshotName => _sharedBaselineState.SnapshotName;
 
-    public MssqlGeneratedDdlTestDatabase Database { get; }
+    public MssqlGeneratedDdlTestDatabase Database => _sharedBaselineState.Database;
 
     public static async Task<MssqlGeneratedDdlBaselineDatabase> CreateAsync(
         string fixtureSignature,
@@ -38,22 +47,48 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(fixtureSignature);
         ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
 
-        var database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
-            generatedDdl,
-            commandTimeoutSeconds
-        );
-        var snapshotName = $"{database.DatabaseName}_baseline";
+        var generatedDdlHash = ComputeGeneratedDdlHash(generatedDdl);
+        SharedBaselineEntry sharedBaselineEntry;
+
+        lock (_sync)
+        {
+            if (_sharedBaselines.TryGetValue(fixtureSignature, out var existingEntry))
+            {
+                sharedBaselineEntry = existingEntry;
+
+                if (
+                    !string.Equals(
+                        sharedBaselineEntry.GeneratedDdlHash,
+                        generatedDdlHash,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Fixture signature '{fixtureSignature}' is already associated with different generated DDL."
+                    );
+                }
+
+                sharedBaselineEntry.LeaseCount++;
+            }
+            else
+            {
+                sharedBaselineEntry = new(
+                    generatedDdlHash,
+                    CreateSharedBaselineStateAsync(generatedDdl, commandTimeoutSeconds)
+                );
+                _sharedBaselines[fixtureSignature] = sharedBaselineEntry;
+            }
+        }
 
         try
         {
-            await DropSnapshotIfExistsAsync(snapshotName, commandTimeoutSeconds);
-            await CreateSnapshotAsync(database.DatabaseName, snapshotName, commandTimeoutSeconds);
-
-            return new(fixtureSignature, snapshotName, database);
+            var sharedBaselineState = await sharedBaselineEntry.InitializationTask;
+            return new(fixtureSignature, sharedBaselineEntry, sharedBaselineState);
         }
         catch
         {
-            await database.DisposeAsync();
+            ReleaseLease(fixtureSignature, sharedBaselineEntry);
             throw;
         }
     }
@@ -64,8 +99,12 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        await RestoreSnapshotAsync(Database.DatabaseName, SnapshotName, commandTimeoutSeconds);
-        return Database;
+        await RestoreSnapshotAsync(
+            _sharedBaselineState.Database.DatabaseName,
+            _sharedBaselineState.SnapshotName,
+            commandTimeoutSeconds
+        );
+        return _sharedBaselineState.Database;
     }
 
     public async ValueTask DisposeAsync()
@@ -77,14 +116,63 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 
         _disposed = true;
 
+        if (ReleaseLease(FixtureSignature, _sharedBaselineEntry))
+        {
+            await _sharedBaselineState.DisposeAsync();
+        }
+    }
+
+    private static bool ReleaseLease(string fixtureSignature, SharedBaselineEntry sharedBaselineEntry)
+    {
+        lock (_sync)
+        {
+            if (
+                !_sharedBaselines.TryGetValue(fixtureSignature, out var currentEntry)
+                || !ReferenceEquals(currentEntry, sharedBaselineEntry)
+            )
+            {
+                return false;
+            }
+
+            sharedBaselineEntry.LeaseCount--;
+
+            if (sharedBaselineEntry.LeaseCount != 0)
+            {
+                return false;
+            }
+
+            _sharedBaselines.Remove(fixtureSignature);
+            return true;
+        }
+    }
+
+    private static async Task<SharedBaselineState> CreateSharedBaselineStateAsync(
+        string generatedDdl,
+        int commandTimeoutSeconds
+    )
+    {
+        var database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
+            generatedDdl,
+            commandTimeoutSeconds
+        );
+        var snapshotName = $"{database.DatabaseName}_baseline";
+
         try
         {
-            await DropSnapshotIfExistsAsync(SnapshotName, DefaultCommandTimeoutSeconds);
+            await DropSnapshotIfExistsAsync(snapshotName, commandTimeoutSeconds);
+            await CreateSnapshotAsync(database.DatabaseName, snapshotName, commandTimeoutSeconds);
+            return new(snapshotName, database);
         }
-        finally
+        catch
         {
-            await Database.DisposeAsync();
+            await database.DisposeAsync();
+            throw;
         }
+    }
+
+    private static string ComputeGeneratedDdlHash(string generatedDdl)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(generatedDdl)));
     }
 
     private static async Task CreateSnapshotAsync(
@@ -229,6 +317,38 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
                 char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'
             ),
         ]);
+    }
+
+    private sealed class SharedBaselineEntry(
+        string generatedDdlHash,
+        Task<SharedBaselineState> initializationTask
+    )
+    {
+        public string GeneratedDdlHash { get; } = generatedDdlHash;
+
+        public Task<SharedBaselineState> InitializationTask { get; } = initializationTask;
+
+        public int LeaseCount { get; set; } = 1;
+    }
+
+    private sealed class SharedBaselineState(string snapshotName, MssqlGeneratedDdlTestDatabase database)
+        : IAsyncDisposable
+    {
+        public string SnapshotName { get; } = snapshotName;
+
+        public MssqlGeneratedDdlTestDatabase Database { get; } = database;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await DropSnapshotIfExistsAsync(SnapshotName, DefaultCommandTimeoutSeconds);
+            }
+            finally
+            {
+                await Database.DisposeAsync();
+            }
+        }
     }
 
     private sealed record MssqlSnapshotSourceFile(string LogicalName, string SnapshotPath);

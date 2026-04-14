@@ -10,7 +10,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -257,7 +256,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             MssqlSurveyRuntimeIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = MssqlSurveyRuntimeIntegrationTestSupport.CreateServiceProvider();
 

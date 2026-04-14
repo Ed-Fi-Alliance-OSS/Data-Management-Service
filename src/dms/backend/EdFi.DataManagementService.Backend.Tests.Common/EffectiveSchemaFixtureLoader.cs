@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
@@ -16,6 +19,9 @@ public static class EffectiveSchemaFixtureLoader
 {
     private sealed record GeneratedDdlFixtureConfig(string[] ApiSchemaFiles);
 
+    private static readonly ConcurrentDictionary<string, Lazy<EffectiveSchemaSet>> _cache = new(
+        StringComparer.Ordinal
+    );
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -48,11 +54,40 @@ public static class EffectiveSchemaFixtureLoader
             );
         }
 
-        var resolvedPaths = apiSchemaFiles
-            .Select(path =>
-                FixturePathResolver.ResolveFixtureInputPath(fixtureDirectory, path, repositoryRoot)
-            )
-            .ToArray();
+        var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
+        var resolvedPaths = ResolveFixtureInputPaths(
+            resolvedFixtureDirectory,
+            apiSchemaFiles,
+            repositoryRoot
+        );
+        var cacheKey = BuildCacheKey(resolvedFixtureDirectory, resolvedPaths);
+        var lazyEffectiveSchemaSet = _cache.GetOrAdd(
+            cacheKey,
+            _ =>
+                new(
+                    () => LoadEffectiveSchemaSetCore(resolvedFixtureDirectory, resolvedPaths),
+                    LazyThreadSafetyMode.ExecutionAndPublication
+                )
+        );
+
+        try
+        {
+            return lazyEffectiveSchemaSet.Value;
+        }
+        catch
+        {
+            _cache.TryRemove(new(cacheKey, lazyEffectiveSchemaSet));
+            throw;
+        }
+    }
+
+    private static EffectiveSchemaSet LoadEffectiveSchemaSetCore(
+        string fixtureDirectory,
+        IReadOnlyList<string> resolvedPaths
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureDirectory);
+        ArgumentNullException.ThrowIfNull(resolvedPaths);
 
         var coreNode = ParseJsonNode(resolvedPaths[0]);
         var extensionNodes = resolvedPaths.Skip(1).Select(ParseJsonNode).ToArray();
@@ -72,6 +107,33 @@ public static class EffectiveSchemaFixtureLoader
         );
 
         return builder.Build(normalizedNodes);
+    }
+
+    private static string[] ResolveFixtureInputPaths(
+        string fixtureDirectory,
+        IReadOnlyList<string> apiSchemaFiles,
+        string? repositoryRoot
+    )
+    {
+        return apiSchemaFiles
+            .Select(path =>
+                FixturePathResolver.ResolveFixtureInputPath(fixtureDirectory, path, repositoryRoot)
+            )
+            .ToArray();
+    }
+
+    private static string BuildCacheKey(string fixtureDirectory, IReadOnlyList<string> resolvedPaths)
+    {
+        StringBuilder builder = new();
+        builder.Append(fixtureDirectory);
+
+        foreach (var resolvedPath in resolvedPaths)
+        {
+            builder.Append('\0');
+            builder.Append(resolvedPath);
+        }
+
+        return builder.ToString();
     }
 
     private static GeneratedDdlFixtureConfig ReadFixtureConfig(string fixtureDirectory)
