@@ -21,6 +21,7 @@ using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -60,6 +61,59 @@ file sealed class MssqlProfileRuntimeNoOpUpdateCascadeHandler : IUpdateCascadeHa
             ResourceName: referencingResourceName,
             isIdentityUpdate: false
         );
+}
+
+file sealed class MssqlProfileRuntimeConcurrentContentVersionBumpFreshnessChecker(
+    IDmsInstanceSelection dmsInstanceSelection
+) : IRelationalWriteFreshnessChecker
+{
+    private readonly IDmsInstanceSelection _dmsInstanceSelection =
+        dmsInstanceSelection ?? throw new ArgumentNullException(nameof(dmsInstanceSelection));
+
+    private readonly RelationalWriteFreshnessChecker _innerChecker = new();
+    private bool _hasBumpedContentVersion;
+
+    public async Task<bool> IsCurrentAsync(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!_hasBumpedContentVersion)
+        {
+            _hasBumpedContentVersion = true;
+
+            await BumpContentVersionAsync(targetContext.DocumentId, cancellationToken);
+        }
+
+        return await _innerChecker.IsCurrentAsync(request, targetContext, writeSession, cancellationToken);
+    }
+
+    private async Task BumpContentVersionAsync(long documentId, CancellationToken cancellationToken)
+    {
+        await using SqlConnection connection = new(
+            _dmsInstanceSelection.GetSelectedDmsInstance().ConnectionString
+        );
+        await connection.OpenAsync(cancellationToken);
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [dms].[Document]
+            SET [ContentVersion] = [ContentVersion] + 1
+            WHERE [DocumentId] = @documentId;
+            """;
+        command.Parameters.Add(new SqlParameter("@documentId", documentId));
+
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (rowsAffected != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
+            );
+        }
+    }
 }
 
 internal sealed record MssqlProfileRuntimeDocumentRow(
@@ -153,7 +207,7 @@ file static class MssqlProfileRuntimeTestSupport
         }
         """;
 
-    public static ServiceProvider CreateServiceProvider()
+    public static ServiceProvider CreateServiceProvider(Action<IServiceCollection>? configureServices = null)
     {
         ServiceCollection services = [];
 
@@ -163,11 +217,22 @@ file static class MssqlProfileRuntimeTestSupport
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
         services.AddMssqlReferenceResolver();
+        configureServices?.Invoke(services);
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
     }
+
+    public static ServiceProvider CreateStaleCompareServiceProvider() =>
+        CreateServiceProvider(static services =>
+        {
+            services.RemoveAll<IRelationalWriteFreshnessChecker>();
+            services.AddScoped<
+                IRelationalWriteFreshnessChecker,
+                MssqlProfileRuntimeConcurrentContentVersionBumpFreshnessChecker
+            >();
+        });
 
     public static UpsertRequest CreateCreateRequest(
         MappingSet mappingSet,
@@ -1161,7 +1226,334 @@ public class Given_A_Mssql_Profiled_Guarded_NoOp_POST_As_Update
 }
 
 // --------------------------------------------------------------------------
-// Scenario 3: Profiled Merge With Hidden-Data Preservation
+// Scenario 3: Profiled Stale Guarded No-Op PUT
+// --------------------------------------------------------------------------
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[NonParallelizable]
+public class Given_A_Mssql_Profiled_Stale_Guarded_NoOp_PUT
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000205")
+    );
+
+    private const string UpdateBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            { "city": "Austin", "periods": [{ "periodName": "Fall" }] },
+            { "city": "Dallas", "periods": [{ "periodName": "Spring" }] }
+          ]
+        }
+        """;
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private MssqlProfileRuntimePersistedState _stateBeforeUpdate = null!;
+    private MssqlProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("SQL Server integration tests require a configured connection string.");
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRuntimeTestSupport.CreateStaleCompareServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+        _stateBeforeUpdate = await MssqlProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await MssqlProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_retries_and_returns_update_success_after_the_profiled_no_op_compare_goes_stale()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled stale guarded no-op PUT should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_preserves_rowsets_but_keeps_the_concurrent_content_version_bump()
+    {
+        var adjustedAfterState = _stateAfterUpdate with
+        {
+            Document = _stateAfterUpdate.Document with
+            {
+                ContentVersion = _stateBeforeUpdate.Document.ContentVersion,
+            },
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforeUpdate);
+        _stateAfterUpdate.Document.ContentVersion.Should().Be(_stateBeforeUpdate.Document.ContentVersion + 1);
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfiledStaleGuardedNoOpPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            MssqlProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "mssql-profiled-stale-guarded-noop-put-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfiledStaleGuardedNoOpPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            MssqlProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "mssql-profiled-stale-guarded-noop-put-update",
+                UpdateBodyJson,
+                MssqlProfileRuntimeContextFactory.CreateGuardedNoOpPutContext(_mappingSet, UpdateBodyJson)
+            )
+        );
+    }
+}
+
+// --------------------------------------------------------------------------
+// Scenario 4: Profiled Stale Guarded No-Op POST-as-update
+// --------------------------------------------------------------------------
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[NonParallelizable]
+public class Given_A_Mssql_Profiled_Stale_Guarded_NoOp_POST_As_Update
+{
+    private static readonly DocumentUuid SeedDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000206")
+    );
+
+    private static readonly DocumentUuid PostDocumentUuid = new(
+        Guid.Parse("eeeeeeee-0000-0000-0000-000000000206")
+    );
+
+    private const string PostBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            { "city": "Austin", "periods": [{ "periodName": "Fall" }] },
+            { "city": "Dallas", "periods": [{ "periodName": "Spring" }] }
+          ]
+        }
+        """;
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private MssqlProfileRuntimePersistedState _stateBeforePost = null!;
+    private MssqlProfileRuntimePersistedState _stateAfterPost = null!;
+    private UpsertResult _postResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("SQL Server integration tests require a configured connection string.");
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRuntimeTestSupport.CreateStaleCompareServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+        _stateBeforePost = await MssqlProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SeedDocumentUuid.Value
+        );
+
+        _postResult = await ExecuteProfiledPostAsUpdateAsync();
+        _stateAfterPost = await MssqlProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SeedDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_retries_and_returns_update_success_for_a_profiled_stale_post_as_update_no_op_compare()
+    {
+        var failureMessage = _postResult is UpsertResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled stale guarded no-op POST-as-update should succeed";
+
+        _postResult.Should().BeOfType<UpsertResult.UpdateSuccess>(failureMessage);
+        _postResult.As<UpsertResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SeedDocumentUuid);
+    }
+
+    [Test]
+    public void It_preserves_the_existing_rowsets_but_keeps_the_concurrent_content_version_bump()
+    {
+        var adjustedAfterState = _stateAfterPost with
+        {
+            Document = _stateAfterPost.Document with
+            {
+                ContentVersion = _stateBeforePost.Document.ContentVersion,
+            },
+        };
+
+        adjustedAfterState.Should().BeEquivalentTo(_stateBeforePost);
+        _stateAfterPost.Document.ContentVersion.Should().Be(_stateBeforePost.Document.ContentVersion + 1);
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfiledStaleGuardedNoOpPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            MssqlProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SeedDocumentUuid,
+                "mssql-profiled-stale-guarded-noop-post-as-update-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpsertResult> ExecuteProfiledPostAsUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfiledStaleGuardedNoOpPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var referentialId = MssqlProfileRuntimeTestSupport.CreateSchoolDocumentInfo().ReferentialId;
+
+        return await repository.UpsertDocument(
+            MssqlProfileRuntimeTestSupport.CreatePostAsUpdateRequest(
+                _mappingSet,
+                PostDocumentUuid,
+                "mssql-profiled-stale-guarded-noop-post-as-update",
+                referentialId,
+                PostBodyJson,
+                MssqlProfileRuntimeContextFactory.CreateGuardedNoOpPostAsUpdateContext(
+                    _mappingSet,
+                    PostBodyJson
+                )
+            )
+        );
+    }
+}
+
+// --------------------------------------------------------------------------
+// Scenario 5: Profiled Merge With Hidden-Data Preservation
 // --------------------------------------------------------------------------
 
 [TestFixture]
