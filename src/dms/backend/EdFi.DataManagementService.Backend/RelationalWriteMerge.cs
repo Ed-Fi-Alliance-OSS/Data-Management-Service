@@ -3095,14 +3095,27 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         public RelationalWriteMergeTableState Build()
         {
-            var currentRowsForComparison = RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(
-                TableWritePlan
-            )
-                ? RelationalWriteMergeShared.OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
+            IReadOnlyList<MergeTableRow> currentRowsForComparison;
+
+            if (TableWritePlan.CollectionMergePlan is not null)
+            {
+                currentRowsForComparison = RelationalWriteMergeShared.OrderCollectionRowsIfFullyBound(
                     TableWritePlan,
                     currentRows
-                )
-                : currentRows;
+                );
+            }
+            else if (RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(TableWritePlan))
+            {
+                currentRowsForComparison =
+                    RelationalWriteMergeShared.OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
+                        TableWritePlan,
+                        currentRows
+                    );
+            }
+            else
+            {
+                currentRowsForComparison = currentRows;
+            }
             IReadOnlyList<MergeTableRow> mergedRows;
 
             if (TableWritePlan.CollectionMergePlan is not null)

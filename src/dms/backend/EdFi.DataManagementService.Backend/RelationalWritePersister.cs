@@ -689,20 +689,25 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
         CancellationToken cancellationToken
     )
     {
+        // Per-row no-op: skip updates whose values are identical to current state
+        var currentRow =
+            tableState.ComparableCurrentRowset.Length == 1 ? tableState.ComparableCurrentRowset[0] : null;
+
+        var updatesToApply = currentRow is not null
+            ? tableState.Updates.Where(u => !currentRow.Values.SequenceEqual(u.Values)).ToList()
+            : tableState.Updates.ToList();
+
+        if (updatesToApply.Count == 0)
+        {
+            return;
+        }
+
         if (tableState.TableWritePlan.UpdateSql is null)
         {
             throw new InvalidOperationException(
                 $"Table '{FormatTable(tableState.TableWritePlan)}' requires UpdateSql to persist a changed non-collection row."
             );
         }
-
-        // Per-row no-op: skip updates whose values are identical to current state
-        var currentRow =
-            tableState.ComparableCurrentRowset.Length == 1 ? tableState.ComparableCurrentRowset[0] : null;
-
-        var updatesToApply = currentRow is not null
-            ? tableState.Updates.Where(u => !currentRow.Values.SequenceEqual(u.Values))
-            : tableState.Updates.AsEnumerable();
 
         foreach (var update in updatesToApply)
         {
