@@ -2576,96 +2576,16 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             tableBackedScopes.Add(tablePlan.TableModel.JsonScope.Canonical);
         }
 
-        var parentJsonScope = parentTablePlan.TableModel.JsonScope.Canonical;
-        List<string>? clearablePaths = null;
-        List<string>? hiddenPaths = null;
-
-        foreach (var scopeDescriptor in compiledScopeCatalog)
-        {
-            if (scopeDescriptor.ScopeKind != ScopeKind.NonCollection)
-            {
-                continue;
-            }
-
-            if (tableBackedScopes.Contains(scopeDescriptor.JsonScope))
-            {
-                continue;
-            }
-
-            // Inlined scope — check if it belongs to this parent table
-            if (
-                scopeDescriptor.ImmediateParentJsonScope is null
-                || !string.Equals(
-                    scopeDescriptor.ImmediateParentJsonScope,
-                    parentJsonScope,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                continue;
-            }
-
-            var storedScopeState = scopeLookup.TryGetStoredScopeState(scopeDescriptor.JsonScope);
-
-            // Hidden stored scope: ALL canonical members must be preserved (hidden).
-            // VisibleAbsent request scope: classify per hidden/visible stored members.
-            // All other states: not applicable for inlined path collection.
-            var isScopeHidden = storedScopeState is { Visibility: ProfileVisibilityKind.Hidden };
-            if (!isScopeHidden)
-            {
-                var requestScopeState = scopeLookup.TryGetRequestScopeState(scopeDescriptor.JsonScope);
-                if (requestScopeState is not { Visibility: ProfileVisibilityKind.VisibleAbsent })
-                {
-                    continue;
-                }
-            }
-
-            // Derive the scope prefix for converting scope-relative to parent-relative paths.
-            // For scope "$.calendarReference" with parent "$", prefix is "calendarReference".
-            var scopePrefix = DeriveScopePrefix(scopeDescriptor.JsonScope, parentJsonScope);
-
-            if (scopePrefix is null)
-            {
-                continue;
-            }
-
-            if (isScopeHidden)
-            {
-                // Entire inlined scope is hidden — all members are preserved from stored state
-                foreach (var memberPath in scopeDescriptor.CanonicalScopeRelativeMemberPaths)
-                {
-                    hiddenPaths ??= [];
-                    hiddenPaths.Add($"$.{scopePrefix}.{memberPath}");
-                }
-            }
-            else
-            {
-                // VisibleAbsent: split members into clearable (visible) vs hidden (preserved)
-                var scopeHiddenPaths = storedScopeState?.HiddenMemberPaths ?? [];
-                var scopeHiddenSet = new HashSet<string>(scopeHiddenPaths, StringComparer.Ordinal);
-
-                foreach (var memberPath in scopeDescriptor.CanonicalScopeRelativeMemberPaths)
-                {
-                    var parentRelativePath = $"$.{scopePrefix}.{memberPath}";
-
-                    if (scopeHiddenSet.Contains(memberPath))
-                    {
-                        hiddenPaths ??= [];
-                        hiddenPaths.Add(parentRelativePath);
-                    }
-                    else
-                    {
-                        clearablePaths ??= [];
-                        clearablePaths.Add(parentRelativePath);
-                    }
-                }
-            }
-        }
-
-        return (
-            clearablePaths is not null ? [.. clearablePaths] : [],
-            hiddenPaths is not null ? [.. hiddenPaths] : []
+        var (clearable, hidden, _) = CollectInlinedScopePathsCore(
+            parentTablePlan,
+            tableBackedScopes,
+            compiledScopeCatalog,
+            scopeLookup.TryGetStoredScopeState,
+            scopeLookup.TryGetRequestScopeState,
+            failOnMissingRequestState: false
         );
+
+        return (clearable, hidden);
     }
 
     /// <summary>
@@ -2689,6 +2609,32 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         MergeScopeLookup scopeLookup,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
         string childAncestorContextKey
+    ) =>
+        CollectInlinedScopePathsCore(
+            parentTablePlan,
+            tableBackedScopes,
+            compiledScopeCatalog,
+            jsonScope => scopeLookup.TryGetStoredScopeStateForInstance(jsonScope, childAncestorContextKey),
+            jsonScope => scopeLookup.TryGetRequestScopeStateForInstance(jsonScope, childAncestorContextKey),
+            failOnMissingRequestState: true
+        );
+
+    /// <summary>
+    /// Shared implementation for inlined scope path collection. Walks the compiled scope catalog
+    /// to find non-collection scopes inlined into <paramref name="parentTablePlan"/>, classifies
+    /// their members as clearable or hidden, and optionally fails on missing request state.
+    /// </summary>
+    private static (
+        ImmutableArray<string> ClearablePaths,
+        ImmutableArray<string> HiddenPaths,
+        string? ContractMismatchMessage
+    ) CollectInlinedScopePathsCore(
+        TableWritePlan parentTablePlan,
+        HashSet<string> tableBackedScopes,
+        IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
+        Func<string, StoredScopeState?> getStoredScopeState,
+        Func<string, RequestScopeState?> getRequestScopeState,
+        bool failOnMissingRequestState
     )
     {
         var parentJsonScope = parentTablePlan.TableModel.JsonScope.Canonical;
@@ -2720,10 +2666,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 continue;
             }
 
-            var storedScopeState = scopeLookup.TryGetStoredScopeStateForInstance(
-                scopeDescriptor.JsonScope,
-                childAncestorContextKey
-            );
+            var storedScopeState = getStoredScopeState(scopeDescriptor.JsonScope);
 
             // Hidden stored scope: ALL canonical members must be preserved (hidden).
             // VisibleAbsent request scope: classify per hidden/visible stored members.
@@ -2731,12 +2674,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var isScopeHidden = storedScopeState is { Visibility: ProfileVisibilityKind.Hidden };
             if (!isScopeHidden)
             {
-                var requestScopeState = scopeLookup.TryGetRequestScopeStateForInstance(
-                    scopeDescriptor.JsonScope,
-                    childAncestorContextKey
-                );
+                var requestScopeState = getRequestScopeState(scopeDescriptor.JsonScope);
 
-                if (requestScopeState is null)
+                if (requestScopeState is null && failOnMissingRequestState)
                 {
                     return (
                         [],
