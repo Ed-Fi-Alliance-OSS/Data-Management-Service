@@ -171,6 +171,42 @@ public class Given_Relational_Write_Persister
     }
 
     [Test]
+    public async Task It_binds_multi_parent_key_non_collection_deletes_from_explicit_delete_values()
+    {
+        var rootPlan = CreateRootPlan();
+        var nestedScopePlan = CreateMultiParentDeleteScopePlan();
+        var writePlan = CreateWritePlan([rootPlan, nestedScopePlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateUnifiedTableState(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            CreateUnifiedTableState(
+                nestedScopePlan,
+                [CreateRow(345L, 910L, "Blue")],
+                [],
+                deletes:
+                [
+                    new MergeRowDelete(
+                        StableRowIdentityValue: null,
+                        Values: CreateRow(345L, 910L, "Blue").Values
+                    ),
+                ]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Be(nestedScopePlan.DeleteByParentSql);
+        GetParameterValue(writeSession.Commands[0], "@School_DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(910L);
+        GetParameterValue(writeSession.Commands[0], "@FavoriteColor").Should().Be("Blue");
+    }
+
+    [Test]
     public async Task It_deletes_root_extension_child_collection_rows_when_root_extension_scope_is_omitted_in_unified_merge_results()
     {
         var rootPlan = CreateRootPlan();
@@ -1563,6 +1599,7 @@ public class Given_Relational_Write_Persister
             "SchoolAddressPeriod" => CreatePeriodPlan(),
             "SchoolExtensionIntervention" => CreateExtensionCollectionPlan(),
             "SchoolExtensionAddress" => CreateCollectionExtensionScopePlan(),
+            "SchoolAddressFavoriteColor" => CreateMultiParentDeleteScopePlan(),
             "SchoolExtensionAddressService" => CreateCollectionAlignedExtensionChildCollectionPlan(),
             _ => throw new InvalidOperationException($"Unsupported table '{tableModel.Table.Name}'."),
         };
@@ -1818,6 +1855,72 @@ public class Given_Relational_Write_Persister
                     """,
             },
         };
+    }
+
+    private static TableWritePlan CreateMultiParentDeleteScopePlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("sample"), "SchoolAddressFavoriteColor"),
+            new JsonPathExpression("$.addresses[*]._ext.sample.favoriteColor", []),
+            new TableKey(
+                "PK_SchoolAddressFavoriteColor",
+                [
+                    new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("BaseCollectionItemId"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+            [
+                CreateColumn("School_DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("BaseCollectionItemId", ColumnKind.ParentKeyPart),
+                CreateColumn("FavoriteColor", ColumnKind.Scalar),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.RootExtension,
+                [new DbColumnName("School_DocumentId"), new DbColumnName("BaseCollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId"), new DbColumnName("BaseCollectionItemId")],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: """
+            insert into sample."SchoolAddressFavoriteColor" values (@School_DocumentId, @BaseCollectionItemId, @FavoriteColor)
+            """,
+            UpdateSql: """
+            update sample."SchoolAddressFavoriteColor" set "FavoriteColor" = @FavoriteColor where "School_DocumentId" = @School_DocumentId and "BaseCollectionItemId" = @BaseCollectionItemId
+            """,
+            DeleteByParentSql: """
+            delete from sample."SchoolAddressFavoriteColor" where "School_DocumentId" = @School_DocumentId and "BaseCollectionItemId" = @BaseCollectionItemId
+            """,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.ParentKeyPart(1),
+                    "BaseCollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.favoriteColor", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "FavoriteColor"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
     }
 
     private static TableWritePlan CreatePeriodPlan()

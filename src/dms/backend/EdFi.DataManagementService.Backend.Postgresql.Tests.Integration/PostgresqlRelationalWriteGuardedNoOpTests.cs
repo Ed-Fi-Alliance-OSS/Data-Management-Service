@@ -3,17 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -361,6 +365,40 @@ file sealed class GuardedNoOpPreLoadContentVersionBumpCurrentStateLoader(
     }
 }
 
+file sealed class GuardedNoOpFixedStoredStateProjectionInvoker(
+    ImmutableArray<StoredScopeState> storedScopeStates,
+    ImmutableArray<VisibleStoredCollectionRow> visibleStoredCollectionRows
+) : IStoredStateProjectionInvoker
+{
+    private readonly ImmutableArray<StoredScopeState> _storedScopeStates = storedScopeStates;
+    private readonly ImmutableArray<VisibleStoredCollectionRow> _visibleStoredCollectionRows =
+        visibleStoredCollectionRows;
+
+    public ProfileAppliedWriteContext ProjectStoredState(
+        JsonNode storedDocument,
+        ProfileAppliedWriteRequest request,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+    ) =>
+        new(
+            Request: request,
+            VisibleStoredBody: storedDocument.DeepClone(),
+            StoredScopeStates: _storedScopeStates,
+            VisibleStoredCollectionRows: _visibleStoredCollectionRows
+        );
+}
+
+file sealed class GuardedNoOpUnexpectedStoredStateProjectionInvoker : IStoredStateProjectionInvoker
+{
+    public ProfileAppliedWriteContext ProjectStoredState(
+        JsonNode storedDocument,
+        ProfileAppliedWriteRequest request,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+    ) =>
+        throw new InvalidOperationException(
+            "Stored-state projection should not run for create-new profiled requests."
+        );
+}
+
 internal sealed record GuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
@@ -401,6 +439,52 @@ file static class GuardedNoOpIntegrationTestSupport
 {
     public const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
+
+    public const string RootOnlyRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS"
+        }
+        """;
+
+    public const string RootExtensionRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "_ext": {
+            "sample": {
+              "campusCode": "North"
+            }
+          }
+        }
+        """;
+
+    public const string AddressCollectionRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            },
+            {
+              "city": "Dallas"
+            }
+          ]
+        }
+        """;
+
+    public const string DeleteDallasAddressRequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            {
+              "city": "Austin"
+            }
+          ]
+        }
+        """;
 
     public const string RequestBodyJson = """
         {
@@ -537,13 +621,14 @@ file static class GuardedNoOpIntegrationTestSupport
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId
-    ) => CreateCreateRequest(mappingSet, documentUuid, traceId, RequestBodyJson);
+    ) => CreateCreateRequest(mappingSet, documentUuid, traceId, RequestBodyJson, null);
 
     public static UpsertRequest CreateCreateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId,
-        string requestBodyJson
+        string requestBodyJson,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
@@ -556,20 +641,22 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         );
 
     public static UpdateRequest CreateUpdateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId
-    ) => CreateUpdateRequest(mappingSet, documentUuid, traceId, RequestBodyJson);
+    ) => CreateUpdateRequest(mappingSet, documentUuid, traceId, RequestBodyJson, null);
 
     public static UpdateRequest CreateUpdateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId,
-        string requestBodyJson
+        string requestBodyJson,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
@@ -582,7 +669,8 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         );
 
     public static UpsertRequest CreatePostAsUpdateRequest(
@@ -590,14 +678,15 @@ file static class GuardedNoOpIntegrationTestSupport
         DocumentUuid documentUuid,
         string traceId,
         ReferentialId referentialId
-    ) => CreatePostAsUpdateRequest(mappingSet, documentUuid, traceId, referentialId, RequestBodyJson);
+    ) => CreatePostAsUpdateRequest(mappingSet, documentUuid, traceId, referentialId, RequestBodyJson, null);
 
     public static UpsertRequest CreatePostAsUpdateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId,
         ReferentialId referentialId,
-        string requestBodyJson
+        string requestBodyJson,
+        BackendProfileWriteContext? backendProfileWriteContext = null
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
@@ -610,8 +699,208 @@ file static class GuardedNoOpIntegrationTestSupport
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new GuardedNoOpUpdateCascadeHandler(),
             ResourceAuthorizationHandler: new GuardedNoOpAllowAllResourceAuthorizationHandler(),
-            ResourceAuthorizationPathways: []
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: backendProfileWriteContext
         );
+
+    public static BackendProfileWriteContext CreateNonCreatableRootProfileWriteContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+
+        return new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody,
+                RootResourceCreatable: false,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: false
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new GuardedNoOpUnexpectedStoredStateProjectionInvoker()
+        );
+    }
+
+    public static BackendProfileWriteContext CreateRootOnlyVisibleProfileWriteContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new GuardedNoOpFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: []
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateVisibleAddressCollectionProfileWriteContext(
+        MappingSet mappingSet,
+        string requestBodyJson,
+        IReadOnlyList<string> storedVisibleCities
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var visibleRequestCollectionItems = ParseAddressCities(requestBody)
+            .Select((city, index) => CreateVisibleAddressCollectionItem(rootAddress, city, index))
+            .ToImmutableArray();
+        var visibleStoredCollectionRows = storedVisibleCities
+            .Select(city => CreateVisibleStoredAddressCollectionRow(rootAddress, city))
+            .ToImmutableArray();
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new GuardedNoOpFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: visibleStoredCollectionRows
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateRootExtensionDeleteProfileWriteContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new GuardedNoOpFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: []
+            )
+        );
+    }
 
     public static async Task<GuardedNoOpPersistedState> ReadPersistedStateAsync(
         PostgresqlGeneratedDdlTestDatabase database,
@@ -667,6 +956,25 @@ file static class GuardedNoOpIntegrationTestSupport
             WHERE "DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? GetInt64(rows[0], "Count")
+            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
+    }
+
+    public static async Task<long> ReadSchoolExtensionCountAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        var rows = await database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "Count"
+            FROM "sample"."SchoolExtension"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
         );
 
         return rows.Count == 1
@@ -838,6 +1146,48 @@ file static class GuardedNoOpIntegrationTestSupport
 
         return value;
     }
+
+    private static IReadOnlyList<string> ParseAddressCities(JsonNode requestBody) =>
+        requestBody["addresses"]
+            ?.AsArray()
+            .Select(addressNode =>
+                addressNode?["city"]?.GetValue<string>()
+                ?? throw new InvalidOperationException(
+                    "Expected each request address item to include a non-null 'city'."
+                )
+            )
+            .ToArray()
+        ?? throw new InvalidOperationException(
+            "Expected request body to include an 'addresses' array for profiled address tests."
+        );
+
+    private static VisibleRequestCollectionItem CreateVisibleAddressCollectionItem(
+        ScopeInstanceAddress rootAddress,
+        string city,
+        int requestIndex
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*]",
+                rootAddress,
+                [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+            ),
+            Creatable: true,
+            RequestJsonPath: $"$.addresses[{requestIndex}]"
+        );
+
+    private static VisibleStoredCollectionRow CreateVisibleStoredAddressCollectionRow(
+        ScopeInstanceAddress rootAddress,
+        string city
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*]",
+                rootAddress,
+                [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+            ),
+            HiddenMemberPaths: []
+        );
 }
 
 internal abstract class GuardedNoOpGeneratedDdlFixtureTestBase
@@ -2213,5 +2563,543 @@ internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A
             coordinator.ReleaseCommit();
             await pendingCommitTask;
         }
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Relational_Create_With_A_Focused_Stable_Key_Fixture_And_A_Non_Creatable_Root
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000010")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpsertResult _createResult = null!;
+    private long _documentCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        _createResult = await ExecuteCreateAsync();
+        _documentCount = await GuardedNoOpIntegrationTestSupport.ReadDocumentCountAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_rejects_the_profiled_create_before_any_document_rows_are_committed()
+    {
+        _createResult.Should().BeOfType<UpsertResult.UpsertFailureNotAuthorized>();
+        _createResult
+            .As<UpsertResult.UpsertFailureNotAuthorized>()
+            .ErrorMessages.Should()
+            .Equal("The profile does not allow creating new instances of this resource.");
+        _documentCount.Should().Be(0);
+    }
+
+    private async Task<UpsertResult> ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledCreateRejected",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-create-rejected",
+                GuardedNoOpIntegrationTestSupport.RootOnlyRequestBodyJson,
+                GuardedNoOpIntegrationTestSupport.CreateNonCreatableRootProfileWriteContext(
+                    _mappingSet,
+                    GuardedNoOpIntegrationTestSupport.RootOnlyRequestBodyJson
+                )
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000011")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        await ExecuteCreateAsync();
+        _stateBeforeUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+
+        _updateResult = await ExecuteUpdateAsync();
+
+        _stateAfterUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_short_circuits_the_profiled_put_as_a_guarded_no_op()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled PUT should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_keeps_the_persisted_rowsets_and_content_version_unchanged()
+    {
+        _stateAfterUpdate.Should().BeEquivalentTo(_stateBeforeUpdate);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledGuardedNoOpPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-guarded-no-op-put-create",
+                GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledGuardedNoOpPut",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-guarded-no-op-put-update",
+                GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson,
+                GuardedNoOpIntegrationTestSupport.CreateVisibleAddressCollectionProfileWriteContext(
+                    _mappingSet,
+                    GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson,
+                    ["Austin", "Dallas"]
+                )
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000012")
+    );
+    private static readonly DocumentUuid IncomingSchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000013")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
+    private UpsertResult _postAsUpdateResult = null!;
+    private long _incomingDocumentUuidCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        await ExecuteCreateAsync();
+        _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+
+        var persistedReferentialIdentity =
+            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
+                _database,
+                _stateBeforePostAsUpdate.Document.DocumentId,
+                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
+            );
+
+        _postAsUpdateResult = await ExecutePostAsUpdateAsync(
+            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+        );
+
+        _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            ExistingSchoolDocumentUuid.Value
+        );
+        _incomingDocumentUuidCount = await GuardedNoOpIntegrationTestSupport.ReadDocumentCountAsync(
+            _database,
+            IncomingSchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_short_circuits_the_profiled_post_as_update_as_a_guarded_no_op()
+    {
+        var failureMessage = _postAsUpdateResult is UpsertResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled POST-as-update should succeed";
+
+        _postAsUpdateResult.Should().BeOfType<UpsertResult.UpdateSuccess>(failureMessage);
+        _postAsUpdateResult
+            .As<UpsertResult.UpdateSuccess>()
+            .ExistingDocumentUuid.Should()
+            .Be(ExistingSchoolDocumentUuid);
+        _incomingDocumentUuidCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_the_existing_persisted_rowsets_and_content_version_unchanged()
+    {
+        _stateAfterPostAsUpdate.Should().BeEquivalentTo(_stateBeforePostAsUpdate);
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledGuardedNoOpPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                ExistingSchoolDocumentUuid,
+                "pg-profiled-guarded-no-op-post-as-update-create",
+                GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpsertResult> ExecutePostAsUpdateAsync(ReferentialId referentialId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledGuardedNoOpPostAsUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreatePostAsUpdateRequest(
+                _mappingSet,
+                IncomingSchoolDocumentUuid,
+                "pg-profiled-guarded-no-op-post-as-update",
+                referentialId,
+                GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson,
+                GuardedNoOpIntegrationTestSupport.CreateVisibleAddressCollectionProfileWriteContext(
+                    _mappingSet,
+                    GuardedNoOpIntegrationTestSupport.AddressCollectionRequestBodyJson,
+                    ["Austin", "Dallas"]
+                )
+            )
+        );
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Root_Extension_Delete_With_A_Focused_Stable_Key_Fixture
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000014")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpdateResult _updateResult = null!;
+    private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
+    private GuardedNoOpPersistedState _stateAfterUpdate = null!;
+    private long _schoolExtensionCountBeforeUpdate;
+    private long _schoolExtensionCountAfterUpdate;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+
+        await ExecuteCreateAsync();
+        _stateBeforeUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+        _schoolExtensionCountBeforeUpdate =
+            await GuardedNoOpIntegrationTestSupport.ReadSchoolExtensionCountAsync(
+                _database,
+                _stateBeforeUpdate.Document.DocumentId
+            );
+        _updateResult = await ExecuteDeleteAsync();
+        _stateAfterUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+        _schoolExtensionCountAfterUpdate =
+            await GuardedNoOpIntegrationTestSupport.ReadSchoolExtensionCountAsync(
+                _database,
+                _stateAfterUpdate.Document.DocumentId
+            );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_applies_the_profiled_update_successfully()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled root-extension delete should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_deletes_the_visible_absent_root_extension_row_and_preserves_the_base_school_state()
+    {
+        _schoolExtensionCountBeforeUpdate.Should().Be(1);
+        _schoolExtensionCountAfterUpdate.Should().Be(0);
+        _stateAfterUpdate.School.Should().BeEquivalentTo(_stateBeforeUpdate.School);
+        _stateAfterUpdate.Document.DocumentUuid.Should().Be(_stateBeforeUpdate.Document.DocumentUuid);
+        _stateAfterUpdate.Document.ResourceKeyId.Should().Be(_stateBeforeUpdate.Document.ResourceKeyId);
+        _stateAfterUpdate.DocumentCount.Should().Be(_stateBeforeUpdate.DocumentCount);
+        _stateAfterUpdate.Addresses.Should().BeEmpty();
+        _stateAfterUpdate.ExtensionAddresses.Should().BeEmpty();
+    }
+
+    private async Task ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledAlignedScopeDelete",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var createResult = await repository.UpsertDocument(
+            GuardedNoOpIntegrationTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-root-extension-delete-create",
+                GuardedNoOpIntegrationTestSupport.RootExtensionRequestBodyJson
+            )
+        );
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteDeleteAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfiledAlignedScopeDelete",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            GuardedNoOpIntegrationTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-root-extension-delete-update",
+                GuardedNoOpIntegrationTestSupport.RootOnlyRequestBodyJson,
+                GuardedNoOpIntegrationTestSupport.CreateRootExtensionDeleteProfileWriteContext(
+                    _mappingSet,
+                    GuardedNoOpIntegrationTestSupport.RootOnlyRequestBodyJson
+                )
+            )
+        );
     }
 }

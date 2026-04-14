@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -16,6 +17,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -160,6 +162,18 @@ file static class MssqlSurveyRuntimeIntegrationTestSupport
 
         return string.Join("; ", documentFailures.Concat(descriptorFailures));
     }
+}
+
+file sealed class MssqlSurveyRuntimeUnexpectedStoredStateProjectionInvoker : IStoredStateProjectionInvoker
+{
+    public ProfileAppliedWriteContext ProjectStoredState(
+        JsonNode storedDocument,
+        ProfileAppliedWriteRequest request,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+    ) =>
+        throw new InvalidOperationException(
+            "Stored-state projection should not run for create-new profiled requests."
+        );
 }
 
 internal sealed record MssqlSurveyRuntimeSeedData(
@@ -851,4 +865,173 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
 
     private static string ReadRequiredString(object? value) =>
         value as string ?? throw new InvalidOperationException("Expected a non-null string value.");
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[NonParallelizable]
+public class Given_A_Mssql_Profiled_Relational_Create_With_A_Non_Creatable_Root_And_The_Authoritative_Sample_School_Fixture
+{
+    private const string RequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "nameOfInstitution": "Lincoln High"
+        }
+        """;
+
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000020")
+    );
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ResourceInfo _resourceInfo = null!;
+    private ResourceSchema _resourceSchema = null!;
+    private UpsertResult _createResult = null!;
+    private long _documentCount;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlSurveyRuntimeIntegrationTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlSurveyRuntimeIntegrationTestSupport.CreateServiceProvider();
+
+        var (projectSchema, resourceSchema) = MssqlSurveyRuntimeIntegrationTestSupport.GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "ed-fi",
+            "School"
+        );
+
+        _resourceInfo = MssqlSurveyRuntimeIntegrationTestSupport.CreateResourceInfo(
+            projectSchema,
+            resourceSchema
+        );
+        _resourceSchema = resourceSchema;
+
+        _createResult = await ExecuteCreateAsync();
+        _documentCount = await ReadDocumentCountAsync(SchoolDocumentUuid.Value);
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_rejects_the_profiled_create_before_any_document_rows_are_committed()
+    {
+        _createResult.Should().BeOfType<UpsertResult.UpsertFailureNotAuthorized>();
+        _createResult
+            .As<UpsertResult.UpsertFailureNotAuthorized>()
+            .ErrorMessages.Should()
+            .Equal("The profile does not allow creating new instances of this resource.");
+        _documentCount.Should().Be(0);
+    }
+
+    private async Task<UpsertResult> ExecuteCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+        var request = new UpsertRequest(
+            ResourceInfo: _resourceInfo,
+            DocumentInfo: MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
+                requestBody,
+                _resourceInfo,
+                _resourceSchema,
+                _mappingSet
+            ),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId("mssql-profiled-school-create-rejected"),
+            DocumentUuid: SchoolDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new MssqlSurveyRuntimeNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: CreateNonCreatableRootProfileWriteContext(requestBody)
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpsertDocument(request);
+    }
+
+    private BackendProfileWriteContext CreateNonCreatableRootProfileWriteContext(JsonNode requestBody)
+    {
+        var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+
+        return new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody.DeepClone(),
+                RootResourceCreatable: false,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: false
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new MssqlSurveyRuntimeUnexpectedStoredStateProjectionInvoker()
+        );
+    }
+
+    private void SetSelectedInstance(IServiceProvider serviceProvider)
+    {
+        serviceProvider
+            .GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfiledSchoolCreateRejected",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+    }
+
+    private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
+    {
+        return await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", documentUuid)
+        );
+    }
 }
