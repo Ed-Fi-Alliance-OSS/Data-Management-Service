@@ -91,6 +91,8 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
     }
 
     private readonly NpgsqlDataSource _dataSource;
+    private bool _disposed;
+    private bool _dropDatabaseOnDispose = true;
 
     public string DatabaseName { get; }
 
@@ -99,10 +101,24 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
     public static async Task<PostgresqlGeneratedDdlTestDatabase> CreateEmptyAsync()
     {
         var databaseName = GenerateUniqueDatabaseName();
-        var adminConnectionString = BuildAdminConnectionString();
         var connectionString = BuildConnectionString(databaseName);
 
-        await CreateDatabaseAsync(adminConnectionString, databaseName);
+        await CreateDatabaseAsync(databaseName);
+
+        return new(databaseName, connectionString, NpgsqlDataSource.Create(connectionString));
+    }
+
+    public static async Task<PostgresqlGeneratedDdlTestDatabase> CreateFromTemplateAsync(
+        string templateDatabaseName,
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(templateDatabaseName);
+
+        var databaseName = GenerateUniqueDatabaseName();
+        var connectionString = BuildConnectionString(databaseName);
+
+        await CreateDatabaseAsync(databaseName, templateDatabaseName, commandTimeoutSeconds);
 
         return new(databaseName, connectionString, NpgsqlDataSource.Create(connectionString));
     }
@@ -371,18 +387,57 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         await _dataSource.DisposeAsync();
         NpgsqlConnection.ClearAllPools();
-        await DropDatabaseIfExistsAsync(BuildAdminConnectionString(), DatabaseName);
+
+        if (_dropDatabaseOnDispose)
+        {
+            await DropDatabaseIfExistsAsync(DatabaseName);
+        }
+
+        _disposed = true;
     }
 
-    private static async Task CreateDatabaseAsync(string adminConnectionString, string databaseName)
+    internal async Task DetachAsync()
     {
-        await using var connection = new NpgsqlConnection(adminConnectionString);
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _dataSource.DisposeAsync();
+        NpgsqlConnection.ClearAllPools();
+        _dropDatabaseOnDispose = false;
+        _disposed = true;
+    }
+
+    internal static Task DropDatabaseIfExistsAsync(string databaseName)
+    {
+        return DropDatabaseIfExistsAsync(BuildAdminConnectionString(), databaseName);
+    }
+
+    private static async Task CreateDatabaseAsync(
+        string databaseName,
+        string? templateDatabaseName = null,
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+    )
+    {
+        await using var connection = new NpgsqlConnection(BuildAdminConnectionString());
         await connection.OpenAsync();
 
         await using var command = connection.CreateCommand();
-        command.CommandText = $"CREATE DATABASE {QuoteIdentifier(databaseName)}";
+        command.CommandText = templateDatabaseName is null
+            ? $"CREATE DATABASE {QuoteIdentifier(databaseName)}"
+            : $"""
+                CREATE DATABASE {QuoteIdentifier(databaseName)}
+                TEMPLATE {QuoteIdentifier(templateDatabaseName)}
+                """;
+        command.CommandTimeout = commandTimeoutSeconds;
         await command.ExecuteNonQueryAsync();
     }
 
