@@ -1182,6 +1182,20 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
 
+        // Validate 1:1 coverage: every request candidate must match a VisibleRequestCollectionItem.
+        // If Core drops a visible request item, the unmatched candidate would be silently ignored and
+        // its matching current row would be treated as a visible delete — corrupting data.
+        if (candidatesByIdentity.Count != requestCandidates.Count)
+        {
+            var unmatchedCount = requestCandidates.Count - candidatesByIdentity.Count;
+            return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                $"Profile merge for collection scope '{jsonScope}' has {requestCandidates.Count} "
+                    + $"request candidate(s) but only {candidatesByIdentity.Count} matched "
+                    + $"VisibleRequestCollectionItems ({unmatchedCount} unmatched). "
+                    + "Core must emit a VisibleRequestCollectionItem for each visible request collection row.",
+            ]);
+        }
+
         foreach (var (currentRow, currentIndex, storedRow) in visibleCurrentRows)
         {
             var currentIdentityKey = BuildSemanticIdentityKeyFromRow(mergePlan, currentRow, storedRow);

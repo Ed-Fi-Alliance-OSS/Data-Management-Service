@@ -246,26 +246,15 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
         CancellationToken cancellationToken
     )
     {
-        var currentRowsByPhysicalIdentity = RelationalWritePersisterShared.GetRowsByPhysicalIdentityOrThrow(
-            tableState.ComparableCurrentRowset,
-            "current",
-            tableState.TableWritePlan
-        );
+        // Execute all updates unconditionally. The merge's update rows may contain
+        // UnresolvedCollectionItemId tokens in parent FK columns (resolved later by the
+        // batching infrastructure), making Values-based change detection unreliable.
+        // The guarded no-op already short-circuits true no-ops before the persister runs.
         var rowsToUpdate = tableState
             .Updates.Select(update => new MergeTableRow(
                 update.Values,
                 ImmutableArray<FlattenedWriteValue>.Empty
             ))
-            .Where(updateRow =>
-            {
-                var physicalIdentity = RelationalWritePersisterShared.ResolvePhysicalRowIdentityKey(
-                    tableState.TableWritePlan,
-                    updateRow
-                );
-
-                return !currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow)
-                    || !currentRow.Values.SequenceEqual(updateRow.Values);
-            })
             .ToList();
 
         if (rowsToUpdate.Count > 0)

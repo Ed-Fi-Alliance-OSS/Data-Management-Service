@@ -53,14 +53,14 @@ internal static class NoProfileSyntheticProfileAdapter
         var catalogArray = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
         var catalog = catalogArray.ToImmutableArray();
 
-        // Build lookup indexes
-        var catalogByJsonScope = catalogArray.ToDictionary(d => d.JsonScope, StringComparer.Ordinal);
-
         // Phase 1: Build presence sets — which table-backed scopes did the flattened set materialize?
+        // Only root-level non-collection scope keys are needed because BuildStoredScopeStates
+        // only probes root-level keys (collection/extension-collection scopes are handled by
+        // VisibleStoredCollectionRows, not StoredScopeStates).
         var flattenedScopeKeys = BuildFlattenedPresenceSet(flattenedWriteSet);
 
         // Phase 2: Build RequestScopeStates
-        var requestScopeStates = BuildRequestScopeStates(flattenedWriteSet, catalog, catalogByJsonScope);
+        var requestScopeStates = BuildRequestScopeStates(flattenedWriteSet, catalog);
 
         // Phase 3: Build VisibleRequestCollectionItems
         var visibleRequestCollectionItems = BuildVisibleRequestCollectionItems(flattenedWriteSet);
@@ -108,62 +108,14 @@ internal static class NoProfileSyntheticProfileAdapter
         var rootJsonScope = flattenedWriteSet.RootRow.TableWritePlan.TableModel.JsonScope.Canonical;
         keys.Add($"{rootJsonScope}|");
 
-        // Root extension rows
+        // Root extension rows — the only other non-collection table-backed scopes
         foreach (var extRow in flattenedWriteSet.RootRow.RootExtensionRows)
         {
             var extJsonScope = extRow.TableWritePlan.TableModel.JsonScope.Canonical;
             keys.Add($"{extJsonScope}|");
-
-            AddCollectionCandidateKeys(keys, extRow.CollectionCandidates, ancestorContextKey: "");
         }
-
-        // Collection candidates (recursive) and attached aligned scopes
-        AddCollectionCandidateKeys(
-            keys,
-            flattenedWriteSet.RootRow.CollectionCandidates,
-            ancestorContextKey: ""
-        );
 
         return keys;
-    }
-
-    /// <summary>
-    /// Recursively adds collection candidate and attached-aligned-scope keys to the presence set.
-    /// </summary>
-    private static void AddCollectionCandidateKeys(
-        HashSet<string> keys,
-        IReadOnlyList<CollectionWriteCandidate> candidates,
-        string ancestorContextKey
-    )
-    {
-        foreach (var candidate in candidates)
-        {
-            var jsonScope = candidate.TableWritePlan.TableModel.JsonScope.Canonical;
-
-            // Build the candidate's own ancestor context key (extends the parent's key)
-            var candidateAncestorKey = ExtendAncestorContextKeyFromCandidate(
-                ancestorContextKey,
-                jsonScope,
-                candidate.SemanticIdentityValues,
-                candidate.SemanticIdentityPresenceFlags
-            );
-
-            // The collection table itself is a scope
-            keys.Add($"{jsonScope}|{candidateAncestorKey}");
-
-            // Attached aligned scopes
-            foreach (var attachedScope in candidate.AttachedAlignedScopeData)
-            {
-                var attachedJsonScope = attachedScope.TableWritePlan.TableModel.JsonScope.Canonical;
-                keys.Add($"{attachedJsonScope}|{candidateAncestorKey}");
-
-                // Recurse into collections under attached aligned scopes
-                AddCollectionCandidateKeys(keys, attachedScope.CollectionCandidates, candidateAncestorKey);
-            }
-
-            // Recurse into nested collections
-            AddCollectionCandidateKeys(keys, candidate.CollectionCandidates, candidateAncestorKey);
-        }
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -177,8 +129,7 @@ internal static class NoProfileSyntheticProfileAdapter
     /// </summary>
     private static ImmutableArray<RequestScopeState> BuildRequestScopeStates(
         FlattenedWriteSet flattenedWriteSet,
-        ImmutableArray<CompiledScopeDescriptor> catalog,
-        IReadOnlyDictionary<string, CompiledScopeDescriptor> catalogByJsonScope
+        ImmutableArray<CompiledScopeDescriptor> catalog
     )
     {
         var states = new List<RequestScopeState>();
@@ -203,8 +154,7 @@ internal static class NoProfileSyntheticProfileAdapter
                 states,
                 extRow.CollectionCandidates,
                 ImmutableArray<AncestorCollectionInstance>.Empty,
-                catalog,
-                catalogByJsonScope
+                catalog
             );
         }
 
@@ -229,8 +179,7 @@ internal static class NoProfileSyntheticProfileAdapter
             states,
             flattenedWriteSet.RootRow.CollectionCandidates,
             ImmutableArray<AncestorCollectionInstance>.Empty,
-            catalog,
-            catalogByJsonScope
+            catalog
         );
 
         return [.. states];
@@ -244,8 +193,7 @@ internal static class NoProfileSyntheticProfileAdapter
         List<RequestScopeState> states,
         IReadOnlyList<CollectionWriteCandidate> candidates,
         ImmutableArray<AncestorCollectionInstance> parentAncestors,
-        ImmutableArray<CompiledScopeDescriptor> catalog,
-        IReadOnlyDictionary<string, CompiledScopeDescriptor> catalogByJsonScope
+        ImmutableArray<CompiledScopeDescriptor> catalog
     )
     {
         foreach (var candidate in candidates)
@@ -314,19 +262,12 @@ internal static class NoProfileSyntheticProfileAdapter
                     states,
                     attachedScope.CollectionCandidates,
                     childAncestors,
-                    catalog,
-                    catalogByJsonScope
+                    catalog
                 );
             }
 
             // Recurse into nested collections
-            AddCollectionContextScopeStates(
-                states,
-                candidate.CollectionCandidates,
-                childAncestors,
-                catalog,
-                catalogByJsonScope
-            );
+            AddCollectionContextScopeStates(states, candidate.CollectionCandidates, childAncestors, catalog);
         }
     }
 
@@ -828,52 +769,4 @@ internal static class NoProfileSyntheticProfileAdapter
 
         return false;
     }
-
-    /// <summary>
-    /// Extends an ancestor context key with a new collection item's identity.
-    /// Mirrors <c>RelationalWriteMergeSynthesizer.ExtendAncestorContextKey</c>
-    /// but uses CLR-domain values from the flattened candidate.
-    /// </summary>
-    private static string ExtendAncestorContextKeyFromCandidate(
-        string currentKey,
-        string collectionJsonScope,
-        IReadOnlyList<object?> semanticIdentityValues,
-        ImmutableArray<bool> semanticIdentityPresenceFlags
-    )
-    {
-        var sb = new System.Text.StringBuilder();
-
-        if (currentKey.Length > 0)
-        {
-            sb.Append(currentKey);
-            sb.Append('\0');
-        }
-
-        sb.Append(collectionJsonScope);
-
-        for (var i = 0; i < semanticIdentityValues.Count; i++)
-        {
-            sb.Append('\0');
-            sb.Append(semanticIdentityPresenceFlags[i] ? '1' : '0');
-            sb.Append('\0');
-            sb.Append(NormalizeClrValueForIdentity(semanticIdentityValues[i]));
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Normalizes a CLR value for use in canonical key construction.
-    /// Mirrors <c>RelationalWriteMergeSynthesizer.NormalizeClrValueForIdentity</c>.
-    /// </summary>
-    private static string NormalizeClrValueForIdentity(object? value) =>
-        value switch
-        {
-            null => "",
-            string s => s,
-            int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            bool b => b ? "true" : "false",
-            _ => value.ToString() ?? "",
-        };
 }
