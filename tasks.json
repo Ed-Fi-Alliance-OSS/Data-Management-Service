@@ -123,7 +123,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalWriteAuthoritativeSampleStudentSchoolAssociationSmokeTests.cs` and confirm DB creation moved out of per-test setup.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Write Smoke",
