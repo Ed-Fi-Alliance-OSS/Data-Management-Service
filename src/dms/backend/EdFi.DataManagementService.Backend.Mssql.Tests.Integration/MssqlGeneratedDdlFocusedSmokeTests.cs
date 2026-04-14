@@ -37,8 +37,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     private IReadOnlyList<MssqlForeignKeyMetadata> _interventionVisitForeignKeys = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _sponsorReferenceForeignKeys = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -49,11 +49,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-
-        // Reapply the emitted DDL so each smoke test also covers idempotent apply.
-        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
-
-        _seedData = await SeedSmokeRowsAsync();
         _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "SchoolAddressPeriod");
         _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
@@ -69,13 +64,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _seedData = await SeedSmokeRowsAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
             await _database.DisposeAsync();
-            _database = null!;
         }
     }
 

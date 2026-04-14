@@ -72,8 +72,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private string? _contactExtensionAddressSchoolDistrictCollectionItemDefault;
     private string? _contactExtensionAddressTermCollectionItemDefault;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -84,11 +84,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-
-        // Reapply the emitted DDL so each smoke test also covers idempotent apply.
-        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
-
-        _seedData = await SeedSmokeRowsAsync();
         _contactExtensionAuthorForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
             "ContactExtensionAuthor"
@@ -128,13 +123,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _seedData = await SeedSmokeRowsAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
             await _database.DisposeAsync();
-            _database = null!;
         }
     }
 
@@ -171,6 +172,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         generatedCollectionItemIds.Should().OnlyContain(collectionItemId => collectionItemId > 0);
         generatedCollectionItemIds.Should().OnlyHaveUniqueItems();
+    }
+
+    [Test]
+    public async Task It_should_reapply_the_same_generated_ddl_without_duplicate_generated_seed_rows()
+    {
+        await _database.ResetAsync();
+
+        var effectiveSchemaCountBefore = await CountRowsAsync(
+            "SELECT COUNT(*) FROM [dms].[EffectiveSchema];"
+        );
+        var resourceKeyCountBefore = await CountRowsAsync("SELECT COUNT(*) FROM [dms].[ResourceKey];");
+        var schemaComponentCountBefore = await CountRowsAsync(
+            "SELECT COUNT(*) FROM [dms].[SchemaComponent];"
+        );
+
+        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
+
+        var effectiveSchemaCountAfter = await CountRowsAsync("SELECT COUNT(*) FROM [dms].[EffectiveSchema];");
+        var resourceKeyCountAfter = await CountRowsAsync("SELECT COUNT(*) FROM [dms].[ResourceKey];");
+        var schemaComponentCountAfter = await CountRowsAsync("SELECT COUNT(*) FROM [dms].[SchemaComponent];");
+
+        effectiveSchemaCountAfter.Should().Be(effectiveSchemaCountBefore);
+        resourceKeyCountAfter.Should().Be(resourceKeyCountBefore);
+        schemaComponentCountAfter.Should().Be(schemaComponentCountBefore);
     }
 
     [Test]
