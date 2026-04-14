@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -19,6 +21,10 @@ internal sealed record MssqlGeneratedDdlFixture(
 
 internal static class MssqlGeneratedDdlFixtureLoader
 {
+    private static readonly ConcurrentDictionary<string, Lazy<MssqlGeneratedDdlFixture>> _cache = new(
+        StringComparer.Ordinal
+    );
+
     public static MssqlGeneratedDdlFixture LoadFromRepositoryRelativePath(string relativePath)
     {
         return LoadFromFixtureDirectory(
@@ -32,14 +38,30 @@ internal static class MssqlGeneratedDdlFixtureLoader
     public static MssqlGeneratedDdlFixture LoadFromFixtureDirectory(string fixtureDirectory)
     {
         var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
-        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
-            resolvedFixtureDirectory
+        var lazyFixture = _cache.GetOrAdd(
+            resolvedFixtureDirectory,
+            static path => new(() => LoadFixture(path), LazyThreadSafetyMode.ExecutionAndPublication)
         );
+
+        try
+        {
+            return lazyFixture.Value;
+        }
+        catch
+        {
+            _cache.TryRemove(new(resolvedFixtureDirectory, lazyFixture));
+            throw;
+        }
+    }
+
+    private static MssqlGeneratedDdlFixture LoadFixture(string fixtureDirectory)
+    {
+        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
         var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
             SqlDialect.Mssql
         );
 
-        return new(resolvedFixtureDirectory, effectiveSchemaSet, modelSet, generatedDdl);
+        return new(fixtureDirectory, effectiveSchemaSet, modelSet, generatedDdl);
     }
 }
