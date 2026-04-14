@@ -86,36 +86,41 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
                     _ => [],
                 };
 
-                entries.Add(
-                    new MultiHopEntry(
-                        ResourceName: resource.ResourceName,
-                        PersonType: resolvedPath.Kind.ToString(),
-                        SecurableElementJsonPaths: jsonPaths.ToArray(),
-                        JoinPath: resolvedPath
-                            .Steps.Select(step =>
-                            {
-                                var targetTable =
-                                    step.TargetTable
-                                    ?? throw new InvalidOperationException(
-                                        $"Multi-hop step for {resource.ResourceName} has null TargetTable"
-                                    );
-                                var targetColumn =
-                                    step.TargetColumnName
-                                    ?? throw new InvalidOperationException(
-                                        $"Multi-hop step for {resource.ResourceName} has null TargetColumnName"
-                                    );
+                var joinSteps = resolvedPath
+                    .Steps.Select(step =>
+                    {
+                        var targetTable =
+                            step.TargetTable
+                            ?? throw new InvalidOperationException(
+                                $"Multi-hop step for {resource.ResourceName} has null TargetTable"
+                            );
+                        var targetColumn =
+                            step.TargetColumnName
+                            ?? throw new InvalidOperationException(
+                                $"Multi-hop step for {resource.ResourceName} has null TargetColumnName"
+                            );
 
-                                return new JoinStep(
-                                    SourceTable: step.SourceTable.ToString(),
-                                    SourceColumn: step.SourceColumnName.Value,
-                                    TargetTable: targetTable.ToString(),
-                                    TargetColumn: targetColumn.Value
-                                );
-                            })
-                            .ToArray(),
-                        HopCount: resolvedPath.Steps.Count
-                    )
-                );
+                        return new JoinStep(
+                            SourceTable: step.SourceTable.ToString(),
+                            SourceColumn: step.SourceColumnName.Value,
+                            TargetTable: targetTable.ToString(),
+                            TargetColumn: targetColumn.Value
+                        );
+                    })
+                    .ToArray();
+
+                foreach (var jsonPath in jsonPaths)
+                {
+                    entries.Add(
+                        new MultiHopEntry(
+                            ResourceName: resource.ResourceName,
+                            PersonType: resolvedPath.Kind.ToString(),
+                            SecurableElementJsonPath: jsonPath,
+                            JoinPath: joinSteps,
+                            HopCount: resolvedPath.Steps.Count
+                        )
+                    );
+                }
             }
         }
 
@@ -203,7 +208,57 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     }
 
     [Test]
-    public void It_should_process_all_concrete_resources_with_securable_elements()
+    public void It_should_resolve_every_person_kind_present_in_securable_elements()
+    {
+        foreach (var concreteResource in _modelSet.ConcreteResourcesInNameOrder)
+        {
+            var resource = concreteResource.RelationalModel.Resource;
+            var elements = concreteResource.SecurableElements;
+
+            if (
+                !_mappingSet.SecurableElementColumnPathsByResource.TryGetValue(
+                    resource,
+                    out var resolvedPaths
+                )
+            )
+            {
+                continue;
+            }
+
+            var resolvedPersonKinds = resolvedPaths
+                .Where(p => _personKinds.Contains(p.Kind))
+                .Select(p => p.Kind)
+                .ToHashSet();
+
+            var expectedPersonKinds = new List<SecurableElementKind>();
+            if (elements.Student.Count > 0)
+            {
+                expectedPersonKinds.Add(SecurableElementKind.Student);
+            }
+            if (elements.Contact.Count > 0)
+            {
+                expectedPersonKinds.Add(SecurableElementKind.Contact);
+            }
+            if (elements.Staff.Count > 0)
+            {
+                expectedPersonKinds.Add(SecurableElementKind.Staff);
+            }
+
+            foreach (var expectedKind in expectedPersonKinds)
+            {
+                resolvedPersonKinds
+                    .Should()
+                    .Contain(
+                        expectedKind,
+                        $"resource '{resource.ResourceName}' has {expectedKind} securable elements "
+                            + "but no resolved column path for that kind"
+                    );
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_process_all_concrete_resources_with_person_securable_elements()
     {
         // Person resources (Student, Contact, Staff) have securable elements but
         // don't produce mapping entries because they ARE the authorization anchor.
@@ -212,21 +267,25 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
             StringComparer.Ordinal
         );
 
-        var resourcesWithSecurableElements = _modelSet
-            .ConcreteResourcesInNameOrder.Where(r => r.SecurableElements.HasAny)
+        var resourcesWithPersonSecurableElements = _modelSet
+            .ConcreteResourcesInNameOrder.Where(r =>
+                r.SecurableElements.Student.Count > 0
+                || r.SecurableElements.Contact.Count > 0
+                || r.SecurableElements.Staff.Count > 0
+            )
             .Select(r => r.RelationalModel.Resource)
             .Where(r => !personResourceNames.Contains(r.ResourceName))
             .ToHashSet();
 
         var resourcesInMapping = _mappingSet.SecurableElementColumnPathsByResource.Keys.ToHashSet();
 
-        resourcesWithSecurableElements
+        resourcesWithPersonSecurableElements
             .Should()
             .BeSubsetOf(
                 resourcesInMapping,
-                "every concrete resource with securable elements (excluding person "
-                    + "resources that are their own authorization anchor) should have "
-                    + "a resolved entry in the mapping set"
+                "every concrete resource with person securable elements (excluding "
+                    + "person resources that are their own authorization anchor) should "
+                    + "have a resolved entry in the mapping set"
             );
     }
 
@@ -277,7 +336,7 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     private sealed record MultiHopEntry(
         string ResourceName,
         string PersonType,
-        string[] SecurableElementJsonPaths,
+        string SecurableElementJsonPath,
         JoinStep[] JoinPath,
         int HopCount
     );

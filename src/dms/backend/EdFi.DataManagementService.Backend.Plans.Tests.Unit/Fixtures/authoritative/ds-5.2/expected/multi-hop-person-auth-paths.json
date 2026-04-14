@@ -2,9 +2,7 @@
   {
     "resourceName": "StudentAssessmentRegistrationBatteryPartAssociation",
     "personType": "Student",
-    "securableElementJsonPaths": [
-      "$.studentAssessmentRegistrationReference.studentUniqueId"
-    ],
+    "securableElementJsonPath": "$.studentAssessmentRegistrationReference.studentUniqueId",
     "joinPath": [
       {
         "sourceTable": "edfi.StudentAssessmentRegistrationBatteryPartAssociation",
@@ -30,9 +28,7 @@
   {
     "resourceName": "CourseTranscript",
     "personType": "Student",
-    "securableElementJsonPaths": [
-      "$.studentAcademicRecordReference.studentUniqueId"
-    ],
+    "securableElementJsonPath": "$.studentAcademicRecordReference.studentUniqueId",
     "joinPath": [
       {
         "sourceTable": "edfi.CourseTranscript",
@@ -52,9 +48,7 @@
   {
     "resourceName": "Grade",
     "personType": "Student",
-    "securableElementJsonPaths": [
-      "$.studentSectionAssociationReference.studentUniqueId"
-    ],
+    "securableElementJsonPath": "$.studentSectionAssociationReference.studentUniqueId",
     "joinPath": [
       {
         "sourceTable": "edfi.Grade",
@@ -74,9 +68,7 @@
   {
     "resourceName": "StudentAssessmentEducationOrganizationAssociation",
     "personType": "Student",
-    "securableElementJsonPaths": [
-      "$.studentAssessmentReference.studentUniqueId"
-    ],
+    "securableElementJsonPath": "$.studentAssessmentReference.studentUniqueId",
     "joinPath": [
       {
         "sourceTable": "edfi.StudentAssessmentEducationOrganizationAssociation",
@@ -96,9 +88,7 @@
   {
     "resourceName": "StudentAssessmentRegistration",
     "personType": "Student",
-    "securableElementJsonPaths": [
-      "$.studentEducationOrganizationAssociationReference.studentUniqueId"
-    ],
+    "securableElementJsonPath": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
     "joinPath": [
       {
         "sourceTable": "edfi.StudentAssessmentRegistration",
