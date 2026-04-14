@@ -657,6 +657,46 @@ file static class ProfileRuntimeContextFactory
             HiddenMemberPaths: []
         );
 
+    private static ScopeInstanceAddress CreateAddressParentAddress(string city) =>
+        new(
+            "$.addresses[*]",
+            [
+                new AncestorCollectionInstance(
+                    "$.addresses[*]",
+                    [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+                ),
+            ]
+        );
+
+    private static VisibleRequestCollectionItem CreateVisiblePeriodCollectionItem(
+        string parentCity,
+        string periodName,
+        int parentAddressIndex,
+        int periodIndex
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*].periods[*]",
+                CreateAddressParentAddress(parentCity),
+                [new SemanticIdentityPart("periodName", JsonValue.Create(periodName)!, IsPresent: true)]
+            ),
+            Creatable: true,
+            RequestJsonPath: $"$.addresses[{parentAddressIndex}].periods[{periodIndex}]"
+        );
+
+    private static VisibleStoredCollectionRow CreateVisibleStoredPeriodCollectionRow(
+        string parentCity,
+        string periodName
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*].periods[*]",
+                CreateAddressParentAddress(parentCity),
+                [new SemanticIdentityPart("periodName", JsonValue.Create(periodName)!, IsPresent: true)]
+            ),
+            HiddenMemberPaths: []
+        );
+
     public static BackendProfileWriteContext CreateVisibleRowUpdateWithHiddenRowPreservationContext(
         MappingSet mappingSet,
         string requestBodyJson
@@ -669,7 +709,8 @@ file static class ProfileRuntimeContextFactory
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
-            CreateVisibleAddressCollectionItem(rootAddress, "Houston", 1)
+            CreateVisibleAddressCollectionItem(rootAddress, "Houston", 1),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0)
         );
 
         var request = new ProfileAppliedWriteRequest(
@@ -709,7 +750,11 @@ file static class ProfileRuntimeContextFactory
                         HiddenMemberPaths: []
                     ),
                 ],
-                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                ]
             )
         );
     }
@@ -761,7 +806,11 @@ file static class ProfileRuntimeContextFactory
                         HiddenMemberPaths: []
                     ),
                 ],
-                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                ]
             )
         );
     }
@@ -778,7 +827,9 @@ file static class ProfileRuntimeContextFactory
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
-            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1)
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0),
+            CreateVisiblePeriodCollectionItem("Dallas", "Spring", parentAddressIndex: 1, periodIndex: 0)
         );
 
         var request = new ProfileAppliedWriteRequest(
@@ -832,6 +883,8 @@ file static class ProfileRuntimeContextFactory
                 [
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                    CreateVisibleStoredPeriodCollectionRow("Dallas", "Spring"),
                 ]
             )
         );
@@ -1010,6 +1063,8 @@ file static class ProfileRuntimeContextFactory
                 [
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                    CreateVisibleStoredPeriodCollectionRow("Dallas", "Spring"),
                 ]
             )
         );
@@ -1083,7 +1138,21 @@ file static class ProfileRuntimeContextFactory
         var rootAddress = new ScopeInstanceAddress("$", []);
 
         var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
-        var interventionParentAddress = new ScopeInstanceAddress("$._ext.sample.interventions[*]", []);
+        var interventionParentAddress = new ScopeInstanceAddress(
+            "$._ext.sample.interventions[*]",
+            [
+                new AncestorCollectionInstance(
+                    "$._ext.sample.interventions[*]",
+                    [
+                        new SemanticIdentityPart(
+                            "interventionCode",
+                            JsonValue.Create("NEW-INT")!,
+                            IsPresent: true
+                        ),
+                    ]
+                ),
+            ]
+        );
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleInterventionCollectionItem(extensionAddress, "NEW-INT", 0, creatable: false),
@@ -1105,6 +1174,11 @@ file static class ProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -1126,6 +1200,11 @@ file static class ProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: []
                     ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
                 ],
                 visibleStoredCollectionRows: []
             )
@@ -1144,7 +1223,9 @@ file static class ProfileRuntimeContextFactory
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
-            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1)
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0),
+            CreateVisiblePeriodCollectionItem("Dallas", "Spring", parentAddressIndex: 1, periodIndex: 0)
         );
 
         var request = new ProfileAppliedWriteRequest(
@@ -1171,7 +1252,7 @@ file static class ProfileRuntimeContextFactory
                     new StoredScopeState(
                         Address: rootAddress,
                         Visibility: ProfileVisibilityKind.VisiblePresent,
-                        HiddenMemberPaths: ["$.shortName"]
+                        HiddenMemberPaths: ["shortName"]
                     ),
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
@@ -1188,6 +1269,8 @@ file static class ProfileRuntimeContextFactory
                 [
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                    CreateVisibleStoredPeriodCollectionRow("Dallas", "Spring"),
                 ]
             )
         );

@@ -571,6 +571,46 @@ file static class MssqlProfileRuntimeContextFactory
             HiddenMemberPaths: []
         );
 
+    private static ScopeInstanceAddress CreateAddressParentAddress(string city) =>
+        new(
+            "$.addresses[*]",
+            [
+                new AncestorCollectionInstance(
+                    "$.addresses[*]",
+                    [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+                ),
+            ]
+        );
+
+    private static VisibleRequestCollectionItem CreateVisiblePeriodCollectionItem(
+        string parentCity,
+        string periodName,
+        int parentAddressIndex,
+        int periodIndex
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*].periods[*]",
+                CreateAddressParentAddress(parentCity),
+                [new SemanticIdentityPart("periodName", JsonValue.Create(periodName)!, IsPresent: true)]
+            ),
+            Creatable: true,
+            RequestJsonPath: $"$.addresses[{parentAddressIndex}].periods[{periodIndex}]"
+        );
+
+    private static VisibleStoredCollectionRow CreateVisibleStoredPeriodCollectionRow(
+        string parentCity,
+        string periodName
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$.addresses[*].periods[*]",
+                CreateAddressParentAddress(parentCity),
+                [new SemanticIdentityPart("periodName", JsonValue.Create(periodName)!, IsPresent: true)]
+            ),
+            HiddenMemberPaths: []
+        );
+
     public static BackendProfileWriteContext CreateGuardedNoOpPutContext(
         MappingSet mappingSet,
         string requestBodyJson
@@ -583,7 +623,9 @@ file static class MssqlProfileRuntimeContextFactory
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
-            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1)
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0),
+            CreateVisiblePeriodCollectionItem("Dallas", "Spring", parentAddressIndex: 1, periodIndex: 0)
         );
 
         var request = new ProfileAppliedWriteRequest(
@@ -627,6 +669,8 @@ file static class MssqlProfileRuntimeContextFactory
                 [
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
                     CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                    CreateVisibleStoredPeriodCollectionRow("Dallas", "Spring"),
                 ]
             )
         );
@@ -653,7 +697,8 @@ file static class MssqlProfileRuntimeContextFactory
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0),
-            CreateVisibleAddressCollectionItem(rootAddress, "Houston", 1)
+            CreateVisibleAddressCollectionItem(rootAddress, "Houston", 1),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0)
         );
 
         var request = new ProfileAppliedWriteRequest(
@@ -693,7 +738,11 @@ file static class MssqlProfileRuntimeContextFactory
                         HiddenMemberPaths: []
                     ),
                 ],
-                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                ]
             )
         );
     }
