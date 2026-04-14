@@ -1607,18 +1607,21 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     }
 
     /// <summary>
-    /// Second pass over StoredScopeStates: emits deletes for VisibleAbsent separate-table scopes
-    /// that were not visited by buffer iteration (because the flattener dropped them).
+    /// Second pass over StoredScopeStates: handles separate-table scopes that were not visited
+    /// by buffer iteration (because the flattener dropped them from the profiled selected body).
+    /// VisibleAbsent scopes emit deletes; Hidden scopes preserve current rows and descendants.
     /// </summary>
     /// <remarks>
-    /// This closes a pre-existing profile-mode gap: when a scope is present in current state
-    /// but omitted from the request body, the flattener produces no buffer entry for it, so the
-    /// merge's normal VisibleAbsent branch (which fires during buffer iteration) never triggers.
-    /// The second pass walks StoredScopeStates and emits deletes for any VisibleAbsent entries
-    /// whose scope was not already handled by buffer iteration.
+    /// This closes a profile-mode gap: when a scope is present in current state but omitted from
+    /// the request body, the flattener produces no buffer entry for it, so the merge's normal
+    /// buffer-iteration branches never trigger. The second pass walks StoredScopeStates and:
+    ///   - VisibleAbsent: emits deletes (the scope was visible but the client omitted it).
+    ///   - Hidden: preserves current rows and all descendants so that hidden data is not lost
+    ///     and guarded no-op comparison remains correct.
     ///
     /// Shortcut: only separate-table scopes are handled here. Inlined-scope VisibleAbsent
-    /// handling remains in the buffer iteration path. See commit message for rationale.
+    /// handling remains in the buffer iteration path. Hidden collection scopes under visible
+    /// parents are handled by SynthesizeProfileCollectionCandidates' current-state discovery.
     /// </remarks>
     private static RelationalWriteMergeSynthesisOutcome? ApplyStoredScopeStatesSecondPass(
         ImmutableArray<StoredScopeState> storedScopeStates,
@@ -1636,9 +1639,12 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         foreach (var storedState in storedScopeStates)
         {
-            // Only process VisibleAbsent scopes — all other visibilities are handled
-            // by buffer iteration or are not relevant for deletion.
-            if (storedState.Visibility != ProfileVisibilityKind.VisibleAbsent)
+            // Only process VisibleAbsent (delete) and Hidden (preserve) scopes.
+            // VisiblePresent scopes are handled by buffer iteration.
+            if (
+                storedState.Visibility != ProfileVisibilityKind.VisibleAbsent
+                && storedState.Visibility != ProfileVisibilityKind.Hidden
+            )
             {
                 continue;
             }
@@ -1692,20 +1698,42 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 continue;
             }
 
-            // Separate-table non-collection scope: emit delete if current state has data
+            // Resolve the current row for this scope instance
             var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
                 matchedTablePlan,
                 storedState.Address,
                 tablePlansByJsonScope
             );
 
-            if (currentRow is not null)
+            if (currentRow is null)
             {
-                tableStateBuilders[matchedTablePlan.TableModel.Table]
-                    .AddDelete(new MergeRowDelete(StableRowIdentityValue: null, Values: currentRow.Values));
+                continue;
             }
 
-            // No comparable merged row when deleting — child collections are implicitly removed
+            if (storedState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                // Hidden scope: preserve the current row and all descendant rows so that
+                // hidden data is not lost and guarded no-op row counts remain correct.
+                var comparableValues = ProjectComparableValues(matchedTablePlan, currentRow.Values);
+                tableStateBuilders[matchedTablePlan.TableModel.Table]
+                    .AddPreservedRow(new MergePreservedRow(currentRow.Values, OriginalOrdinal: 0));
+                var hiddenRow = new MergeTableRow(currentRow.Values, comparableValues);
+                tableStateBuilders[matchedTablePlan.TableModel.Table].AddComparableMergedRow(hiddenRow);
+                PreserveHiddenRowDescendants(
+                    matchedTablePlan,
+                    hiddenRow,
+                    currentStateProjection,
+                    tableStateBuilders,
+                    compiledScopeCatalog
+                );
+            }
+            else
+            {
+                // VisibleAbsent: emit delete — the scope was visible but the client omitted it.
+                tableStateBuilders[matchedTablePlan.TableModel.Table]
+                    .AddDelete(new MergeRowDelete(StableRowIdentityValue: null, Values: currentRow.Values));
+                // No comparable merged row when deleting — child collections are implicitly removed
+            }
         }
 
         return null;

@@ -347,18 +347,13 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     public void It_preserves_extension_row_when_scope_is_hidden()
     {
         var fixture = CreateFixtureWithExtension();
-        // The flattened write set still has a root extension row buffer entry, but the scope is hidden
+        // Hidden scopes are absent from the profiled WritableRequestBody, so the flattener
+        // produces no buffer entry. The second pass in the merge handles preservation.
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
                 [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
-                rootExtensionRows:
-                [
-                    new RootExtensionWriteRowBuffer(
-                        fixture.RootExtensionPlan,
-                        [Literal(345L), Literal("ignored"), Literal("ignored")]
-                    ),
-                ]
+                rootExtensionRows: []
             )
         );
         var currentState = CreateCurrentStateWithExtension(
@@ -418,6 +413,10 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         LiteralValue(preserved.Values[0]).Should().Be(345L);
         LiteralValue(preserved.Values[1]).Should().Be("preserved-ext");
         LiteralValue(preserved.Values[2]).Should().Be("PRESERVED_HIDDEN");
+
+        // ComparableMergedRowset includes the hidden row so guarded no-op comparison is correct
+        extensionState.ComparableMergedRowset.Should().ContainSingle();
+        extensionState.ComparableCurrentRowset.Should().ContainSingle();
     }
 
     [Test]
@@ -1231,34 +1230,14 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     {
         var fixture = CreateExtensionWithChildCollectionFixture();
 
-        // Build a flattened write set with root + extension + extension child collection candidates
+        // Hidden extension scopes are absent from the profiled WritableRequestBody, so the
+        // flattener produces no buffer entry. The second pass preserves the extension row and
+        // PreserveHiddenRowDescendants preserves child collection rows via CompiledScopeCatalog.
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
                 [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
-                rootExtensionRows:
-                [
-                    new RootExtensionWriteRowBuffer(
-                        fixture.RootExtensionPlan,
-                        [Literal(345L), Literal("ignored-ext"), Literal("ignored-hidden")],
-                        collectionCandidates:
-                        [
-                            CreateCollectionCandidate(
-                                fixture.ExtensionChildCollectionPlan,
-                                requestOrder: 0,
-                                semanticIdentityValues: ["Thing1"],
-                                values:
-                                [
-                                    Literal(345L),
-                                    FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
-                                    Literal(0),
-                                    Literal("Thing1"),
-                                    Literal("ignored-value"),
-                                ]
-                            ),
-                        ]
-                    ),
-                ]
+                rootExtensionRows: []
             )
         );
 
