@@ -286,6 +286,29 @@ internal static class NoProfileSyntheticProfileAdapter
                     )
                 );
 
+                // Emit states for inlined scopes whose immediate parent is this
+                // attached aligned scope. The merge synthesizer's
+                // CollectInlinedScopePathsForCollectionInstance processes aligned
+                // scope tables and expects per-instance RequestScopeState entries
+                // for any inlined children (e.g. nested _ext containers).
+                var inlinedScopesUnderAttached = catalog.Where(d =>
+                    d.ScopeKind == ScopeKind.NonCollection
+                    && d.ImmediateParentJsonScope is not null
+                    && string.Equals(d.ImmediateParentJsonScope, attachedJsonScope, StringComparison.Ordinal)
+                );
+
+                foreach (var inlinedScope in inlinedScopesUnderAttached)
+                {
+                    var inlinedAddress = new ScopeInstanceAddress(inlinedScope.JsonScope, childAncestors);
+                    states.Add(
+                        new RequestScopeState(
+                            inlinedAddress,
+                            ProfileVisibilityKind.VisiblePresent,
+                            Creatable: true
+                        )
+                    );
+                }
+
                 // Recurse into collections under attached aligned scopes
                 AddCollectionContextScopeStates(
                     states,
