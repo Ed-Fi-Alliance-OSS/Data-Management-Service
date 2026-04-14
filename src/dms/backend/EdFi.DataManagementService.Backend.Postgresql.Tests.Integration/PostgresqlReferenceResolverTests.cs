@@ -29,7 +29,6 @@ file sealed class TestHostApplicationLifetime : IHostApplicationLifetime
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_PostgresqlReferenceResolver
 {
     private PostgresqlReferenceResolverTestDatabase _database = null!;

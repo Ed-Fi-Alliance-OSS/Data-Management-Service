@@ -421,7 +421,6 @@ internal sealed record PropagatedReferenceIdentityCascadeReferenceShape(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture
 {
     private static readonly ContentTypeDefinition ReadableProfileContentType = new(
@@ -1808,7 +1807,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_Cascade_With_The_Authoritative_Sample_StudentEducationOrganizationAssociation_Fixture
 {
     private const long EducationOrganizationId = 100;

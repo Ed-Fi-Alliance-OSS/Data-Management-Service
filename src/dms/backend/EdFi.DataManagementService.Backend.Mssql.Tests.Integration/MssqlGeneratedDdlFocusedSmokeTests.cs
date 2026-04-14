@@ -23,7 +23,6 @@ internal sealed record FocusedStableKeySmokeSeedData(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath =

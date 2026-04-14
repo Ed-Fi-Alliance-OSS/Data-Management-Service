@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]
-[NonParallelizable]
 public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_EffectiveSchemaHash_Mismatch_Detection
 {
     private const string FixtureRelativePath =
@@ -54,9 +53,7 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
 
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
-        var reader = new MssqlDatabaseFingerprintReader(
-            NullLogger<MssqlDatabaseFingerprintReader>.Instance
-        );
+        var reader = new MssqlDatabaseFingerprintReader(NullLogger<MssqlDatabaseFingerprintReader>.Instance);
 
         _fingerprint = await reader.ReadFingerprintAsync(_database.ConnectionString);
     }
@@ -76,6 +73,8 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
     {
         _fingerprint.Should().NotBeNull();
         _fingerprint!.EffectiveSchemaHash.Should().NotBeNullOrEmpty();
-        _fingerprint.EffectiveSchemaHash.Should().Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
+        _fingerprint
+            .EffectiveSchemaHash.Should()
+            .Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
     }
 }

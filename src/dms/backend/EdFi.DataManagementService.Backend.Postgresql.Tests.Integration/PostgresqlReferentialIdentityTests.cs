@@ -13,7 +13,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class PostgresqlReferentialIdentityTests
 {
     private const string FixtureRelativePath =

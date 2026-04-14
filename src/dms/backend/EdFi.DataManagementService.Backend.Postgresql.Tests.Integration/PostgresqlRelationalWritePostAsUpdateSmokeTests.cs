@@ -238,7 +238,6 @@ internal sealed record FocusedPostAsUpdateSchoolExtensionAddressRow(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =
@@ -600,7 +599,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
@@ -2382,7 +2380,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =
@@ -2819,7 +2816,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =
@@ -3191,7 +3187,6 @@ internal sealed record AuthoritativeSchoolYearTypeRow(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Ds52_SchoolYearType_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
@@ -3581,7 +3576,6 @@ internal sealed record AuthoritativeStudentAcademicRecordPersistedState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

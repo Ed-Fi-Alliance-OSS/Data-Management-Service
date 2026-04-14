@@ -461,7 +461,6 @@ internal sealed record AuthoritativeSampleStudentSectionAssociationPersistedStat
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSectionAssociation_Fixture
 {
     private const long SchoolId = 100;

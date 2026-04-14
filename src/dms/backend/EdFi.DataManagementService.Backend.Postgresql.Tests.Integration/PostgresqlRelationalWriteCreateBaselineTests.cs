@@ -120,7 +120,6 @@ internal sealed record PersistedSchoolExtensionInterventionVisitRow(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Create_Baseline_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =

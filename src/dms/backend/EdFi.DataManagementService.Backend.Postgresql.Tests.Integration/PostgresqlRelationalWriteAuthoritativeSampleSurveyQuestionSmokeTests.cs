@@ -268,7 +268,6 @@ internal sealed record AuthoritativeSampleSurveyQuestionPersistedState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_SurveyQuestion_Fixture
 {
     private const int SchoolYear = 2024;

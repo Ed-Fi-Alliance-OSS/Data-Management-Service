@@ -30,7 +30,6 @@ internal sealed record PostgresqlGeneratedDdlDocumentState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_PostgresqlGeneratedDdlTestDatabase
 {
     private const string FixtureRelativePath =

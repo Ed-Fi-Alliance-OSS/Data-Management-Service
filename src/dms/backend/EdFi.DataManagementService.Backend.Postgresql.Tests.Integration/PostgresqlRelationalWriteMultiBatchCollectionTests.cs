@@ -596,7 +596,6 @@ public abstract class MultiBatchCollectionsGeneratedDdlFixtureTestBase
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture
     : MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {
@@ -753,7 +752,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture
     : MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {
@@ -902,7 +900,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_Extension_Create_With_A_Focused_Stable_Key_Fixture
     : MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {

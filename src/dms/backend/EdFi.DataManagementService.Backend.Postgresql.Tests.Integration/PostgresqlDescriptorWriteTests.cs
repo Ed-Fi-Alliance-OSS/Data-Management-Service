@@ -22,7 +22,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_PostgresqlDescriptorWriteHandler
 {
     private PostgresqlReferenceResolverTestDatabase _database = null!;

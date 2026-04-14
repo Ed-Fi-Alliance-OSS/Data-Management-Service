@@ -33,7 +33,6 @@ internal sealed record DocumentStampState(
 );
 
 [TestFixture]
-[NonParallelizable]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

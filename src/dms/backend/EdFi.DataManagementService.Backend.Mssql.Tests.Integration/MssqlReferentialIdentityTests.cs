@@ -12,7 +12,6 @@ using static EdFi.DataManagementService.Backend.Tests.Common.ReferentialIdTestHe
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
-[NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 public class MssqlReferentialIdentityTests

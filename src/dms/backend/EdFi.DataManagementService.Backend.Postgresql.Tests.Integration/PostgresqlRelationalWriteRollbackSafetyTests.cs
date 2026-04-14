@@ -275,7 +275,6 @@ file static class RollbackSafetyIntegrationTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(

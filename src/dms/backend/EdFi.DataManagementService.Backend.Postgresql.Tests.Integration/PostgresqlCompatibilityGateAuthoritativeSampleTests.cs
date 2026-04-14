@@ -8,7 +8,6 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
-[NonParallelizable]
 [Category("CompatibilityGate")]
 public class PostgresqlCompatibilityGateAuthoritativeSampleTests : PostgresqlCompatibilityGateTestsBase
 {

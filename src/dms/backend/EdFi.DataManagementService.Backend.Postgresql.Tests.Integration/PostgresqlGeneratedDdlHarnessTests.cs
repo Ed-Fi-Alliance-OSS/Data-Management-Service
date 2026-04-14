@@ -9,7 +9,6 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
-[NonParallelizable]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =

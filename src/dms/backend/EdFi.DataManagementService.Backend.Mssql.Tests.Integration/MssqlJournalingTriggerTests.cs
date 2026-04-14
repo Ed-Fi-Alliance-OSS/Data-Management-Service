@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_A_Provisioned_Mssql_Database_With_Journaling_Trigger
 {
     private const string FixtureRelativePath =
@@ -30,12 +29,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Journaling_Trigger
             );
         }
 
-        var fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            FixtureRelativePath
-        );
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
-            fixture.GeneratedDdl
-        );
+        var fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
     }
 
     [SetUp]
@@ -130,20 +125,21 @@ public class Given_A_Provisioned_Mssql_Database_With_Journaling_Trigger
         );
 
         journalRows.Should().HaveCount(3, "one journal row per updated document");
-        journalRows.Select(r => r["ChangeVersion"]).Distinct().Should().HaveCount(3, "each ChangeVersion must be distinct");
+        journalRows
+            .Select(r => r["ChangeVersion"])
+            .Distinct()
+            .Should()
+            .HaveCount(3, "each ChangeVersion must be distinct");
 
-        var journalRow1 = journalRows
-            .Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[0]);
+        var journalRow1 = journalRows.Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[0]);
         Convert.ToInt16(journalRow1["ResourceKeyId"]).Should().Be(resourceKeyId);
         Convert.ToInt64(journalRow1["ChangeVersion"]).Should().BeGreaterThan(0);
 
-        var journalRow2 = journalRows
-            .Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[1]);
+        var journalRow2 = journalRows.Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[1]);
         Convert.ToInt16(journalRow2["ResourceKeyId"]).Should().Be(resourceKeyId);
         Convert.ToInt64(journalRow2["ChangeVersion"]).Should().BeGreaterThan(0);
 
-        var journalRow3 = journalRows
-            .Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[2]);
+        var journalRow3 = journalRows.Single(r => Convert.ToInt64(r["DocumentId"]) == documentIds[2]);
         Convert.ToInt16(journalRow3["ResourceKeyId"]).Should().Be(resourceKeyId);
         Convert.ToInt64(journalRow3["ChangeVersion"]).Should().BeGreaterThan(0);
     }

@@ -49,7 +49,6 @@ internal sealed record SurveySessionReferenceState(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";

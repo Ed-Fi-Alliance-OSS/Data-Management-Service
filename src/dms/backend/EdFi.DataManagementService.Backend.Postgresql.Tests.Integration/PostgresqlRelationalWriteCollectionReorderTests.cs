@@ -421,7 +421,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(

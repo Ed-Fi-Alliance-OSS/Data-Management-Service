@@ -22,7 +22,6 @@ internal sealed record FocusedStableKeySmokeSeedData(
 );
 
 [TestFixture]
-[NonParallelizable]
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath =

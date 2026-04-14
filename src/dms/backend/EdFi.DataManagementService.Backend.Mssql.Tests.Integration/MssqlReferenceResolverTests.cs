@@ -18,7 +18,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_MssqlReferenceResolver
 {
     private MssqlReferenceResolverTestDatabase _database = null!;

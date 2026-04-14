@@ -18,7 +18,6 @@ internal sealed record MssqlGeneratedDdlBaselineMutableCounts(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_MssqlGeneratedDdlBaselineDatabase
 {
     private const string FixtureRelativePath =
