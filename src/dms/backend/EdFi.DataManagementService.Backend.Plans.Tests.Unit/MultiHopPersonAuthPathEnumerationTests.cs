@@ -16,12 +16,14 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 /// Enumerates all DS 5.2 resources with multi-hop Person authorization join paths
 /// and produces a JSON report for the DMS-1064 ticket.
 /// </summary>
-[TestFixture]
-public class Given_MultiHop_Person_Auth_Path_Enumeration
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_MultiHop_Person_Auth_Path_Enumeration(SqlDialect dialect)
 {
     private const string ProjectFileName = "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj";
 
-    private const string GoldenFileName = "multi-hop-person-auth-paths.json";
+    private string GoldenFileName { get; } =
+        $"multi-hop-person-auth-paths-{dialect.ToString().ToLowerInvariant()}.json";
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -44,7 +46,7 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     [OneTimeSetUp]
     public void Setup()
     {
-        (_modelSet, _mappingSet) = Ds52FixtureHelper.BuildAndCompile();
+        (_modelSet, _mappingSet) = Ds52FixtureHelper.BuildAndCompile(dialect);
         _multiHopEntries = BuildMultiHopEntries();
     }
 
@@ -185,6 +187,12 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
             );
     }
 
+    /// <summary>
+    /// Validates the resolver's BFS shortest-path contract: each person kind should
+    /// produce exactly one resolved column path per resource. A failure here in a
+    /// future schema version is an expected early warning that the resolver's
+    /// one-path-per-kind assumption no longer holds, not necessarily a bug.
+    /// </summary>
     [Test]
     public void It_should_have_at_most_one_resolved_path_per_person_kind_per_resource()
     {

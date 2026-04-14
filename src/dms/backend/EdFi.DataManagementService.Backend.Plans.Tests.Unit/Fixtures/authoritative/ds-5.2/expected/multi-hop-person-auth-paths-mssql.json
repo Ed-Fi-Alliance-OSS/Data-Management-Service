@@ -12,7 +12,7 @@
       },
       {
         "sourceTable": "edfi.StudentAssessmentRegistration",
-        "sourceColumn": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+        "sourceColumn": "ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId",
         "targetTable": "edfi.StudentEducationOrganizationAssessmentAccommodation",
         "targetColumn": "DocumentId"
       },
