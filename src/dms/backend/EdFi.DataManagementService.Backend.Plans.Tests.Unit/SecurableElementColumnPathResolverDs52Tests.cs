@@ -16,18 +16,13 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_SecurableElementColumnPathResolver_with_DS52_schema
 {
-    private const string Ds52FixturePath =
-        "../Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json";
-
     private DerivedRelationalModelSet _modelSet = null!;
     private MappingSet _mappingSet = null!;
 
     [OneTimeSetUp]
     public void Setup()
     {
-        _modelSet = RuntimePlanFixtureModelSetBuilder.Build(Ds52FixturePath, SqlDialect.Pgsql);
-        var compiler = new MappingSetCompiler();
-        _mappingSet = compiler.Compile(_modelSet);
+        (_modelSet, _mappingSet) = Ds52FixtureHelper.BuildAndCompile();
     }
 
     private ConcreteResourceModel FindResource(string resourceName)

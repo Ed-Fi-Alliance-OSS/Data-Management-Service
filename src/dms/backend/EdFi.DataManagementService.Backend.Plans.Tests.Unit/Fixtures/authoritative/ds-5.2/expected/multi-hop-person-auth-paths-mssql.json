@@ -1,0 +1,108 @@
+[
+  {
+    "resourceName": "StudentAssessmentRegistrationBatteryPartAssociation",
+    "personType": "Student",
+    "securableElementJsonPath": "$.studentAssessmentRegistrationReference.studentUniqueId",
+    "joinPath": [
+      {
+        "sourceTable": "edfi.StudentAssessmentRegistrationBatteryPartAssociation",
+        "sourceColumn": "StudentAssessmentRegistration_DocumentId",
+        "targetTable": "edfi.StudentAssessmentRegistration",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentAssessmentRegistration",
+        "sourceColumn": "ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId",
+        "targetTable": "edfi.StudentEducationOrganizationAssessmentAccommodation",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentEducationOrganizationAssessmentAccommodation",
+        "sourceColumn": "Student_DocumentId",
+        "targetTable": "edfi.Student",
+        "targetColumn": "DocumentId"
+      }
+    ],
+    "hopCount": 3
+  },
+  {
+    "resourceName": "CourseTranscript",
+    "personType": "Student",
+    "securableElementJsonPath": "$.studentAcademicRecordReference.studentUniqueId",
+    "joinPath": [
+      {
+        "sourceTable": "edfi.CourseTranscript",
+        "sourceColumn": "StudentAcademicRecord_DocumentId",
+        "targetTable": "edfi.StudentAcademicRecord",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentAcademicRecord",
+        "sourceColumn": "Student_DocumentId",
+        "targetTable": "edfi.Student",
+        "targetColumn": "DocumentId"
+      }
+    ],
+    "hopCount": 2
+  },
+  {
+    "resourceName": "Grade",
+    "personType": "Student",
+    "securableElementJsonPath": "$.studentSectionAssociationReference.studentUniqueId",
+    "joinPath": [
+      {
+        "sourceTable": "edfi.Grade",
+        "sourceColumn": "StudentSectionAssociation_DocumentId",
+        "targetTable": "edfi.StudentSectionAssociation",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentSectionAssociation",
+        "sourceColumn": "Student_DocumentId",
+        "targetTable": "edfi.Student",
+        "targetColumn": "DocumentId"
+      }
+    ],
+    "hopCount": 2
+  },
+  {
+    "resourceName": "StudentAssessmentEducationOrganizationAssociation",
+    "personType": "Student",
+    "securableElementJsonPath": "$.studentAssessmentReference.studentUniqueId",
+    "joinPath": [
+      {
+        "sourceTable": "edfi.StudentAssessmentEducationOrganizationAssociation",
+        "sourceColumn": "StudentAssessment_DocumentId",
+        "targetTable": "edfi.StudentAssessment",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentAssessment",
+        "sourceColumn": "Student_DocumentId",
+        "targetTable": "edfi.Student",
+        "targetColumn": "DocumentId"
+      }
+    ],
+    "hopCount": 2
+  },
+  {
+    "resourceName": "StudentAssessmentRegistration",
+    "personType": "Student",
+    "securableElementJsonPath": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+    "joinPath": [
+      {
+        "sourceTable": "edfi.StudentAssessmentRegistration",
+        "sourceColumn": "StudentEducationOrganizationAssociation_DocumentId",
+        "targetTable": "edfi.StudentEducationOrganizationAssociation",
+        "targetColumn": "DocumentId"
+      },
+      {
+        "sourceTable": "edfi.StudentEducationOrganizationAssociation",
+        "sourceColumn": "Student_DocumentId",
+        "targetTable": "edfi.Student",
+        "targetColumn": "DocumentId"
+      }
+    ],
+    "hopCount": 2
+  }
+]
