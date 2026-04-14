@@ -1698,40 +1698,76 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 continue;
             }
 
-            // Resolve the current row for this scope instance
-            var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
-                matchedTablePlan,
-                storedState.Address,
-                tablePlansByJsonScope
-            );
+            var tableStateBuilder = tableStateBuilders[matchedTablePlan.TableModel.Table];
+            IReadOnlyList<MergeTableRow> scopeCurrentRows;
 
-            if (currentRow is null)
+            if (
+                RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(matchedTablePlan)
+                && storedState.Address.AncestorCollectionInstances.IsEmpty
+            )
             {
-                continue;
+                // A scope-wide StoredScopeState for a collection-aligned extension scope
+                // applies to every current aligned row under the document, not just the
+                // first one. Hidden/VisibleAbsent second-pass handling must therefore walk
+                // the full current rowset when Core does not disambiguate by ancestors.
+                scopeCurrentRows = currentStateProjection.GetCurrentRows(matchedTablePlan);
+            }
+            else
+            {
+                var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
+                    matchedTablePlan,
+                    storedState.Address,
+                    tablePlansByJsonScope
+                );
+
+                if (currentRow is null)
+                {
+                    continue;
+                }
+
+                scopeCurrentRows = [currentRow];
+            }
+
+            if (RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(matchedTablePlan))
+            {
+                scopeCurrentRows = scopeCurrentRows
+                    .Where(row => !tableStateBuilder.HasComparableMergedRowWithPhysicalIdentity(row.Values))
+                    .ToList();
+
+                if (scopeCurrentRows.Count == 0)
+                {
+                    continue;
+                }
             }
 
             if (storedState.Visibility == ProfileVisibilityKind.Hidden)
             {
                 // Hidden scope: preserve the current row and all descendant rows so that
                 // hidden data is not lost and guarded no-op row counts remain correct.
-                var comparableValues = ProjectComparableValues(matchedTablePlan, currentRow.Values);
-                tableStateBuilders[matchedTablePlan.TableModel.Table]
-                    .AddPreservedRow(new MergePreservedRow(currentRow.Values, OriginalOrdinal: 0));
-                var hiddenRow = new MergeTableRow(currentRow.Values, comparableValues);
-                tableStateBuilders[matchedTablePlan.TableModel.Table].AddComparableMergedRow(hiddenRow);
-                PreserveHiddenRowDescendants(
-                    matchedTablePlan,
-                    hiddenRow,
-                    currentStateProjection,
-                    tableStateBuilders,
-                    compiledScopeCatalog
-                );
+                foreach (var values in scopeCurrentRows.Select(static currentRow => currentRow.Values))
+                {
+                    var comparableValues = ProjectComparableValues(matchedTablePlan, values);
+                    tableStateBuilder.AddPreservedRow(new MergePreservedRow(values, OriginalOrdinal: 0));
+                    var hiddenRow = new MergeTableRow(values, comparableValues);
+                    tableStateBuilder.AddComparableMergedRow(hiddenRow);
+                    PreserveHiddenRowDescendants(
+                        matchedTablePlan,
+                        hiddenRow,
+                        currentStateProjection,
+                        tableStateBuilders,
+                        compiledScopeCatalog
+                    );
+                }
             }
             else
             {
                 // VisibleAbsent: emit delete — the scope was visible but the client omitted it.
-                tableStateBuilders[matchedTablePlan.TableModel.Table]
-                    .AddDelete(new MergeRowDelete(StableRowIdentityValue: null, Values: currentRow.Values));
+                foreach (var values in scopeCurrentRows.Select(static currentRow => currentRow.Values))
+                {
+                    tableStateBuilder.AddDelete(
+                        new MergeRowDelete(StableRowIdentityValue: null, Values: values)
+                    );
+                }
                 // No comparable merged row when deleting — child collections are implicitly removed
             }
         }
@@ -2109,10 +2145,10 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
     /// <summary>
     /// Preserves all descendant rows under a hidden parent row.
-    /// Uses the compiled scope catalog to identify immediate children by
-    /// <see cref="CompiledScopeDescriptor.ImmediateParentJsonScope"/>, avoiding the
-    /// column-count heuristic that can produce false matches when literal identity
-    /// values collide across sibling collection tables.
+    /// Uses compiled immediate-child scope metadata where available, and falls back to
+    /// collection-aligned extension scope alignment / physical parent-scope FK shape when
+    /// the compiled JSON hierarchy does not expose the aligned base collection as the
+    /// immediate parent.
     /// </summary>
     private static void PreserveHiddenRowDescendants(
         TableWritePlan parentTablePlan,
@@ -2146,8 +2182,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         {
             var childPlan = builder.TableWritePlan;
 
-            // Only include tables that are compiled immediate children of this parent scope
-            if (!childScopes.Contains(childPlan.TableModel.JsonScope.Canonical))
+            if (!IsDirectHiddenDescendant(parentTablePlan, childPlan, childScopes))
             {
                 continue;
             }
@@ -2176,6 +2211,129 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
     }
+
+    private static bool IsDirectHiddenDescendant(
+        TableWritePlan parentTablePlan,
+        TableWritePlan childPlan,
+        HashSet<string> compiledChildScopes
+    )
+    {
+        if (compiledChildScopes.Contains(childPlan.TableModel.JsonScope.Canonical))
+        {
+            return true;
+        }
+
+        if (
+            RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(childPlan)
+            && IsAlignedToParentScope(parentTablePlan, childPlan)
+        )
+        {
+            return true;
+        }
+
+        return HasParentScopeForeignKey(parentTablePlan, childPlan);
+    }
+
+    private static bool IsAlignedToParentScope(TableWritePlan parentTablePlan, TableWritePlan childPlan)
+    {
+        var alignedBaseJsonScope = TryGetAlignedBaseJsonScope(childPlan.TableModel.JsonScope.Canonical);
+
+        return alignedBaseJsonScope is not null
+            && string.Equals(
+                alignedBaseJsonScope,
+                parentTablePlan.TableModel.JsonScope.Canonical,
+                StringComparison.Ordinal
+            );
+    }
+
+    private static bool HasParentScopeForeignKey(TableWritePlan parentTablePlan, TableWritePlan childPlan)
+    {
+        var expectedColumns = BuildParentScopeForeignKeyColumns(
+            childPlan.TableModel.IdentityMetadata,
+            parentTablePlan.TableModel
+        );
+        var expectedTargetColumns = BuildParentScopeForeignKeyTargetColumns(parentTablePlan.TableModel);
+
+        return childPlan
+            .TableModel.Constraints.OfType<TableConstraint.ForeignKey>()
+            .Any(fk =>
+                fk.TargetTable.Equals(parentTablePlan.TableModel.Table)
+                && fk.Columns.SequenceEqual(expectedColumns)
+                && fk.TargetColumns.SequenceEqual(expectedTargetColumns)
+            );
+    }
+
+    private static string? TryGetAlignedBaseJsonScope(string jsonScope)
+    {
+        if (!jsonScope.Contains("._ext.", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var segments = jsonScope.Split('.');
+        List<string> baseScopeSegments = [];
+        var index = 0;
+
+        while (index < segments.Length)
+        {
+            if (string.Equals(segments[index], "_ext", StringComparison.Ordinal))
+            {
+                if (index + 1 >= segments.Length)
+                {
+                    return null;
+                }
+
+                index += 2;
+                continue;
+            }
+
+            baseScopeSegments.Add(segments[index]);
+            index += 1;
+        }
+
+        if (baseScopeSegments.Count == 0 || baseScopeSegments.Count == segments.Length)
+        {
+            return null;
+        }
+
+        return string.Join(".", baseScopeSegments);
+    }
+
+    private static IReadOnlyList<DbColumnName> BuildParentScopeForeignKeyColumns(
+        DbTableIdentityMetadata childIdentityMetadata,
+        DbTableModel parentTable
+    )
+    {
+        if (UsesSingleColumnParentScopeForeignKey(parentTable.IdentityMetadata.TableKind))
+        {
+            return childIdentityMetadata.ImmediateParentScopeLocatorColumns;
+        }
+
+        return
+        [
+            .. childIdentityMetadata.ImmediateParentScopeLocatorColumns,
+            .. childIdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    private static IReadOnlyList<DbColumnName> BuildParentScopeForeignKeyTargetColumns(
+        DbTableModel parentTable
+    )
+    {
+        if (UsesSingleColumnParentScopeForeignKey(parentTable.IdentityMetadata.TableKind))
+        {
+            return parentTable.IdentityMetadata.PhysicalRowIdentityColumns;
+        }
+
+        return
+        [
+            .. parentTable.IdentityMetadata.PhysicalRowIdentityColumns,
+            .. parentTable.IdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    private static bool UsesSingleColumnParentScopeForeignKey(DbTableKind parentTableKind) =>
+        parentTableKind is DbTableKind.Root or DbTableKind.RootExtension;
 
     // --- Value overlay ---
 
@@ -3303,6 +3461,43 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         {
             ArgumentNullException.ThrowIfNull(row);
             _comparableMergedRows.Add(row);
+        }
+
+        public bool HasComparableMergedRowWithPhysicalIdentity(ImmutableArray<FlattenedWriteValue> values)
+        {
+            var physicalIdentityValues = ExtractPhysicalRowIdentityValues(TableWritePlan, values);
+
+            return _comparableMergedRows.Exists(row =>
+                HaveSamePhysicalIdentityValues(
+                    physicalIdentityValues,
+                    ExtractPhysicalRowIdentityValues(TableWritePlan, row.Values)
+                )
+            );
+        }
+
+        private static bool HaveSamePhysicalIdentityValues(
+            IReadOnlyList<FlattenedWriteValue> left,
+            IReadOnlyList<FlattenedWriteValue> right
+        )
+        {
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < left.Count; i++)
+            {
+                if (
+                    left[i] is not FlattenedWriteValue.Literal { Value: var leftValue }
+                    || right[i] is not FlattenedWriteValue.Literal { Value: var rightValue }
+                    || !Equals(leftValue, rightValue)
+                )
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         public RelationalWriteMergeTableState Build()

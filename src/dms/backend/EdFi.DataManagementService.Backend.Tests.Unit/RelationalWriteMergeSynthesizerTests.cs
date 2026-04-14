@@ -5786,6 +5786,237 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_preserves_hidden_collection_aligned_scope_rows_when_the_catalog_parent_link_is_missing()
+    {
+        var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("UpdatedValue1"),
+                        ],
+                        attachedAlignedScopeData:
+                        [
+                            new CandidateAttachedAlignedScopeData(
+                                fixture.AlignedExtensionScopePlan,
+                                [
+                                    Literal(345L),
+                                    Literal(100L),
+                                    Literal("requested-ext-1"),
+                                    Literal("REQ_REF_1"),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithCollectionAndAlignedExtensionScope(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "OrigValue1"],
+                [345L, 101L, 1, "Period2", "OrigValue2"],
+            ],
+            alignedExtensionScopeRows:
+            [
+                [345L, 100L, "stored-ext-1", "STORED_REF_1"],
+                [345L, 101L, "stored-ext-2", "STORED_REF_2"],
+            ]
+        );
+
+        var period1Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period1"),
+                    IsPresent: true
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [
+                new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [CreateVisibleRequestCollectionItem("$.classPeriods", "Period1")]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            [CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", [])]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var extScopeState = result.TablesInDependencyOrder[2];
+
+        extScopeState.Updates.Count().Should().BeLessOrEqualTo(1);
+        extScopeState.Inserts.Count().Should().BeLessOrEqualTo(1);
+        (extScopeState.Updates.Count() + extScopeState.Inserts.Count()).Should().Be(1);
+
+        extScopeState.PreservedRows.Should().ContainSingle();
+        LiteralValue(extScopeState.PreservedRows[0].Values[1]).Should().Be(101L);
+        LiteralValue(extScopeState.PreservedRows[0].Values[2]).Should().Be("stored-ext-2");
+        LiteralValue(extScopeState.PreservedRows[0].Values[3]).Should().Be("STORED_REF_2");
+    }
+
+    [Test]
+    public void It_preserves_all_scope_wide_hidden_collection_aligned_scope_rows_in_the_second_pass()
+    {
+        var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("UpdatedValue1"),
+                        ]
+                    ),
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 1,
+                        semanticIdentityValues: ["Period2"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(1),
+                            Literal("Period2"),
+                            Literal("UpdatedValue2"),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithCollectionAndAlignedExtensionScope(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "OrigValue1"],
+                [345L, 101L, 1, "Period2", "OrigValue2"],
+            ],
+            alignedExtensionScopeRows:
+            [
+                [345L, 100L, "stored-ext-1", "STORED_REF_1"],
+                [345L, 101L, "stored-ext-2", "STORED_REF_2"],
+            ]
+        );
+
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true)],
+            [
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period1"),
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period2"),
+            ]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", []),
+                    ProfileVisibilityKind.Hidden,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            [
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", []),
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period2", []),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var extScopeState = result.TablesInDependencyOrder[2];
+
+        extScopeState.PreservedRows.Should().HaveCount(2);
+        LiteralValue(extScopeState.PreservedRows[0].Values[1]).Should().Be(100L);
+        LiteralValue(extScopeState.PreservedRows[1].Values[1]).Should().Be(101L);
+        extScopeState.Deletes.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_returns_ContractMismatch_when_StoredScopeState_references_unknown_scope()
     {
         // Scenario: StoredScopeStates contains a VisibleAbsent entry for a scope that
