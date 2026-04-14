@@ -15,10 +15,10 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 public class Given_MssqlReferenceResolverTestDatabase
 {
-    private MssqlReferenceResolverTestDatabase? _database;
+    private MssqlReferenceResolverTestDatabase _database = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -30,22 +30,26 @@ public class Given_MssqlReferenceResolverTestDatabase
         _database = await MssqlReferenceResolverTestDatabase.CreateProvisionedAsync();
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
             await _database.DisposeAsync();
-            _database = null;
         }
     }
 
     [Test]
     public async Task It_provisions_the_minimal_resolver_schema_shape_used_by_the_shared_fixture()
     {
-        var database = _database ?? throw new InvalidOperationException("Test database not initialized.");
         var tableNames = await ReadRelationNamesAsync(
-            database.ConnectionString,
+            _database.ConnectionString,
             """
             SELECT s.name + N'.' + t.name
             FROM sys.tables t
@@ -55,7 +59,7 @@ public class Given_MssqlReferenceResolverTestDatabase
             """
         );
         var viewNames = await ReadRelationNamesAsync(
-            database.ConnectionString,
+            _database.ConnectionString,
             """
             SELECT s.name + N'.' + v.name
             FROM sys.views v
@@ -86,34 +90,39 @@ public class Given_MssqlReferenceResolverTestDatabase
     [Test]
     public async Task It_seeds_and_resets_repeatable_fixture_data_between_test_runs()
     {
-        var database = _database ?? throw new InvalidOperationException("Test database not initialized.");
-        await database.SeedAsync();
+        await _database.SeedAsync();
         await ExecuteNonQueryAsync(
-            database.ConnectionString,
+            _database.ConnectionString,
             """INSERT INTO [edfi].[Student] ([DocumentId]) VALUES (999);"""
         );
 
-        var firstSeedCounts = await ReadFixtureTableCountsAsync(database.ConnectionString);
-        var firstStudentTableCount = await ReadTableCountAsync(database.ConnectionString, "[edfi].[Student]");
+        var firstSeedCounts = await ReadFixtureTableCountsAsync(_database.ConnectionString);
+        var firstStudentTableCount = await ReadTableCountAsync(
+            _database.ConnectionString,
+            "[edfi].[Student]"
+        );
 
-        await database.ResetAsync();
+        await _database.ResetAsync();
 
-        var resetCounts = await ReadFixtureTableCountsAsync(database.ConnectionString);
-        var resetStudentTableCount = await ReadTableCountAsync(database.ConnectionString, "[edfi].[Student]");
+        var resetCounts = await ReadFixtureTableCountsAsync(_database.ConnectionString);
+        var resetStudentTableCount = await ReadTableCountAsync(
+            _database.ConnectionString,
+            "[edfi].[Student]"
+        );
 
-        await database.SeedAsync();
+        await _database.SeedAsync();
 
-        var secondSeedCounts = await ReadFixtureTableCountsAsync(database.ConnectionString);
+        var secondSeedCounts = await ReadFixtureTableCountsAsync(_database.ConnectionString);
 
         firstSeedCounts
             .Should()
             .BeEquivalentTo(
                 new Dictionary<string, long>
                 {
-                    ["dms.ResourceKey"] = database.Fixture.SeedData.ResourceKeys.Count,
-                    ["dms.Document"] = database.Fixture.SeedData.Documents.Count,
-                    ["dms.ReferentialIdentity"] = database.Fixture.SeedData.ReferentialIdentities.Count,
-                    ["dms.Descriptor"] = database.Fixture.SeedData.Descriptors.Count,
+                    ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
+                    ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
+                    ["dms.ReferentialIdentity"] = _database.Fixture.SeedData.ReferentialIdentities.Count,
+                    ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
                 }
             );
         firstStudentTableCount.Should().Be(1);

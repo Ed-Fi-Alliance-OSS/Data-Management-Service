@@ -51,7 +51,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlReferenceResolverTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlReferenceResolverTestDatabaseTests.cs` and confirm `CreateProvisionedAsync()` is not used from `[SetUp]`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~MssqlReferenceResolver\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Generated DDL",
