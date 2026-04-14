@@ -28,10 +28,16 @@ public class Given_PostgresqlDescriptorWriteHandler
     private PostgresqlReferenceResolverTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
 
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _database = await PostgresqlReferenceResolverTestDatabase.CreateProvisionedAsync();
+    }
+
     [SetUp]
     public async Task Setup()
     {
-        _database = await PostgresqlReferenceResolverTestDatabase.CreateProvisionedAsync();
+        await _database.ResetAsync();
         await _database.SeedAsync();
         _serviceProvider = CreateServiceProvider();
     }
@@ -42,11 +48,17 @@ public class Given_PostgresqlDescriptorWriteHandler
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 

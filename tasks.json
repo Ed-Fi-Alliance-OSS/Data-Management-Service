@@ -69,7 +69,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(|ApplyGeneratedDdlAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlGeneratedDdlFocusedSmokeTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlGeneratedDdlHarnessTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlGeneratedDdlAuthoritativeSmokeTests.cs`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~Generated_Ddl\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Write Smoke",
@@ -105,7 +105,7 @@
       "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteCreateBaselineTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteUpdateSemanticsTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlDescriptorWriteTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlReferentialIdentityTests.cs`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~CreateBaseline|FullyQualifiedName~UpdateSemantics|FullyQualifiedName~DescriptorWrite|FullyQualifiedName~ReferentialIdentity\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Write Smoke",

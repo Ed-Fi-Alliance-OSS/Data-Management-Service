@@ -191,12 +191,18 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesBeforeUpdate = null!;
     private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesAfterUpdate = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
         _serviceProvider = CreateServiceProvider();
 
         await ExecuteCreateAsync();
@@ -223,11 +229,17 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 

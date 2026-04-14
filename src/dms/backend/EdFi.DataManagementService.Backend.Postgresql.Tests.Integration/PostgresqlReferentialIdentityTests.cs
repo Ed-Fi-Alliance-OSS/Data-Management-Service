@@ -22,19 +22,26 @@ public class PostgresqlReferentialIdentityTests
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 
@@ -283,11 +290,7 @@ public class PostgresqlReferentialIdentityTests
         );
 
         // Insert KeyUnifiedResource referencing both A and B
-        var keyUnifiedDocumentId = await InsertDocumentAsync(
-            Guid.NewGuid(),
-            "Ed-Fi",
-            "KeyUnifiedResource"
-        );
+        var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO "edfi"."KeyUnifiedResource" ("DocumentId", "KeyUnifiedResourceId", "ResourceAReference_DocumentId", "ResourceAReference_ResourceAId", "ResourceBReference_DocumentId", "ResourceBReference_ResourceBId", "StudentUniqueId_Unified")
@@ -311,20 +314,17 @@ public class PostgresqlReferentialIdentityTests
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedStudentOld
-                && (long)r["DocumentId"]! == studentDocumentId
+                (Guid)r["ReferentialId"]! == expectedStudentOld && (long)r["DocumentId"]! == studentDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedResAOld
-                && (long)r["DocumentId"]! == resourceADocumentId
+                (Guid)r["ReferentialId"]! == expectedResAOld && (long)r["DocumentId"]! == resourceADocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedResBOld
-                && (long)r["DocumentId"]! == resourceBDocumentId
+                (Guid)r["ReferentialId"]! == expectedResBOld && (long)r["DocumentId"]! == resourceBDocumentId
             );
         referentialIds
             .Should()
@@ -359,20 +359,17 @@ public class PostgresqlReferentialIdentityTests
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedStudentNew
-                && (long)r["DocumentId"]! == studentDocumentId
+                (Guid)r["ReferentialId"]! == expectedStudentNew && (long)r["DocumentId"]! == studentDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedResANew
-                && (long)r["DocumentId"]! == resourceADocumentId
+                (Guid)r["ReferentialId"]! == expectedResANew && (long)r["DocumentId"]! == resourceADocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == expectedResBNew
-                && (long)r["DocumentId"]! == resourceBDocumentId
+                (Guid)r["ReferentialId"]! == expectedResBNew && (long)r["DocumentId"]! == resourceBDocumentId
             );
         referentialIds
             .Should()
@@ -446,20 +443,17 @@ public class PostgresqlReferentialIdentityTests
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == oldSchoolRI
-                && (long)r["DocumentId"]! == schoolDocumentId
+                (Guid)r["ReferentialId"]! == oldSchoolRI && (long)r["DocumentId"]! == schoolDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == oldEdOrgRI
-                && (long)r["DocumentId"]! == schoolDocumentId
+                (Guid)r["ReferentialId"]! == oldEdOrgRI && (long)r["DocumentId"]! == schoolDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == oldEdOrgDepRI
-                && (long)r["DocumentId"]! == edOrgDepDocumentId
+                (Guid)r["ReferentialId"]! == oldEdOrgDepRI && (long)r["DocumentId"]! == edOrgDepDocumentId
             );
         referentialIds
             .Should()
@@ -512,20 +506,17 @@ public class PostgresqlReferentialIdentityTests
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == newSchoolRI
-                && (long)r["DocumentId"]! == schoolDocumentId
+                (Guid)r["ReferentialId"]! == newSchoolRI && (long)r["DocumentId"]! == schoolDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == newEdOrgRI
-                && (long)r["DocumentId"]! == schoolDocumentId
+                (Guid)r["ReferentialId"]! == newEdOrgRI && (long)r["DocumentId"]! == schoolDocumentId
             );
         referentialIds
             .Should()
             .Contain(r =>
-                (Guid)r["ReferentialId"]! == newEdOrgDepRI
-                && (long)r["DocumentId"]! == edOrgDepDocumentId
+                (Guid)r["ReferentialId"]! == newEdOrgDepRI && (long)r["DocumentId"]! == edOrgDepDocumentId
             );
         referentialIds
             .Should()
@@ -974,6 +965,11 @@ public class PostgresqlReferentialIdentityTests
             ("$.resourceBReference.studentUniqueId", studentUniqueId)
         );
 
-        return (studentReferentialId, resourceAReferentialId, resourceBReferentialId, keyUnifiedReferentialId);
+        return (
+            studentReferentialId,
+            resourceAReferentialId,
+            resourceBReferentialId,
+            keyUnifiedReferentialId
+        );
     }
 }
