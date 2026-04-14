@@ -160,7 +160,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter \"FullyQualifiedName~StudentSchoolAssociation|FullyQualifiedName~StudentArtProgramAssociation\"`",
       "Run: `rg -n \"Snapshot|Baseline|Restore\" ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Parallelism",

@@ -463,6 +463,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         Guid.Parse("abababab-0000-0000-0000-000000000001")
     );
 
+    private MssqlGeneratedDdlBaselineDatabase _baselineDatabase = null!;
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
@@ -475,8 +476,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     private GetResult _profiledGetResultAfterCreate = null!;
     private MssqlStudentSchoolAssociationDocumentMetadata _documentMetadata = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -489,8 +490,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath
         );
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = MssqlStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
+        _baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+            MssqlStudentSchoolAssociationIntegrationTestSupport.FixtureRelativePath,
+            _fixture.GeneratedDdl
+        );
 
         var (projectSchema, resourceSchema) =
             MssqlStudentSchoolAssociationIntegrationTestSupport.GetResourceSchema(
@@ -504,6 +507,13 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             resourceSchema
         );
         _resourceSchema = resourceSchema;
+    }
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _database = await _baselineDatabase.RestoreAsync();
+        _serviceProvider = MssqlStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
         _seedData = await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
@@ -552,10 +562,14 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         {
             await _serviceProvider.DisposeAsync();
         }
+    }
 
-        if (_database is not null)
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_baselineDatabase is not null)
         {
-            await _database.DisposeAsync();
+            await _baselineDatabase.DisposeAsync();
         }
     }
 
