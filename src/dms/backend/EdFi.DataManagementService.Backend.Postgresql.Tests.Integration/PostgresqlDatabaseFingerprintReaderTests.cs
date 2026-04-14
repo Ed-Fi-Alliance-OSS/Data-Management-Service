@@ -13,7 +13,6 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
-[NonParallelizable]
 public class Given_A_Provisioned_EffectiveSchema_Table
 {
     private static readonly string _qualifiedEffectiveSchemaTable = SqlIdentifierQuoter.QuoteTableName(
@@ -55,33 +54,28 @@ public class Given_A_Provisioned_EffectiveSchema_Table
         .ToHexString(_expectedResourceKeySeedHash)
         .ToLowerInvariant();
 
+    private PostgresqlFingerprintTestDatabase _database = null!;
     private DatabaseFingerprint? _result;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        // Create only the EffectiveSchema table — running full CoreDdlEmitter DDL
-        // would add FK constraints to dms.Document that break other tests in this assembly.
-        await ExecuteNonQueryAsync(
-            """
-            CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
-            (
-                "EffectiveSchemaSingletonId" smallint NOT NULL,
-                "ApiSchemaFormatVersion" varchar(64) NOT NULL,
-                "EffectiveSchemaHash" varchar(64) NOT NULL,
-                "ResourceKeyCount" smallint NOT NULL,
-                "ResourceKeySeedHash" bytea NOT NULL,
-                "AppliedAt" timestamp with time zone NOT NULL DEFAULT now(),
-                CONSTRAINT "PK_EffectiveSchema" PRIMARY KEY ("EffectiveSchemaSingletonId")
-            );
-            """
-        );
+        _database = await PostgresqlFingerprintTestDatabase.CreateProvisionedAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
     }
 
     [SetUp]
     public async Task Setup()
     {
-        await ExecuteNonQueryAsync($"DELETE FROM {_qualifiedEffectiveSchemaTable};");
+        await _database.ResetAsync();
 
         var insertSql = $$"""
             INSERT INTO {{_qualifiedEffectiveSchemaTable}} (
@@ -106,7 +100,7 @@ public class Given_A_Provisioned_EffectiveSchema_Table
             NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
         );
 
-        _result = await reader.ReadFingerprintAsync(Configuration.DatabaseConnectionString);
+        _result = await reader.ReadFingerprintAsync(_database.ConnectionString);
     }
 
     [Test]
@@ -119,9 +113,9 @@ public class Given_A_Provisioned_EffectiveSchema_Table
         _result.ResourceKeySeedHash.Should().Equal(_expectedResourceKeySeedHash);
     }
 
-    private static async Task ExecuteNonQueryAsync(string sql)
+    private async Task ExecuteNonQueryAsync(string sql)
     {
-        await using var connection = new NpgsqlConnection(Configuration.DatabaseConnectionString);
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();

@@ -58,6 +58,19 @@ public sealed partial class MssqlFingerprintTestDatabase : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    public async Task ResetAsync()
+    {
+        const string sql = """
+            DELETE FROM [dms].[EffectiveSchema];
+            """;
+
+        await using SqlConnection connection = new(ConnectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task ExecuteBatchesAsync(string connectionString, string sql)
     {
         await using SqlConnection connection = new(connectionString);
