@@ -111,10 +111,10 @@
     "category": "PostgreSQL Write Smoke",
     "description": "Convert the collection- and rollback-oriented PostgreSQL write fixtures in `PostgresqlRelationalWriteCollectionReorderTests.cs`, `PostgresqlRelationalWriteMultiBatchCollectionTests.cs`, and `PostgresqlRelationalWriteRollbackSafetyTests.cs` to use one-time provisioning plus reset/seed. Acceptance: these files stop provisioning a fresh database in each `[SetUp]`, retain isolation between tests, and preserve current collection ordering, batching, and rollback assertions.",
     "steps-to-verify": [
-      "Run: `rg -n \"\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteCollectionReorderTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteMultiBatchCollectionTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteRollbackSafetyTests.cs`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"FullyQualifiedName~CollectionReorder|FullyQualifiedName~MultiBatchCollection|FullyQualifiedName~RollbackSafety\"`"
+      "Run: `rg -n \"\\[OneTimeSetUp\\]|\\[SetUp\\]|CreateProvisionedAsync\\(\" ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteCollectionReorderTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteMultiBatchCollectionTests.cs ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalWriteRollbackSafetyTests.cs` and confirm `CreateProvisionedAsync()` appears only in one-time setup paths.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter \"Name~full_surface_reorder|Name~large_collection|Name~delete_batches|Name~transaction_rolls_back|Name~early_write_commands\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Write Smoke",

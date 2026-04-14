@@ -541,52 +541,31 @@ file static class MultiBatchCollectionsIntegrationTestSupport
     }
 }
 
-[TestFixture]
-[Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture
+public abstract class MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {
-    private static readonly DocumentUuid SchoolDocumentUuid = new(
-        Guid.Parse("0f0f0f0f-0000-0000-0000-000000000001")
-    );
+    private protected MappingSet _mappingSet = null!;
+    private protected PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private protected ServiceProvider _serviceProvider = null!;
+    private protected MultiBatchCommandRecorder _commandRecorder = null!;
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
-    private MultiBatchCommandRecorder _commandRecorder = null!;
-    private UpsertResult _result = null!;
-    private MultiBatchCollectionPersistedState _persistedState = null!;
-    private int _maxRowsPerBatch;
-    private int _parametersPerRow;
-    private int _requestedAddressCount;
-
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+        var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+        await OneTimeSetUpTestAsync();
+    }
 
-        var schoolAddressTablePlan = MultiBatchCollectionsIntegrationTestSupport.GetSchoolAddressTablePlan(
-            _mappingSet
-        );
-
-        _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
-        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
-        _requestedAddressCount = _maxRowsPerBatch + 2;
-
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
         _serviceProvider = MultiBatchCollectionsIntegrationTestSupport.CreateServiceProvider();
         _commandRecorder = _serviceProvider.GetRequiredService<MultiBatchCommandRecorder>();
-
-        _result = await ExecuteCreateAsync();
-        _persistedState = await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
-            _database,
-            SchoolDocumentUuid.Value
-        );
+        await SetUpTestAsync();
     }
 
     [TearDown]
@@ -595,12 +574,62 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
+    }
+
+    protected virtual Task OneTimeSetUpTestAsync() => Task.CompletedTask;
+
+    protected abstract Task SetUpTestAsync();
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_With_A_Focused_Stable_Key_Fixture
+    : MultiBatchCollectionsGeneratedDdlFixtureTestBase
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("0f0f0f0f-0000-0000-0000-000000000001")
+    );
+
+    private UpsertResult _result = null!;
+    private MultiBatchCollectionPersistedState _persistedState = null!;
+    private int _maxRowsPerBatch;
+    private int _parametersPerRow;
+    private int _requestedAddressCount;
+
+    protected override Task OneTimeSetUpTestAsync()
+    {
+        var schoolAddressTablePlan = MultiBatchCollectionsIntegrationTestSupport.GetSchoolAddressTablePlan(
+            _mappingSet
+        );
+
+        _maxRowsPerBatch = schoolAddressTablePlan.BulkInsertBatching.MaxRowsPerBatch;
+        _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
+        _requestedAddressCount = _maxRowsPerBatch + 2;
+
+        return Task.CompletedTask;
+    }
+
+    protected override async Task SetUpTestAsync()
+    {
+        _result = await ExecuteCreateAsync();
+        _persistedState = await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
     }
 
     [Test]
@@ -726,16 +755,12 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Create_W
 [Category("PostgresqlIntegration")]
 [NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_Update_With_A_Focused_Stable_Key_Fixture
+    : MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("0f0f0f0f-0000-0000-0000-000000000003")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
-    private MultiBatchCommandRecorder _commandRecorder = null!;
     private UpdateResult _result = null!;
     private MultiBatchCollectionPersistedState _persistedStateBeforeUpdate = null!;
     private MultiBatchCollectionPersistedState _persistedStateAfterUpdate = null!;
@@ -743,14 +768,8 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
     private int _parametersPerRow;
     private int _createdAddressCount;
 
-    [SetUp]
-    public async Task Setup()
+    protected override Task OneTimeSetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-
         var schoolAddressTablePlan = MultiBatchCollectionsIntegrationTestSupport.GetSchoolAddressTablePlan(
             _mappingSet
         );
@@ -759,10 +778,11 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
         _parametersPerRow = schoolAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _createdAddressCount = _maxRowsPerBatch + 2;
 
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = MultiBatchCollectionsIntegrationTestSupport.CreateServiceProvider();
-        _commandRecorder = _serviceProvider.GetRequiredService<MultiBatchCommandRecorder>();
+        return Task.CompletedTask;
+    }
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
 
         _persistedStateBeforeUpdate =
@@ -779,20 +799,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
                 _database,
                 SchoolDocumentUuid.Value
             );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -898,16 +904,12 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Delete_U
 [Category("PostgresqlIntegration")]
 [NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_Extension_Create_With_A_Focused_Stable_Key_Fixture
+    : MultiBatchCollectionsGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("0f0f0f0f-0000-0000-0000-000000000002")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
-    private MultiBatchCommandRecorder _commandRecorder = null!;
     private UpsertResult _result = null!;
     private MultiBatchCollectionPersistedState _persistedState = null!;
     private IReadOnlyList<MultiBatchCollectionPersistedSchoolExtensionAddressRow> _persistedExtensionAddresses =
@@ -916,14 +918,8 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_
     private int _parametersPerRow;
     private int _requestedAddressCount;
 
-    [SetUp]
-    public async Task Setup()
+    protected override Task OneTimeSetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MultiBatchCollectionsIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-
         var schoolExtensionAddressTablePlan =
             MultiBatchCollectionsIntegrationTestSupport.GetSchoolExtensionAddressTablePlan(_mappingSet);
 
@@ -931,10 +927,11 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_
         _parametersPerRow = schoolExtensionAddressTablePlan.BulkInsertBatching.ParametersPerRow;
         _requestedAddressCount = _maxRowsPerBatch + 2;
 
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = MultiBatchCollectionsIntegrationTestSupport.CreateServiceProvider();
-        _commandRecorder = _serviceProvider.GetRequiredService<MultiBatchCommandRecorder>();
+        return Task.CompletedTask;
+    }
 
+    protected override async Task SetUpTestAsync()
+    {
         _result = await ExecuteCreateAsync();
         _persistedState = await MultiBatchCollectionsIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -945,20 +942,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Aligned_
                 _database,
                 _persistedState.Document.DocumentId
             );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]

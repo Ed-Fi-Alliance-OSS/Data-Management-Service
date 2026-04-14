@@ -292,14 +292,20 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     private long _schoolCount;
     private long _schoolAddressCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             RollbackSafetyIntegrationTestSupport.FixtureRelativePath
         );
         _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
         _serviceProvider = RollbackSafetyIntegrationTestSupport.CreateServiceProvider();
         _commandRecorder = _serviceProvider.GetRequiredService<RollbackSafetyCommandRecorder>();
 
@@ -331,11 +337,17 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 
