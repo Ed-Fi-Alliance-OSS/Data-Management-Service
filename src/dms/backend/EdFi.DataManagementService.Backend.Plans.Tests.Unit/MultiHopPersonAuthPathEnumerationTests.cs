@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -18,8 +19,16 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_MultiHop_Person_Auth_Path_Enumeration
 {
-    private const string Ds52FixturePath =
-        "../Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json";
+    private const string ProjectFileName = "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj";
+
+    private const string GoldenFileName = "multi-hop-person-auth-paths.json";
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+    };
 
     private static readonly SecurableElementKind[] _personKinds =
     [
@@ -35,9 +44,7 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     [OneTimeSetUp]
     public void Setup()
     {
-        _modelSet = RuntimePlanFixtureModelSetBuilder.Build(Ds52FixturePath, SqlDialect.Pgsql);
-        var compiler = new MappingSetCompiler();
-        _mappingSet = compiler.Compile(_modelSet);
+        (_modelSet, _mappingSet) = Ds52FixtureHelper.BuildAndCompile();
         _multiHopEntries = BuildMultiHopEntries();
     }
 
@@ -71,9 +78,6 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
                     continue;
                 }
 
-                // The resolver produces one shortest join chain per (resource, kind),
-                // so we aggregate all JSON paths for the kind here. This is accurate for
-                // DS 5.2 where no resource has divergent join chains for same-kind person elements.
                 var jsonPaths = resolvedPath.Kind switch
                 {
                     SecurableElementKind.Student => concreteResource.SecurableElements.Student,
@@ -129,107 +133,101 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration
     }
 
     [Test]
-    public void It_should_enumerate_all_expected_multi_hop_resources()
+    public void It_should_match_golden_report_json()
     {
-        var expectedResources = new[]
+        var actualJson = JsonSerializer.Serialize(_multiHopEntries, _jsonOptions);
+
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            ProjectFileName
+        );
+        var expectedPath = Path.Combine(
+            projectRoot,
+            "Fixtures",
+            "authoritative",
+            "ds-5.2",
+            "expected",
+            GoldenFileName
+        );
+
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "authoritative",
+            "ds-5.2",
+            "actual",
+            GoldenFileName
+        );
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, actualJson);
+
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
-            "CourseTranscript",
-            "Grade",
-            "StudentAssessmentEducationOrganizationAssociation",
-            "StudentAssessmentRegistration",
-            "StudentAssessmentRegistrationBatteryPartAssociation",
-        };
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
+            File.WriteAllText(expectedPath, actualJson);
+        }
 
-        var actualResources = _multiHopEntries.Select(e => e.ResourceName).Distinct().Order().ToArray();
-
-        actualResources
+        File.Exists(expectedPath)
             .Should()
-            .BeEquivalentTo(
-                expectedResources,
-                "the full set of DS 5.2 resources with multi-hop Person paths must be locked in"
+            .BeTrue($"golden file missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate.");
+
+        var diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
+
+        diffOutput
+            .Should()
+            .BeEmpty(
+                "the multi-hop person auth path report must match the golden file. "
+                    + "If the change is intentional, set UPDATE_GOLDENS=1 and re-run."
             );
     }
 
     [Test]
-    public void It_should_generate_multi_hop_report_json()
+    public void It_should_have_at_most_one_resolved_path_per_person_kind_per_resource()
     {
-        var options = new JsonSerializerOptions
+        foreach (var (resource, resolvedPaths) in _mappingSet.SecurableElementColumnPathsByResource)
         {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-        };
+            var personPathsByKind = resolvedPaths
+                .Where(p => _personKinds.Contains(p.Kind))
+                .GroupBy(p => p.Kind);
 
-        var json = JsonSerializer.Serialize(_multiHopEntries, options);
-
-        TestContext.Out.WriteLine($"Total multi-hop entries: {_multiHopEntries.Count}");
-        TestContext.Out.WriteLine();
-        TestContext.Out.WriteLine(json);
+            foreach (var group in personPathsByKind)
+            {
+                group
+                    .Should()
+                    .HaveCount(
+                        1,
+                        $"resource '{resource.ResourceName}' should have exactly one resolved "
+                            + $"path for {group.Key}, but found {group.Count()}"
+                    );
+            }
+        }
     }
 
     [Test]
-    public void It_should_find_CourseTranscript_Student_two_hop_path()
+    public void It_should_process_all_concrete_resources_with_securable_elements()
     {
-        var entry = _multiHopEntries.Find(e =>
-            e.ResourceName == "CourseTranscript" && e.PersonType == "Student"
+        // Person resources (Student, Contact, Staff) have securable elements but
+        // don't produce mapping entries because they ARE the authorization anchor.
+        var personResourceNames = new HashSet<string>(
+            ["Student", "Contact", "Staff"],
+            StringComparer.Ordinal
         );
 
-        entry.Should().NotBeNull("CourseTranscript should have a multi-hop Student path");
+        var resourcesWithSecurableElements = _modelSet
+            .ConcreteResourcesInNameOrder.Where(r => r.SecurableElements.HasAny)
+            .Select(r => r.RelationalModel.Resource)
+            .Where(r => !personResourceNames.Contains(r.ResourceName))
+            .ToHashSet();
 
-        entry!.HopCount.Should().Be(2);
-        entry.SecurableElementJsonPaths.Should().Contain("$.studentAcademicRecordReference.studentUniqueId");
+        var resourcesInMapping = _mappingSet.SecurableElementColumnPathsByResource.Keys.ToHashSet();
 
-        entry.JoinPath.Should().HaveCount(2);
-
-        entry.JoinPath[0].SourceTable.Should().Be("edfi.CourseTranscript");
-        entry.JoinPath[0].SourceColumn.Should().Be("StudentAcademicRecord_DocumentId");
-        entry.JoinPath[0].TargetTable.Should().Be("edfi.StudentAcademicRecord");
-        entry.JoinPath[0].TargetColumn.Should().Be("DocumentId");
-
-        entry.JoinPath[1].SourceTable.Should().Be("edfi.StudentAcademicRecord");
-        entry.JoinPath[1].SourceColumn.Should().Be("Student_DocumentId");
-        entry.JoinPath[1].TargetTable.Should().Be("edfi.Student");
-        entry.JoinPath[1].TargetColumn.Should().Be("DocumentId");
-    }
-
-    [Test]
-    public void It_should_find_StudentAssessmentRegistrationBatteryPartAssociation_Student_three_hop_path()
-    {
-        var entry = _multiHopEntries.Find(e =>
-            e.ResourceName == "StudentAssessmentRegistrationBatteryPartAssociation"
-            && e.PersonType == "Student"
-        );
-
-        entry
+        resourcesWithSecurableElements
             .Should()
-            .NotBeNull(
-                "StudentAssessmentRegistrationBatteryPartAssociation should have a multi-hop Student path"
+            .BeSubsetOf(
+                resourcesInMapping,
+                "every concrete resource with securable elements (excluding person "
+                    + "resources that are their own authorization anchor) should have "
+                    + "a resolved entry in the mapping set"
             );
-
-        entry!.HopCount.Should().Be(3);
-        entry
-            .SecurableElementJsonPaths.Should()
-            .Contain("$.studentAssessmentRegistrationReference.studentUniqueId");
-
-        entry.JoinPath.Should().HaveCount(3);
-
-        entry.JoinPath[0].SourceTable.Should().Be("edfi.StudentAssessmentRegistrationBatteryPartAssociation");
-        entry.JoinPath[0].SourceColumn.Should().Be("StudentAssessmentRegistration_DocumentId");
-        entry.JoinPath[0].TargetTable.Should().Be("edfi.StudentAssessmentRegistration");
-        entry.JoinPath[0].TargetColumn.Should().Be("DocumentId");
-
-        entry.JoinPath[1].SourceTable.Should().Be("edfi.StudentAssessmentRegistration");
-        entry
-            .JoinPath[1]
-            .SourceColumn.Should()
-            .Be("ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea");
-        entry.JoinPath[1].TargetTable.Should().Be("edfi.StudentEducationOrganizationAssessmentAccommodation");
-        entry.JoinPath[1].TargetColumn.Should().Be("DocumentId");
-
-        entry.JoinPath[2].SourceTable.Should().Be("edfi.StudentEducationOrganizationAssessmentAccommodation");
-        entry.JoinPath[2].SourceColumn.Should().Be("Student_DocumentId");
-        entry.JoinPath[2].TargetTable.Should().Be("edfi.Student");
-        entry.JoinPath[2].TargetColumn.Should().Be("DocumentId");
     }
 
     [Test]
