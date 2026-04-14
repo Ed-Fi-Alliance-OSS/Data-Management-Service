@@ -21,6 +21,63 @@ internal sealed record PostgresqlForeignKeyMetadata(
 internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private static readonly string[] _generatedDdlBaselineTables =
+    [
+        "EffectiveSchema",
+        "ResourceKey",
+        "SchemaComponent",
+    ];
+    private static readonly string _resetSql = $$"""
+        DO $$
+        DECLARE
+            truncate_sql text;
+            sequence_sql text;
+        BEGIN
+            SELECT
+                CASE
+                    WHEN COUNT(*) = 0 THEN NULL
+                    ELSE
+                        'TRUNCATE TABLE '
+                        || string_agg(
+                            format('%I.%I', schemaname, tablename),
+                            ', '
+                            ORDER BY schemaname, tablename
+                        )
+                        || ' RESTART IDENTITY CASCADE;'
+                END
+            INTO truncate_sql
+            FROM pg_tables
+            WHERE schemaname <> 'information_schema'
+              AND schemaname !~ '^pg_'
+              AND NOT (
+                  schemaname = 'dms'
+                  AND tablename = ANY (ARRAY[{{string.Join(
+            ", ",
+            _generatedDdlBaselineTables.Select(tableName => $"'{tableName}'")
+        )}}])
+              );
+
+            IF truncate_sql IS NOT NULL THEN
+                EXECUTE truncate_sql;
+            END IF;
+
+            FOR sequence_sql IN
+                SELECT format(
+                    'ALTER SEQUENCE %I.%I RESTART WITH %s',
+                    schemaname,
+                    sequencename,
+                    start_value
+                )
+                FROM pg_sequences
+                WHERE schemaname <> 'information_schema'
+                  AND schemaname !~ '^pg_'
+                ORDER BY schemaname, sequencename
+            LOOP
+                EXECUTE sequence_sql;
+            END LOOP;
+        END
+        $$;
+        """;
 
     private PostgresqlGeneratedDdlTestDatabase(
         string databaseName,
@@ -93,6 +150,15 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    public async Task ResetAsync(int commandTimeoutSeconds = DefaultCommandTimeoutSeconds)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = _resetSql;
+        command.CommandTimeout = commandTimeoutSeconds;
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task<bool> SequenceExistsAsync(string schema, string sequenceName)
