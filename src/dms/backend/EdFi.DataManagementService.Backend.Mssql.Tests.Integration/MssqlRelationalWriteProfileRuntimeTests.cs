@@ -893,6 +893,10 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
+                .. CreateAlignedExtensionAddressRequestScopeStates(
+                    ProfileVisibilityKind.Hidden,
+                    ["Austin", "Houston"]
+                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
