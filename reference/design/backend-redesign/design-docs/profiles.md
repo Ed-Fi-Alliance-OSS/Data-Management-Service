@@ -759,11 +759,13 @@ backend MUST assign exactly one of the following outcomes:
 
 - **Visible and writable**
   - the binding is driven by the visible request surface for that scope instance and is written from request/resolved/precomputed values.
-  - this includes canonical key-unification storage bindings when at least one visible member path in the corresponding unification class is being written.
+  - for a key-unification canonical storage binding, backend MUST determine the canonical source using the full member set in the corresponding `KeyUnificationWritePlan`, in `MembersInOrder`, combining visible request-present members with preserved hidden-member presence/value from current stored state.
+  - the canonical binding is visible-and-writable only when that full-member-set evaluation selects a visible present member as the canonical source; the presence of some visible member elsewhere in the class does not by itself make the canonical binding writable.
 
 - **Hidden and preserved**
-  - the binding is governed only by hidden member paths for that scope instance, so backend copies the current stored value unchanged.
-  - this includes hidden reference FK bindings, hidden descriptor FK bindings, canonical key-unification storage columns fed only by hidden members, and synthetic presence columns whose governing member path is hidden.
+  - the binding is governed by preserved hidden member paths for that scope instance, so backend copies the current stored value unchanged.
+  - this includes hidden reference FK bindings, hidden descriptor FK bindings, canonical key-unification storage columns when the full-member-set evaluation is driven by a hidden preserved member, and synthetic presence columns whose governing member path is hidden.
+  - if a preserved hidden member and a visible present member in the same key-unification class disagree after conversion, backend MUST fail closed rather than overwriting the canonical binding.
 
 - **Cleared when the scope is visible but absent**
   - the scope state is `VisibleAbsent` and normal `PUT` semantics clear that binding because it belongs only to the visible surface being removed.

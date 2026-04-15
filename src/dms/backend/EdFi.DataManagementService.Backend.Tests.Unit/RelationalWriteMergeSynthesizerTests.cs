@@ -591,6 +591,376 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         LiteralValue(update.Values[4]).Should().BeNull();
     }
 
+    /// <remarks>
+    /// Regression coverage for the full-member-set canonical-source rule in
+    /// <c>profiles.md</c> "Visible and writable" / "Hidden and preserved". The hidden
+    /// member comes first in <c>MembersInOrder</c> and has preserved stored presence, so
+    /// the canonical source is the hidden member and the canonical column MUST be
+    /// preserved even though a visible member is also present in the request (with an
+    /// agreeing value).
+    /// </remarks>
+    [Test]
+    public void It_preserves_key_unification_canonical_when_hidden_first_in_MembersInOrder_and_visible_also_present_with_agreeing_values()
+    {
+        var rootPlan = CreateRootPlanWithKeyUnification();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        // Request: visible secondaryType present with "Biology"; flattener produces canonical
+        // "Biology" from the only request-present member. Under the new rule, the hidden
+        // primaryType (first in MembersInOrder) is preserved-present in stored, so its stored
+        // canonical wins — the request's "Biology" must match stored "Biology" to avoid conflict.
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal("Biology"), // canonical from flattener using secondaryType visible value
+                    Literal(null), // primaryType presence — absent in request (hidden)
+                    Literal(true), // secondaryType presence — present in request
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        // Stored: canonical "Biology" (from hidden primaryType), primaryType present, secondaryType absent
+                        [345L, "Original Name", "Biology", true, false],
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["primaryType"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var update = result.TablesInDependencyOrder[0].Updates[0];
+
+        // Canonical source is first-present hidden primaryType → preserved from stored
+        LiteralValue(update.Values[2]).Should().Be("Biology");
+        // Hidden primaryType presence preserved from stored (was true)
+        LiteralValue(update.Values[3]).Should().Be(true);
+        // Visible secondaryType presence driven by request (was absent → now true)
+        LiteralValue(update.Values[4]).Should().Be(true);
+    }
+
+    /// <remarks>
+    /// Regression coverage for the fail-closed clause in <c>profiles.md</c>
+    /// "Hidden and preserved": when a preserved hidden member and a visible present
+    /// member disagree, the merge MUST fail closed as a ValidationFailure rather than
+    /// silently overwriting the canonical binding.
+    /// </remarks>
+    [Test]
+    public void It_fails_closed_when_preserved_hidden_member_value_disagrees_with_visible_request_member_value()
+    {
+        var rootPlan = CreateRootPlanWithKeyUnification();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        // Request: visible secondaryType "Chemistry"; stored hidden primaryType is "Biology".
+        // These disagree, so the merge must fail closed.
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal("Chemistry"),
+                    Literal(null),
+                    Literal(true),
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [345L, "Original Name", "Biology", true, false],
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["primaryType"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ValidationFailure>();
+        var failure = (RelationalWriteMergeSynthesisOutcome.ValidationFailure)outcome;
+        failure.Failures.Should().ContainSingle();
+        failure.Failures[0].Message.Should().Contain("Key-unification conflict");
+        failure.Failures[0].Message.Should().Contain("PrimaryType_Unified");
+    }
+
+    /// <remarks>
+    /// Regression coverage confirming the visible-member-first branch: when the first
+    /// present member in <c>MembersInOrder</c> is visible (the hidden member has stored
+    /// presence = false), the canonical binding is visible-and-writable and the overlay
+    /// keeps the request-driven canonical value.
+    /// </remarks>
+    [Test]
+    public void It_writes_request_canonical_when_visible_member_is_first_present_and_hidden_is_stored_absent()
+    {
+        var rootPlan = CreateRootPlanWithKeyUnification();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        // Request: visible secondaryType "Chemistry". Stored has neither member present
+        // (canonical is NULL in stored). First-present in MembersInOrder walking is the
+        // hidden primaryType (not present in stored) → skip; then secondaryType (present
+        // in request) → first-present is visible → canonical is visible-and-writable.
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal("Chemistry"),
+                    Literal(null),
+                    Literal(true),
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        // Stored: canonical NULL, both presence flags absent
+                        [345L, "Original Name", null, false, false],
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["primaryType"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var update = result.TablesInDependencyOrder[0].Updates[0];
+
+        // Canonical source is first-present visible secondaryType → request value wins
+        LiteralValue(update.Values[2]).Should().Be("Chemistry");
+        // Hidden primaryType presence preserved from stored (was false)
+        LiteralValue(update.Values[3]).Should().Be(false);
+        // Visible secondaryType presence from request (true)
+        LiteralValue(update.Values[4]).Should().Be(true);
+    }
+
+    /// <remarks>
+    /// Regression coverage pinning the all-members-hidden branch: when every member of
+    /// the class is hidden and has preserved stored presence, the canonical is
+    /// hidden-and-preserved regardless of any request-side state.
+    /// </remarks>
+    [Test]
+    public void It_preserves_key_unification_canonical_when_all_members_are_hidden_and_stored_present()
+    {
+        var rootPlan = CreateRootPlanWithKeyUnification();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        // Both primaryType AND secondaryType are hidden; request has no visible key-unification
+        // content. Flattener produces a NULL canonical (no present members from request side).
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal(null),
+                    Literal(null),
+                    Literal(null),
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        // Stored: canonical "StoredCanonical" with primaryType present
+                        [345L, "Original Name", "StoredCanonical", true, false],
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["primaryType", "secondaryType"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var update = result.TablesInDependencyOrder[0].Updates[0];
+
+        // Canonical preserved from stored — all members hidden
+        LiteralValue(update.Values[2]).Should().Be("StoredCanonical");
+        // Both presence flags preserved from stored
+        LiteralValue(update.Values[3]).Should().Be(true);
+        LiteralValue(update.Values[4]).Should().Be(false);
+    }
+
     // --- Collection merge tests ---
 
     /// <remarks>

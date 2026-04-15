@@ -342,12 +342,19 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             rootCurrentValues,
             ImmutableArray<FlattenedWriteValue>.Empty
         );
-        rootOverlaidValues = AdjustKeyUnificationOverlayForHiddenMembers(
+        var (adjustedRootValues, rootKeyUnificationFailures) = AdjustKeyUnificationOverlayForHiddenMembers(
             rootPlan,
             rootOverlaidValues,
             rootCurrentValues,
             augmentedHiddenPaths
         );
+
+        if (rootKeyUnificationFailures.Length > 0)
+        {
+            return new RelationalWriteMergeSynthesisOutcome.ValidationFailure(rootKeyUnificationFailures);
+        }
+
+        rootOverlaidValues = adjustedRootValues;
 
         var rootComparableValues = ProjectComparableValues(rootPlan, rootOverlaidValues);
 
@@ -579,12 +586,22 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     currentValues,
                     parentPhysicalRowIdentityValues
                 );
-                overlaidValues = AdjustKeyUnificationOverlayForHiddenMembers(
-                    tablePlan,
-                    overlaidValues,
-                    currentValues,
-                    augmentedHidden
-                );
+                var (adjustedExtValues, extKeyUnificationFailures) =
+                    AdjustKeyUnificationOverlayForHiddenMembers(
+                        tablePlan,
+                        overlaidValues,
+                        currentValues,
+                        augmentedHidden
+                    );
+
+                if (extKeyUnificationFailures.Length > 0)
+                {
+                    return new RelationalWriteMergeSynthesisOutcome.ValidationFailure(
+                        extKeyUnificationFailures
+                    );
+                }
+
+                overlaidValues = adjustedExtValues;
 
                 var comparableValues = ProjectComparableValues(tablePlan, overlaidValues);
 
@@ -823,12 +840,22 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     currentRow?.Values,
                     parentPhysicalRowIdentityValues
                 );
-                overlaidValues = AdjustKeyUnificationOverlayForHiddenMembers(
-                    tablePlan,
-                    overlaidValues,
-                    currentRow?.Values,
-                    augmentedScopeHidden
-                );
+                var (adjustedAlignedValues, alignedKeyUnificationFailures) =
+                    AdjustKeyUnificationOverlayForHiddenMembers(
+                        tablePlan,
+                        overlaidValues,
+                        currentRow?.Values,
+                        augmentedScopeHidden
+                    );
+
+                if (alignedKeyUnificationFailures.Length > 0)
+                {
+                    return new RelationalWriteMergeSynthesisOutcome.ValidationFailure(
+                        alignedKeyUnificationFailures
+                    );
+                }
+
+                overlaidValues = adjustedAlignedValues;
 
                 var comparableValues = ProjectComparableValues(tablePlan, overlaidValues);
 
@@ -1287,12 +1314,20 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 currentRow.Values,
                 parentPhysicalRowIdentityValues
             );
-            overlaidValues = AdjustKeyUnificationOverlayForHiddenMembers(
-                tablePlan,
-                overlaidValues,
-                currentRow.Values,
-                augmentedCollHidden
-            );
+            var (adjustedCollValues, collKeyUnificationFailures) =
+                AdjustKeyUnificationOverlayForHiddenMembers(
+                    tablePlan,
+                    overlaidValues,
+                    currentRow.Values,
+                    augmentedCollHidden
+                );
+
+            if (collKeyUnificationFailures.Length > 0)
+            {
+                return new RelationalWriteMergeSynthesisOutcome.ValidationFailure(collKeyUnificationFailures);
+            }
+
+            overlaidValues = adjustedCollValues;
 
             overlaidValues = RewriteCollectionStableRowIdentity(tablePlan, overlaidValues, currentRow.Values);
             var stableRowIdentityValue = ExtractStableRowIdentityValue(tablePlan, overlaidValues);
@@ -2439,15 +2474,28 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// Adjusts key-unification precomputed bindings after overlay to account for hidden
     /// members whose stored values are not reflected in request-side key-unification.
     /// <para>
-    /// When ALL members of a key-unification class are hidden — or when some members
-    /// are hidden and all remaining visible members are absent from the request — the
-    /// canonical column must preserve its stored value (the request had no visible
-    /// members to compute from). When SOME members are hidden but at least one visible
-    /// member is present, hidden members' synthetic presence columns must preserve
-    /// stored values (visible members correctly drive the canonical value).
+    /// Implements the full-member-set canonical-source evaluation rule from
+    /// <c>reference/design/backend-redesign/design-docs/profiles.md</c> ("Visible and
+    /// writable" / "Hidden and preserved"): the canonical source is the first present
+    /// member in <see cref="KeyUnificationWritePlan.MembersInOrder"/>, where "present"
+    /// counts visible members from the request overlay and hidden members from
+    /// preserved stored presence. When the first present member is hidden, the canonical
+    /// binding is hidden-and-preserved; when the first present member is visible, it is
+    /// visible-and-writable. Hidden members' synthetic presence columns always preserve
+    /// stored state so that the class's effective presence profile remains intact.
+    /// </para>
+    /// <para>
+    /// Conflict detection: when a preserved hidden member and a visible present member
+    /// coexist in the same class, their canonical values MUST agree (per
+    /// <c>key-unification.md</c> "Canonical value coalescing" conflict rule and the
+    /// profiles.md "Hidden and preserved" fail-closed clause). Returned failures are
+    /// mapped by callers into <see cref="RelationalWriteMergeSynthesisOutcome.ValidationFailure"/>.
     /// </para>
     /// </summary>
-    private static ImmutableArray<FlattenedWriteValue> AdjustKeyUnificationOverlayForHiddenMembers(
+    private static (
+        ImmutableArray<FlattenedWriteValue> Values,
+        ImmutableArray<MergeValidationFailure> Failures
+    ) AdjustKeyUnificationOverlayForHiddenMembers(
         TableWritePlan tableWritePlan,
         ImmutableArray<FlattenedWriteValue> overlaidValues,
         ImmutableArray<FlattenedWriteValue>? currentValues,
@@ -2460,56 +2508,141 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             || hiddenMemberPaths.Length == 0
         )
         {
-            return overlaidValues;
+            return (overlaidValues, []);
         }
 
         var hiddenSet = new HashSet<string>(hiddenMemberPaths, StringComparer.Ordinal);
         FlattenedWriteValue[]? adjusted = null;
+        List<MergeValidationFailure>? failures = null;
 
         foreach (var plan in tableWritePlan.KeyUnificationPlans)
         {
-            var allMembersHidden = true;
-            var anyVisibleMemberPresent = false;
+            // Pass 1: classify each member's effective presence and find the first-present
+            // member in MembersInOrder — the canonical source per the design rule.
+            int? firstPresentIndex = null;
+            var firstPresentIsHidden = false;
+            var anyVisiblePresent = false;
+            var anyHiddenStoredPresent = false;
 
-            foreach (var member in plan.MembersInOrder)
+            for (var i = 0; i < plan.MembersInOrder.Length; i++)
             {
+                var member = plan.MembersInOrder[i];
                 var memberIsHidden = hiddenSet.Contains(member.RelativePath.Canonical);
 
-                if (!memberIsHidden)
+                bool isPresent;
+                if (member.PresenceBindingIndex is not int presenceIdx)
                 {
-                    allMembersHidden = false;
-
-                    // Check if this visible member contributed to the canonical.
-                    // Members without a PresenceBindingIndex are unconditionally present (required fields).
-                    if (
-                        member.PresenceBindingIndex is not int visiblePresIdx
-                        || overlaidValues[visiblePresIdx] is FlattenedWriteValue.Literal { Value: true }
-                    )
+                    // No presence column — member is unconditionally present (required field).
+                    isPresent = true;
+                }
+                else if (memberIsHidden)
+                {
+                    // Hidden member: presence is governed by preserved stored state.
+                    isPresent =
+                        currentValues.Value[presenceIdx] is FlattenedWriteValue.Literal { Value: true };
+                    if (isPresent)
                     {
-                        anyVisibleMemberPresent = true;
+                        anyHiddenStoredPresent = true;
                     }
-
-                    continue;
+                }
+                else
+                {
+                    // Visible member: presence is governed by the request (via the overlay).
+                    isPresent = overlaidValues[presenceIdx] is FlattenedWriteValue.Literal { Value: true };
+                    if (isPresent)
+                    {
+                        anyVisiblePresent = true;
+                    }
                 }
 
-                // Hidden member: preserve synthetic presence from stored state
-                if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceIdx)
+                if (isPresent && firstPresentIndex is null)
+                {
+                    firstPresentIndex = i;
+                    firstPresentIsHidden = memberIsHidden;
+                }
+            }
+
+            // Pass 2: preserve hidden members' synthetic presence columns from stored state.
+            // Must happen regardless of canonical-source choice so the stored presence profile
+            // is never silently dropped.
+            foreach (var member in plan.MembersInOrder)
+            {
+                if (
+                    hiddenSet.Contains(member.RelativePath.Canonical)
+                    && member.PresenceIsSynthetic
+                    && member.PresenceBindingIndex is int presenceIdx
+                )
                 {
                     adjusted ??= overlaidValues.ToArray();
                     adjusted[presenceIdx] = currentValues.Value[presenceIdx];
                 }
             }
 
-            if (allMembersHidden || !anyVisibleMemberPresent)
+            // Fail-closed conflict detection: preserved hidden member AND visible present member
+            // must agree on the canonical value. Compare stored canonical vs. overlay canonical
+            // (both already in canonical storage form).
+            if (anyHiddenStoredPresent && anyVisiblePresent)
             {
-                // All members hidden, or all visible members absent:
-                // the request cannot compute a meaningful canonical, so preserve stored state.
+                var storedCanonical = currentValues.Value[plan.CanonicalBindingIndex];
+                var requestCanonical = overlaidValues[plan.CanonicalBindingIndex];
+
+                if (!CanonicalValueEquals(storedCanonical, requestCanonical))
+                {
+                    var canonicalColumn = tableWritePlan
+                        .ColumnBindings[plan.CanonicalBindingIndex]
+                        .Column
+                        .ColumnName
+                        .Value;
+
+                    failures ??= [];
+                    failures.Add(
+                        new MergeValidationFailure(
+                            $"Key-unification conflict on canonical column '{canonicalColumn}' "
+                                + $"in table '{FormatTable(tableWritePlan)}': preserved hidden "
+                                + "member value disagrees with visible request member value."
+                        )
+                    );
+
+                    // Do not write a canonical choice when a conflict was detected — the caller
+                    // will surface the validation failure and the resulting values are unused.
+                    continue;
+                }
+            }
+
+            // Choose the canonical source per the design's first-present-in-MembersInOrder rule:
+            //   - no first-present member → preserve stored canonical (preserves no-op equivalence
+            //     and matches the key-unification.md "no members present => NULL" outcome, since
+            //     a stored row with no present members already has a NULL canonical),
+            //   - first-present member is hidden → canonical binding is hidden-and-preserved,
+            //   - first-present member is visible → canonical binding is visible-and-writable
+            //     and the overlay already carries the request-driven canonical (no change).
+            var preserveCanonical = firstPresentIndex is null || firstPresentIsHidden;
+            if (preserveCanonical)
+            {
                 adjusted ??= overlaidValues.ToArray();
                 adjusted[plan.CanonicalBindingIndex] = currentValues.Value[plan.CanonicalBindingIndex];
             }
         }
 
-        return adjusted is not null ? adjusted.ToImmutableArray() : overlaidValues;
+        return (
+            adjusted is not null ? adjusted.ToImmutableArray() : overlaidValues,
+            failures is not null ? [.. failures] : []
+        );
+    }
+
+    /// <summary>
+    /// Equality comparison for canonical storage values. Both sides have already been
+    /// canonicalized (request side by the flattener, stored side by hydration), so
+    /// CLR-level equality on <see cref="FlattenedWriteValue.Literal.Value"/> is the
+    /// correct comparison per <c>key-unification.md</c> §"Apply conflict detection".
+    /// </summary>
+    private static bool CanonicalValueEquals(FlattenedWriteValue left, FlattenedWriteValue right)
+    {
+        if (left is FlattenedWriteValue.Literal leftLit && right is FlattenedWriteValue.Literal rightLit)
+        {
+            return Equals(leftLit.Value, rightLit.Value);
+        }
+        return ReferenceEquals(left, right);
     }
 
     // --- Inlined visible-absent scope path precomputation ---
