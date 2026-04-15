@@ -273,7 +273,8 @@ public class Given_AncestorChainMismatch_When_Validating
     [SetUp]
     public void Setup()
     {
-        // Catalog: nested collection requiring one ancestor
+        // Catalog: a NonCollection scope nested under one collection ancestor. A well-formed
+        // ScopeInstanceAddress for this scope must carry exactly one AncestorCollectionInstance.
         var scopeCatalog = new List<CompiledScopeDescriptor>
         {
             new(
@@ -293,32 +294,30 @@ public class Given_AncestorChainMismatch_When_Validating
                 CanonicalScopeRelativeMemberPaths: ["addressType"]
             ),
             new(
-                JsonScope: "$.addresses[*].periods[*]",
-                ScopeKind: ScopeKind.Collection,
+                JsonScope: "$.addresses[*].addressInfo",
+                ScopeKind: ScopeKind.NonCollection,
                 ImmediateParentJsonScope: "$.addresses[*]",
                 CollectionAncestorsInOrder: ["$.addresses[*]"],
-                SemanticIdentityRelativePathsInOrder: ["periodType"],
-                CanonicalScopeRelativeMemberPaths: ["periodType"]
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["addressLine1"]
             ),
         };
 
-        // Address references the nested collection but provides wrong ancestor chain (empty instead of one ancestor)
+        // Address references the NonCollection scope but provides the wrong ancestor chain
+        // (empty instead of the required "$.addresses[*]" ancestor).
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
             RequestScopeStates:
             [
-                // Root: valid (no ancestors needed)
                 new RequestScopeState(
                     new ScopeInstanceAddress("$", []),
                     ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
-                // addresses[*] as a NonCollection scope (addresses[*] is a collection scope but testing via RequestScopeState)
-                // Use root which is valid but add a scope with wrong ancestor for the nested collection
                 new RequestScopeState(
                     new ScopeInstanceAddress(
-                        "$.addresses[*].periods[*]",
+                        "$.addresses[*].addressInfo",
                         AncestorCollectionInstances: [] // wrong: expects 1 ancestor "$.addresses[*]"
                     ),
                     ProfileVisibilityKind.VisiblePresent,
@@ -1897,6 +1896,194 @@ public class Given_Duplicate_VisibleStoredCollectionRow_When_ValidatingWriteCont
             .Message.Should()
             .Contain("duplicate VisibleStoredCollectionRow")
             .And.Contain("$.classPeriods[*]");
+    }
+}
+
+[TestFixture]
+public class Given_ScopeInstanceAddress_Targets_Collection_ScopeKind_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog has a Collection-kind scope; the request emits a ScopeInstanceAddress
+        // pointed at it (a contract violation — ScopeInstanceAddress must target Root or
+        // NonCollection).
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndCollectionCatalog();
+        var wrongKindAddress = new ScopeInstanceAddress("$.classPeriods[*]", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+                new RequestScopeState(wrongKindAddress, ProfileVisibilityKind.VisiblePresent, true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "Section",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_scope_kind_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0]
+            .Message.Should()
+            .Contain("ScopeInstanceAddress")
+            .And.Contain("$.classPeriods[*]")
+            .And.Contain("Collection");
+    }
+}
+
+[TestFixture]
+public class Given_CollectionRowAddress_Targets_NonCollection_ScopeKind_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog has a NonCollection-kind scope; the request emits a VisibleRequestCollectionItem
+        // whose CollectionRowAddress points at it (a contract violation — CollectionRowAddress
+        // must target a Collection scope).
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndNonCollectionCatalog(
+            "$.calendarReference"
+        );
+        var wrongKindAddress = new CollectionRowAddress(
+            "$.calendarReference",
+            new ScopeInstanceAddress("$", []),
+            []
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    wrongKindAddress,
+                    Creatable: false,
+                    RequestJsonPath: "$.calendarReference"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "Calendar",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_scope_kind_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0]
+            .Message.Should()
+            .Contain("CollectionRowAddress")
+            .And.Contain("$.calendarReference")
+            .And.Contain("NonCollection");
+    }
+}
+
+[TestFixture]
+public class Given_Duplicate_CompiledScope_In_Catalog_When_ValidatingRequestContract
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Two compiled descriptors share the same JsonScope. The prior ToDictionary-based
+        // lookup would throw an ArgumentException and surface as a generic 500; the
+        // validator now reports this as a deterministic category-5 contract mismatch.
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.calendarReference",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["calendarCode"]
+            ),
+            new(
+                JsonScope: "$.calendarReference",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["calendarCode"]
+            ),
+        };
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "Calendar",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_does_not_throw_and_emits_a_duplicate_compiled_scope_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0].Message.Should().Contain("duplicate JsonScope").And.Contain("$.calendarReference");
     }
 }
 

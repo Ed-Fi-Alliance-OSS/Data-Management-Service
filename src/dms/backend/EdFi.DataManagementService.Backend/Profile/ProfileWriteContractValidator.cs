@@ -29,7 +29,14 @@ internal static class ProfileWriteContractValidator
     )
     {
         var failures = new List<ProfileFailure>();
-        var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
+        var catalogByJsonScope = BuildCatalogLookup(
+            scopeCatalog,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
         ValidateRequestContractCore(
             request,
             catalogByJsonScope,
@@ -102,7 +109,14 @@ internal static class ProfileWriteContractValidator
     )
     {
         var failures = new List<ProfileFailure>();
-        var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
+        var catalogByJsonScope = BuildCatalogLookup(
+            scopeCatalog,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
 
         // Validate request side (reuse the already-built catalog lookup)
         ValidateRequestContractCore(
@@ -762,9 +776,47 @@ internal static class ProfileWriteContractValidator
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Builds a JsonScope-keyed lookup from the compiled scope catalog. When Core/backend
+    /// ever emit duplicate compiled scopes (a design-doc MUST-violation — see profiles.md
+    /// §"Scope and Row Address Derivation", "exactly one compiled scope"), the duplicate
+    /// is reported as a deterministic category-5 contract mismatch and the first-seen
+    /// descriptor is retained so downstream validation can still run. A silent
+    /// <c>ToDictionary</c> throw would escape as an unstructured 500 instead.
+    /// </summary>
     private static Dictionary<string, CompiledScopeDescriptor> BuildCatalogLookup(
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    ) => scopeCatalog.ToDictionary(d => d.JsonScope);
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var lookup = new Dictionary<string, CompiledScopeDescriptor>(StringComparer.Ordinal);
+        HashSet<string> reportedDuplicates = new(StringComparer.Ordinal);
+
+        foreach (var descriptor in scopeCatalog)
+        {
+            if (
+                !lookup.TryAdd(descriptor.JsonScope, descriptor)
+                && reportedDuplicates.Add(descriptor.JsonScope)
+            )
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Compiled scope catalog contains duplicate JsonScope '{descriptor.JsonScope}'. "
+                            + "Backend requires exactly one compiled scope per JsonScope and will not "
+                            + "apply first-wins lookup behavior.",
+                        new ProfileFailureContext(profileName, resourceName, method, operation)
+                    )
+                );
+            }
+        }
+
+        return lookup;
+    }
 
     private static void ValidateScopeInstanceAddress(
         ScopeInstanceAddress address,
@@ -786,6 +838,27 @@ internal static class ProfileWriteContractValidator
                     operation,
                     address.JsonScope,
                     ScopeKind.NonCollection
+                )
+            );
+            return;
+        }
+
+        // Per profiles.md §"Scope and Row Address Derivation" (line 425): backend MUST
+        // fail deterministically when an emitted address does not map to a compiled scope
+        // of the expected kind. A ScopeInstanceAddress targets a Root or NonCollection
+        // scope; pointing it at a Collection scope would let the merge consume the state
+        // via TryGetStoredScopeStateForInstance and treat it as a whole-collection hidden
+        // override, which is outside the design contract.
+        if (compiledScope.ScopeKind == ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.CoreBackendContractMismatch(
+                    ProfileFailureEmitter.BackendProfileWriteContext,
+                    $"ScopeInstanceAddress targets JsonScope '{address.JsonScope}' which is "
+                        + $"compiled as {compiledScope.ScopeKind}. ScopeInstanceAddress requires "
+                        + "a Root or NonCollection compiled scope.",
+                    new ProfileFailureContext(profileName, resourceName, method, operation),
+                    new ProfileFailureDiagnostic.ScopeAddress(address)
                 )
             );
             return;
@@ -839,6 +912,26 @@ internal static class ProfileWriteContractValidator
                     operation,
                     address.JsonScope,
                     ScopeKind.Collection
+                )
+            );
+            return;
+        }
+
+        // Per profiles.md §"Scope and Row Address Derivation" (line 425): backend MUST
+        // fail deterministically when an emitted address does not map to a compiled scope
+        // of the expected kind. A CollectionRowAddress targets a Collection scope; pointing
+        // it at a Root or NonCollection scope would let the downstream collection merge
+        // operate on a scope that has no CollectionMergePlan and misbind row identity.
+        if (compiledScope.ScopeKind != ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.CoreBackendContractMismatch(
+                    ProfileFailureEmitter.BackendProfileWriteContext,
+                    $"CollectionRowAddress targets JsonScope '{address.JsonScope}' which is "
+                        + $"compiled as {compiledScope.ScopeKind}. CollectionRowAddress requires "
+                        + "a Collection compiled scope.",
+                    new ProfileFailureContext(profileName, resourceName, method, operation),
+                    new ProfileFailureDiagnostic.CollectionRow(address)
                 )
             );
             return;
