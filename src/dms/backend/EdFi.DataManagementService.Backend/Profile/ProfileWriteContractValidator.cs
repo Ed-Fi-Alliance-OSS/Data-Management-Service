@@ -59,6 +59,8 @@ internal static class ProfileWriteContractValidator
         List<ProfileFailure> failures
     )
     {
+        ValidateDuplicateRequestMetadata(request, profileName, resourceName, method, operation, failures);
+
         foreach (var scopeState in request.RequestScopeStates)
         {
             ValidateScopeInstanceAddress(
@@ -112,6 +114,8 @@ internal static class ProfileWriteContractValidator
             operation,
             failures
         );
+
+        ValidateDuplicateStoredMetadata(context, profileName, resourceName, method, operation, failures);
 
         // Validate completeness: every non-root, non-collection scope has a RequestScopeState.
         // Pass stored scope states so scopes with Hidden stored visibility can be skipped —
@@ -217,6 +221,188 @@ internal static class ProfileWriteContractValidator
         }
 
         return [.. failures];
+    }
+
+    /// <summary>
+    /// Validates that request-side metadata is unique per compiled address so the merge does not
+    /// silently resolve duplicates via first-wins lookup behavior.
+    /// </summary>
+    private static void ValidateDuplicateRequestMetadata(
+        ProfileAppliedWriteRequest request,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var context = new ProfileFailureContext(profileName, resourceName, method, operation);
+
+        ValidateDuplicateScopeStates(
+            request.RequestScopeStates,
+            metadataKind: nameof(RequestScopeState),
+            context,
+            failures
+        );
+        ValidateDuplicateCollectionItems(
+            request.VisibleRequestCollectionItems,
+            metadataKind: nameof(VisibleRequestCollectionItem),
+            context,
+            failures
+        );
+    }
+
+    /// <summary>
+    /// Validates that stored-side metadata is unique per compiled address so hidden-member
+    /// preservation and second-pass resolution never depend on first-wins lookup behavior.
+    /// </summary>
+    private static void ValidateDuplicateStoredMetadata(
+        ProfileAppliedWriteContext context,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var failureContext = new ProfileFailureContext(profileName, resourceName, method, operation);
+
+        ValidateDuplicateStoredScopeStates(
+            context.StoredScopeStates,
+            metadataKind: nameof(StoredScopeState),
+            failureContext,
+            failures
+        );
+        ValidateDuplicateStoredCollectionRows(
+            context.VisibleStoredCollectionRows,
+            metadataKind: nameof(VisibleStoredCollectionRow),
+            failureContext,
+            failures
+        );
+    }
+
+    private static void ValidateDuplicateScopeStates(
+        ImmutableArray<RequestScopeState> scopeStates,
+        string metadataKind,
+        ProfileFailureContext context,
+        List<ProfileFailure> failures
+    )
+    {
+        HashSet<string> seenKeys = new(StringComparer.Ordinal);
+        HashSet<string> reportedKeys = new(StringComparer.Ordinal);
+
+        foreach (var address in scopeStates.Select(scopeState => scopeState.Address))
+        {
+            var instanceKey = BuildScopeInstanceKey(address.JsonScope, address.AncestorCollectionInstances);
+
+            if (!seenKeys.Add(instanceKey) && reportedKeys.Add(instanceKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Core emitted duplicate {metadataKind} metadata for scope "
+                            + $"'{address.JsonScope}' at the same compiled address. "
+                            + "Backend requires unique scope metadata and will not apply "
+                            + "first-wins lookup behavior.",
+                        context,
+                        new ProfileFailureDiagnostic.ScopeAddress(address)
+                    )
+                );
+            }
+        }
+    }
+
+    private static void ValidateDuplicateStoredScopeStates(
+        ImmutableArray<StoredScopeState> scopeStates,
+        string metadataKind,
+        ProfileFailureContext context,
+        List<ProfileFailure> failures
+    )
+    {
+        HashSet<string> seenKeys = new(StringComparer.Ordinal);
+        HashSet<string> reportedKeys = new(StringComparer.Ordinal);
+
+        foreach (var address in scopeStates.Select(scopeState => scopeState.Address))
+        {
+            var instanceKey = BuildScopeInstanceKey(address.JsonScope, address.AncestorCollectionInstances);
+
+            if (!seenKeys.Add(instanceKey) && reportedKeys.Add(instanceKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Core emitted duplicate {metadataKind} metadata for scope "
+                            + $"'{address.JsonScope}' at the same compiled address. "
+                            + "Backend requires unique scope metadata and will not apply "
+                            + "first-wins lookup behavior.",
+                        context,
+                        new ProfileFailureDiagnostic.ScopeAddress(address)
+                    )
+                );
+            }
+        }
+    }
+
+    private static void ValidateDuplicateCollectionItems(
+        ImmutableArray<VisibleRequestCollectionItem> collectionItems,
+        string metadataKind,
+        ProfileFailureContext context,
+        List<ProfileFailure> failures
+    )
+    {
+        HashSet<string> seenKeys = new(StringComparer.Ordinal);
+        HashSet<string> reportedKeys = new(StringComparer.Ordinal);
+
+        foreach (var address in collectionItems.Select(collectionItem => collectionItem.Address))
+        {
+            var instanceKey = BuildCollectionRowInstanceKey(address);
+
+            if (!seenKeys.Add(instanceKey) && reportedKeys.Add(instanceKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Core emitted duplicate {metadataKind} metadata for collection scope "
+                            + $"'{address.JsonScope}' at the same compiled address. "
+                            + "Backend requires unique collection metadata and will not apply "
+                            + "first-wins lookup behavior.",
+                        context,
+                        new ProfileFailureDiagnostic.CollectionRow(address)
+                    )
+                );
+            }
+        }
+    }
+
+    private static void ValidateDuplicateStoredCollectionRows(
+        ImmutableArray<VisibleStoredCollectionRow> collectionRows,
+        string metadataKind,
+        ProfileFailureContext context,
+        List<ProfileFailure> failures
+    )
+    {
+        HashSet<string> seenKeys = new(StringComparer.Ordinal);
+        HashSet<string> reportedKeys = new(StringComparer.Ordinal);
+
+        foreach (var address in collectionRows.Select(collectionRow => collectionRow.Address))
+        {
+            var instanceKey = BuildCollectionRowInstanceKey(address);
+
+            if (!seenKeys.Add(instanceKey) && reportedKeys.Add(instanceKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"Core emitted duplicate {metadataKind} metadata for collection scope "
+                            + $"'{address.JsonScope}' at the same compiled address. "
+                            + "Backend requires unique collection metadata and will not apply "
+                            + "first-wins lookup behavior.",
+                        context,
+                        new ProfileFailureDiagnostic.CollectionRow(address)
+                    )
+                );
+            }
+        }
     }
 
     /// <summary>
@@ -548,35 +734,29 @@ internal static class ProfileWriteContractValidator
     private static string BuildScopeInstanceKey(
         string jsonScope,
         ImmutableArray<AncestorCollectionInstance> ancestors
-    )
+    ) => $"{jsonScope}|{AncestorKeyHelpers.BuildAncestorKeyFromInstances(ancestors)}";
+
+    private static string BuildCollectionRowInstanceKey(CollectionRowAddress address)
     {
         var sb = new StringBuilder();
-        sb.Append(jsonScope);
+        sb.Append(address.JsonScope);
         sb.Append('|');
+        sb.Append(address.ParentAddress.JsonScope);
+        sb.Append('|');
+        sb.Append(
+            AncestorKeyHelpers.BuildAncestorKeyFromInstances(
+                address.ParentAddress.AncestorCollectionInstances
+            )
+        );
 
-        if (ancestors.IsDefaultOrEmpty)
+        foreach (var part in address.SemanticIdentityInOrder)
         {
-            return sb.ToString();
-        }
-
-        var first = true;
-        foreach (var ancestor in ancestors)
-        {
-            if (!first)
-            {
-                sb.Append('\0');
-            }
-            first = false;
-
-            sb.Append(ancestor.JsonScope);
-
-            foreach (var part in ancestor.SemanticIdentityInOrder)
-            {
-                sb.Append('\0');
-                sb.Append(part.IsPresent ? '1' : '0');
-                sb.Append('\0');
-                sb.Append(AncestorKeyHelpers.ExtractJsonNodeStringValue(part.Value));
-            }
+            sb.Append('\0');
+            sb.Append(part.RelativePath);
+            sb.Append('\0');
+            sb.Append(part.IsPresent ? '1' : '0');
+            sb.Append('\0');
+            sb.Append(AncestorKeyHelpers.ExtractJsonNodeStringValue(part.Value));
         }
 
         return sb.ToString();

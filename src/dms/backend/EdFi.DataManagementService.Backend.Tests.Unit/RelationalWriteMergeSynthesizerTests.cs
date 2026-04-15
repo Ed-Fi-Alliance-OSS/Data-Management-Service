@@ -5909,7 +5909,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
-    public void It_preserves_all_scope_wide_hidden_collection_aligned_scope_rows_in_the_second_pass()
+    public void It_returns_ContractMismatch_when_collection_aligned_scope_state_has_no_ancestors()
     {
         var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
 
@@ -6006,14 +6006,15 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
             )
         );
 
-        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
-        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
-        var extScopeState = result.TablesInDependencyOrder[2];
-
-        extScopeState.PreservedRows.Should().HaveCount(2);
-        LiteralValue(extScopeState.PreservedRows[0].Values[1]).Should().Be(100L);
-        LiteralValue(extScopeState.PreservedRows[1].Values[1]).Should().Be(101L);
-        extScopeState.Deletes.Should().BeEmpty();
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ContractMismatch>();
+        var mismatch = (RelationalWriteMergeSynthesisOutcome.ContractMismatch)outcome;
+        mismatch.Messages.Should().ContainSingle();
+        mismatch
+            .Messages[0]
+            .Should()
+            .Contain("collection-aligned scope")
+            .And.Contain("without ancestor collection instances")
+            .And.Contain("$.classPeriods._ext.sample");
     }
 
     [Test]

@@ -288,6 +288,40 @@ public class Given_Relational_Write_Persister
     }
 
     [Test]
+    public async Task It_skips_unchanged_collection_aligned_scope_updates_when_only_some_rows_change()
+    {
+        var rootPlan = CreateRootPlan();
+        var collectionPlan = CreateCollectionPlan();
+        var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
+        var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
+                rootPlan,
+                [CreateRow(345L, 255901, "Lincoln High")],
+                [CreateRow(345L, 255901, "Lincoln High")]
+            ),
+            CreateTableStateFromRowSets(
+                collectionPlan,
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")]
+            ),
+            CreateTableStateFromRowSets(
+                collectionExtensionScopePlan,
+                [CreateRow(44L, "Blue"), CreateRow(45L, "Green")],
+                [CreateRow(44L, "Blue"), CreateRow(45L, "Green-Updated")]
+            ),
+        ]);
+        var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+        writeSession.Commands.Should().ContainSingle();
+        writeSession.Commands[0].CommandText.Should().Be(collectionExtensionScopePlan.UpdateSql);
+        GetParameterValue(writeSession.Commands[0], "@BaseCollectionItemId").Should().Be(45L);
+        GetParameterValue(writeSession.Commands[0], "@FavoriteColor").Should().Be("Green-Updated");
+    }
+
+    [Test]
     public async Task It_batches_collection_aligned_extension_scope_inserts_by_parent_row_identity()
     {
         var rootPlan = CreateRootPlan();

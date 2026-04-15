@@ -694,10 +694,13 @@ internal static class NoProfileSyntheticProfileAdapter
 
     /// <summary>
     /// Builds semantic identity parts from an actual stored collection row's column values.
-    /// Uses the merge plan's <see cref="CollectionMergePlan.SemanticIdentityBindings"/> to
-    /// extract the correct column values by index. This is required so that
-    /// <see cref="RelationalWriteMergeSynthesizer.TryMatchCurrentRowToVisibleStored"/> can
-    /// correctly classify each current row as visible rather than hidden.
+    /// Resolves each semantic identity binding to its physical table-column ordinal instead of
+    /// assuming the binding index matches the hydrated-row layout.
+    ///
+    /// Null-profile callers do not carry Core's request-vs-stored presence metadata, so a
+    /// stored semantic-identity null is ambiguous: hydrated rows alone cannot distinguish an
+    /// omitted member from an explicit JSON null. Rather than silently collapsing that
+    /// distinction, fail fast so the caller can route through a reconstituted-document path.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> BuildStoredRowActualSemanticIdentityParts(
         TableWritePlan tableWritePlan,
@@ -715,15 +718,31 @@ internal static class NoProfileSyntheticProfileAdapter
             // Strip the "$." prefix from the relative path for the SemanticIdentityPart
             var partRelativePath = TrimJsonPathRootPrefix(relativePath);
 
-            var clrValue = storedRow[binding.BindingIndex];
-            var isPresent = clrValue is not null;
-            var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
+            var columnBinding = tableWritePlan.ColumnBindings[binding.BindingIndex];
+            var columnOrdinal = FindColumnOrdinalByName(
+                tableWritePlan.TableModel,
+                columnBinding.Column.ColumnName
+            );
+            var clrValue = storedRow[columnOrdinal];
+
+            if (clrValue is null)
+            {
+                throw new InvalidOperationException(
+                    $"Synthetic no-profile adaptation cannot derive stored semantic identity "
+                        + $"presence for table '{tableWritePlan.TableModel.Table.Name}' and path "
+                        + $"'{relativePath}' from hydrated rows alone. Null semantic identity "
+                        + "values require a reconstituted-document path to preserve "
+                        + "missing-vs-explicit-null fidelity."
+                );
+            }
+
+            var scalarType = columnBinding.Column.ScalarType;
             var jsonNodeValue = AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(
                 clrValue,
                 scalarType
             );
 
-            parts[i] = new SemanticIdentityPart(partRelativePath, jsonNodeValue, isPresent);
+            parts[i] = new SemanticIdentityPart(partRelativePath, jsonNodeValue, IsPresent: true);
         }
 
         return [.. parts];

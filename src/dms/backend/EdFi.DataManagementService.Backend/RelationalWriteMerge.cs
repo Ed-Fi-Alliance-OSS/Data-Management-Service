@@ -1723,27 +1723,26 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 && storedState.Address.AncestorCollectionInstances.IsEmpty
             )
             {
-                // A scope-wide StoredScopeState for a collection-aligned extension scope
-                // applies to every current aligned row under the document, not just the
-                // first one. Hidden/VisibleAbsent second-pass handling must therefore walk
-                // the full current rowset when Core does not disambiguate by ancestors.
-                scopeCurrentRows = currentStateProjection.GetCurrentRows(matchedTablePlan);
+                return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                    $"StoredScopeStates second pass received collection-aligned scope "
+                        + $"'{storedState.Address.JsonScope}' without ancestor collection instances. "
+                        + "Core must emit per-instance StoredScopeState addresses for collection-aligned scopes; "
+                        + "backend will not apply a scope-wide fallback.",
+                ]);
             }
-            else
+
+            var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
+                matchedTablePlan,
+                storedState.Address,
+                tablePlansByJsonScope
+            );
+
+            if (currentRow is null)
             {
-                var currentRow = currentStateProjection.TryMatchScopeInstanceRow(
-                    matchedTablePlan,
-                    storedState.Address,
-                    tablePlansByJsonScope
-                );
-
-                if (currentRow is null)
-                {
-                    continue;
-                }
-
-                scopeCurrentRows = [currentRow];
+                continue;
             }
+
+            scopeCurrentRows = [currentRow];
 
             if (RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(matchedTablePlan))
             {

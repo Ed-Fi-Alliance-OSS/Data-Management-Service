@@ -1669,3 +1669,283 @@ public class Given_MissingRootStoredScopeState_When_ValidatingWriteContext
         _result[0].Message.Should().Contain("root scope '$'").And.Contain("StoredScopeState");
     }
 }
+
+[TestFixture]
+public class Given_Duplicate_RequestScopeState_When_ValidatingRequestContract
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndNonCollectionCatalog(
+            "$.calendarReference"
+        );
+        var duplicatedAddress = new ScopeInstanceAddress("$.calendarReference", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+                new RequestScopeState(duplicatedAddress, ProfileVisibilityKind.VisiblePresent, true),
+                new RequestScopeState(duplicatedAddress, ProfileVisibilityKind.VisibleAbsent, false),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "Calendar",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_duplicate_RequestScopeState_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0].Message.Should().Contain("duplicate RequestScopeState").And.Contain("$.calendarReference");
+    }
+}
+
+[TestFixture]
+public class Given_Duplicate_VisibleRequestCollectionItem_When_ValidatingRequestContract
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndCollectionCatalog();
+        var duplicatedRowAddress = DuplicateProfileContractValidatorTestData.BuildCollectionRowAddress();
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(duplicatedRowAddress, Creatable: true, "$.classPeriods[0]"),
+                new VisibleRequestCollectionItem(duplicatedRowAddress, Creatable: false, "$.classPeriods[1]"),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "ClassPeriod",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_duplicate_VisibleRequestCollectionItem_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0]
+            .Message.Should()
+            .Contain("duplicate VisibleRequestCollectionItem")
+            .And.Contain("$.classPeriods[*]");
+    }
+}
+
+[TestFixture]
+public class Given_Duplicate_StoredScopeState_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndNonCollectionCatalog(
+            "$.calendarReference"
+        );
+        var duplicateAddress = new ScopeInstanceAddress("$.calendarReference", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+                new RequestScopeState(duplicateAddress, ProfileVisibilityKind.VisiblePresent, true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    []
+                ),
+                new StoredScopeState(duplicateAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(duplicateAddress, ProfileVisibilityKind.Hidden, ["calendarCode"]),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "Calendar",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_duplicate_StoredScopeState_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0].Message.Should().Contain("duplicate StoredScopeState").And.Contain("$.calendarReference");
+    }
+}
+
+[TestFixture]
+public class Given_Duplicate_VisibleStoredCollectionRow_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = DuplicateProfileContractValidatorTestData.BuildRootAndCollectionCatalog();
+        var duplicatedRowAddress = DuplicateProfileContractValidatorTestData.BuildCollectionRowAddress();
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    true
+                ),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(duplicatedRowAddress, Creatable: true, "$.classPeriods[0]"),
+            ]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    []
+                ),
+            ],
+            VisibleStoredCollectionRows:
+            [
+                new VisibleStoredCollectionRow(duplicatedRowAddress, []),
+                new VisibleStoredCollectionRow(duplicatedRowAddress, ["classPeriodName"]),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "ClassPeriod",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_duplicate_VisibleStoredCollectionRow_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0]
+            .Message.Should()
+            .Contain("duplicate VisibleStoredCollectionRow")
+            .And.Contain("$.classPeriods[*]");
+    }
+}
+
+internal static class DuplicateProfileContractValidatorTestData
+{
+    public static List<CompiledScopeDescriptor> BuildRootAndNonCollectionCatalog(string childScope) =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: childScope,
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["calendarCode"]
+            ),
+        ];
+
+    public static List<CompiledScopeDescriptor> BuildRootAndCollectionCatalog() =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["sectionIdentifier"]
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+        ];
+
+    public static CollectionRowAddress BuildCollectionRowAddress() =>
+        new(
+            "$.classPeriods[*]",
+            new ScopeInstanceAddress("$", []),
+            [new SemanticIdentityPart("classPeriodName", JsonValue.Create("Period1"), IsPresent: true)]
+        );
+}

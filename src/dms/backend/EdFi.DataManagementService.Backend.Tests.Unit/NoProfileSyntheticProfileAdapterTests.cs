@@ -745,16 +745,7 @@ internal static class AdapterTestHelpers
             {
                 var rows = Enumerable
                     .Range(0, t.RowCount)
-                    .Select(rowIndex =>
-                    {
-                        var row = new object?[t.TableModel.Columns.Count];
-                        // Fill with nulls except set DocumentId=1 for root tables
-                        for (var i = 0; i < row.Length; i++)
-                        {
-                            row[i] = null;
-                        }
-                        return row;
-                    })
+                    .Select(rowIndex => BuildHydratedRow(t.TableModel, rowIndex))
                     .ToList();
                 return new HydratedTableRows(t.TableModel, rows);
             })
@@ -770,6 +761,55 @@ internal static class AdapterTestHelpers
         );
 
         return new RelationalWriteCurrentState(documentMetadata, tableRows);
+    }
+
+    public static RelationalWriteCurrentState CreateCurrentStateWithExplicitRows(
+        DbTableModel firstTableModel,
+        IReadOnlyList<object?[]> firstRows,
+        DbTableModel secondTableModel,
+        IReadOnlyList<object?[]> secondRows
+    )
+    {
+        var documentMetadata = new DocumentMetadataRow(
+            DocumentId: 1,
+            DocumentUuid: Guid.NewGuid(),
+            ContentVersion: 1,
+            IdentityVersion: 1,
+            ContentLastModifiedAt: DateTimeOffset.UtcNow,
+            IdentityLastModifiedAt: DateTimeOffset.UtcNow
+        );
+
+        return new RelationalWriteCurrentState(
+            documentMetadata,
+            [
+                new HydratedTableRows(firstTableModel, firstRows),
+                new HydratedTableRows(secondTableModel, secondRows),
+            ]
+        );
+    }
+
+    private static object?[] BuildHydratedRow(DbTableModel tableModel, int rowIndex)
+    {
+        var row = new object?[tableModel.Columns.Count];
+
+        for (var i = 0; i < tableModel.Columns.Count; i++)
+        {
+            var column = tableModel.Columns[i];
+
+            row[i] = column.ColumnName.Value switch
+            {
+                "DocumentId" => 1L,
+                "CollectionItemId" => (long)rowIndex + 1,
+                "Ordinal" => rowIndex,
+                _ when column.ScalarType?.Kind == ScalarKind.String =>
+                    $"{column.ColumnName.Value}_{rowIndex}",
+                _ when column.ScalarType?.Kind == ScalarKind.Int32 => rowIndex,
+                _ when column.ScalarType?.Kind == ScalarKind.Int64 => (long)rowIndex,
+                _ => null,
+            };
+        }
+
+        return row;
     }
 }
 
@@ -880,6 +920,147 @@ public class Given_a_resource_with_collection_extension_scope_table_kind
     public void It_has_one_VisibleStoredCollectionRow_for_the_collection_table()
     {
         _result.Context!.VisibleStoredCollectionRows.Should().HaveCount(1);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_collection_plan_with_binding_indexes_that_do_not_match_table_column_ordinals
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns: [("SectionId", "$.sectionIdentifier")]
+        );
+
+        var collectionPlan = PlanBuilder.CreateCollectionTablePlan(
+            tableName: "SectionClassPeriod",
+            jsonScope: "$.classPeriods[*]",
+            columns: [("ClassPeriodName", "$.classPeriodName"), ("ClassPeriodValue", "$.classPeriodValue")],
+            semanticIdentityRelativePaths: ["$.classPeriodName"]
+        );
+
+        var reorderedBindings = collectionPlan.ColumnBindings.ToArray();
+        (reorderedBindings[3], reorderedBindings[4]) = (reorderedBindings[4], reorderedBindings[3]);
+
+        var reorderedCollectionPlan = collectionPlan with
+        {
+            ColumnBindings = [.. reorderedBindings],
+            CollectionMergePlan = collectionPlan.CollectionMergePlan! with
+            {
+                SemanticIdentityBindings =
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.classPeriodName",
+                            [new JsonPathSegment.Property("classPeriodName")]
+                        ),
+                        BindingIndex: 4
+                    ),
+                ],
+            },
+        };
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, reorderedCollectionPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        var currentState = AdapterTestHelpers.CreateCurrentStateWithExplicitRows(
+            rootPlan.TableModel,
+            [
+                [1L, "sec-1"],
+            ],
+            reorderedCollectionPlan.TableModel,
+            [
+                [1L, 77L, 0, "Period1", "WrongValue"],
+            ]
+        );
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            new JsonObject { ["sectionIdentifier"] = "sec-1" },
+            currentState
+        );
+    }
+
+    [Test]
+    public void It_reads_semantic_identity_values_using_table_column_ordinals()
+    {
+        var semanticIdentity = _result
+            .Context!.VisibleStoredCollectionRows.Single()
+            .Address.SemanticIdentityInOrder.Single();
+
+        semanticIdentity.RelativePath.Should().Be("classPeriodName");
+        semanticIdentity.IsPresent.Should().BeTrue();
+        semanticIdentity.Value.Should().NotBeNull();
+        semanticIdentity.Value!.GetValue<string>().Should().Be("Period1");
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_stored_collection_row_with_null_semantic_identity_value_under_no_profile
+{
+    [Test]
+    public void It_fails_fast_instead_of_collapsing_missing_vs_explicit_null_state()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns: [("SectionId", "$.sectionIdentifier")]
+        );
+
+        var collectionPlan = PlanBuilder.CreateCollectionTablePlan(
+            tableName: "SectionClassPeriod",
+            jsonScope: "$.classPeriods[*]",
+            columns: [("ClassPeriodName", "$.classPeriodName")],
+            semanticIdentityRelativePaths: ["$.classPeriodName"]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, collectionPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        var currentState = AdapterTestHelpers.CreateCurrentStateWithExplicitRows(
+            rootPlan.TableModel,
+            [
+                [1L, "sec-1"],
+            ],
+            collectionPlan.TableModel,
+            [
+                [1L, 77L, 0, null],
+            ]
+        );
+
+        var act = () =>
+            NoProfileSyntheticProfileAdapter.Build(
+                plan,
+                flattenedWriteSet,
+                new JsonObject { ["sectionIdentifier"] = "sec-1" },
+                currentState
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*cannot derive stored semantic identity presence*missing-vs-explicit-null fidelity*"
+            );
     }
 }
 
