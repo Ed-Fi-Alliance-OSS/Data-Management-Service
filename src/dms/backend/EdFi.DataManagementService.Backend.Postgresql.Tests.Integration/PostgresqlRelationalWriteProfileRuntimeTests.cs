@@ -1381,6 +1381,82 @@ file static class ProfileRuntimeContextFactory
             StoredStateProjectionInvoker: new ProfileRuntimeUnexpectedStoredStateProjectionInvoker()
         );
     }
+
+    public static BackendProfileWriteContext CreateHiddenFkMemberPreservationContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        // The extension address scope ($._ext.sample.addresses[*]._ext.sample) is Hidden:
+        // the update body omits extension address data entirely, so the flattener produces
+        // no buffer entries for that scope. The merge second pass detects the Hidden stored
+        // scope state and preserves all extension address rows and their descendants
+        // (including SchoolExtensionAddressSponsorReference rows with FK columns) via
+        // PreserveHiddenRowDescendants. The base address collection remains visible.
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0, creatable: true),
+            CreateVisibleAddressCollectionItem(rootAddress, "Dallas", 1, creatable: true),
+            CreateVisiblePeriodCollectionItem("Austin", "Fall", parentAddressIndex: 0, periodIndex: 0),
+            CreateVisiblePeriodCollectionItem("Dallas", "Spring", parentAddressIndex: 1, periodIndex: 0)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin"),
+                    CreateVisibleStoredAddressCollectionRow(rootAddress, "Dallas"),
+                    CreateVisibleStoredPeriodCollectionRow("Austin", "Fall"),
+                    CreateVisibleStoredPeriodCollectionRow("Dallas", "Spring"),
+                ]
+            )
+        );
+    }
 }
 
 [TestFixture]
@@ -3056,5 +3132,278 @@ public class Given_A_Postgresql_Profiled_Creatable_Root_Create
     public void It_has_exactly_one_document()
     {
         _stateAfterCreate.DocumentCount.Should().Be(1);
+    }
+}
+
+// --------------------------------------------------------------------------
+// Hidden FK member preservation: visible sponsor-reference row,
+// programReference member hidden — FK columns must survive the profiled update
+// --------------------------------------------------------------------------
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Hidden_FK_Member_Preservation
+{
+    // Program gets ResourceKeyId = 1, School gets ResourceKeyId = 2
+    // (sorted by (ProjectName, ResourceName) ordinal: "Ed-Fi/Program" < "Ed-Fi/School")
+    private const short ProgramResourceKeyId = 1;
+
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000111")
+    );
+
+    private static readonly Guid ProgramDocumentUuid = Guid.Parse("eeeeeeee-0000-0000-0000-000000000001");
+
+    // Update body: campusCode changes from "North" → "UpdatedCampus" (visible root-extension
+    // change). Extension addresses are omitted entirely so the flattener produces no buffer
+    // entries for $._ext.sample.addresses[*]._ext.sample; the merge second pass preserves
+    // those rows (and their sponsor reference descendants with FK columns) via the Hidden
+    // stored scope state.
+    private const string UpdateBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "addresses": [
+            { "city": "Austin", "periods": [{ "periodName": "Fall" }] },
+            { "city": "Dallas", "periods": [{ "periodName": "Spring" }] }
+          ],
+          "_ext": {
+            "sample": {
+              "campusCode": "UpdatedCampus"
+            }
+          }
+        }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+        var programDocumentId = await InsertProgramDocumentAsync();
+        await InsertSponsorReferenceAsync(programDocumentId);
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledHiddenFkMember",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-fk-preservation-create"
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    /// <summary>
+    /// Inserts a Program document directly via SQL, bypassing the pipeline.
+    /// Returns the DocumentId assigned by the database.
+    /// </summary>
+    private async Task<long> InsertProgramDocumentAsync()
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Document"
+                ("DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion")
+            VALUES
+                (@uuid, @resourceKeyId, nextval('"dms"."ChangeVersionSequence"'), nextval('"dms"."ChangeVersionSequence"'));
+            """,
+            new NpgsqlParameter("uuid", ProgramDocumentUuid),
+            new NpgsqlParameter("resourceKeyId", ProgramResourceKeyId)
+        );
+
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @uuid;
+            """,
+            new NpgsqlParameter("uuid", ProgramDocumentUuid)
+        );
+
+        var programDocumentId = ProfileRuntimeTestSupport.GetInt64(rows[0], "DocumentId");
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Program" ("DocumentId", "ProgramName")
+            VALUES (@documentId, 'TestProg');
+            """,
+            new NpgsqlParameter("documentId", programDocumentId)
+        );
+
+        return programDocumentId;
+    }
+
+    /// <summary>
+    /// Inserts a sponsor reference row directly via SQL for the Austin address extension.
+    /// The BaseCollectionItemId is derived by looking up the SchoolExtensionAddress row
+    /// for Austin after the initial create.
+    /// </summary>
+    private async Task InsertSponsorReferenceAsync(long programDocumentId)
+    {
+        var schoolDocumentRows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @uuid;
+            """,
+            new NpgsqlParameter("uuid", SchoolDocumentUuid.Value)
+        );
+        var schoolDocumentId = ProfileRuntimeTestSupport.GetInt64(schoolDocumentRows[0], "DocumentId");
+
+        // The Austin extension address BaseCollectionItemId comes from the address row for Austin.
+        var austinAddressRows = await _database.QueryRowsAsync(
+            """
+            SELECT "CollectionItemId"
+            FROM "edfi"."SchoolAddress"
+            WHERE "School_DocumentId" = @schoolDocId AND "City" = 'Austin';
+            """,
+            new NpgsqlParameter("schoolDocId", schoolDocumentId)
+        );
+        var austinAddressCollectionItemId = ProfileRuntimeTestSupport.GetInt64(
+            austinAddressRows[0],
+            "CollectionItemId"
+        );
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "sample"."SchoolExtensionAddressSponsorReference"
+                ("CollectionItemId", "BaseCollectionItemId", "Ordinal",
+                 "School_DocumentId", "Program_DocumentId", "Program_ProgramName")
+            VALUES
+                (nextval('"dms"."CollectionItemIdSequence"'), @baseId, 0,
+                 @schoolDocId, @programDocId, 'TestProg');
+            """,
+            new NpgsqlParameter("baseId", austinAddressCollectionItemId),
+            new NpgsqlParameter("schoolDocId", schoolDocumentId),
+            new NpgsqlParameter("programDocId", programDocumentId)
+        );
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledHiddenFkMember",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-fk-preservation-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateHiddenFkMemberPreservationContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "profiled hidden-FK-member update should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_preserves_the_sponsor_reference_row()
+    {
+        _stateAfterUpdate.SponsorReferences.Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_preserves_the_FK_document_reference_column()
+    {
+        _stateAfterUpdate
+            .SponsorReferences[0]
+            .ProgramDocumentId.Should()
+            .NotBeNull("Program_DocumentId FK column must survive the profiled update");
+    }
+
+    [Test]
+    public void It_preserves_the_FK_derived_scalar_column()
+    {
+        _stateAfterUpdate
+            .SponsorReferences[0]
+            .ProgramProgramName.Should()
+            .Be("TestProg", "Program_ProgramName reference-derived scalar must survive the profiled update");
+    }
+
+    [Test]
+    public void It_applies_the_visible_campus_code_change()
+    {
+        _stateAfterUpdate.SchoolExtension.Should().NotBeNull();
+        _stateAfterUpdate
+            .SchoolExtension!.CampusCode.Should()
+            .Be(
+                "UpdatedCampus",
+                "campusCode in the visible $._ext.sample scope must reflect the profiled update"
+            );
     }
 }

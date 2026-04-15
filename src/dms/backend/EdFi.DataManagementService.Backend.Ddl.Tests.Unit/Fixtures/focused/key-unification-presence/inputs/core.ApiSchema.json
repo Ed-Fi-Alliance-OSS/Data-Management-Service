@@ -1,0 +1,88 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "widgets": "widgets"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "Widget": "widgets"
+    },
+    "resourceSchemas": {
+      "widgets": {
+        "resourceName": "Widget",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "equalityConstraints": [
+          {
+            "sourceJsonPath": "$.primaryType",
+            "targetJsonPath": "$.secondaryType"
+          }
+        ],
+        "identityJsonPaths": [
+          "$.widgetId"
+        ],
+        "documentPathsMapping": {
+          "WidgetId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.widgetId"
+          },
+          "PrimaryType": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.primaryType"
+          },
+          "SecondaryType": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.secondaryType"
+          },
+          "Name": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.name"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "widgetId": {
+              "type": "integer"
+            },
+            "primaryType": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "secondaryType": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "widgetId"
+          ]
+        }
+      }
+    }
+  }
+}
