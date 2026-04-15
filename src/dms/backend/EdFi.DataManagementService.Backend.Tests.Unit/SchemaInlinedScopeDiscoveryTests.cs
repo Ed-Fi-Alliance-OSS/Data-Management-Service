@@ -762,6 +762,156 @@ internal static class PlanBuilder
         );
     }
 
+    /// <summary>
+    /// Creates a minimal TableWritePlan for a nested collection table (parent is another collection,
+    /// not the root). Adds a parent-scope-locator column referencing the parent collection's stable
+    /// row identity and wires <see cref="DbTableIdentityMetadata.ImmediateParentScopeLocatorColumns"/>
+    /// so the adapter can resolve the parent row in the ancestor chain.
+    /// </summary>
+    public static TableWritePlan CreateNestedCollectionTablePlan(
+        string tableName,
+        string jsonScope,
+        string parentTableName,
+        IEnumerable<(string ColumnName, string? SourcePath)> columns,
+        IEnumerable<string> semanticIdentityRelativePaths
+    )
+    {
+        var scopeSegments = ParsePathSegments(jsonScope);
+        var identityPaths = semanticIdentityRelativePaths.ToList();
+
+        // Parent scope locator column: references parent collection's CollectionItemId
+        var parentLocatorColumnName = $"{parentTableName}CollectionItemId";
+
+        var columnModels = new List<DbColumnModel>
+        {
+            // ParentScopeLocator (references parent collection's stable row identity)
+            new(
+                new DbColumnName(parentLocatorColumnName),
+                ColumnKind.ParentKeyPart,
+                null,
+                false,
+                null,
+                null,
+                new ColumnStorage.Stored()
+            ),
+            // CollectionItemId (this table's own stable row identity)
+            new(
+                new DbColumnName("CollectionItemId"),
+                ColumnKind.ParentKeyPart,
+                null,
+                false,
+                null,
+                null,
+                new ColumnStorage.Stored()
+            ),
+            // Ordinal
+            new(
+                new DbColumnName("Ordinal"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                false,
+                null,
+                null,
+                new ColumnStorage.Stored()
+            ),
+        };
+
+        var userColumnStartIndex = columnModels.Count;
+
+        foreach (var (colName, sourcePath) in columns)
+        {
+            var pathExpr = sourcePath is not null
+                ? (JsonPathExpression?)new JsonPathExpression(sourcePath, ParsePathSegments(sourcePath))
+                : null;
+
+            columnModels.Add(
+                new DbColumnModel(
+                    new DbColumnName(colName),
+                    sourcePath is not null ? ColumnKind.Scalar : ColumnKind.ParentKeyPart,
+                    sourcePath is not null
+                        ? new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                        : null,
+                    true,
+                    pathExpr,
+                    null,
+                    new ColumnStorage.Stored()
+                )
+            );
+        }
+
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), tableName),
+            new JsonPathExpression(jsonScope, scopeSegments),
+            new TableKey(
+                $"PK_{tableName}",
+                [new DbKeyColumn(new DbColumnName(parentLocatorColumnName), ColumnKind.ParentKeyPart)]
+            ),
+            columnModels,
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName(parentLocatorColumnName)],
+                [new DbColumnName(parentLocatorColumnName)],
+                [new DbColumnName(parentLocatorColumnName)],
+                []
+            ),
+        };
+
+        var bindings = columnModels
+            .Select(
+                (col, i) =>
+                    new WriteColumnBinding(col, new WriteValueSource.DocumentId(), col.ColumnName.Value)
+            )
+            .ToList();
+
+        // Build semantic identity bindings pointing into the binding list
+        var semanticIdentityBindings = identityPaths
+            .Select(relPath =>
+            {
+                var bindingIndex = columnModels.FindIndex(c =>
+                    c.SourceJsonPath.HasValue && c.SourceJsonPath.Value.Canonical == relPath
+                );
+                if (bindingIndex < 0)
+                {
+                    bindingIndex = userColumnStartIndex; // fallback
+                }
+
+                return new CollectionMergeSemanticIdentityBinding(
+                    new JsonPathExpression(relPath, ParsePathSegments(relPath)),
+                    bindingIndex
+                );
+            })
+            .ToList();
+
+        var collectionMergePlan = new CollectionMergePlan(
+            SemanticIdentityBindings: semanticIdentityBindings,
+            StableRowIdentityBindingIndex: 1, // CollectionItemId
+            UpdateByStableRowIdentitySql: $"update edfi.\"{tableName}\" set Ordinal=@Ordinal where CollectionItemId=@CollectionItemId",
+            DeleteByStableRowIdentitySql: $"delete from edfi.\"{tableName}\" where CollectionItemId=@CollectionItemId",
+            OrdinalBindingIndex: 2, // Ordinal column
+            CompareBindingIndexesInOrder: Enumerable.Range(0, bindings.Count)
+        );
+
+        var collectionKeyPreallocationPlan = new CollectionKeyPreallocationPlan(
+            new DbColumnName("CollectionItemId"),
+            BindingIndex: 1
+        );
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: $"insert into edfi.\"{tableName}\" values (@ParentId)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, bindings.Count, 1000),
+            ColumnBindings: bindings,
+            KeyUnificationPlans: [],
+            CollectionMergePlan: collectionMergePlan,
+            CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+        );
+    }
+
     private static IReadOnlyList<JsonPathSegment> ParsePathSegments(string path)
     {
         // Minimal: split on "." skipping "$", convert "[*]" suffix to AnyArrayElement

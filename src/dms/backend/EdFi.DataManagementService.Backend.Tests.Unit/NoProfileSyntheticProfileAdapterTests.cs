@@ -788,6 +788,34 @@ internal static class AdapterTestHelpers
         );
     }
 
+    public static RelationalWriteCurrentState CreateCurrentStateWithExplicitRows(
+        DbTableModel firstTableModel,
+        IReadOnlyList<object?[]> firstRows,
+        DbTableModel secondTableModel,
+        IReadOnlyList<object?[]> secondRows,
+        DbTableModel thirdTableModel,
+        IReadOnlyList<object?[]> thirdRows
+    )
+    {
+        var documentMetadata = new DocumentMetadataRow(
+            DocumentId: 1,
+            DocumentUuid: Guid.NewGuid(),
+            ContentVersion: 1,
+            IdentityVersion: 1,
+            ContentLastModifiedAt: DateTimeOffset.UtcNow,
+            IdentityLastModifiedAt: DateTimeOffset.UtcNow
+        );
+
+        return new RelationalWriteCurrentState(
+            documentMetadata,
+            [
+                new HydratedTableRows(firstTableModel, firstRows),
+                new HydratedTableRows(secondTableModel, secondRows),
+                new HydratedTableRows(thirdTableModel, thirdRows),
+            ]
+        );
+    }
+
     private static object?[] BuildHydratedRow(DbTableModel tableModel, int rowIndex)
     {
         var row = new object?[tableModel.Columns.Count];
@@ -1012,8 +1040,10 @@ public class Given_a_collection_plan_with_binding_indexes_that_do_not_match_tabl
 [Parallelizable]
 public class Given_a_stored_collection_row_with_null_semantic_identity_value_under_no_profile
 {
-    [Test]
-    public void It_fails_fast_instead_of_collapsing_missing_vs_explicit_null_state()
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
     {
         var rootPlan = PlanBuilder.CreateTablePlan(
             tableName: "Section",
@@ -1048,19 +1078,125 @@ public class Given_a_stored_collection_row_with_null_semantic_identity_value_und
             ]
         );
 
-        var act = () =>
-            NoProfileSyntheticProfileAdapter.Build(
-                plan,
-                flattenedWriteSet,
-                new JsonObject { ["sectionIdentifier"] = "sec-1" },
-                currentState
-            );
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            new JsonObject { ["sectionIdentifier"] = "sec-1" },
+            currentState
+        );
+    }
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*cannot derive stored semantic identity presence*missing-vs-explicit-null fidelity*"
-            );
+    [Test]
+    public void It_reads_the_null_identity_member_as_not_present()
+    {
+        var semanticIdentity = _result
+            .Context!.VisibleStoredCollectionRows.Single()
+            .Address.SemanticIdentityInOrder.Single();
+
+        semanticIdentity.RelativePath.Should().Be("classPeriodName");
+        semanticIdentity.IsPresent.Should().BeFalse();
+        semanticIdentity.Value.Should().BeNull();
+    }
+
+    [Test]
+    public void It_does_not_throw_when_building_the_adapter_output()
+    {
+        _result.Should().NotBeNull();
+        _result.Context.Should().NotBeNull();
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_nested_collection_under_a_null_identity_parent_under_no_profile
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns: [("SectionId", "$.sectionIdentifier")]
+        );
+
+        var parentCollectionPlan = PlanBuilder.CreateCollectionTablePlan(
+            tableName: "SectionClassPeriod",
+            jsonScope: "$.classPeriods[*]",
+            columns: [("ClassPeriodName", "$.classPeriodName")],
+            semanticIdentityRelativePaths: ["$.classPeriodName"]
+        );
+
+        var childCollectionPlan = PlanBuilder.CreateNestedCollectionTablePlan(
+            tableName: "SectionClassPeriodMeetingDay",
+            jsonScope: "$.classPeriods[*].meetingDays[*]",
+            parentTableName: parentCollectionPlan.TableModel.Table.Name,
+            columns: [("MeetingDayName", "$.meetingDayName")],
+            semanticIdentityRelativePaths: ["$.meetingDayName"]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, parentCollectionPlan, childCollectionPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        // Parent row has NULL identity; child row references parent by stableId = 77.
+        // The child's ancestor chain MUST include the parent instance with IsPresent=false
+        // so that MergeCollectionLookup indexes the child under the correct parent key.
+        var currentState = AdapterTestHelpers.CreateCurrentStateWithExplicitRows(
+            rootPlan.TableModel,
+            [
+                [1L, "sec-1"],
+            ],
+            parentCollectionPlan.TableModel,
+            [
+                [1L, 77L, 0, null],
+            ],
+            childCollectionPlan.TableModel,
+            [
+                [77L, 88L, 0, "Monday"],
+            ]
+        );
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            new JsonObject { ["sectionIdentifier"] = "sec-1" },
+            currentState
+        );
+    }
+
+    [Test]
+    public void It_registers_the_parent_instance_with_IsPresent_false_in_the_child_ancestor_chain()
+    {
+        var childRow = _result.Context!.VisibleStoredCollectionRows.Single(r =>
+            r.Address.JsonScope == "$.classPeriods[*].meetingDays[*]"
+        );
+
+        var parentInstance = childRow.Address.ParentAddress.AncestorCollectionInstances.Single();
+        parentInstance.JsonScope.Should().Be("$.classPeriods[*]");
+
+        var parentIdentity = parentInstance.SemanticIdentityInOrder.Single();
+        parentIdentity.RelativePath.Should().Be("classPeriodName");
+        parentIdentity.IsPresent.Should().BeFalse();
+        parentIdentity.Value.Should().BeNull();
+    }
+
+    [Test]
+    public void It_produces_a_visible_stored_row_for_the_parent_collection_with_null_identity()
+    {
+        var parentRow = _result.Context!.VisibleStoredCollectionRows.Single(r =>
+            r.Address.JsonScope == "$.classPeriods[*]"
+        );
+
+        var identity = parentRow.Address.SemanticIdentityInOrder.Single();
+        identity.IsPresent.Should().BeFalse();
+        identity.Value.Should().BeNull();
     }
 }
 

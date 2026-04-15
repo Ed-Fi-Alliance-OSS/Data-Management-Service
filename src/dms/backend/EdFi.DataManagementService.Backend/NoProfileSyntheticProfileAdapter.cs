@@ -697,10 +697,18 @@ internal static class NoProfileSyntheticProfileAdapter
     /// Resolves each semantic identity binding to its physical table-column ordinal instead of
     /// assuming the binding index matches the hydrated-row layout.
     ///
-    /// Null-profile callers do not carry Core's request-vs-stored presence metadata, so a
-    /// stored semantic-identity null is ambiguous: hydrated rows alone cannot distinguish an
-    /// omitted member from an explicit JSON null. Rather than silently collapsing that
-    /// distinction, fail fast so the caller can route through a reconstituted-document path.
+    /// Null-profile callers do not reconstitute the stored document
+    /// (<c>DefaultRelationalWriteExecutor</c> sets <c>requiresReconstitution</c> only when a
+    /// <c>ProfileWriteContext</c> is present), so stored identity members must be derived
+    /// directly from raw hydrated row values. A null CLR value at an identity position is
+    /// emitted as <c>SemanticIdentityPart(path, Value: null, IsPresent: false)</c>, which is
+    /// semantically identical to what the profiled path produces via
+    /// <c>DocumentReconstituter.EmitScalars</c> (omits null scalars) followed by
+    /// <c>AddressDerivationEngine.ReadSemanticIdentity</c> (reads absent keys as
+    /// <c>IsPresent=false</c>). Both paths therefore sit on the same
+    /// <c>EmitScalars</c>-driven invariant; DMS-1132 closes the residual
+    /// <c>(IsPresent=true, Value=null)</c> vs <c>(IsPresent=false, Value=null)</c> fragility
+    /// for both paths uniformly.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> BuildStoredRowActualSemanticIdentityParts(
         TableWritePlan tableWritePlan,
@@ -727,13 +735,8 @@ internal static class NoProfileSyntheticProfileAdapter
 
             if (clrValue is null)
             {
-                throw new InvalidOperationException(
-                    $"Synthetic no-profile adaptation cannot derive stored semantic identity "
-                        + $"presence for table '{tableWritePlan.TableModel.Table.Name}' and path "
-                        + $"'{relativePath}' from hydrated rows alone. Null semantic identity "
-                        + "values require a reconstituted-document path to preserve "
-                        + "missing-vs-explicit-null fidelity."
-                );
+                parts[i] = new SemanticIdentityPart(partRelativePath, Value: null, IsPresent: false);
+                continue;
             }
 
             var scalarType = columnBinding.Column.ScalarType;
