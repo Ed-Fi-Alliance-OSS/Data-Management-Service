@@ -1139,6 +1139,66 @@ file static class ProfileRuntimeContextFactory
         );
     }
 
+    public static BackendProfileWriteContext CreateNonCreatableProfileExistingItemUpdateContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        // Same profile shape as CreateNonCreatableAddressInsertRejectionContext: the
+        // address collection is non-creatable. The difference is the body contains
+        // ONLY the matched stored row (Austin), so no create is attempted and the
+        // profiled update path must proceed successfully.
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleAddressCollectionItem(rootAddress, "Austin", 0, creatable: false)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: false,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
+            )
+        );
+    }
+
     public static BackendProfileWriteContext CreateNonCreatableInterventionInsertRejectionContext(
         MappingSet mappingSet,
         string requestBodyJson
@@ -3405,5 +3465,156 @@ public class Given_A_Postgresql_Profiled_Hidden_FK_Member_Preservation
                 "UpdatedCampus",
                 "campusCode in the visible $._ext.sample scope must reflect the profiled update"
             );
+    }
+}
+
+// --------------------------------------------------------------------------
+// Finding 1: existing-item update allowed under a non-creatable profile —
+// a profile that denies create still permits update of a matched stored row.
+// --------------------------------------------------------------------------
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Non_Creatable_Existing_Item_Update_Allowed
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000112")
+    );
+
+    private const string InitialCreateBodyJson = """
+        { "schoolId": 255901, "shortName": "LHS", "addresses": [{ "city": "Austin" }] }
+        """;
+
+    // Update body keeps Austin (matched existing row), updates root-scalar shortName.
+    // No new collection inserts, so the non-creatable profile should NOT reject.
+    private const string UpdateBodyJson = """
+        { "schoolId": 255901, "shortName": "LHS-Updated", "addresses": [{ "city": "Austin" }] }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledExistingItemUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-existing-item-update-create",
+                requestBodyJsonOverride: InitialCreateBodyJson
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledExistingItemUpdate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-existing-item-update-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateNonCreatableProfileExistingItemUpdateContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success_despite_non_creatable_profile()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "existing-item update under non-creatable profile should succeed";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_applies_the_shortName_update()
+    {
+        _stateAfterUpdate.School.ShortName.Should().Be("LHS-Updated");
+    }
+
+    [Test]
+    public void It_preserves_the_existing_address()
+    {
+        _stateAfterUpdate.Addresses.Should().HaveCount(1);
+        _stateAfterUpdate.Addresses[0].City.Should().Be("Austin");
     }
 }
