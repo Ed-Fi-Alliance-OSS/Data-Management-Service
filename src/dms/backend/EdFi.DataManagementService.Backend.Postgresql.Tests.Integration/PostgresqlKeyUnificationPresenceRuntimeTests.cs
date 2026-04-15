@@ -570,20 +570,37 @@ public class Given_A_Postgresql_Key_Unified_Canonical_Preservation
     }
 
     [Test]
-    public void It_returns_update_success()
+    public void It_returns_update_failure_validation()
     {
-        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+        var diagnosticMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
             ? unknownFailure.FailureMessage
-            : "key-unified canonical preservation update should succeed";
+            : "key-unified canonical preservation update should fail closed with ValidationFailure";
 
-        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
-        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(WidgetDocumentUuid);
+        _updateResult.Should().BeOfType<UpdateResult.UpdateFailureValidation>(diagnosticMessage);
     }
 
     [Test]
-    public void It_updates_the_canonical_to_visible_value()
+    public void It_surfaces_the_key_unification_conflict_in_the_validation_failure()
     {
-        _stateAfterUpdate.Widget.PrimaryTypeUnified.Should().Be("Beta");
+        var validationFailure = _updateResult.As<UpdateResult.UpdateFailureValidation>();
+        validationFailure.ValidationFailures.Should().NotBeEmpty();
+        Array
+            .Exists(
+                validationFailure.ValidationFailures,
+                failure => failure.Message.Contains("Key-unification conflict")
+            )
+            .Should()
+            .BeTrue(
+                "per profiles.md §'Hidden and preserved', a preserved hidden member and a visible "
+                    + "request member that disagree on the canonical value must surface a "
+                    + "Key-unification conflict"
+            );
+    }
+
+    [Test]
+    public void It_preserves_the_canonical_at_stored_value()
+    {
+        _stateAfterUpdate.Widget.PrimaryTypeUnified.Should().Be("Alpha");
     }
 
     [Test]
@@ -593,15 +610,15 @@ public class Given_A_Postgresql_Key_Unified_Canonical_Preservation
     }
 
     [Test]
-    public void It_updates_the_visible_presence_flag()
+    public void It_preserves_the_visible_presence_flag()
     {
         _stateAfterUpdate.Widget.PrimaryTypePresent.Should().BeTrue();
     }
 
     [Test]
-    public void It_updates_the_name()
+    public void It_does_not_update_the_name()
     {
-        _stateAfterUpdate.Widget.Name.Should().Be("UpdatedWidget");
+        _stateAfterUpdate.Widget.Name.Should().Be("TestWidget");
     }
 }
 

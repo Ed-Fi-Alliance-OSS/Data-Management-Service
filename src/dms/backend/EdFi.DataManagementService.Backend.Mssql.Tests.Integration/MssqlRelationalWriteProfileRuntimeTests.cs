@@ -1630,6 +1630,14 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
+                // Every new visible address carries an aligned extension scope
+                // ($._ext.sample.addresses[*]._ext.sample) that inherits the top-level
+                // $._ext.sample Hidden visibility. ProfileWriteContractValidator enumerates
+                // these per visible request collection item, so each must be emitted.
+                .. CreateAlignedExtensionAddressRequestScopeStates(
+                    ProfileVisibilityKind.Hidden,
+                    ["Houston", "San Antonio"]
+                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
