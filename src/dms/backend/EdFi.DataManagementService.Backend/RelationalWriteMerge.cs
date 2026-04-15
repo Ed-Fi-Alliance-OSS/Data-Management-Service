@@ -1209,9 +1209,11 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
 
-        // Validate 1:1 coverage: every request candidate must match a VisibleRequestCollectionItem.
-        // If Core drops a visible request item, the unmatched candidate would be silently ignored and
-        // its matching current row would be treated as a visible delete — corrupting data.
+        // Validate 1:1 coverage in BOTH directions.
+        //
+        // Forward: every request candidate must match a VisibleRequestCollectionItem.
+        // Missing forward coverage means Core emitted a candidate visible-row but no
+        // corresponding visible item — the candidate would be silently ignored.
         if (candidatesByIdentity.Count != requestCandidates.Count)
         {
             var unmatchedCount = requestCandidates.Count - candidatesByIdentity.Count;
@@ -1221,6 +1223,35 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     + $"VisibleRequestCollectionItems ({unmatchedCount} unmatched). "
                     + "Core must emit a VisibleRequestCollectionItem for each visible request collection row.",
             ]);
+        }
+
+        // Reverse: every VisibleRequestCollectionItem must have a matching candidate by
+        // semantic identity. Missing reverse coverage means the backend flattener dropped
+        // a candidate or Core emitted an orphan visible item — without this check, the
+        // current row whose stored identity matches the orphan would fall into
+        // unmatchedVisibleCurrentRows and be silently queued for delete.
+        //
+        // Relies on upstream duplicate rejection: profiled writes go through
+        // ProfileWriteContractValidator.ValidateDuplicateCollectionItems; no-profile
+        // writes synthesize VisibleRequestCollectionItems 1:1 from flattenedWriteSet in
+        // NoProfileSyntheticProfileAdapter.BuildVisibleRequestCollectionItems, and Core's
+        // DocumentValidator rejects duplicate collection items in the request body before
+        // flattening. Either upstream guarantee can be weakened only by tightening this
+        // check to a multiset comparison.
+        foreach (var visibleItem in visibleRequestItems)
+        {
+            var visibleItemKey = BuildSemanticIdentityKeyFromVisibleItem(visibleItem);
+            if (!candidatesByIdentity.ContainsKey(visibleItemKey))
+            {
+                return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                    $"Profile merge for collection scope '{jsonScope}' has a VisibleRequestCollectionItem "
+                        + $"with semantic identity '{visibleItemKey}' that has no matching request candidate. "
+                        + "This can originate either from the backend flattener dropping a candidate "
+                        + "or from Core emitting an orphan VisibleRequestCollectionItem; without a "
+                        + "matching candidate the merge cannot safely classify the current row, and "
+                        + "proceeding would queue it for silent delete.",
+                ]);
+            }
         }
 
         foreach (var (currentRow, currentIndex, storedRow) in visibleCurrentRows)
@@ -2177,6 +2208,26 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         return string.Join("\0", values.Select((v, i) => FormatIdentityKeyPart(v, presenceFlags[i])));
+    }
+
+    /// <summary>
+    /// Builds a string key from a VisibleRequestCollectionItem's compiled semantic-identity
+    /// parts using the same format as <see cref="BuildSemanticIdentityKeyString"/>. Used by
+    /// the reverse-coverage check to prove every visible request item has a matching
+    /// backend-flattened CollectionWriteCandidate.
+    /// </summary>
+    private static string BuildSemanticIdentityKeyFromVisibleItem(VisibleRequestCollectionItem visibleItem)
+    {
+        var parts = visibleItem.Address.SemanticIdentityInOrder;
+        var values = new JsonNode?[parts.Length];
+        var flags = new bool[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            values[i] = parts[i].Value;
+            flags[i] = parts[i].IsPresent;
+        }
+
+        return BuildSemanticIdentityKeyString(values, flags);
     }
 
     /// <summary>

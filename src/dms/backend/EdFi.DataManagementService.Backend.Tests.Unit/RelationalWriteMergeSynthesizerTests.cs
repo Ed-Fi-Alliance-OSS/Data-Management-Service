@@ -2565,6 +2565,83 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_returns_contract_mismatch_when_visible_request_item_has_no_matching_candidate()
+    {
+        // Finding #2: Core (or the backend flattener) has produced a
+        // VisibleRequestCollectionItem that has no matching CollectionWriteCandidate
+        // by semantic identity. Without a reverse coverage check, the matching
+        // current row would fall into unmatchedVisibleCurrentRows and be queued
+        // for silent delete. The merge must surface a category-5 contract mismatch
+        // instead. The message must name both origins (backend flattener drop or
+        // Core/backend contract divergence) without attributing blame.
+        var fixture = CreateCollectionFixture();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("Value1"),
+                            Literal(null),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        // One candidate (Period1) but TWO visible items (Period1 and Period2).
+        // Period2 is the orphan — no backend-flattened candidate counterpart.
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true)],
+            [
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period1"),
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period2"),
+            ]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            []
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                CurrentState: null,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ContractMismatch>();
+        var mismatch = (RelationalWriteMergeSynthesisOutcome.ContractMismatch)outcome;
+        mismatch.Messages.Should().HaveCount(1);
+        mismatch.Messages[0].Should().Contain("'$.classPeriods'");
+        // Message must name both origins rather than blaming only one side.
+        mismatch.Messages[0].Should().ContainAll("backend flattener", "Core");
+    }
+
+    [Test]
     public void It_returns_contract_mismatch_when_collection_receives_duplicate_visible_request_candidates()
     {
         // Two CollectionWriteCandidates with identical semantic identity that are both
