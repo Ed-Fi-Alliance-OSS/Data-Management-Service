@@ -335,6 +335,24 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
             .Be(1);
     }
 
+    [Test]
+    public async Task It_should_preserve_immediate_parent_fk_enforcement_after_reapplying_the_same_generated_ddl()
+    {
+        await _database.ResetAsync();
+        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
+
+        var seedData = await SeedSmokeRowsAsync();
+
+        await AssertForeignKeyViolationAsync(async () =>
+            await InsertSchoolExtensionInterventionVisitAsync(
+                seedData.InterventionCollectionItemId,
+                seedData.OtherSchoolDocumentId,
+                2,
+                "Visit-WrongRoot"
+            )
+        );
+    }
+
     private async Task<FocusedStableKeySmokeSeedData> SeedSmokeRowsAsync()
     {
         var schoolDocumentId = await InsertDocumentAsync(
