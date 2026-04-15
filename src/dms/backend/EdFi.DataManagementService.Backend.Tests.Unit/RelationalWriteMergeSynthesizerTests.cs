@@ -6809,6 +6809,87 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
             .Equal(0, new DateOnly(2026, 9, 1), new TimeOnly(8, 15), "Updated Room");
     }
 
+    [Test]
+    public void It_keeps_nested_collection_ancestor_keys_aligned_for_datetime_semantic_identity()
+    {
+        var fixture = CreateNoProfileNestedDateTimeFixture();
+        var appointmentCollectionItemId = NewCollectionItemId();
+        var attendeeCollectionItemId = NewCollectionItemId();
+        var meetingDateTime = new DateTime(2026, 9, 1, 8, 15, 0, DateTimeKind.Utc);
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal(new DateOnly(2026, 8, 20)), Literal(new TimeOnly(14, 5, 7))],
+                collectionCandidates:
+                [
+                    CreateNoProfileAppointmentCandidate(
+                        fixture,
+                        requestOrder: 0,
+                        collectionItemId: appointmentCollectionItemId,
+                        meetingDateTime: meetingDateTime,
+                        title: "Updated Title",
+                        attendees:
+                        [
+                            CreateNoProfileAttendeeCandidate(
+                                fixture,
+                                requestOrder: 0,
+                                collectionItemId: attendeeCollectionItemId,
+                                parentCollectionItemId: appointmentCollectionItemId,
+                                attendeeName: "Alice",
+                                role: "Updated Role"
+                            ),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateNoProfileNestedDateTimeCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(14, 5, 7)],
+            ],
+            appointmentRows:
+            [
+                [77L, 345L, 0, meetingDateTime, "Original Title"],
+            ],
+            attendeeRows:
+            [
+                [88L, 345L, 77L, 0, "Alice", "Original Role"],
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                ProfileRequest: null,
+                ProfileContext: null,
+                CompiledScopeCatalog: null
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        var appointmentState = result.TablesInDependencyOrder[1];
+        var attendeeState = result.TablesInDependencyOrder[2];
+
+        appointmentState.Updates.Should().ContainSingle();
+        LiteralValue(appointmentState.Updates[0].Values[0]).Should().Be(77L);
+        LiteralValue(appointmentState.Updates[0].Values[4]).Should().Be("Updated Title");
+
+        attendeeState.Updates.Should().ContainSingle();
+        attendeeState.Inserts.Should().BeEmpty();
+        attendeeState.Deletes.Should().BeEmpty();
+        LiteralValue(attendeeState.Updates[0].Values[0]).Should().Be(88L);
+        LiteralValue(attendeeState.Updates[0].Values[2]).Should().Be(77L);
+        LiteralValue(attendeeState.Updates[0].Values[5]).Should().Be("Updated Role");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Fixture helpers (ported from Given_Relational_Write_No_Profile_Merge_Synthesizer)
     // Self-contained here to avoid coupling to the legacy test class that Task 6
@@ -6867,6 +6948,34 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
         );
     }
 
+    private static NoProfileNestedDateTimeWritePlanFixture CreateNoProfileNestedDateTimeFixture()
+    {
+        var rootPlan = CreateNoProfileDateAndTimeRootPlan();
+        var appointmentPlan = CreateNoProfileAppointmentPlan();
+        var attendeePlan = CreateNoProfileAttendeePlan();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder:
+            [
+                rootPlan.TableModel,
+                appointmentPlan.TableModel,
+                attendeePlan.TableModel,
+            ],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new NoProfileNestedDateTimeWritePlanFixture(
+            new ResourceWritePlan(resourceModel, [rootPlan, appointmentPlan, attendeePlan]),
+            rootPlan,
+            appointmentPlan,
+            attendeePlan
+        );
+    }
+
     private static RelationalWriteCurrentState CreateNoProfileCurrentState(
         NoProfileWritePlanFixture fixture,
         IReadOnlyList<object?[]>? rootRows = null,
@@ -6911,6 +7020,30 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
             [
                 new HydratedTableRows(fixture.RootPlan.TableModel, rootRows ?? []),
                 new HydratedTableRows(fixture.SchedulePlan.TableModel, scheduleRows ?? []),
+            ]
+        );
+    }
+
+    private static RelationalWriteCurrentState CreateNoProfileNestedDateTimeCurrentState(
+        NoProfileNestedDateTimeWritePlanFixture fixture,
+        IReadOnlyList<object?[]>? rootRows = null,
+        IReadOnlyList<object?[]>? appointmentRows = null,
+        IReadOnlyList<object?[]>? attendeeRows = null
+    )
+    {
+        return new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(fixture.RootPlan.TableModel, rootRows ?? []),
+                new HydratedTableRows(fixture.AppointmentPlan.TableModel, appointmentRows ?? []),
+                new HydratedTableRows(fixture.AttendeePlan.TableModel, attendeeRows ?? []),
             ]
         );
     }
@@ -6976,7 +7109,8 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
         FlattenedWriteValue collectionItemId,
         DateOnly sessionDate,
         TimeOnly startTime,
-        string room
+        string room,
+        IReadOnlyList<CollectionWriteCandidate>? nestedCandidates = null
     )
     {
         return new CollectionWriteCandidate(
@@ -6992,7 +7126,60 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
                 Literal(startTime),
                 Literal(room),
             ],
-            semanticIdentityValues: [sessionDate, startTime]
+            semanticIdentityValues: [sessionDate, startTime],
+            collectionCandidates: nestedCandidates ?? []
+        );
+    }
+
+    private static CollectionWriteCandidate CreateNoProfileAppointmentCandidate(
+        NoProfileNestedDateTimeWritePlanFixture fixture,
+        int requestOrder,
+        FlattenedWriteValue collectionItemId,
+        DateTime meetingDateTime,
+        string title,
+        IReadOnlyList<CollectionWriteCandidate>? attendees = null
+    )
+    {
+        return new CollectionWriteCandidate(
+            fixture.AppointmentPlan,
+            ordinalPath: [requestOrder],
+            requestOrder: requestOrder,
+            values:
+            [
+                collectionItemId,
+                Literal(345L),
+                Literal(requestOrder),
+                Literal(meetingDateTime),
+                Literal(title),
+            ],
+            semanticIdentityValues: [meetingDateTime],
+            collectionCandidates: attendees ?? []
+        );
+    }
+
+    private static CollectionWriteCandidate CreateNoProfileAttendeeCandidate(
+        NoProfileNestedDateTimeWritePlanFixture fixture,
+        int requestOrder,
+        FlattenedWriteValue collectionItemId,
+        FlattenedWriteValue parentCollectionItemId,
+        string attendeeName,
+        string role
+    )
+    {
+        return new CollectionWriteCandidate(
+            fixture.AttendeePlan,
+            ordinalPath: [0, requestOrder],
+            requestOrder: requestOrder,
+            values:
+            [
+                collectionItemId,
+                Literal(345L),
+                parentCollectionItemId,
+                Literal(requestOrder),
+                Literal(attendeeName),
+                Literal(role),
+            ],
+            semanticIdentityValues: [attendeeName]
         );
     }
 
@@ -7698,6 +7885,314 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
         );
     }
 
+    private static TableWritePlan CreateNoProfileAppointmentPlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAppointment"),
+            new JsonPathExpression(
+                "$.appointments[*]",
+                [new JsonPathSegment.Property("appointments"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                "PK_SchoolAppointment",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("MeetingDateTime"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    false,
+                    new JsonPathExpression(
+                        "$.meetingDateTime",
+                        [new JsonPathSegment.Property("meetingDateTime")]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Title"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.title", [new JsonPathSegment.Property("title")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.meetingDateTime",
+                            [new JsonPathSegment.Property("meetingDateTime")]
+                        ),
+                        new DbColumnName("MeetingDateTime")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"SchoolAppointment\" values (@CollectionItemId, @School_DocumentId, @Ordinal, @MeetingDateTime, @Title)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 5, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.DocumentId(),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[2], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.meetingDateTime",
+                            [new JsonPathSegment.Property("meetingDateTime")]
+                        ),
+                        new RelationalScalarType(ScalarKind.DateTime)
+                    ),
+                    "MeetingDateTime"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.title", [new JsonPathSegment.Property("title")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                    ),
+                    "Title"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.meetingDateTime",
+                            [new JsonPathSegment.Property("meetingDateTime")]
+                        ),
+                        BindingIndex: 3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "update edfi.\"SchoolAppointment\" set \"Ordinal\" = @Ordinal, \"MeetingDateTime\" = @MeetingDateTime, \"Title\" = @Title where \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "delete from edfi.\"SchoolAppointment\" where \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [2, 3, 4]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
+    private static TableWritePlan CreateNoProfileAttendeePlan()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAppointmentAttendee"),
+            new JsonPathExpression(
+                "$.appointments[*].attendees[*]",
+                [
+                    new JsonPathSegment.Property("appointments"),
+                    new JsonPathSegment.AnyArrayElement(),
+                    new JsonPathSegment.Property("attendees"),
+                    new JsonPathSegment.AnyArrayElement(),
+                ]
+            ),
+            new TableKey(
+                "PK_SchoolAppointmentAttendee",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ParentCollectionItemId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AttendeeName"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    new JsonPathExpression("$.attendeeName", [new JsonPathSegment.Property("attendeeName")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Role"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    false,
+                    new JsonPathExpression("$.role", [new JsonPathSegment.Property("role")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("ParentCollectionItemId")],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.attendeeName",
+                            [new JsonPathSegment.Property("attendeeName")]
+                        ),
+                        new DbColumnName("AttendeeName")
+                    ),
+                ]
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"SchoolAppointmentAttendee\" values (@CollectionItemId, @School_DocumentId, @ParentCollectionItemId, @Ordinal, @AttendeeName, @Role)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 6, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.DocumentId(),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.ParentKeyPart(0),
+                    "ParentCollectionItemId"
+                ),
+                new WriteColumnBinding(tableModel.Columns[3], new WriteValueSource.Ordinal(), "Ordinal"),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.attendeeName",
+                            [new JsonPathSegment.Property("attendeeName")]
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 50)
+                    ),
+                    "AttendeeName"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[5],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.role", [new JsonPathSegment.Property("role")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 50)
+                    ),
+                    "Role"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        new JsonPathExpression(
+                            "$.attendeeName",
+                            [new JsonPathSegment.Property("attendeeName")]
+                        ),
+                        BindingIndex: 4
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "update edfi.\"SchoolAppointmentAttendee\" set \"Ordinal\" = @Ordinal, \"AttendeeName\" = @AttendeeName, \"Role\" = @Role where \"CollectionItemId\" = @CollectionItemId",
+                DeleteByStableRowIdentitySql: "delete from edfi.\"SchoolAppointmentAttendee\" where \"CollectionItemId\" = @CollectionItemId",
+                OrdinalBindingIndex: 3,
+                CompareBindingIndexesInOrder: [3, 4, 5]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+    }
+
     private static FlattenedWriteValue Literal(object? value) => new FlattenedWriteValue.Literal(value);
 
     private static object? LiteralValue(FlattenedWriteValue value) =>
@@ -7717,5 +8212,12 @@ public class Given_Unified_Merge_Synthesizer_Under_Null_Profile
         ResourceWritePlan WritePlan,
         TableWritePlan RootPlan,
         TableWritePlan SchedulePlan
+    );
+
+    private sealed record NoProfileNestedDateTimeWritePlanFixture(
+        ResourceWritePlan WritePlan,
+        TableWritePlan RootPlan,
+        TableWritePlan AppointmentPlan,
+        TableWritePlan AttendeePlan
     );
 }

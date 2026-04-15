@@ -316,6 +316,7 @@ public sealed record CollectionWriteCandidate
         IEnumerable<FlattenedWriteValue> values,
         IEnumerable<object?> semanticIdentityValues,
         IEnumerable<bool>? semanticIdentityPresenceFlags = null,
+        IEnumerable<JsonNode?>? semanticIdentityJsonValues = null,
         IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
         IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
@@ -395,6 +396,22 @@ public sealed record CollectionWriteCandidate
                 nameof(semanticIdentityPresenceFlags)
             );
         }
+
+        SemanticIdentityJsonValues = semanticIdentityJsonValues is not null
+            ? FlattenedWriteContractSupport.ToImmutableArray(
+                semanticIdentityJsonValues,
+                nameof(semanticIdentityJsonValues)
+            )
+            : BuildSemanticIdentityJsonValues(TableWritePlan, mergePlan, SemanticIdentityValues);
+
+        if (SemanticIdentityJsonValues.Length != SemanticIdentityValues.Length)
+        {
+            throw new ArgumentException(
+                $"{nameof(semanticIdentityJsonValues)} must contain one entry per semantic identity value. "
+                    + $"Expected {SemanticIdentityValues.Length}, actual {SemanticIdentityJsonValues.Length}.",
+                nameof(semanticIdentityJsonValues)
+            );
+        }
     }
 
     /// <summary>
@@ -429,6 +446,12 @@ public sealed record CollectionWriteCandidate
     public ImmutableArray<bool> SemanticIdentityPresenceFlags { get; init; }
 
     /// <summary>
+    /// JSON-domain semantic identity values aligned with <see cref="SemanticIdentityValues"/>.
+    /// These are used when key-building must match <see cref="SemanticIdentityPart.Value"/> encoding.
+    /// </summary>
+    public ImmutableArray<JsonNode?> SemanticIdentityJsonValues { get; init; }
+
+    /// <summary>
     /// Collection-aligned one-to-one scopes that remain attached to the owning collection candidate.
     /// </summary>
     public ImmutableArray<CandidateAttachedAlignedScopeData> AttachedAlignedScopeData { get; init; }
@@ -437,6 +460,28 @@ public sealed record CollectionWriteCandidate
     /// Nested collection candidates that hang directly from this collection scope.
     /// </summary>
     public ImmutableArray<CollectionWriteCandidate> CollectionCandidates { get; init; }
+
+    private static ImmutableArray<JsonNode?> BuildSemanticIdentityJsonValues(
+        TableWritePlan tableWritePlan,
+        CollectionMergePlan mergePlan,
+        ImmutableArray<object?> semanticIdentityValues
+    )
+    {
+        JsonNode?[] semanticIdentityJsonValues = new JsonNode?[semanticIdentityValues.Length];
+
+        for (var i = 0; i < semanticIdentityValues.Length; i++)
+        {
+            var bindingIndex = mergePlan.SemanticIdentityBindings[i].BindingIndex;
+            var scalarType = tableWritePlan.ColumnBindings[bindingIndex].Column.ScalarType;
+
+            semanticIdentityJsonValues[i] = AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(
+                semanticIdentityValues[i],
+                scalarType
+            );
+        }
+
+        return [.. semanticIdentityJsonValues];
+    }
 }
 
 /// <summary>

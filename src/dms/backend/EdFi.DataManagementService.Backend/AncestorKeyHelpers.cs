@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
@@ -18,16 +19,65 @@ namespace EdFi.DataManagementService.Backend;
 /// <remarks>
 /// Only JSON-domain helpers live here (<see cref="JsonNode"/>-based identity values,
 /// <see cref="ScopeInstanceAddress"/>-based ancestor keys).
-///
-/// The CLR-domain helper (<c>NormalizeClrValueForIdentity</c> and <c>ExtendAncestorContextKey</c>
-/// in <c>RelationalWriteMerge.cs</c>) is deliberately NOT consolidated here because it
-/// handles <c>DateOnly</c>, <c>TimeOnly</c>, <c>DateTime</c>, and <c>decimal</c> branches
-/// that diverge from the JSON-domain serialization in <see cref="ExtractJsonNodeStringValue"/>.
-/// Unifying them would be a behavior change and is out of scope for DMS-1124. A future
-/// cleanup story can revisit once equivalence tests are added.
 /// </remarks>
 internal static class AncestorKeyHelpers
 {
+    internal static JsonNode? ConvertClrValueToSemanticIdentityJsonNode(
+        object? clrValue,
+        RelationalScalarType? scalarType = null
+    ) =>
+        scalarType?.Kind switch
+        {
+            ScalarKind.String => JsonValue.Create((string?)clrValue),
+            ScalarKind.Int32 => clrValue is null ? null : JsonValue.Create((int)clrValue),
+            ScalarKind.Int64 => clrValue is null ? null : JsonValue.Create((long)clrValue),
+            ScalarKind.Decimal => clrValue is null ? null : JsonValue.Create((decimal)clrValue),
+            ScalarKind.Boolean => clrValue is null ? null : JsonValue.Create((bool)clrValue),
+            ScalarKind.Date => clrValue switch
+            {
+                null => null,
+                DateOnly d => JsonValue.Create(d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                DateTime dt => JsonValue.Create(
+                    DateOnly.FromDateTime(dt).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                ),
+                _ => JsonValue.Create(clrValue.ToString()!),
+            },
+            ScalarKind.DateTime => clrValue switch
+            {
+                null => null,
+                DateTime dt => JsonValue.Create(dt.ToString("O", CultureInfo.InvariantCulture)),
+                DateTimeOffset dto => JsonValue.Create(dto.ToString("O", CultureInfo.InvariantCulture)),
+                _ => JsonValue.Create(clrValue.ToString()!),
+            },
+            ScalarKind.Time => clrValue switch
+            {
+                null => null,
+                TimeOnly t => JsonValue.Create(t.ToString("HH:mm:ss", CultureInfo.InvariantCulture)),
+                TimeSpan ts => JsonValue.Create(
+                    new TimeOnly(ts.Ticks).ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+                ),
+                _ => JsonValue.Create(clrValue.ToString()!),
+            },
+            _ => clrValue switch
+            {
+                null => null,
+                string s => JsonValue.Create(s),
+                int n => JsonValue.Create(n),
+                long n => JsonValue.Create(n),
+                decimal dec => JsonValue.Create(dec),
+                double d => JsonValue.Create(d),
+                bool b => JsonValue.Create(b),
+                DateOnly d => JsonValue.Create(d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                TimeOnly t => JsonValue.Create(t.ToString("HH:mm:ss", CultureInfo.InvariantCulture)),
+                DateTime dt => JsonValue.Create(dt.ToString("O", CultureInfo.InvariantCulture)),
+                DateTimeOffset dto => JsonValue.Create(dto.ToString("O", CultureInfo.InvariantCulture)),
+                TimeSpan ts => JsonValue.Create(
+                    new TimeOnly(ts.Ticks).ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+                ),
+                _ => JsonValue.Create(clrValue.ToString()!),
+            },
+        };
+
     /// <summary>
     /// Extracts the raw string value from a JsonNode without JSON-encoding artifacts.
     /// JsonNode.ToString() on a JsonValue wrapping a string produces quoted JSON (e.g. "\"foo\""),
@@ -54,6 +104,10 @@ internal static class AncestorKeyHelpers
             {
                 return i.ToString(CultureInfo.InvariantCulture);
             }
+            if (jsonValue.TryGetValue<decimal>(out var dec))
+            {
+                return dec.ToString(CultureInfo.InvariantCulture);
+            }
             if (jsonValue.TryGetValue<double>(out var d))
             {
                 return d.ToString(CultureInfo.InvariantCulture);
@@ -77,15 +131,6 @@ internal static class AncestorKeyHelpers
     /// <c>MergeScopeLookup.BuildAncestorKey</c>, and
     /// <c>MergeCollectionLookup.BuildAncestorKeyFromAddress</c>.
     ///
-    /// NOTE: <c>ExtendAncestorContextKey</c> in <c>RelationalWriteMerge.cs</c> operates on CLR-domain
-    /// values (<c>CollectionWriteCandidate.SemanticIdentityValues</c> as <c>object?</c>) and uses
-    /// <c>NormalizeClrValueForIdentity</c>. For simple types (string, int, long, bool) both
-    /// serializers produce the same output. A divergence is possible for decimal, double, DateOnly,
-    /// DateTime, and TimeOnly — but the write-side CLR path runs only when collection-nested
-    /// separate-table scopes are present, which does not occur in any current schema. Routing the
-    /// write side through this helper is deferred as a follow-on cleanup (it would require
-    /// <c>CollectionWriteCandidate</c> to carry <c>JsonNode?</c> identity values instead of
-    /// <c>object?</c>).
     /// </summary>
     internal static string BuildAncestorKeyFromInstances(ImmutableArray<AncestorCollectionInstance> ancestors)
     {
@@ -125,4 +170,39 @@ internal static class AncestorKeyHelpers
     /// </summary>
     internal static string BuildAncestorKeyFromScopeInstanceAddress(ScopeInstanceAddress address) =>
         BuildAncestorKeyFromInstances(address.AncestorCollectionInstances);
+
+    internal static string ExtendAncestorKey(
+        string currentKey,
+        string collectionJsonScope,
+        IReadOnlyList<JsonNode?> semanticIdentityValues,
+        IReadOnlyList<bool> semanticIdentityPresenceFlags
+    )
+    {
+        if (semanticIdentityValues.Count != semanticIdentityPresenceFlags.Count)
+        {
+            throw new InvalidOperationException(
+                $"Semantic identity values ({semanticIdentityValues.Count}) and presence flags ({semanticIdentityPresenceFlags.Count}) must have equal length."
+            );
+        }
+
+        var sb = new System.Text.StringBuilder();
+
+        if (currentKey.Length > 0)
+        {
+            sb.Append(currentKey);
+            sb.Append('\0');
+        }
+
+        sb.Append(collectionJsonScope);
+
+        for (var i = 0; i < semanticIdentityValues.Count; i++)
+        {
+            sb.Append('\0');
+            sb.Append(semanticIdentityPresenceFlags[i] ? '1' : '0');
+            sb.Append('\0');
+            sb.Append(ExtractJsonNodeStringValue(semanticIdentityValues[i]));
+        }
+
+        return sb.ToString();
+    }
 }

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -1129,6 +1128,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         {
             var currentRow = allCurrentRows[i];
             var matchedStoredRow = TryMatchCurrentRowToVisibleStored(
+                tablePlan,
                 mergePlan,
                 currentRow,
                 visibleStoredRows
@@ -1168,7 +1168,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             if (isVisibleRequest)
             {
                 var identityKey = BuildSemanticIdentityKeyString(
-                    candidate.SemanticIdentityValues,
+                    candidate.SemanticIdentityJsonValues,
                     candidate.SemanticIdentityPresenceFlags
                 );
                 if (!candidatesByIdentity.TryAdd(identityKey, candidate))
@@ -1198,7 +1198,12 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         foreach (var (currentRow, currentIndex, storedRow) in visibleCurrentRows)
         {
-            var currentIdentityKey = BuildSemanticIdentityKeyFromRow(mergePlan, currentRow, storedRow);
+            var currentIdentityKey = BuildSemanticIdentityKeyFromRow(
+                tablePlan,
+                mergePlan,
+                currentRow,
+                storedRow
+            );
 
             if (candidatesByIdentity.TryGetValue(currentIdentityKey, out var matchedCandidate))
             {
@@ -1239,7 +1244,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var itemAncestorContextKey = ExtendAncestorContextKey(
                 ancestorContextKey,
                 jsonScope,
-                candidate.SemanticIdentityValues,
+                candidate.SemanticIdentityJsonValues,
                 candidate.SemanticIdentityPresenceFlags
             );
 
@@ -1336,7 +1341,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var insertAncestorContextKey = ExtendAncestorContextKey(
                 ancestorContextKey,
                 jsonScope,
-                candidate.SemanticIdentityValues,
+                candidate.SemanticIdentityJsonValues,
                 candidate.SemanticIdentityPresenceFlags
             );
 
@@ -1555,7 +1560,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var childAncestorContextKey = ExtendAncestorContextKey(
                 ancestorContextKey,
                 jsonScope,
-                candidate.SemanticIdentityValues,
+                candidate.SemanticIdentityJsonValues,
                 candidate.SemanticIdentityPresenceFlags
             );
 
@@ -1850,6 +1855,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// Tries to match a current row to a VisibleStoredCollectionRow by semantic identity.
     /// </summary>
     private static VisibleStoredCollectionRow? TryMatchCurrentRowToVisibleStored(
+        TableWritePlan tableWritePlan,
         CollectionMergePlan mergePlan,
         MergeTableRow currentRow,
         IReadOnlyList<VisibleStoredCollectionRow> visibleStoredRows
@@ -1877,8 +1883,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 var binding = mergePlan.SemanticIdentityBindings[i];
                 var currentValue = currentRow.Values[binding.BindingIndex];
                 var storedPart = storedRow.Address.SemanticIdentityInOrder[i];
+                var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
 
-                if (!CompareSemanticIdentityValue(currentValue, storedPart))
+                if (!CompareSemanticIdentityValue(currentValue, storedPart, scalarType))
                 {
                     match = false;
                     break;
@@ -1912,7 +1919,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         return visibleRequestItems.Any(requestItem =>
             MatchesSemanticIdentity(
                 mergePlan,
-                candidate.SemanticIdentityValues,
+                candidate.SemanticIdentityJsonValues,
                 candidate.SemanticIdentityPresenceFlags,
                 requestItem
             )
@@ -1937,7 +1944,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         return visibleRequestItems.FirstOrDefault(requestItem =>
             MatchesSemanticIdentity(
                 mergePlan,
-                candidate.SemanticIdentityValues,
+                candidate.SemanticIdentityJsonValues,
                 candidate.SemanticIdentityPresenceFlags,
                 requestItem
             )
@@ -1946,7 +1953,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
     private static bool MatchesSemanticIdentity(
         CollectionMergePlan mergePlan,
-        IReadOnlyList<object?> candidateValues,
+        IReadOnlyList<JsonNode?> candidateValues,
         IReadOnlyList<bool> candidatePresenceFlags,
         VisibleRequestCollectionItem requestItem
     )
@@ -1966,7 +1973,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
         {
             if (
-                !CompareObjectToSemanticIdentityPart(
+                !CompareJsonNodeToSemanticIdentityPart(
                     candidateValues[i],
                     candidatePresenceFlags[i],
                     requestItem.Address.SemanticIdentityInOrder[i]
@@ -1985,17 +1992,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// Handles culture-sensitive types (DateOnly, TimeOnly, DateTime) that would otherwise
     /// produce locale-dependent strings via ToString().
     /// </summary>
-    private static string NormalizeClrValueForIdentity(object? value) =>
-        value switch
-        {
-            null => "",
-            DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            TimeOnly t => t.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-            DateTime dt => dt.ToString("O", CultureInfo.InvariantCulture),
-            decimal dec => dec.ToString(CultureInfo.InvariantCulture),
-            _ => value.ToString() ?? "",
-        };
-
     /// <summary>
     /// Compares a FlattenedWriteValue from a current row to a SemanticIdentityPart from
     /// a VisibleStoredCollectionRow or VisibleRequestCollectionItem.
@@ -2008,7 +2004,8 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// </remarks>
     private static bool CompareSemanticIdentityValue(
         FlattenedWriteValue currentValue,
-        SemanticIdentityPart storedPart
+        SemanticIdentityPart storedPart,
+        RelationalScalarType? scalarType
     )
     {
         if (currentValue is not FlattenedWriteValue.Literal { Value: var literal })
@@ -2027,12 +2024,14 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         var storedString = AncestorKeyHelpers.ExtractJsonNodeStringValue(storedPart.Value);
-        var currentString = NormalizeClrValueForIdentity(literal);
+        var currentString = AncestorKeyHelpers.ExtractJsonNodeStringValue(
+            AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(literal, scalarType)
+        );
         return string.Equals(storedString, currentString, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// Compares an object? (from SemanticIdentityValues) plus its candidate-side IsPresent
+    /// Compares a JSON-domain candidate semantic identity value plus its candidate-side IsPresent
     /// flag to a SemanticIdentityPart.
     /// </summary>
     /// <remarks>
@@ -2043,8 +2042,8 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// the absent-vs-present-null distinction that <see cref="CollectionWriteCandidate.SemanticIdentityPresenceFlags"/>
     /// threads through the contract.
     /// </remarks>
-    private static bool CompareObjectToSemanticIdentityPart(
-        object? candidateValue,
+    private static bool CompareJsonNodeToSemanticIdentityPart(
+        JsonNode? candidateValue,
         bool candidatePresent,
         SemanticIdentityPart part
     )
@@ -2066,7 +2065,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         var partString = AncestorKeyHelpers.ExtractJsonNodeStringValue(part.Value);
-        var candidateString = NormalizeClrValueForIdentity(candidateValue);
+        var candidateString = AncestorKeyHelpers.ExtractJsonNodeStringValue(candidateValue);
         return string.Equals(partString, candidateString, StringComparison.Ordinal);
     }
 
@@ -2076,9 +2075,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// candidate-side dedup and stored-row lookup consistent with the IsPresent distinction
     /// preserved elsewhere in the contract.
     /// </summary>
-    private static string FormatIdentityKeyPart(object? value, bool isPresent)
+    private static string FormatIdentityKeyPart(JsonNode? value, bool isPresent)
     {
-        return isPresent ? "P:" + NormalizeClrValueForIdentity(value) : "A";
+        return isPresent ? "P:" + AncestorKeyHelpers.ExtractJsonNodeStringValue(value) : "A";
     }
 
     /// <summary>
@@ -2087,7 +2086,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// present-with-null members so they don't collapse to the same key.
     /// </summary>
     private static string BuildSemanticIdentityKeyString(
-        IReadOnlyList<object?> values,
+        IReadOnlyList<JsonNode?> values,
         IReadOnlyList<bool> presenceFlags
     )
     {
@@ -2113,6 +2112,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// matches candidates keyed via <see cref="BuildSemanticIdentityKeyString"/>.
     /// </summary>
     private static string BuildSemanticIdentityKeyFromRow(
+        TableWritePlan tableWritePlan,
         CollectionMergePlan mergePlan,
         MergeTableRow row,
         VisibleStoredCollectionRow storedRow
@@ -2132,9 +2132,13 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var binding = mergePlan.SemanticIdentityBindings[0];
             var value = row.Values[binding.BindingIndex];
             var isPresent = storedRow.Address.SemanticIdentityInOrder[0].IsPresent;
+            var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
 
             return value is FlattenedWriteValue.Literal { Value: var literal }
-                ? FormatIdentityKeyPart(literal, isPresent)
+                ? FormatIdentityKeyPart(
+                    AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(literal, scalarType),
+                    isPresent
+                )
                 : FormatIdentityKeyPart(null, isPresent);
         }
 
@@ -2145,8 +2149,12 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 {
                     var value = row.Values[b.BindingIndex];
                     var isPresent = storedRow.Address.SemanticIdentityInOrder[i].IsPresent;
+                    var scalarType = tableWritePlan.ColumnBindings[b.BindingIndex].Column.ScalarType;
                     return value is FlattenedWriteValue.Literal { Value: var literal }
-                        ? FormatIdentityKeyPart(literal, isPresent)
+                        ? FormatIdentityKeyPart(
+                            AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(literal, scalarType),
+                            isPresent
+                        )
                         : FormatIdentityKeyPart(null, isPresent);
                 }
             )
@@ -2966,45 +2974,21 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// Extends an ancestor context key with a new collection item's identity,
     /// producing the ancestor key for scopes nested under that collection item.
     ///
-    /// ENCODING NOTE: This method operates on CLR-domain values (<c>object?</c> from
-    /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/>) and serializes them
-    /// via <see cref="NormalizeClrValueForIdentity"/>. The corresponding JSON-domain builder,
-    /// <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>, uses <see cref="AncestorKeyHelpers.ExtractJsonNodeStringValue"/>.
-    /// For string, int, long, and bool identity types (all current schemas), both serializers
-    /// produce identical output. If a collection-nested separate-table scope ever uses decimal,
-    /// double, DateOnly, DateTime, or TimeOnly as a semantic identity key, the keys built here
-    /// and in <see cref="ApplyStoredScopeStatesSecondPass"/> could diverge, producing a spurious
-    /// duplicate delete. Eliminate this risk as a follow-on by carrying <c>JsonNode?</c> identity
-    /// values through <see cref="CollectionWriteCandidate"/> and routing this method through
-    /// <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>.
+    /// Uses the same JSON-domain serialization as <see cref="AncestorKeyHelpers.BuildAncestorKeyFromInstances"/>
+    /// so request-side ancestor keys stay aligned with stored-side keys under the unified no-profile path.
     /// </summary>
     private static string ExtendAncestorContextKey(
         string currentKey,
         string collectionJsonScope,
-        IReadOnlyList<object?> semanticIdentityValues,
+        IReadOnlyList<JsonNode?> semanticIdentityValues,
         ImmutableArray<bool> semanticIdentityPresenceFlags
-    )
-    {
-        var sb = new System.Text.StringBuilder();
-
-        if (currentKey.Length > 0)
-        {
-            sb.Append(currentKey);
-            sb.Append('\0');
-        }
-
-        sb.Append(collectionJsonScope);
-
-        for (var i = 0; i < semanticIdentityValues.Count; i++)
-        {
-            sb.Append('\0');
-            sb.Append(semanticIdentityPresenceFlags[i] ? '1' : '0');
-            sb.Append('\0');
-            sb.Append(NormalizeClrValueForIdentity(semanticIdentityValues[i]));
-        }
-
-        return sb.ToString();
-    }
+    ) =>
+        AncestorKeyHelpers.ExtendAncestorKey(
+            currentKey,
+            collectionJsonScope,
+            semanticIdentityValues,
+            semanticIdentityPresenceFlags
+        );
 
     // --- Profile collection lookup ---
 
@@ -3319,7 +3303,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 }
 
                 var matchedRow = GetCurrentRowsForParent(collectionPlan, parentPhysicalRowIdentityValues)
-                    .FirstOrDefault(row => MatchesAncestorCollectionInstance(mergePlan, row, ancestor));
+                    .FirstOrDefault(row =>
+                        MatchesAncestorCollectionInstance(collectionPlan, mergePlan, row, ancestor)
+                    );
 
                 if (matchedRow is null)
                 {
@@ -3336,6 +3322,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         private static bool MatchesAncestorCollectionInstance(
+            TableWritePlan tableWritePlan,
             CollectionMergePlan mergePlan,
             MergeTableRow row,
             AncestorCollectionInstance ancestorInstance
@@ -3355,8 +3342,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 var binding = mergePlan.SemanticIdentityBindings[i];
                 var rowValue = row.Values[binding.BindingIndex];
                 var ancestorPart = ancestorInstance.SemanticIdentityInOrder[i];
+                var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
 
-                if (!CompareSemanticIdentityValue(rowValue, ancestorPart))
+                if (!CompareSemanticIdentityValue(rowValue, ancestorPart, scalarType))
                 {
                     return false;
                 }

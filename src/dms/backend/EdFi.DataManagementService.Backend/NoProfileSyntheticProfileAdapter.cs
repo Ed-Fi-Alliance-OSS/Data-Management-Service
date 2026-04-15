@@ -534,7 +534,11 @@ internal static class NoProfileSyntheticProfileAdapter
 
             foreach (var storedRow in tableRows.Rows)
             {
-                var semanticParts = BuildStoredRowActualSemanticIdentityParts(storedRow, mergePlan);
+                var semanticParts = BuildStoredRowActualSemanticIdentityParts(
+                    tableWritePlan,
+                    storedRow,
+                    mergePlan
+                );
 
                 // Build parent address. For a top-level collection the parent is root ("$", []).
                 // For a nested collection, use the registered ancestor chain of the parent row.
@@ -679,13 +683,8 @@ internal static class NoProfileSyntheticProfileAdapter
             // Strip the "$." prefix from the relative path for the SemanticIdentityPart
             var partRelativePath = TrimJsonPathRootPrefix(relativePath);
 
-            var clrValue = candidate.SemanticIdentityValues[i];
             var isPresent = candidate.SemanticIdentityPresenceFlags[i];
-
-            // Use the shared converter so that date/time types (DateOnly, TimeOnly) are
-            // serialized with invariant ISO strings, matching ConvertClrValueToSemanticIdentityJsonNode
-            // and NormalizeClrValueForIdentity in RelationalWriteMergeSynthesizer.
-            JsonNode? jsonNodeValue = ConvertClrValueToSemanticIdentityJsonNode(clrValue);
+            var jsonNodeValue = candidate.SemanticIdentityJsonValues[i];
 
             parts[i] = new SemanticIdentityPart(partRelativePath, jsonNodeValue, isPresent);
         }
@@ -701,6 +700,7 @@ internal static class NoProfileSyntheticProfileAdapter
     /// correctly classify each current row as visible rather than hidden.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> BuildStoredRowActualSemanticIdentityParts(
+        TableWritePlan tableWritePlan,
         object?[] storedRow,
         CollectionMergePlan mergePlan
     )
@@ -717,46 +717,17 @@ internal static class NoProfileSyntheticProfileAdapter
 
             var clrValue = storedRow[binding.BindingIndex];
             var isPresent = clrValue is not null;
-
-            JsonNode? jsonNodeValue = ConvertClrValueToSemanticIdentityJsonNode(clrValue);
+            var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
+            var jsonNodeValue = AncestorKeyHelpers.ConvertClrValueToSemanticIdentityJsonNode(
+                clrValue,
+                scalarType
+            );
 
             parts[i] = new SemanticIdentityPart(partRelativePath, jsonNodeValue, isPresent);
         }
 
         return [.. parts];
     }
-
-    /// <summary>
-    /// Converts a CLR value to a <see cref="JsonNode"/> suitable for use in a
-    /// <see cref="SemanticIdentityPart"/>. SQL Server date/time types
-    /// (<see cref="DateTime"/> for Date columns, <see cref="TimeSpan"/> for Time columns)
-    /// are normalized to canonical ISO strings that match the output of
-    /// <c>RelationalWriteMergeSynthesizer.NormalizeClrValueForIdentity</c>.
-    /// </summary>
-    private static JsonNode? ConvertClrValueToSemanticIdentityJsonNode(object? clrValue) =>
-        clrValue switch
-        {
-            null => null,
-            string s => JsonValue.Create(s),
-            int n => JsonValue.Create(n),
-            long n => JsonValue.Create(n),
-            bool b => JsonValue.Create(b),
-            DateTime dt => JsonValue.Create(
-                DateOnly
-                    .FromDateTime(dt)
-                    .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
-            ),
-            TimeSpan ts => JsonValue.Create(
-                new TimeOnly(ts.Ticks).ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
-            ),
-            DateOnly d => JsonValue.Create(
-                d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
-            ),
-            TimeOnly t => JsonValue.Create(
-                t.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
-            ),
-            _ => JsonValue.Create(clrValue.ToString()!),
-        };
 
     private static int? ResolveSingleParentScopeLocatorOrdinal(DbTableModel tableModel)
     {
