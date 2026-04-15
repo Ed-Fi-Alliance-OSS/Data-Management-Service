@@ -16,8 +16,6 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
     private const string AuthoritativeFixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const string FocusedFixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
-    private const string SmallMinimalFixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
     private const string SmallExtensionFixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/ext";
 
@@ -153,7 +151,7 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
     [Test]
     public void It_reloads_fixture_artifacts_when_the_fixture_manifest_changes_in_place()
     {
-        var tempFixtureDirectory = CreateTemporaryFixtureCopy(SmallMinimalFixtureRelativePath);
+        var tempFixtureDirectory = CreateTemporaryFixtureCopy(SmallExtensionFixtureRelativePath);
 
         try
         {
@@ -161,7 +159,7 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
                 tempFixtureDirectory
             );
 
-            AddExtensionSchemaToMinimalFixture(tempFixtureDirectory);
+            ReplaceFixtureManifestWithBaseOnlyManifest(tempFixtureDirectory);
 
             var reloadedFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
                 tempFixtureDirectory
@@ -179,21 +177,13 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
         }
     }
 
-    private static void AddExtensionSchemaToMinimalFixture(string fixtureDirectory)
+    private static void ReplaceFixtureManifestWithBaseOnlyManifest(string fixtureDirectory)
     {
-        var extensionFixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
-            TestContext.CurrentContext.TestDirectory,
-            SmallExtensionFixtureRelativePath
-        );
-        var extensionSourcePath = Path.Combine(extensionFixtureDirectory, "inputs", "ApiSchema-Sample.json");
-        var extensionTargetPath = Path.Combine(fixtureDirectory, "inputs", "ApiSchema-Sample.json");
-
-        File.Copy(extensionSourcePath, extensionTargetPath);
         File.WriteAllText(
             Path.Combine(fixtureDirectory, "fixture.json"),
             """
             {
-              "apiSchemaFiles": ["ApiSchema.json", "ApiSchema-Sample.json"],
+              "apiSchemaFiles": ["ApiSchema.json"],
               "dialects": ["pgsql", "mssql"],
               "emitDdlManifest": true
             }
