@@ -731,6 +731,36 @@ file static class MssqlProfileRuntimeContextFactory
             ]
         );
 
+    private static ScopeInstanceAddress CreateAlignedExtensionAddressScopeAddress(string city) =>
+        new(
+            "$._ext.sample.addresses[*]._ext.sample",
+            CreateAddressParentAddress(city).AncestorCollectionInstances
+        );
+
+    private static ImmutableArray<RequestScopeState> CreateAlignedExtensionAddressRequestScopeStates(
+        ProfileVisibilityKind visibility,
+        IEnumerable<string> cities
+    ) =>
+        [
+            .. cities.Select(city => new RequestScopeState(
+                Address: CreateAlignedExtensionAddressScopeAddress(city),
+                Visibility: visibility,
+                Creatable: false
+            )),
+        ];
+
+    private static ImmutableArray<StoredScopeState> CreateAlignedExtensionAddressStoredScopeStates(
+        ProfileVisibilityKind visibility,
+        IEnumerable<string> cities
+    ) =>
+        [
+            .. cities.Select(city => new StoredScopeState(
+                Address: CreateAlignedExtensionAddressScopeAddress(city),
+                Visibility: visibility,
+                HiddenMemberPaths: []
+            )),
+        ];
+
     private static VisibleRequestCollectionItem CreateVisiblePeriodCollectionItem(
         string parentCity,
         string periodName,
@@ -787,6 +817,10 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
+                .. CreateAlignedExtensionAddressRequestScopeStates(
+                    ProfileVisibilityKind.Hidden,
+                    ["Austin", "Houston"]
+                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -808,10 +842,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin", "Dallas"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -881,10 +914,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -937,10 +969,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -984,10 +1015,9 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisibleAbsent,
                     Creatable: false
                 ),
-                new RequestScopeState(
-                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                    Visibility: ProfileVisibilityKind.VisibleAbsent,
-                    Creatable: false
+                .. CreateAlignedExtensionAddressRequestScopeStates(
+                    ProfileVisibilityKind.VisibleAbsent,
+                    ["Austin", "Dallas"]
                 ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
@@ -1010,10 +1040,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisibleAbsent,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.VisibleAbsent,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.VisibleAbsent,
+                        ["Austin", "Dallas"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -1164,11 +1193,6 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: ["campusCode"]
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
-                    ),
                 ],
                 visibleStoredCollectionRows: []
             )
@@ -1226,10 +1250,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin", "Dallas"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -1268,6 +1291,10 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: false
                 ),
+                .. CreateAlignedExtensionAddressRequestScopeStates(
+                    ProfileVisibilityKind.Hidden,
+                    ["Austin", "Houston"]
+                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -1289,10 +1316,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin"]
                     ),
                 ],
                 visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
@@ -1328,6 +1354,7 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: false
                 ),
+                .. CreateAlignedExtensionAddressRequestScopeStates(ProfileVisibilityKind.Hidden, ["Austin"]),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -1349,10 +1376,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin"]
                     ),
                 ],
                 visibleStoredCollectionRows: [CreateVisibleStoredAddressCollectionRow(rootAddress, "Austin")]
@@ -1393,11 +1419,6 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
-                new RequestScopeState(
-                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                    Visibility: ProfileVisibilityKind.VisibleAbsent,
-                    Creatable: false
-                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -1417,11 +1438,6 @@ file static class MssqlProfileRuntimeContextFactory
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
                         Visibility: ProfileVisibilityKind.VisiblePresent,
-                        HiddenMemberPaths: []
-                    ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.VisibleAbsent,
                         HiddenMemberPaths: []
                     ),
                 ],
@@ -1463,11 +1479,6 @@ file static class MssqlProfileRuntimeContextFactory
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
-                new RequestScopeState(
-                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                    Visibility: ProfileVisibilityKind.VisibleAbsent,
-                    Creatable: false
-                ),
             ],
             VisibleRequestCollectionItems: visibleRequestCollectionItems
         );
@@ -1487,11 +1498,6 @@ file static class MssqlProfileRuntimeContextFactory
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
                         Visibility: ProfileVisibilityKind.VisiblePresent,
-                        HiddenMemberPaths: []
-                    ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.VisibleAbsent,
                         HiddenMemberPaths: []
                     ),
                 ],
@@ -1551,10 +1557,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin", "Dallas"]
                     ),
                 ],
                 visibleStoredCollectionRows:
@@ -1643,11 +1648,6 @@ file static class MssqlProfileRuntimeContextFactory
                     ),
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
-                    ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
@@ -1753,10 +1753,9 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        ["Austin", "Dallas"]
                     ),
                 ],
                 visibleStoredCollectionRows:

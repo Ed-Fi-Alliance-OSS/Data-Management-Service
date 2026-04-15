@@ -756,11 +756,6 @@ file static class GuardedNoOpIntegrationTestSupport
                     Visibility: ProfileVisibilityKind.VisibleAbsent,
                     Creatable: false
                 ),
-                new RequestScopeState(
-                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                    Visibility: ProfileVisibilityKind.VisibleAbsent,
-                    Creatable: false
-                ),
             ],
             VisibleRequestCollectionItems: []
         );
@@ -830,10 +825,9 @@ file static class GuardedNoOpIntegrationTestSupport
                         Visibility: ProfileVisibilityKind.Hidden,
                         HiddenMemberPaths: []
                     ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.Hidden,
-                        HiddenMemberPaths: []
+                    .. CreateAlignedExtensionAddressStoredScopeStates(
+                        ProfileVisibilityKind.Hidden,
+                        storedVisibleCities
                     ),
                 ],
                 visibleStoredCollectionRows: visibleStoredCollectionRows
@@ -865,11 +859,6 @@ file static class GuardedNoOpIntegrationTestSupport
                     Visibility: ProfileVisibilityKind.VisibleAbsent,
                     Creatable: false
                 ),
-                new RequestScopeState(
-                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
-                    Visibility: ProfileVisibilityKind.VisibleAbsent,
-                    Creatable: false
-                ),
             ],
             VisibleRequestCollectionItems: []
         );
@@ -888,11 +877,6 @@ file static class GuardedNoOpIntegrationTestSupport
                     ),
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.VisibleAbsent,
-                        HiddenMemberPaths: []
-                    ),
-                    new StoredScopeState(
-                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
                         Visibility: ProfileVisibilityKind.VisibleAbsent,
                         HiddenMemberPaths: []
                     ),
@@ -1188,6 +1172,29 @@ file static class GuardedNoOpIntegrationTestSupport
             ),
             HiddenMemberPaths: []
         );
+
+    private static ScopeInstanceAddress CreateAlignedExtensionAddressScopeAddress(string city) =>
+        new(
+            "$._ext.sample.addresses[*]._ext.sample",
+            [
+                new AncestorCollectionInstance(
+                    "$.addresses[*]",
+                    [new SemanticIdentityPart("city", JsonValue.Create(city)!, IsPresent: true)]
+                ),
+            ]
+        );
+
+    private static ImmutableArray<StoredScopeState> CreateAlignedExtensionAddressStoredScopeStates(
+        ProfileVisibilityKind visibility,
+        IEnumerable<string> cities
+    ) =>
+        [
+            .. cities.Select(city => new StoredScopeState(
+                Address: CreateAlignedExtensionAddressScopeAddress(city),
+                Visibility: visibility,
+                HiddenMemberPaths: []
+            )),
+        ];
 }
 
 internal abstract class GuardedNoOpGeneratedDdlFixtureTestBase
