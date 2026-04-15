@@ -19,13 +19,10 @@ namespace EdFi.DataManagementService.Backend;
 /// Only JSON-domain helpers live here (<see cref="JsonNode"/>-based identity values,
 /// <see cref="ScopeInstanceAddress"/>-based ancestor keys).
 ///
-/// CLR-domain helpers (<c>NormalizeClrValueForIdentity</c>, <c>ExtendAncestorContextKey</c>
-/// in <c>RelationalWriteMerge.cs</c>, and <c>ExtendAncestorContextKeyFromCandidate</c> in
-/// <c>NoProfileSyntheticProfileAdapter.cs</c>) are deliberately NOT consolidated here because
-/// the two implementations diverge on type coverage: <c>RelationalWriteMerge</c>'s version
-/// handles <c>DateOnly</c>, <c>TimeOnly</c>, <c>DateTime</c>, and <c>decimal</c> branches,
-/// while <c>NoProfileSyntheticProfileAdapter</c>'s version handles <c>string</c>, <c>int</c>,
-/// <c>long</c>, and <c>bool</c> with lowercase <c>"true"</c>/<c>"false"</c> serialization.
+/// The CLR-domain helper (<c>NormalizeClrValueForIdentity</c> and <c>ExtendAncestorContextKey</c>
+/// in <c>RelationalWriteMerge.cs</c>) is deliberately NOT consolidated here because it
+/// handles <c>DateOnly</c>, <c>TimeOnly</c>, <c>DateTime</c>, and <c>decimal</c> branches
+/// that diverge from the JSON-domain serialization in <see cref="ExtractJsonNodeStringValue"/>.
 /// Unifying them would be a behavior change and is out of scope for DMS-1124. A future
 /// cleanup story can revisit once equivalence tests are added.
 /// </remarks>

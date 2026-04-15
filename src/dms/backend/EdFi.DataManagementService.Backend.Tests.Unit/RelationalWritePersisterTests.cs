@@ -36,13 +36,13 @@ public class Given_Relational_Write_Persister
         var rootExtensionPlan = CreateRootExtensionPlan();
         var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [],
                 [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 rootExtensionPlan,
                 [],
                 [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, "BLUE")]
@@ -87,8 +87,8 @@ public class Given_Relational_Write_Persister
         var rootPlan = CreateRootPlan(includeShortName: true);
         var writePlan = CreateWritePlan([rootPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High", "LHS")],
                 [CreateRow(345L, 255901, "Lincoln High Updated", null)]
@@ -121,13 +121,13 @@ public class Given_Relational_Write_Persister
         var rootExtensionPlan = CreateRootExtensionPlan();
         var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(rootExtensionPlan, [CreateRow(345L, "BLUE")], []),
+            CreateTableStateFromRowSets(rootExtensionPlan, [CreateRow(345L, "BLUE")], []),
         ]);
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
@@ -261,18 +261,18 @@ public class Given_Relational_Write_Persister
         var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [CreateRow(44L, 345L, 0, "Mailing")],
                 [CreateRow(44L, 345L, 0, "Mailing")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [CreateRow(44L, "Blue")],
                 [CreateRow(44L, "Red")]
@@ -302,13 +302,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -323,7 +323,7 @@ public class Given_Relational_Write_Persister
                     CreateRow(47L, 345L, 3, "Shipping"),
                 ]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [],
                 [
@@ -378,13 +378,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -399,7 +399,7 @@ public class Given_Relational_Write_Persister
                     CreateRow(47L, 345L, 3, "Shipping"),
                 ]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [
                     CreateRow(44L, "Blue"),
@@ -459,13 +459,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -480,7 +480,7 @@ public class Given_Relational_Write_Persister
                     CreateRow(47L, 345L, 3, "Shipping"),
                 ]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [
                     CreateRow(44L, "Blue"),
@@ -587,18 +587,18 @@ public class Given_Relational_Write_Persister
         var writePlan = CreateWritePlan([rootPlan, collectionExtensionScopePlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [],
                 [CreateRow(addressCollectionItemId, "Blue")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [],
                 [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
@@ -632,13 +632,13 @@ public class Given_Relational_Write_Persister
         var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -651,7 +651,7 @@ public class Given_Relational_Write_Persister
                     CreateRow(46L, 345L, 2, "Work"),
                 ]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionExtensionScopePlan,
                 [CreateRow(44L, "Blue"), CreateRow(45L, "Green")],
                 [CreateRow(44L, "Purple"), CreateRow(46L, "Orange")]
@@ -686,13 +686,13 @@ public class Given_Relational_Write_Persister
         var collectionPlan = CreateCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
                 [CreateRow(45L, 345L, 0, "Home"), CreateRow(NewCollectionItemId(), 345L, 1, "Physical")]
@@ -741,18 +741,18 @@ public class Given_Relational_Write_Persister
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
         var periodCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 addressPlan,
                 [],
                 [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 periodPlan,
                 [],
                 [CreateRow(periodCollectionItemId, 345L, addressCollectionItemId, 0, "2026-09-01")]
@@ -790,13 +790,13 @@ public class Given_Relational_Write_Persister
         var extensionCollectionPlan = CreateExtensionCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, extensionCollectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 extensionCollectionPlan,
                 [CreateRow(44L, 345L, 0, "Tutor"), CreateRow(45L, 345L, 1, "Mentor")],
                 [
@@ -846,18 +846,18 @@ public class Given_Relational_Write_Persister
         var collectionAlignedExtensionChildPlan = CreateCollectionAlignedExtensionChildCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, addressPlan, collectionAlignedExtensionChildPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 addressPlan,
                 [CreateRow(44L, 345L, 0, "Home")],
                 [CreateRow(44L, 345L, 0, "Home")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionAlignedExtensionChildPlan,
                 [CreateRow(500L, 345L, 44L, 0, "Bus"), CreateRow(501L, 345L, 44L, 1, "Meal")],
                 [
@@ -911,18 +911,18 @@ public class Given_Relational_Write_Persister
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
         var serviceCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 addressPlan,
                 [],
                 [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionAlignedExtensionChildPlan,
                 [],
                 [CreateRow(serviceCollectionItemId, 345L, addressCollectionItemId, 0, "Bus")]
@@ -967,13 +967,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -1036,13 +1036,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -1101,13 +1101,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [
                     CreateRow(44L, 345L, 0, "Mailing"),
@@ -1166,13 +1166,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
                 [CreateRow(45L, 345L, 0, "Home"), CreateRow(44L, 345L, 1, "Mailing")]
@@ -1222,13 +1222,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [],
                 [
@@ -1303,13 +1303,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [],
                 [
@@ -1357,13 +1357,13 @@ public class Given_Relational_Write_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
+        var mergeResult = new RelationalWriteMergeResult([
+            CreateTableStateFromRowSets(
                 rootPlan,
                 [CreateRow(345L, 255901, "Lincoln High")],
                 [CreateRow(345L, 255901, "Lincoln High")]
             ),
-            new RelationalWriteNoProfileTableState(
+            CreateTableStateFromRowSets(
                 collectionPlan,
                 [],
                 [
@@ -2299,6 +2299,181 @@ public class Given_Relational_Write_Persister
         );
     }
 
+    /// <summary>
+    /// Creates a <see cref="RelationalWriteMergeTableState"/> from current/merged row sets,
+    /// deriving inserts, updates, and deletes by diffing the two sets. Used by tests that
+    /// only specify the before/after row state without explicit action classification.
+    /// </summary>
+    private static RelationalWriteMergeTableState CreateTableStateFromRowSets(
+        TableWritePlan tableWritePlan,
+        IEnumerable<MergeTableRow> currentRows,
+        IEnumerable<MergeTableRow> mergedRows
+    )
+    {
+        var currentList = currentRows.ToList();
+        var mergedList = mergedRows.ToList();
+        List<MergeRowInsert> inserts = [];
+        List<MergeRowUpdate> updates = [];
+        List<MergeRowDelete> deletes = [];
+
+        if (IsCollectionAlignedExtensionScope(tableWritePlan))
+        {
+            var currentRowsByPhysicalIdentity = currentList.ToDictionary(currentRow =>
+                ResolvePhysicalRowIdentityKey(tableWritePlan, currentRow)
+            );
+            var mergedRowsByPhysicalIdentity = mergedList.ToDictionary(mergedRow =>
+                ResolvePhysicalRowIdentityKey(tableWritePlan, mergedRow)
+            );
+
+            foreach (var currentRow in currentList)
+            {
+                if (
+                    !mergedRowsByPhysicalIdentity.ContainsKey(
+                        ResolvePhysicalRowIdentityKey(tableWritePlan, currentRow)
+                    )
+                )
+                {
+                    deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
+                }
+            }
+
+            foreach (var mergedRow in mergedList)
+            {
+                var physicalIdentity = ResolvePhysicalRowIdentityKey(tableWritePlan, mergedRow);
+
+                if (!currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow))
+                {
+                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+                    continue;
+                }
+
+                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
+                {
+                    updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
+                }
+            }
+        }
+        else if (tableWritePlan.CollectionMergePlan is not null)
+        {
+            var currentRowsByStableIdentity = currentList.ToDictionary(currentRow =>
+                ResolveStableRowIdentityLiteral(
+                    tableWritePlan,
+                    currentRow.Values[tableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                )
+            );
+
+            foreach (var currentRow in currentList)
+            {
+                var stableRowIdentity = ResolveStableRowIdentityLiteral(
+                    tableWritePlan,
+                    currentRow.Values[tableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                );
+
+                if (
+                    !mergedList.Exists(mergedRow =>
+                        mergedRow.Values[tableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                            is FlattenedWriteValue.Literal
+                        && ResolveStableRowIdentityLiteral(
+                            tableWritePlan,
+                            mergedRow.Values[tableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
+                        ) == stableRowIdentity
+                    )
+                )
+                {
+                    deletes.Add(new MergeRowDelete(stableRowIdentity));
+                }
+            }
+
+            foreach (var mergedRow in mergedList)
+            {
+                var stableIdentityValue = mergedRow.Values[
+                    tableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex
+                ];
+
+                if (stableIdentityValue is FlattenedWriteValue.UnresolvedCollectionItemId)
+                {
+                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+                    continue;
+                }
+
+                var stableRowIdentity = ResolveStableRowIdentityLiteral(tableWritePlan, stableIdentityValue);
+
+                if (!currentRowsByStableIdentity.TryGetValue(stableRowIdentity, out var currentRow))
+                {
+                    throw new InvalidOperationException(
+                        $"CreateTableStateFromRowSets for table '{tableWritePlan.TableModel.Table}' produced stable identity '{stableRowIdentity}' without a matching current row."
+                    );
+                }
+
+                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
+                {
+                    updates.Add(
+                        new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: stableRowIdentity)
+                    );
+                }
+            }
+        }
+        else
+        {
+            var currentRow = currentList.Count == 1 ? currentList[0] : null;
+            var mergedRow = mergedList.Count == 1 ? mergedList[0] : null;
+
+            if (currentRow is null && mergedRow is not null)
+            {
+                inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
+            }
+            else if (currentRow is not null && mergedRow is null)
+            {
+                deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
+            }
+            else if (
+                currentRow is not null
+                && mergedRow is not null
+                && !currentRow.Values.SequenceEqual(mergedRow.Values)
+            )
+            {
+                updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
+            }
+        }
+
+        return new RelationalWriteMergeTableState(
+            tableWritePlan,
+            inserts,
+            updates,
+            deletes,
+            preservedRows: [],
+            comparableCurrentRowset: currentList,
+            comparableMergedRowset: mergedList
+        );
+    }
+
+    private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
+        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
+
+    private static string ResolvePhysicalRowIdentityKey(TableWritePlan tableWritePlan, MergeTableRow row) =>
+        RelationalWritePersisterShared.ResolvePhysicalRowIdentityKey(tableWritePlan, row);
+
+    private static long ResolveStableRowIdentityLiteral(
+        TableWritePlan tableWritePlan,
+        FlattenedWriteValue stableRowIdentityValue
+    )
+    {
+        return stableRowIdentityValue switch
+        {
+            FlattenedWriteValue.Literal { Value: long stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: int stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: short stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: byte stableId } => stableId,
+            FlattenedWriteValue.Literal { Value: var value } => Convert.ToInt64(
+                value,
+                CultureInfo.InvariantCulture
+            ),
+            _ => throw new InvalidOperationException(
+                $"Collection table '{tableWritePlan.TableModel.Table}' expected a literal stable row identity."
+            ),
+        };
+    }
+
     private static FlattenedWriteValue.UnresolvedCollectionItemId NewCollectionItemId() =>
         FlattenedWriteValue.UnresolvedCollectionItemId.Create();
 
@@ -2515,212 +2690,5 @@ public class Given_Relational_Write_Persister
         public override void Commit() { }
 
         public override void Rollback() { }
-    }
-}
-
-internal sealed record RelationalWriteNoProfileMergeResult
-{
-    public RelationalWriteNoProfileMergeResult(
-        IEnumerable<RelationalWriteNoProfileTableState> tablesInDependencyOrder
-    )
-    {
-        TablesInDependencyOrder = [.. tablesInDependencyOrder];
-    }
-
-    public IReadOnlyList<RelationalWriteNoProfileTableState> TablesInDependencyOrder { get; init; }
-
-    public static implicit operator RelationalWriteMergeResult(
-        RelationalWriteNoProfileMergeResult legacyResult
-    )
-    {
-        ArgumentNullException.ThrowIfNull(legacyResult);
-
-        return new RelationalWriteMergeResult(
-            legacyResult.TablesInDependencyOrder.Select(tableState => tableState.ToUnifiedState())
-        );
-    }
-}
-
-internal sealed record RelationalWriteNoProfileTableState
-{
-    public RelationalWriteNoProfileTableState(
-        TableWritePlan tableWritePlan,
-        IEnumerable<MergeTableRow> currentRows,
-        IEnumerable<MergeTableRow> mergedRows
-    )
-    {
-        TableWritePlan = tableWritePlan;
-        CurrentRows = [.. currentRows];
-        MergedRows = [.. mergedRows];
-    }
-
-    public TableWritePlan TableWritePlan { get; init; }
-
-    public IReadOnlyList<MergeTableRow> CurrentRows { get; init; }
-
-    public IReadOnlyList<MergeTableRow> MergedRows { get; init; }
-
-    public RelationalWriteMergeTableState ToUnifiedState()
-    {
-        List<MergeRowInsert> inserts = [];
-        List<MergeRowUpdate> updates = [];
-        List<MergeRowDelete> deletes = [];
-
-        if (IsCollectionAlignedExtensionScope(TableWritePlan))
-        {
-            var currentRowsByPhysicalIdentity = CurrentRows.ToDictionary(currentRow =>
-                ResolvePhysicalRowIdentityKey(TableWritePlan, currentRow)
-            );
-            var mergedRowsByPhysicalIdentity = MergedRows.ToDictionary(mergedRow =>
-                ResolvePhysicalRowIdentityKey(TableWritePlan, mergedRow)
-            );
-
-            foreach (var currentRow in CurrentRows)
-            {
-                if (
-                    !mergedRowsByPhysicalIdentity.ContainsKey(
-                        ResolvePhysicalRowIdentityKey(TableWritePlan, currentRow)
-                    )
-                )
-                {
-                    deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
-                }
-            }
-
-            foreach (var mergedRow in MergedRows)
-            {
-                var physicalIdentity = ResolvePhysicalRowIdentityKey(TableWritePlan, mergedRow);
-
-                if (!currentRowsByPhysicalIdentity.TryGetValue(physicalIdentity, out var currentRow))
-                {
-                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
-                    continue;
-                }
-
-                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
-                {
-                    updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
-                }
-            }
-        }
-        else if (TableWritePlan.CollectionMergePlan is not null)
-        {
-            var currentRowsByStableIdentity = CurrentRows.ToDictionary(currentRow =>
-                ResolveStableRowIdentityLiteral(
-                    TableWritePlan,
-                    currentRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
-                )
-            );
-
-            foreach (var currentRow in CurrentRows)
-            {
-                var stableRowIdentity = ResolveStableRowIdentityLiteral(
-                    TableWritePlan,
-                    currentRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
-                );
-
-                if (
-                    !MergedRows.Any(mergedRow =>
-                        mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
-                            is FlattenedWriteValue.Literal
-                        && ResolveStableRowIdentityLiteral(
-                            TableWritePlan,
-                            mergedRow.Values[TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex]
-                        ) == stableRowIdentity
-                    )
-                )
-                {
-                    deletes.Add(new MergeRowDelete(stableRowIdentity));
-                }
-            }
-
-            foreach (var mergedRow in MergedRows)
-            {
-                var stableIdentityValue = mergedRow.Values[
-                    TableWritePlan.CollectionMergePlan.StableRowIdentityBindingIndex
-                ];
-
-                if (stableIdentityValue is FlattenedWriteValue.UnresolvedCollectionItemId)
-                {
-                    inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
-                    continue;
-                }
-
-                var stableRowIdentity = ResolveStableRowIdentityLiteral(TableWritePlan, stableIdentityValue);
-
-                if (!currentRowsByStableIdentity.TryGetValue(stableRowIdentity, out var currentRow))
-                {
-                    throw new InvalidOperationException(
-                        $"Compatibility merge result for table '{TableWritePlan.TableModel.Table}' produced stable identity '{stableRowIdentity}' without a matching current row."
-                    );
-                }
-
-                if (!currentRow.Values.SequenceEqual(mergedRow.Values))
-                {
-                    updates.Add(
-                        new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: stableRowIdentity)
-                    );
-                }
-            }
-        }
-        else
-        {
-            var currentRow = CurrentRows.Count == 1 ? CurrentRows[0] : null;
-            var mergedRow = MergedRows.Count == 1 ? MergedRows[0] : null;
-
-            if (currentRow is null && mergedRow is not null)
-            {
-                inserts.Add(new MergeRowInsert([.. mergedRow.Values]));
-            }
-            else if (currentRow is not null && mergedRow is null)
-            {
-                deletes.Add(new MergeRowDelete(StableRowIdentityValue: null));
-            }
-            else if (
-                currentRow is not null
-                && mergedRow is not null
-                && !currentRow.Values.SequenceEqual(mergedRow.Values)
-            )
-            {
-                updates.Add(new MergeRowUpdate([.. mergedRow.Values], StableRowIdentityValue: null));
-            }
-        }
-
-        return new RelationalWriteMergeTableState(
-            TableWritePlan,
-            inserts,
-            updates,
-            deletes,
-            preservedRows: [],
-            comparableCurrentRowset: CurrentRows,
-            comparableMergedRowset: MergedRows
-        );
-    }
-
-    private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
-        tableWritePlan.TableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope;
-
-    private static string ResolvePhysicalRowIdentityKey(TableWritePlan tableWritePlan, MergeTableRow row) =>
-        RelationalWritePersisterShared.ResolvePhysicalRowIdentityKey(tableWritePlan, row);
-
-    private static long ResolveStableRowIdentityLiteral(
-        TableWritePlan tableWritePlan,
-        FlattenedWriteValue stableRowIdentityValue
-    )
-    {
-        return stableRowIdentityValue switch
-        {
-            FlattenedWriteValue.Literal { Value: long stableId } => stableId,
-            FlattenedWriteValue.Literal { Value: int stableId } => stableId,
-            FlattenedWriteValue.Literal { Value: short stableId } => stableId,
-            FlattenedWriteValue.Literal { Value: byte stableId } => stableId,
-            FlattenedWriteValue.Literal { Value: var value } => Convert.ToInt64(
-                value,
-                CultureInfo.InvariantCulture
-            ),
-            _ => throw new InvalidOperationException(
-                $"Collection table '{tableWritePlan.TableModel.Table}' expected a literal stable row identity."
-            ),
-        };
     }
 }
