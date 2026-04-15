@@ -2035,6 +2035,45 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// SQL NULL, so this comparison cannot distinguish them. The IsPresent distinction is
     /// preserved in ancestor key building (BuildAncestorKey / ExtendAncestorContextKey)
     /// where SemanticIdentityPart instances are available on both sides.
+    ///
+    /// Contract assumption: semantic identity members MUST NOT reach the merge as
+    /// (IsPresent=true, Value=null). This helper is consumed from two call sites, each
+    /// gated by a different upstream invariant today:
+    /// <list type="bullet">
+    ///   <item>
+    ///     Request-to-DB collection row matching — called from
+    ///     <see cref="TryMatchCurrentRowToVisibleStored"/> to pair
+    ///     Core-projected <c>VisibleStoredCollectionRow</c> entries with current DB rows.
+    ///     Gated by <c>DocumentReconstituter.EmitScalars</c>
+    ///     (src/dms/backend/EdFi.DataManagementService.Backend.Plans/DocumentReconstituter.cs:159),
+    ///     which omits null scalars during stored-document reconstitution so stored-side
+    ///     address derivation does not observe explicit JSON nulls. Request null pruning
+    ///     (<c>DocumentValidator.PruneNullData</c> at
+    ///     src/dms/core/EdFi.DataManagementService.Core/Validation/DocumentValidator.cs:72)
+    ///     is an adjacent invariant that keeps the request-side key built by
+    ///     <see cref="BuildSemanticIdentityKeyFromRow"/> consistent with the stored side,
+    ///     but the direct current-row comparison at this site is gated by reconstitution.
+    ///   </item>
+    ///   <item>
+    ///     Stored-side ancestor/scope-instance resolution — called from
+    ///     <see cref="MatchesAncestorCollectionInstance"/> during
+    ///     <c>TryMatchScopeInstanceRow</c> and <c>ApplyStoredScopeStatesSecondPass</c>.
+    ///     This path is stored-side only: <c>StoredScopeState</c> addresses and their
+    ///     <c>AncestorCollectionInstance</c> chains come from stored-side address
+    ///     derivation over reconstituted JSON. Only
+    ///     <c>DocumentReconstituter.EmitScalars</c> gates it; request null pruning does
+    ///     not apply.
+    ///   </item>
+    /// </list>
+    /// If stored reconstitution ever emits explicit JSON null for an optional scalar (a
+    /// future code path or an externally supplied <c>ProfileAppliedWriteContext</c>),
+    /// two stored rows could become indistinguishable at this helper — bind-to-first-match
+    /// would silently misroute the update/delete decision (site 1) or silently
+    /// preserve/delete the wrong row under a presence-sensitive collection ancestor
+    /// (site 2). A deterministic fail-fast for that case needs either DB-side presence
+    /// fidelity (presence flag columns threaded into the current-state projection) or
+    /// pre-merge detection of ambiguous stored tuples. Both are tracked as follow-up work
+    /// rather than solved inside this comparator.
     /// </remarks>
     private static bool CompareSemanticIdentityValue(
         FlattenedWriteValue currentValue,

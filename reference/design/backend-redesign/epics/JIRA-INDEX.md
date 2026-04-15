@@ -95,6 +95,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-986` — Map DB Constraint Errors to DMS Write Error Shapes — `reference/design/backend-redesign/epics/07-relational-write-path/05-write-error-mapping.md`
   - `DMS-1104` — Classify and Map Profile Write Failures to DMS Error Shapes — `reference/design/backend-redesign/epics/07-relational-write-path/05b-profile-error-classification.md`
   - `DMS-987` — Descriptor POST/PUT Writes Maintain `dms.Descriptor` (No Per-Descriptor Tables) — `reference/design/backend-redesign/epics/07-relational-write-path/06-descriptor-writes.md`
+  - `DMS-1132` — Presence-Sensitive Semantic Identity Fidelity in the Relational Write Merge — `reference/design/backend-redesign/epics/07-relational-write-path/07-semantic-identity-presence-fidelity.md`
 
 - `DMS-988` — Relational Read Path (GET + Query) — `reference/design/backend-redesign/epics/08-relational-read-path/EPIC.md`
   - `DMS-989` — Hydrate Relational Rows Using Multi-Result Queries — `reference/design/backend-redesign/epics/08-relational-read-path/00-hydrate-multiresult.md`
