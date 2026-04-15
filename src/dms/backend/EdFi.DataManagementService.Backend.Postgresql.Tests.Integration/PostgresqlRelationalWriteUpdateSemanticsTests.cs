@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -95,7 +94,6 @@ internal sealed record UpdateSemanticsSchoolExtensionAddressRow(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_Stable_Key_Fixture
 {
     private const string FixtureRelativePath =
@@ -191,12 +189,18 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
     private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesBeforeUpdate = null!;
     private IReadOnlyList<UpdateSemanticsSchoolExtensionAddressRow> _extensionAddressesAfterUpdate = null!;
 
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
     [SetUp]
     public async Task Setup()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        await _database.ResetAsync();
         _serviceProvider = CreateServiceProvider();
 
         await ExecuteCreateAsync();
@@ -223,11 +227,17 @@ public class Given_A_Postgresql_Relational_Write_Update_Baseline_With_A_Focused_
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 

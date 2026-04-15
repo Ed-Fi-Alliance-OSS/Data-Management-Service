@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -421,7 +420,6 @@ file static class FullSurfaceCollectionReorderIntegrationTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
@@ -436,14 +434,20 @@ public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder
     private FullSurfaceCollectionReorderPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             FullSurfaceCollectionReorderIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
         _serviceProvider = FullSurfaceCollectionReorderIntegrationTestSupport.CreateServiceProvider();
 
         await ExecuteCreateAsync();
@@ -465,11 +469,17 @@ public class Given_A_Postgresql_Relational_Write_Full_Surface_Collection_Reorder
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 

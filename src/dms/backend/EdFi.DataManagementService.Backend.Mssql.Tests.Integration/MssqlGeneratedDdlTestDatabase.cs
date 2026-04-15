@@ -22,6 +22,13 @@ internal sealed record MssqlForeignKeyMetadata(
 internal sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =
+    [
+        ("dms", "EffectiveSchema"),
+        ("dms", "ResourceKey"),
+        ("dms", "SchemaComponent"),
+    ];
+    private static readonly string _resetSql = MssqlDatabaseResetSql.Build(_generatedDdlBaselineTables);
 
     private MssqlGeneratedDdlTestDatabase(string databaseName, string connectionString)
     {
@@ -102,6 +109,16 @@ internal sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         {
             SqlConnection.ClearPool(connection);
         }
+    }
+
+    public async Task ResetAsync(int commandTimeoutSeconds = DefaultCommandTimeoutSeconds)
+    {
+        await using SqlConnection connection = new(ConnectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = _resetSql;
+        command.CommandTimeout = commandTimeoutSeconds;
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task<bool> SequenceExistsAsync(string schema, string sequenceName)

@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -841,34 +840,75 @@ file static class GuardedNoOpIntegrationTestSupport
     }
 }
 
+internal abstract class GuardedNoOpGeneratedDdlFixtureTestBase
+{
+    protected MappingSet _mappingSet = null!;
+    protected PostgresqlGeneratedDdlTestDatabase _database = null!;
+    protected ServiceProvider _serviceProvider = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
+        );
+
+        _mappingSet = fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
+        _serviceProvider = CreateServiceProvider();
+        await SetUpTestAsync();
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    protected abstract ServiceProvider CreateServiceProvider();
+
+    protected abstract Task SetUpTestAsync();
+}
+
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000001")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         _stateBeforeUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -880,20 +920,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stab
             _database,
             SchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -971,8 +997,8 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stab
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000002")
@@ -981,25 +1007,16 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_F
         Guid.Parse("dddddddd-0000-0000-0000-000000000003")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -1025,20 +1042,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_F
             _database,
             IncomingSchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1121,31 +1124,23 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_F
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_Refreshes_Content_Version
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000010")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPreLoadContentVersionBumpProbe _probe = null!;
     private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreatePreLoadContentVersionBumpServiceProvider();
+
+    protected override async Task SetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreatePreLoadContentVersionBumpServiceProvider();
         _probe = _serviceProvider.GetRequiredService<GuardedNoOpPreLoadContentVersionBumpProbe>();
 
         await ExecuteCreateAsync();
@@ -1159,20 +1154,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_
             _database,
             SchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1262,8 +1243,8 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_When_Current_State_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Current_State_Refreshes_Content_Version
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000011")
@@ -1272,25 +1253,17 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Cur
         Guid.Parse("dddddddd-0000-0000-0000-000000000012")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPreLoadContentVersionBumpProbe _probe = null!;
     private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreatePreLoadContentVersionBumpServiceProvider();
+
+    protected override async Task SetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreatePreLoadContentVersionBumpServiceProvider();
         _probe = _serviceProvider.GetRequiredService<GuardedNoOpPreLoadContentVersionBumpProbe>();
 
         await ExecuteCreateAsync();
@@ -1318,20 +1291,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Cur
             _database,
             IncomingSchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1428,31 +1387,22 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_When_Cur
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000007")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforeNoOpUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterNoOpUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         await ExecuteReorderUpdateAsync();
         _stateBeforeNoOpUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1465,20 +1415,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surfac
             _database,
             SchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1587,8 +1523,8 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_After_A_Full_Surfac
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_Full_Surface_Collection_Reorder_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000008")
@@ -1597,25 +1533,16 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_
         Guid.Parse("dddddddd-0000-0000-0000-000000000009")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         await ExecuteReorderUpdateAsync();
         _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1642,20 +1569,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_
             _database,
             IncomingSchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1769,31 +1682,22 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_After_A_
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000004")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateStaleCompareServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateStaleCompareServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         _stateBeforeUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -1805,20 +1709,6 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focuse
             _database,
             SchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -1905,8 +1795,8 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Put_With_A_Focuse
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture
+internal class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_With_A_Focused_Stable_Key_Fixture
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000005")
@@ -1915,25 +1805,16 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_Wi
         Guid.Parse("dddddddd-0000-0000-0000-000000000006")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateStaleCompareServiceProvider();
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateStaleCompareServiceProvider();
 
+    protected override async Task SetUpTestAsync()
+    {
         await ExecuteCreateAsync();
         _stateBeforePostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -1959,20 +1840,6 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_Wi
             _database,
             IncomingSchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -2066,31 +1933,23 @@ public class Given_A_Postgresql_Relational_Stale_Guarded_No_Op_Post_As_Update_Wi
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Window_Race
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000007")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpCommitWindowProbe _freshnessProbe = null!;
     private GuardedNoOpPersistedState _stateBeforeUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterUpdate = null!;
     private UpdateResult _updateResult = null!;
 
-    [SetUp]
-    public async Task Setup()
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
+
+    protected override async Task SetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
         _freshnessProbe = _serviceProvider.GetRequiredService<GuardedNoOpCommitWindowProbe>();
 
         await ExecuteCreateAsync();
@@ -2104,20 +1963,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Windo
             _database,
             SchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]
@@ -2218,8 +2063,8 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Commit_Windo
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
-public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race
+internal class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Commit_Window_Race
+    : GuardedNoOpGeneratedDdlFixtureTestBase
 {
     private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
         Guid.Parse("dddddddd-0000-0000-0000-000000000008")
@@ -2228,25 +2073,17 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_C
         Guid.Parse("dddddddd-0000-0000-0000-000000000009")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
     private GuardedNoOpCommitWindowProbe _freshnessProbe = null!;
     private GuardedNoOpPersistedState _stateBeforePostAsUpdate = null!;
     private GuardedNoOpPersistedState _stateAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
     private long _incomingDocumentUuidCount;
 
-    [SetUp]
-    public async Task Setup()
+    protected override ServiceProvider CreateServiceProvider() =>
+        GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
+
+    protected override async Task SetUpTestAsync()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            GuardedNoOpIntegrationTestSupport.FixtureRelativePath
-        );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = GuardedNoOpIntegrationTestSupport.CreateCommitWindowServiceProvider();
         _freshnessProbe = _serviceProvider.GetRequiredService<GuardedNoOpCommitWindowProbe>();
 
         await ExecuteCreateAsync();
@@ -2275,20 +2112,6 @@ public class Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_C
             _database,
             IncomingSchoolDocumentUuid.Value
         );
-    }
-
-    [TearDown]
-    public async Task TearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
     }
 
     [Test]

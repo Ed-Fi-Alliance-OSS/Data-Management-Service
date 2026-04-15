@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]
-[NonParallelizable]
 public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_EffectiveSchemaHash_Mismatch_Detection
 {
     private const string FixtureRelativePath =
@@ -69,6 +68,8 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
     {
         _fingerprint.Should().NotBeNull();
         _fingerprint!.EffectiveSchemaHash.Should().NotBeNullOrEmpty();
-        _fingerprint.EffectiveSchemaHash.Should().Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
+        _fingerprint
+            .EffectiveSchemaHash.Should()
+            .Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
     }
 }

@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -275,7 +274,6 @@ file static class RollbackSafetyIntegrationTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture
 {
     private static readonly DocumentUuid SchoolDocumentUuid = new(
@@ -292,14 +290,20 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
     private long _schoolCount;
     private long _schoolAddressCount;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
             RollbackSafetyIntegrationTestSupport.FixtureRelativePath
         );
-        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _mappingSet = _fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        await _database.ResetAsync();
         _serviceProvider = RollbackSafetyIntegrationTestSupport.CreateServiceProvider();
         _commandRecorder = _serviceProvider.GetRequiredService<RollbackSafetyCommandRecorder>();
 
@@ -331,11 +335,17 @@ public class Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writ
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
         }
+    }
 
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
         if (_database is not null)
         {
             await _database.DisposeAsync();
+            _database = null!;
         }
     }
 

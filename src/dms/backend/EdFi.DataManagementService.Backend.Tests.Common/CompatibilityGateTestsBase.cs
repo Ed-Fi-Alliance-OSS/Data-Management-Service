@@ -27,7 +27,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]
-[NonParallelizable]
 public abstract class CompatibilityGateTestsBase
 {
     // -------------------------------------------------------------------------
@@ -125,7 +124,7 @@ public abstract class CompatibilityGateTestsBase
             await fingerprintReader.ReadFingerprintAsync(GetConnectionString())
             ?? throw new InvalidOperationException(
                 "Database fingerprint could not be read after provisioning. "
-                + "Ensure ProvisionDatabaseAsync wrote the dms.EffectiveSchema singleton row."
+                    + "Ensure ProvisionDatabaseAsync wrote the dms.EffectiveSchema singleton row."
             );
 
         var rowReader = CreateResourceKeyRowReader();

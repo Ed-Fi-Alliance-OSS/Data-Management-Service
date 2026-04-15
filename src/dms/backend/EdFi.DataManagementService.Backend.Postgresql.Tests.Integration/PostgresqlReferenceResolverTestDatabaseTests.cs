@@ -12,19 +12,24 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_PostgresqlReferenceResolverTestDatabase
 {
     private PostgresqlReferenceResolverTestDatabase _database = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _database = await PostgresqlReferenceResolverTestDatabase.CreateProvisionedAsync();
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {

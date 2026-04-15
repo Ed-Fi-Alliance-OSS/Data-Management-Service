@@ -23,7 +23,6 @@ internal sealed record FocusedStableKeySmokeSeedData(
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath =
@@ -37,8 +36,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     private IReadOnlyList<MssqlForeignKeyMetadata> _interventionVisitForeignKeys = null!;
     private IReadOnlyList<MssqlForeignKeyMetadata> _sponsorReferenceForeignKeys = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -49,11 +48,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
 
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-
-        // Reapply the emitted DDL so each smoke test also covers idempotent apply.
-        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
-
-        _seedData = await SeedSmokeRowsAsync();
         _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "SchoolAddressPeriod");
         _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
@@ -69,13 +63,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _seedData = await SeedSmokeRowsAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_database is not null)
         {
             await _database.DisposeAsync();
-            _database = null!;
         }
     }
 
@@ -261,6 +261,24 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         )
             .Should()
             .Be(1);
+    }
+
+    [Test]
+    public async Task It_should_preserve_immediate_parent_fk_enforcement_after_reapplying_the_same_generated_ddl()
+    {
+        await _database.ResetAsync();
+        await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
+
+        var seedData = await SeedSmokeRowsAsync();
+
+        await AssertForeignKeyViolationAsync(async () =>
+            await InsertSchoolExtensionInterventionVisitAsync(
+                seedData.InterventionCollectionItemId,
+                seedData.OtherSchoolDocumentId,
+                2,
+                "Visit-WrongRoot"
+            )
+        );
     }
 
     private async Task<FocusedStableKeySmokeSeedData> SeedSmokeRowsAsync()

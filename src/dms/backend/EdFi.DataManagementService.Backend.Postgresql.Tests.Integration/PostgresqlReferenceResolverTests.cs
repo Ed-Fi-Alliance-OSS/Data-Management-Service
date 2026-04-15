@@ -29,22 +29,27 @@ file sealed class TestHostApplicationLifetime : IHostApplicationLifetime
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-[NonParallelizable]
 public class Given_PostgresqlReferenceResolver
 {
     private PostgresqlReferenceResolverTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         _database = await PostgresqlReferenceResolverTestDatabase.CreateProvisionedAsync();
-        await _database.SeedAsync();
         _serviceProvider = CreateServiceProvider();
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

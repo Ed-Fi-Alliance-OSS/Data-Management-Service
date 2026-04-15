@@ -36,14 +36,10 @@ public abstract class PostgresqlCompatibilityGateTestsBase : CompatibilityGateTe
     protected override SqlDialect GetSqlDialect() => SqlDialect.Pgsql;
 
     protected override IResourceKeyRowReader CreateResourceKeyRowReader() =>
-        new PostgresqlResourceKeyRowReader(
-            NullLogger<PostgresqlResourceKeyRowReader>.Instance
-        );
+        new PostgresqlResourceKeyRowReader(NullLogger<PostgresqlResourceKeyRowReader>.Instance);
 
     protected override IDatabaseFingerprintReader CreateDatabaseFingerprintReader() =>
-        new PostgresqlDatabaseFingerprintReader(
-            NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
-        );
+        new PostgresqlDatabaseFingerprintReader(NullLogger<PostgresqlDatabaseFingerprintReader>.Instance);
 
     protected override async Task ExecuteTamperAsync(string sql)
     {

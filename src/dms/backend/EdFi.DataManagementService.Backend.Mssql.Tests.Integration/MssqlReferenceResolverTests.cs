@@ -18,14 +18,13 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-[NonParallelizable]
 public class Given_MssqlReferenceResolver
 {
     private MssqlReferenceResolverTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
 
-    [SetUp]
-    public async Task Setup()
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -35,12 +34,18 @@ public class Given_MssqlReferenceResolver
         }
 
         _database = await MssqlReferenceResolverTestDatabase.CreateProvisionedAsync();
-        await _database.SeedAsync();
         _serviceProvider = CreateServiceProvider();
     }
 
-    [TearDown]
-    public async Task TearDown()
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
     {
         if (_serviceProvider is not null)
         {

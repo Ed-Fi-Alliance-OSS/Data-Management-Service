@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// insert known data, execute hydration, and assert the returned row structure.
 /// </remarks>
 [TestFixture]
+[NonParallelizable]
 public class Given_A_Page_With_Multiple_Documents
 {
     private NpgsqlDataSource _dataSource = null!;
@@ -285,6 +286,7 @@ public class Given_A_Page_With_Multiple_Documents
 }
 
 [TestFixture]
+[NonParallelizable]
 public class Given_A_Single_DocumentId_Keyset
 {
     private NpgsqlDataSource _dataSource = null!;
@@ -437,6 +439,7 @@ public class Given_A_Single_DocumentId_Keyset
 }
 
 [TestFixture]
+[NonParallelizable]
 public class Given_A_Query_With_TotalCount_Requested
 {
     private NpgsqlDataSource _dataSource = null!;
@@ -574,6 +577,7 @@ public class Given_A_Query_With_TotalCount_Requested
 }
 
 [TestFixture]
+[NonParallelizable]
 public class Given_A_Reference_Bearing_Resource
 {
     private NpgsqlDataSource _dataSource = null!;
