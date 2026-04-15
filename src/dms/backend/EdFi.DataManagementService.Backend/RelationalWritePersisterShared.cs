@@ -283,6 +283,9 @@ internal static class RelationalWritePersisterShared
         for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
             var temporaryValues = rows[rowIndex].Values.ToArray();
+            // Persisted ordinals are non-negative contiguous values. Moving every row into
+            // negative space first avoids transient collisions while a multi-row reorder
+            // is applied in two passes.
             temporaryValues[ordinalBindingIndex] = new FlattenedWriteValue.Literal(-1 - rowIndex);
 
             temporaryRows[rowIndex] = new MergeTableRow(temporaryValues, rows[rowIndex].ComparableValues);

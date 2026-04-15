@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
+using static EdFi.DataManagementService.Backend.RelationalWritePersisterShared;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -451,7 +452,7 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
         }
 
         var rowsToDelete = tableState
-            .Deletes.Select(delete => delete.Values)
+            .Deletes.Select(static delete => delete.Values)
             .Where(static values => values is not null)
             .Select(static values => new MergeTableRow(values!, ImmutableArray<FlattenedWriteValue>.Empty))
             .ToList();
@@ -465,69 +466,48 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
             rowsToDelete = [.. tableState.ComparableCurrentRowset];
         }
 
-        if (rowsToDelete.Count == tableState.Deletes.Length && rowsToDelete.Count > 0)
+        if (rowsToDelete.Count == 0)
         {
-            Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> emptyReservedIds = [];
+            return;
+        }
 
-            if (rowsToDelete.Count == 1)
-            {
-                await ExecuteNonQueryAsync(
-                        writeSession,
-                        BuildRowCommandFromValues(
-                            tableState.TableWritePlan,
-                            tableState.TableWritePlan.DeleteByParentSql,
-                            rowsToDelete[0].Values,
-                            rootDocumentId,
-                            emptyReservedIds
-                        ),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                await ExecuteParameterizedBatchesAsync(
-                        dialect,
+        if (rowsToDelete.Count != tableState.Deletes.Length)
+        {
+            throw new InvalidOperationException(
+                "Non-collection scope deletes must provide row values for every delete or match the comparable current rowset exactly."
+            );
+        }
+
+        Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> emptyReservedIds = [];
+
+        if (rowsToDelete.Count == 1)
+        {
+            await ExecuteNonQueryAsync(
+                    writeSession,
+                    BuildRowCommandFromValues(
                         tableState.TableWritePlan,
                         tableState.TableWritePlan.DeleteByParentSql,
-                        (batchSqlEmitter, rowCount) =>
-                            batchSqlEmitter.EmitDeleteByParentBatch(tableState.TableWritePlan, rowCount),
-                        rowsToDelete,
+                        rowsToDelete[0].Values,
                         rootDocumentId,
-                        emptyReservedIds,
-                        writeSession,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
+                        emptyReservedIds
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             return;
         }
 
-        List<RelationalParameter> parameters = [];
-
-        for (
-            var bindingIndex = 0;
-            bindingIndex < tableState.TableWritePlan.ColumnBindings.Length;
-            bindingIndex++
-        )
-        {
-            var binding = tableState.TableWritePlan.ColumnBindings[bindingIndex];
-            var parameterName = NormalizeParameterName(binding.ParameterName);
-
-            object? parameterValue = binding.Source switch
-            {
-                WriteValueSource.DocumentId => rootDocumentId,
-                WriteValueSource.ParentKeyPart => rootDocumentId,
-                _ => DBNull.Value,
-            };
-
-            parameters.Add(new RelationalParameter(parameterName, parameterValue));
-        }
-
-        await ExecuteNonQueryAsync(
+        await ExecuteParameterizedBatchesAsync(
+                dialect,
+                tableState.TableWritePlan,
+                tableState.TableWritePlan.DeleteByParentSql,
+                (batchSqlEmitter, rowCount) =>
+                    batchSqlEmitter.EmitDeleteByParentBatch(tableState.TableWritePlan, rowCount),
+                rowsToDelete,
+                rootDocumentId,
+                emptyReservedIds,
                 writeSession,
-                new RelationalCommand(tableState.TableWritePlan.DeleteByParentSql, parameters),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -849,99 +829,6 @@ internal sealed class RelationalWritePersister : IRelationalWritePersister
             )
             .ConfigureAwait(false);
 
-    // ─── Batch execution infrastructure ──────────────────────────────────
-
-    private static async Task ExecuteNonQueryAsync(
-        IRelationalWriteSession writeSession,
-        RelationalCommand command,
-        CancellationToken cancellationToken
-    ) =>
-        await RelationalWritePersisterShared
-            .ExecuteNonQueryAsync(writeSession, command, cancellationToken)
-            .ConfigureAwait(false);
-
-    private static async Task ExecuteParameterizedBatchesAsync(
-        SqlDialect dialect,
-        TableWritePlan tableWritePlan,
-        string sql,
-        Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
-        IReadOnlyList<MergeTableRow> rows,
-        long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    ) =>
-        await RelationalWritePersisterShared
-            .ExecuteParameterizedBatchesAsync(
-                dialect,
-                tableWritePlan,
-                sql,
-                emitBatchSql,
-                rows,
-                rootDocumentId,
-                reservedCollectionItemIds,
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-    private static async Task ExecuteCollectionInsertBatchAsync(
-        SqlDialect dialect,
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<MergeTableRow> rows,
-        long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    ) =>
-        await RelationalWritePersisterShared
-            .ExecuteCollectionInsertBatchAsync(
-                dialect,
-                tableWritePlan,
-                rows,
-                rootDocumentId,
-                reservedCollectionItemIds,
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-    // ─── Temporary ordinal rows for safe multi-row reorders ──────────────
-
-    private static IReadOnlyList<MergeTableRow> CreateTemporaryOrdinalRows(
-        IReadOnlyList<MergeTableRow> rows,
-        int ordinalBindingIndex
-    ) => RelationalWritePersisterShared.CreateTemporaryOrdinalRows(rows, ordinalBindingIndex);
-
-    // ─── Unresolved CollectionItemId extraction ──────────────────────────
-
-    private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
-        IReadOnlyList<MergeTableRow> rows
-    ) => RelationalWritePersisterShared.GetUnresolvedCollectionItemIds(rows);
-
-    // ─── Command building ────────────────────────────────────────────────
-
-    private static RelationalCommand BuildRowCommandFromValues(
-        TableWritePlan tableWritePlan,
-        string sql,
-        ImmutableArray<FlattenedWriteValue> values,
-        long rootDocumentId,
-        IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
-    ) =>
-        RelationalWritePersisterShared.BuildRowCommandFromValues(
-            tableWritePlan,
-            sql,
-            values,
-            rootDocumentId,
-            reservedCollectionItemIds
-        );
-
-    private static string NormalizeParameterName(string parameterName) =>
-        RelationalWritePersisterShared.NormalizeParameterName(parameterName);
-
     private static bool IsCollectionAlignedExtensionScope(TableWritePlan tableWritePlan) =>
         RelationalWriteMergeShared.IsCollectionAlignedExtensionScope(tableWritePlan);
-
-    private static string FormatTable(TableWritePlan tableWritePlan) =>
-        RelationalWritePersisterShared.FormatTable(tableWritePlan);
 }

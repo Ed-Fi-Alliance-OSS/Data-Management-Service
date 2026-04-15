@@ -521,13 +521,9 @@ internal static class NoProfileSyntheticProfileAdapter
 
             // Column ordinal(s) in the child row that hold the parent table's stable row identity.
             // Only used for nested collections (parentJsonScope != null).
-            var parentKeyOrdinals = ancestorCollectionJsonScope is not null
-                ? tableRows
-                    .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(col =>
-                        FindColumnOrdinalByName(tableRows.TableModel, col)
-                    )
-                    .ToArray()
-                : [];
+            int? parentScopeLocatorOrdinal = ancestorCollectionJsonScope is not null
+                ? ResolveSingleParentScopeLocatorOrdinal(tableRows.TableModel)
+                : null;
 
             // Resolve parent table name for ancestor chain lookup.
             DbTableName? parentTableName =
@@ -549,7 +545,7 @@ internal static class NoProfileSyntheticProfileAdapter
                 }
                 else
                 {
-                    var parentKeyRaw = parentKeyOrdinals.Length > 0 ? storedRow[parentKeyOrdinals[0]] : null;
+                    var parentKeyRaw = parentScopeLocatorOrdinal is int ordinal ? storedRow[ordinal] : null;
                     var parentKeyLong = parentKeyRaw switch
                     {
                         long l => l,
@@ -681,9 +677,7 @@ internal static class NoProfileSyntheticProfileAdapter
             var relativePath = binding.RelativePath.Canonical;
 
             // Strip the "$." prefix from the relative path for the SemanticIdentityPart
-            var partRelativePath = relativePath.StartsWith("$.", StringComparison.Ordinal)
-                ? relativePath[2..]
-                : relativePath;
+            var partRelativePath = TrimJsonPathRootPrefix(relativePath);
 
             var clrValue = candidate.SemanticIdentityValues[i];
             var isPresent = candidate.SemanticIdentityPresenceFlags[i];
@@ -719,9 +713,7 @@ internal static class NoProfileSyntheticProfileAdapter
             var relativePath = binding.RelativePath.Canonical;
 
             // Strip the "$." prefix from the relative path for the SemanticIdentityPart
-            var partRelativePath = relativePath.StartsWith("$.", StringComparison.Ordinal)
-                ? relativePath[2..]
-                : relativePath;
+            var partRelativePath = TrimJsonPathRootPrefix(relativePath);
 
             var clrValue = storedRow[binding.BindingIndex];
             var isPresent = clrValue is not null;
@@ -766,15 +758,78 @@ internal static class NoProfileSyntheticProfileAdapter
             _ => JsonValue.Create(clrValue.ToString()!),
         };
 
+    private static int? ResolveSingleParentScopeLocatorOrdinal(DbTableModel tableModel)
+    {
+        var immediateParentLocatorColumns =
+            tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
+
+        return immediateParentLocatorColumns.Length switch
+        {
+            0 => null,
+            1 => FindColumnOrdinalByName(tableModel, immediateParentLocatorColumns[0]),
+            _ => throw new InvalidOperationException(
+                $"Synthetic no-profile adaptation expects at most one immediate parent scope locator column for table '{tableModel.Table.Name}'."
+            ),
+        };
+    }
+
+    private static string TrimJsonPathRootPrefix(string relativePath) =>
+        relativePath.StartsWith("$.", StringComparison.Ordinal) ? relativePath[2..] : relativePath;
+
     /// <summary>
     /// Builds a concrete JSON path from a collection scope and ordinal path.
     /// E.g., "$.classPeriods[*]" with ordinal [0] becomes "$.classPeriods[0]".
     /// </summary>
     private static string BuildRequestJsonPath(string collectionJsonScope, ImmutableArray<int> ordinalPath)
     {
-        // Replace [*] with [ordinalIndex]
-        var lastOrdinal = ordinalPath[^1];
-        return collectionJsonScope.Replace("[*]", $"[{lastOrdinal}]", StringComparison.Ordinal);
+        if (ordinalPath.IsDefaultOrEmpty)
+        {
+            return collectionJsonScope;
+        }
+
+        var wildcardToken = "[*]";
+        var builder = new System.Text.StringBuilder(collectionJsonScope.Length + ordinalPath.Length * 4);
+        var scanIndex = 0;
+        var ordinalIndex = 0;
+
+        while (scanIndex < collectionJsonScope.Length)
+        {
+            var wildcardIndex = collectionJsonScope.IndexOf(
+                wildcardToken,
+                scanIndex,
+                StringComparison.Ordinal
+            );
+
+            if (wildcardIndex < 0)
+            {
+                builder.Append(collectionJsonScope, scanIndex, collectionJsonScope.Length - scanIndex);
+                break;
+            }
+
+            if (ordinalIndex >= ordinalPath.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Ordinal path for '{collectionJsonScope}' did not provide enough indexes to materialize a request JSON path."
+                );
+            }
+
+            builder.Append(collectionJsonScope, scanIndex, wildcardIndex - scanIndex);
+            builder.Append('[');
+            builder.Append(ordinalPath[ordinalIndex]);
+            builder.Append(']');
+
+            scanIndex = wildcardIndex + wildcardToken.Length;
+            ordinalIndex++;
+        }
+
+        if (ordinalIndex != ordinalPath.Length)
+        {
+            throw new InvalidOperationException(
+                $"Ordinal path for '{collectionJsonScope}' contained more indexes than wildcard segments."
+            );
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

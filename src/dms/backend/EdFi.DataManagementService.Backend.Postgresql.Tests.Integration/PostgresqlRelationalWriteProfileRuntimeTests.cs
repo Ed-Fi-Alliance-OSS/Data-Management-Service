@@ -940,6 +940,42 @@ file static class ProfileRuntimeContextFactory
             RequestJsonPath: $"$._ext.sample.interventions[{requestIndex}]"
         );
 
+    private static VisibleStoredCollectionRow CreateVisibleStoredInterventionCollectionRow(
+        ScopeInstanceAddress parentAddress,
+        string interventionCode
+    ) =>
+        new(
+            Address: new CollectionRowAddress(
+                "$._ext.sample.interventions[*]",
+                parentAddress,
+                [
+                    new SemanticIdentityPart(
+                        "interventionCode",
+                        JsonValue.Create(interventionCode)!,
+                        IsPresent: true
+                    ),
+                ]
+            ),
+            HiddenMemberPaths: []
+        );
+
+    private static ScopeInstanceAddress CreateInterventionParentAddress(string interventionCode) =>
+        new(
+            "$._ext.sample.interventions[*]",
+            [
+                new AncestorCollectionInstance(
+                    "$._ext.sample.interventions[*]",
+                    [
+                        new SemanticIdentityPart(
+                            "interventionCode",
+                            JsonValue.Create(interventionCode)!,
+                            IsPresent: true
+                        ),
+                    ]
+                ),
+            ]
+        );
+
     private static VisibleRequestCollectionItem CreateVisibleVisitCollectionItem(
         ScopeInstanceAddress parentAddress,
         string visitCode,
@@ -1210,21 +1246,7 @@ file static class ProfileRuntimeContextFactory
         var rootAddress = new ScopeInstanceAddress("$", []);
 
         var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
-        var interventionParentAddress = new ScopeInstanceAddress(
-            "$._ext.sample.interventions[*]",
-            [
-                new AncestorCollectionInstance(
-                    "$._ext.sample.interventions[*]",
-                    [
-                        new SemanticIdentityPart(
-                            "interventionCode",
-                            JsonValue.Create("NEW-INT")!,
-                            IsPresent: true
-                        ),
-                    ]
-                ),
-            ]
-        );
+        var interventionParentAddress = CreateInterventionParentAddress("NEW-INT");
 
         var visibleRequestCollectionItems = ImmutableArray.Create(
             CreateVisibleInterventionCollectionItem(extensionAddress, "NEW-INT", 0, creatable: false),
@@ -1279,6 +1301,79 @@ file static class ProfileRuntimeContextFactory
                     ),
                 ],
                 visibleStoredCollectionRows: []
+            )
+        );
+    }
+
+    public static BackendProfileWriteContext CreateNonCreatableExistingInterventionDescendantCreateContext(
+        MappingSet mappingSet,
+        string requestBodyJson
+    )
+    {
+        var requestBody = JsonNode.Parse(requestBodyJson)!;
+        var writePlan = mappingSet.WritePlansByResource[SchoolResource];
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var interventionParentAddress = CreateInterventionParentAddress("INT-A");
+
+        var visibleRequestCollectionItems = ImmutableArray.Create(
+            CreateVisibleInterventionCollectionItem(extensionAddress, "INT-A", 0, creatable: false),
+            CreateVisibleVisitCollectionItem(interventionParentAddress, "V1", 0, 0, creatable: true)
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: requestBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: rootAddress,
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: visibleRequestCollectionItems
+        );
+
+        return new BackendProfileWriteContext(
+            Request: request,
+            ProfileName: "runtime-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ProfileRuntimeFixedStoredStateProjectionInvoker(
+                storedScopeStates:
+                [
+                    new StoredScopeState(
+                        Address: rootAddress,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        HiddenMemberPaths: []
+                    ),
+                    new StoredScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample.addresses[*]._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        HiddenMemberPaths: []
+                    ),
+                ],
+                visibleStoredCollectionRows:
+                [
+                    CreateVisibleStoredInterventionCollectionRow(extensionAddress, "INT-A"),
+                ]
             )
         );
     }
@@ -2885,6 +2980,183 @@ public class Given_A_Postgresql_Profiled_Non_Creatable_Intervention_Insert_Rejec
     {
         _stateAfterUpdate.SchoolExtension.Should().NotBeNull();
         _stateAfterUpdate.SchoolExtension!.CampusCode.Should().Be("North");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[NonParallelizable]
+public class Given_A_Postgresql_Profiled_Non_Creatable_Existing_Intervention_Allows_Descendant_Create
+{
+    private static readonly DocumentUuid SchoolDocumentUuid = new(
+        Guid.Parse("dddddddd-0000-0000-0000-000000000218")
+    );
+
+    private const string InitialCreateBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS",
+          "_ext": {
+            "sample": {
+              "campusCode": "North",
+              "interventions": [
+                { "interventionCode": "INT-A" }
+              ]
+            }
+          }
+        }
+        """;
+
+    private const string UpdateBodyJson = """
+        {
+          "schoolId": 255901,
+          "shortName": "LHS-Updated",
+          "_ext": {
+            "sample": {
+              "campusCode": "North",
+              "interventions": [
+                { "interventionCode": "INT-A", "visits": [{ "visitCode": "V1" }] }
+              ]
+            }
+          }
+        }
+        """;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private ProfileRuntimePersistedState _stateAfterUpdate = null!;
+    private UpdateResult _updateResult = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            ProfileRuntimeTestSupport.FixtureRelativePath
+        );
+        _mappingSet = new MappingSetCompiler().Compile(_fixture.ModelSet);
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRuntimeTestSupport.CreateServiceProvider();
+
+        await ExecuteInitialCreateAsync();
+
+        _updateResult = await ExecuteProfiledUpdateAsync();
+        _stateAfterUpdate = await ProfileRuntimeTestSupport.ReadFullPersistedStateAsync(
+            _database,
+            SchoolDocumentUuid.Value
+        );
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    private async Task ExecuteInitialCreateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledExistingInterventionAllowsDescendantCreate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        var result = await repository.UpsertDocument(
+            ProfileRuntimeTestSupport.CreateCreateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-existing-intervention-create",
+                requestBodyJsonOverride: InitialCreateBodyJson
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledUpdateAsync()
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfiledExistingInterventionAllowsDescendantCreate",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            ProfileRuntimeTestSupport.CreateUpdateRequest(
+                _mappingSet,
+                SchoolDocumentUuid,
+                "pg-profiled-existing-intervention-update",
+                UpdateBodyJson,
+                ProfileRuntimeContextFactory.CreateNonCreatableExistingInterventionDescendantCreateContext(
+                    _mappingSet,
+                    UpdateBodyJson
+                )
+            )
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success()
+    {
+        var failureMessage = _updateResult is UpdateResult.UnknownFailure unknownFailure
+            ? unknownFailure.FailureMessage
+            : "existing visible intervention should allow descendant visit creation";
+
+        _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>(failureMessage);
+        _updateResult.As<UpdateResult.UpdateSuccess>().ExistingDocumentUuid.Should().Be(SchoolDocumentUuid);
+    }
+
+    [Test]
+    public void It_keeps_the_existing_intervention()
+    {
+        _stateAfterUpdate.Interventions.Should().HaveCount(1);
+        _stateAfterUpdate.Interventions[0].InterventionCode.Should().Be("INT-A");
+    }
+
+    [Test]
+    public void It_creates_the_descendant_visit_under_the_existing_intervention()
+    {
+        _stateAfterUpdate.InterventionVisits.Should().HaveCount(1);
+        _stateAfterUpdate.InterventionVisits[0].VisitCode.Should().Be("V1");
+        _stateAfterUpdate
+            .InterventionVisits[0]
+            .ParentCollectionItemId.Should()
+            .Be(_stateAfterUpdate.Interventions[0].CollectionItemId);
+    }
+
+    [Test]
+    public void It_applies_the_root_update()
+    {
+        _stateAfterUpdate.School.ShortName.Should().Be("LHS-Updated");
     }
 }
 
