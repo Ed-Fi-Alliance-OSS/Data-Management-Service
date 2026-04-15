@@ -16,6 +16,10 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
     private const string AuthoritativeFixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const string FocusedFixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
+    private const string SmallMinimalFixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+    private const string SmallExtensionFixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/ext";
 
     private string _authoritativeFixtureDirectory = null!;
     private string _focusedFixtureDirectory = null!;
@@ -116,5 +120,99 @@ public class Given_PostgresqlGeneratedDdlFixtureLoader
             .NotBeSameAs(_authoritativeFixtureFromDirectory.MappingSet);
         _focusedFixtureFromDirectory.FixtureDirectory.Should().Be(_focusedFixtureDirectory);
         _authoritativeFixtureFromDirectory.FixtureDirectory.Should().Be(_authoritativeFixtureDirectory);
+    }
+
+    [Test]
+    public void It_reloads_fixture_artifacts_when_a_fixture_schema_file_changes_in_place()
+    {
+        var tempFixtureDirectory = CreateTemporaryFixtureCopy(SmallExtensionFixtureRelativePath);
+
+        try
+        {
+            var initialFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                tempFixtureDirectory
+            );
+            var schemaPath = Path.Combine(tempFixtureDirectory, "inputs", "ApiSchema-Sample.json");
+            File.WriteAllText(schemaPath, File.ReadAllText(schemaPath) + Environment.NewLine);
+
+            var reloadedFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                tempFixtureDirectory
+            );
+
+            reloadedFixture.Should().NotBeSameAs(initialFixture);
+            reloadedFixture.EffectiveSchemaSet.Should().NotBeSameAs(initialFixture.EffectiveSchemaSet);
+            reloadedFixture.ModelSet.Should().NotBeSameAs(initialFixture.ModelSet);
+            reloadedFixture.MappingSet.Should().NotBeSameAs(initialFixture.MappingSet);
+        }
+        finally
+        {
+            Directory.Delete(tempFixtureDirectory, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_reloads_fixture_artifacts_when_the_fixture_manifest_changes_in_place()
+    {
+        var tempFixtureDirectory = CreateTemporaryFixtureCopy(SmallMinimalFixtureRelativePath);
+
+        try
+        {
+            var initialFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                tempFixtureDirectory
+            );
+
+            AddExtensionSchemaToMinimalFixture(tempFixtureDirectory);
+
+            var reloadedFixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromFixtureDirectory(
+                tempFixtureDirectory
+            );
+
+            reloadedFixture.Should().NotBeSameAs(initialFixture);
+            reloadedFixture.EffectiveSchemaSet.Should().NotBeSameAs(initialFixture.EffectiveSchemaSet);
+            reloadedFixture.ModelSet.Should().NotBeSameAs(initialFixture.ModelSet);
+            reloadedFixture.MappingSet.Should().NotBeSameAs(initialFixture.MappingSet);
+            reloadedFixture.GeneratedDdl.Should().NotBe(initialFixture.GeneratedDdl);
+        }
+        finally
+        {
+            Directory.Delete(tempFixtureDirectory, recursive: true);
+        }
+    }
+
+    private static void AddExtensionSchemaToMinimalFixture(string fixtureDirectory)
+    {
+        var extensionFixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
+            TestContext.CurrentContext.TestDirectory,
+            SmallExtensionFixtureRelativePath
+        );
+        var extensionSourcePath = Path.Combine(extensionFixtureDirectory, "inputs", "ApiSchema-Sample.json");
+        var extensionTargetPath = Path.Combine(fixtureDirectory, "inputs", "ApiSchema-Sample.json");
+
+        File.Copy(extensionSourcePath, extensionTargetPath);
+        File.WriteAllText(
+            Path.Combine(fixtureDirectory, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json", "ApiSchema-Sample.json"],
+              "dialects": ["pgsql", "mssql"],
+              "emitDdlManifest": true
+            }
+            """
+        );
+    }
+
+    private static string CreateTemporaryFixtureCopy(string fixtureRelativePath)
+    {
+        var sourceFixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
+            TestContext.CurrentContext.TestDirectory,
+            fixtureRelativePath
+        );
+        var tempFixtureDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"pgsql-fixture-loader-{Guid.NewGuid():N}"
+        );
+
+        GoldenFixtureTestHelpers.CopyDirectory(sourceFixtureDirectory, tempFixtureDirectory);
+        return tempFixtureDirectory;
     }
 }

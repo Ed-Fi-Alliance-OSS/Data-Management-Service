@@ -39,10 +39,10 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
 
     public static PostgresqlGeneratedDdlFixture LoadFromFixtureDirectory(string fixtureDirectory)
     {
-        var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
+        var descriptor = EffectiveSchemaFixtureLoader.DescribeFixtureDirectory(fixtureDirectory);
         var lazyFixture = _cache.GetOrAdd(
-            resolvedFixtureDirectory,
-            static path => new(() => LoadFixture(path), LazyThreadSafetyMode.ExecutionAndPublication)
+            descriptor.CacheKey,
+            _ => new(() => LoadFixture(descriptor), LazyThreadSafetyMode.ExecutionAndPublication)
         );
 
         try
@@ -51,20 +51,22 @@ internal static class PostgresqlGeneratedDdlFixtureLoader
         }
         catch
         {
-            _cache.TryRemove(new(resolvedFixtureDirectory, lazyFixture));
+            _cache.TryRemove(new(descriptor.CacheKey, lazyFixture));
             throw;
         }
     }
 
-    private static PostgresqlGeneratedDdlFixture LoadFixture(string fixtureDirectory)
+    private static PostgresqlGeneratedDdlFixture LoadFixture(
+        EffectiveSchemaFixtureLoader.FixtureContentDescriptor descriptor
+    )
     {
-        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
+        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(descriptor);
         var (modelSet, generatedDdl) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,
             SqlDialect.Pgsql
         );
         var mappingSet = new MappingSetCompiler().Compile(modelSet);
 
-        return new(fixtureDirectory, effectiveSchemaSet, modelSet, mappingSet, generatedDdl);
+        return new(descriptor.FixtureDirectory, effectiveSchemaSet, modelSet, mappingSet, generatedDdl);
     }
 }

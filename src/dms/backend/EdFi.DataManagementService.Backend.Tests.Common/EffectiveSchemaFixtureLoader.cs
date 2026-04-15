@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -19,6 +20,14 @@ public static class EffectiveSchemaFixtureLoader
 {
     private sealed record GeneratedDdlFixtureConfig(string[] ApiSchemaFiles);
 
+    internal sealed record FixtureInputFile(string Path, string Content);
+
+    internal sealed record FixtureContentDescriptor(
+        string FixtureDirectory,
+        FixtureInputFile[] ResolvedInputs,
+        string CacheKey
+    );
+
     private static readonly ConcurrentDictionary<string, Lazy<EffectiveSchemaSet>> _cache = new(
         StringComparer.Ordinal
     );
@@ -32,10 +41,7 @@ public static class EffectiveSchemaFixtureLoader
         string? repositoryRoot = null
     )
     {
-        var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
-        var config = ReadFixtureConfig(resolvedFixtureDirectory);
-
-        return LoadEffectiveSchemaSet(resolvedFixtureDirectory, config.ApiSchemaFiles, repositoryRoot);
+        return LoadEffectiveSchemaSet(DescribeFixtureDirectory(fixtureDirectory, repositoryRoot));
     }
 
     public static EffectiveSchemaSet LoadEffectiveSchemaSet(
@@ -54,18 +60,40 @@ public static class EffectiveSchemaFixtureLoader
             );
         }
 
+        return LoadEffectiveSchemaSet(
+            DescribeEffectiveSchemaInputs(fixtureDirectory, apiSchemaFiles, repositoryRoot)
+        );
+    }
+
+    internal static FixtureContentDescriptor DescribeFixtureDirectory(
+        string fixtureDirectory,
+        string? repositoryRoot = null
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureDirectory);
+
         var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
-        var resolvedPaths = ResolveFixtureInputPaths(
+        var fixturePath = Path.Combine(resolvedFixtureDirectory, "fixture.json");
+        var fixtureManifestContent = ReadFixtureManifestContent(fixturePath);
+        var config = ReadFixtureConfig(fixturePath, fixtureManifestContent);
+
+        return DescribeEffectiveSchemaInputs(
             resolvedFixtureDirectory,
-            apiSchemaFiles,
+            config.ApiSchemaFiles,
+            fixtureManifestContent,
             repositoryRoot
         );
-        var cacheKey = BuildCacheKey(resolvedFixtureDirectory, resolvedPaths);
+    }
+
+    internal static EffectiveSchemaSet LoadEffectiveSchemaSet(FixtureContentDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
         var lazyEffectiveSchemaSet = _cache.GetOrAdd(
-            cacheKey,
+            descriptor.CacheKey,
             _ =>
                 new(
-                    () => LoadEffectiveSchemaSetCore(resolvedFixtureDirectory, resolvedPaths),
+                    () => LoadEffectiveSchemaSetCore(descriptor),
                     LazyThreadSafetyMode.ExecutionAndPublication
                 )
         );
@@ -76,21 +104,49 @@ public static class EffectiveSchemaFixtureLoader
         }
         catch
         {
-            _cache.TryRemove(new(cacheKey, lazyEffectiveSchemaSet));
+            _cache.TryRemove(new(descriptor.CacheKey, lazyEffectiveSchemaSet));
             throw;
         }
     }
 
-    private static EffectiveSchemaSet LoadEffectiveSchemaSetCore(
+    private static FixtureContentDescriptor DescribeEffectiveSchemaInputs(
         string fixtureDirectory,
-        IReadOnlyList<string> resolvedPaths
+        IReadOnlyList<string> apiSchemaFiles,
+        string? repositoryRoot = null
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureDirectory);
-        ArgumentNullException.ThrowIfNull(resolvedPaths);
+        return DescribeEffectiveSchemaInputs(
+            fixtureDirectory,
+            apiSchemaFiles,
+            fixtureManifestContent: null,
+            repositoryRoot
+        );
+    }
 
-        var coreNode = ParseJsonNode(resolvedPaths[0]);
-        var extensionNodes = resolvedPaths.Skip(1).Select(ParseJsonNode).ToArray();
+    private static FixtureContentDescriptor DescribeEffectiveSchemaInputs(
+        string fixtureDirectory,
+        IReadOnlyList<string> apiSchemaFiles,
+        string? fixtureManifestContent,
+        string? repositoryRoot
+    )
+    {
+        var resolvedFixtureDirectory = Path.GetFullPath(fixtureDirectory);
+        var resolvedInputs = ResolveFixtureInputPaths(
+                resolvedFixtureDirectory,
+                apiSchemaFiles,
+                repositoryRoot
+            )
+            .Select(path => new FixtureInputFile(path, File.ReadAllText(path)))
+            .ToArray();
+        var cacheKey = BuildCacheKey(resolvedFixtureDirectory, fixtureManifestContent, resolvedInputs);
+
+        return new(resolvedFixtureDirectory, resolvedInputs, cacheKey);
+    }
+
+    private static EffectiveSchemaSet LoadEffectiveSchemaSetCore(FixtureContentDescriptor descriptor)
+    {
+        var coreNode = ParseJsonNode(descriptor.ResolvedInputs[0]);
+        var extensionNodes = descriptor.ResolvedInputs.Skip(1).Select(ParseJsonNode).ToArray();
         var rawNodes = new ApiSchemaDocumentNodes(coreNode, extensionNodes);
         var normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
         var normalizationResult = normalizer.Normalize(rawNodes);
@@ -98,7 +154,7 @@ public static class EffectiveSchemaFixtureLoader
         var normalizedNodes = normalizationResult is ApiSchemaNormalizationResult.SuccessResult success
             ? success.NormalizedNodes
             : throw new InvalidOperationException(
-                $"ApiSchema normalization failed for fixture '{fixtureDirectory}': {normalizationResult}"
+                $"ApiSchema normalization failed for fixture '{descriptor.FixtureDirectory}': {normalizationResult}"
             );
 
         var builder = new EffectiveSchemaSetBuilder(
@@ -122,31 +178,46 @@ public static class EffectiveSchemaFixtureLoader
             .ToArray();
     }
 
-    private static string BuildCacheKey(string fixtureDirectory, IReadOnlyList<string> resolvedPaths)
+    private static string BuildCacheKey(
+        string fixtureDirectory,
+        string? fixtureManifestContent,
+        IReadOnlyList<FixtureInputFile> resolvedInputs
+    )
     {
-        StringBuilder builder = new();
-        builder.Append(fixtureDirectory);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendHashString(hash, fixtureDirectory);
 
-        foreach (var resolvedPath in resolvedPaths)
+        if (fixtureManifestContent is not null)
         {
-            builder.Append('\0');
-            builder.Append(resolvedPath);
+            AppendHashString(hash, fixtureManifestContent);
         }
 
-        return builder.ToString();
+        foreach (var resolvedInput in resolvedInputs)
+        {
+            AppendHashString(hash, resolvedInput.Path);
+            AppendHashString(hash, resolvedInput.Content);
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
-    private static GeneratedDdlFixtureConfig ReadFixtureConfig(string fixtureDirectory)
+    private static string ReadFixtureManifestContent(string fixturePath)
     {
-        var fixturePath = Path.Combine(fixtureDirectory, "fixture.json");
-
         if (!File.Exists(fixturePath))
         {
             throw new FileNotFoundException($"Fixture manifest not found: {fixturePath}", fixturePath);
         }
 
+        return File.ReadAllText(fixturePath);
+    }
+
+    private static GeneratedDdlFixtureConfig ReadFixtureConfig(
+        string fixturePath,
+        string fixtureManifestContent
+    )
+    {
         var config =
-            JsonSerializer.Deserialize<GeneratedDdlFixtureConfig>(File.ReadAllText(fixturePath), _jsonOptions)
+            JsonSerializer.Deserialize<GeneratedDdlFixtureConfig>(fixtureManifestContent, _jsonOptions)
             ?? throw new InvalidOperationException(
                 $"Failed to deserialize fixture manifest '{fixturePath}'."
             );
@@ -161,9 +232,20 @@ public static class EffectiveSchemaFixtureLoader
         return config;
     }
 
-    private static JsonNode ParseJsonNode(string path)
+    private static JsonNode ParseJsonNode(FixtureInputFile inputFile)
     {
-        return JsonNode.Parse(File.ReadAllText(path))
-            ?? throw new InvalidOperationException($"Fixture input '{path}' parsed to null.");
+        ArgumentNullException.ThrowIfNull(inputFile);
+
+        return JsonNode.Parse(inputFile.Content)
+            ?? throw new InvalidOperationException($"Fixture input '{inputFile.Path}' parsed to null.");
+    }
+
+    private static void AppendHashString(IncrementalHash hash, string value)
+    {
+        var encoded = Encoding.UTF8.GetBytes(value);
+        Span<byte> lengthPrefix = stackalloc byte[sizeof(int)];
+        BitConverter.TryWriteBytes(lengthPrefix, encoded.Length);
+        hash.AppendData(lengthPrefix);
+        hash.AppendData(encoded);
     }
 }
