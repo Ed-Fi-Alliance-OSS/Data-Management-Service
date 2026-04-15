@@ -462,6 +462,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     );
 
     private MssqlGeneratedDdlBaselineDatabase _baselineDatabase = null!;
+    private MssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
@@ -510,7 +511,8 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     [SetUp]
     public async Task Setup()
     {
-        _database = await _baselineDatabase.RestoreAsync();
+        _databaseLease = await _baselineDatabase.AcquireRestoredDatabaseAsync();
+        _database = _databaseLease.Database;
         _serviceProvider = MssqlStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
         _seedData = await SeedReferenceDataAsync();
         await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
@@ -559,6 +561,11 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
+        }
+
+        if (_databaseLease is not null)
+        {
+            await _databaseLease.DisposeAsync();
         }
     }
 

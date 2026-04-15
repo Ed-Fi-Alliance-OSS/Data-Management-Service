@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
@@ -18,27 +19,20 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     );
 
     private readonly SharedBaselineEntry _sharedBaselineEntry;
-    private readonly SharedBaselineState _sharedBaselineState;
     private bool _disposed;
 
     private MssqlGeneratedDdlBaselineDatabase(
         string fixtureSignature,
-        SharedBaselineEntry sharedBaselineEntry,
-        SharedBaselineState sharedBaselineState
+        SharedBaselineEntry sharedBaselineEntry
     )
     {
         FixtureSignature = fixtureSignature;
         _sharedBaselineEntry = sharedBaselineEntry;
-        _sharedBaselineState = sharedBaselineState;
     }
 
     public string FixtureSignature { get; }
 
-    public string SnapshotName => _sharedBaselineState.SnapshotName;
-
-    public MssqlGeneratedDdlTestDatabase Database => _sharedBaselineState.Database;
-
-    public static async Task<MssqlGeneratedDdlBaselineDatabase> CreateAsync(
+    public static Task<MssqlGeneratedDdlBaselineDatabase> CreateAsync(
         string fixtureSignature,
         string generatedDdl,
         int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
@@ -69,42 +63,64 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
                     );
                 }
 
-                sharedBaselineEntry.LeaseCount++;
+                sharedBaselineEntry.ManagerHandleCount++;
             }
             else
             {
-                sharedBaselineEntry = new(
-                    generatedDdlHash,
-                    CreateSharedBaselineStateAsync(generatedDdl, commandTimeoutSeconds)
-                );
+                sharedBaselineEntry = new(generatedDdlHash, generatedDdl, commandTimeoutSeconds);
                 _sharedBaselines[fixtureSignature] = sharedBaselineEntry;
+            }
+        }
+
+        return Task.FromResult(new MssqlGeneratedDdlBaselineDatabase(fixtureSignature, sharedBaselineEntry));
+    }
+
+    public async Task<MssqlGeneratedDdlBaselineLease> AcquireRestoredDatabaseAsync(
+        int? commandTimeoutSeconds = null
+    )
+    {
+        var resolvedCommandTimeoutSeconds =
+            commandTimeoutSeconds ?? _sharedBaselineEntry.SlotCommandTimeoutSeconds;
+        SharedBaselineSlot? leasedSlot = null;
+
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _sharedBaselineEntry.ActiveSlotLeaseCount++;
+
+            if (_sharedBaselineEntry.IdleSlots.Count != 0)
+            {
+                leasedSlot = _sharedBaselineEntry.IdleSlots.Pop();
             }
         }
 
         try
         {
-            var sharedBaselineState = await sharedBaselineEntry.InitializationTask;
-            return new(fixtureSignature, sharedBaselineEntry, sharedBaselineState);
+            if (leasedSlot is null)
+            {
+                leasedSlot = await CreateSharedBaselineSlotAsync(
+                    _sharedBaselineEntry.GeneratedDdl,
+                    resolvedCommandTimeoutSeconds
+                );
+            }
+            else
+            {
+                await RestoreSnapshotAsync(
+                    leasedSlot.Database.DatabaseName,
+                    leasedSlot.SnapshotName,
+                    resolvedCommandTimeoutSeconds
+                );
+            }
+
+            var acquiredSlot = leasedSlot;
+
+            return new(acquiredSlot.Database, acquiredSlot.SnapshotName, () => ReturnSlotAsync(acquiredSlot));
         }
         catch
         {
-            ReleaseLease(fixtureSignature, sharedBaselineEntry);
+            await ReleaseFaultedSlotAsync(leasedSlot);
             throw;
         }
-    }
-
-    public async Task<MssqlGeneratedDdlTestDatabase> RestoreAsync(
-        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
-    )
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        await RestoreSnapshotAsync(
-            _sharedBaselineState.Database.DatabaseName,
-            _sharedBaselineState.SnapshotName,
-            commandTimeoutSeconds
-        );
-        return _sharedBaselineState.Database;
     }
 
     public async ValueTask DisposeAsync()
@@ -115,38 +131,100 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         }
 
         _disposed = true;
-
-        if (ReleaseLease(FixtureSignature, _sharedBaselineEntry))
-        {
-            await _sharedBaselineState.DisposeAsync();
-        }
+        await DisposeSlotsAsync(ReleaseManagerHandle());
     }
 
-    private static bool ReleaseLease(string fixtureSignature, SharedBaselineEntry sharedBaselineEntry)
+    private List<SharedBaselineSlot> ReleaseManagerHandle()
     {
         lock (_sync)
         {
             if (
-                !_sharedBaselines.TryGetValue(fixtureSignature, out var currentEntry)
-                || !ReferenceEquals(currentEntry, sharedBaselineEntry)
+                !_sharedBaselines.TryGetValue(FixtureSignature, out var currentEntry)
+                || !ReferenceEquals(currentEntry, _sharedBaselineEntry)
             )
             {
-                return false;
+                return [];
             }
 
-            sharedBaselineEntry.LeaseCount--;
-
-            if (sharedBaselineEntry.LeaseCount != 0)
-            {
-                return false;
-            }
-
-            _sharedBaselines.Remove(fixtureSignature);
-            return true;
+            _sharedBaselineEntry.ManagerHandleCount--;
+            return CollectDisposableIdleSlotsIfUnused();
         }
     }
 
-    private static async Task<SharedBaselineState> CreateSharedBaselineStateAsync(
+    private async ValueTask ReturnSlotAsync(SharedBaselineSlot slot)
+    {
+        await DisposeSlotsAsync(ReleaseSlot(slot));
+    }
+
+    private async ValueTask ReleaseFaultedSlotAsync(SharedBaselineSlot? slot)
+    {
+        await DisposeSlotsAsync(ReleaseFaultedSlot(slot));
+    }
+
+    private List<SharedBaselineSlot> ReleaseSlot(SharedBaselineSlot slot)
+    {
+        lock (_sync)
+        {
+            if (
+                !_sharedBaselines.TryGetValue(FixtureSignature, out var currentEntry)
+                || !ReferenceEquals(currentEntry, _sharedBaselineEntry)
+            )
+            {
+                return [slot];
+            }
+
+            _sharedBaselineEntry.ActiveSlotLeaseCount--;
+
+            if (
+                _sharedBaselineEntry.ManagerHandleCount == 0
+                && _sharedBaselineEntry.ActiveSlotLeaseCount == 0
+            )
+            {
+                List<SharedBaselineSlot> slotsToDispose = [slot, .. _sharedBaselineEntry.IdleSlots];
+                _sharedBaselineEntry.IdleSlots.Clear();
+                _sharedBaselines.Remove(FixtureSignature);
+                return slotsToDispose;
+            }
+
+            _sharedBaselineEntry.IdleSlots.Push(slot);
+            return [];
+        }
+    }
+
+    private List<SharedBaselineSlot> ReleaseFaultedSlot(SharedBaselineSlot? slot)
+    {
+        lock (_sync)
+        {
+            List<SharedBaselineSlot> slotsToDispose = slot is not null ? [slot] : [];
+
+            if (
+                !_sharedBaselines.TryGetValue(FixtureSignature, out var currentEntry)
+                || !ReferenceEquals(currentEntry, _sharedBaselineEntry)
+            )
+            {
+                return slotsToDispose;
+            }
+
+            _sharedBaselineEntry.ActiveSlotLeaseCount--;
+            slotsToDispose.AddRange(CollectDisposableIdleSlotsIfUnused());
+            return slotsToDispose;
+        }
+    }
+
+    private List<SharedBaselineSlot> CollectDisposableIdleSlotsIfUnused()
+    {
+        if (_sharedBaselineEntry.ManagerHandleCount != 0 || _sharedBaselineEntry.ActiveSlotLeaseCount != 0)
+        {
+            return [];
+        }
+
+        List<SharedBaselineSlot> slotsToDispose = [.. _sharedBaselineEntry.IdleSlots];
+        _sharedBaselineEntry.IdleSlots.Clear();
+        _sharedBaselines.Remove(FixtureSignature);
+        return slotsToDispose;
+    }
+
+    private static async Task<SharedBaselineSlot> CreateSharedBaselineSlotAsync(
         string generatedDdl,
         int commandTimeoutSeconds
     )
@@ -300,6 +378,35 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async ValueTask DisposeSlotsAsync(IEnumerable<SharedBaselineSlot> slots)
+    {
+        List<Exception> exceptions = [];
+
+        foreach (var slot in slots)
+        {
+            try
+            {
+                await slot.DisposeAsync();
+            }
+            catch (Exception exception)
+            {
+                exceptions.Add(exception);
+            }
+        }
+
+        if (exceptions.Count == 0)
+        {
+            return;
+        }
+
+        if (exceptions.Count == 1)
+        {
+            ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+        }
+
+        throw new AggregateException(exceptions);
+    }
+
     private static string QuoteIdentifier(string value)
     {
         return $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
@@ -321,17 +428,24 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 
     private sealed class SharedBaselineEntry(
         string generatedDdlHash,
-        Task<SharedBaselineState> initializationTask
+        string generatedDdl,
+        int slotCommandTimeoutSeconds
     )
     {
         public string GeneratedDdlHash { get; } = generatedDdlHash;
 
-        public Task<SharedBaselineState> InitializationTask { get; } = initializationTask;
+        public string GeneratedDdl { get; } = generatedDdl;
 
-        public int LeaseCount { get; set; } = 1;
+        public int SlotCommandTimeoutSeconds { get; } = slotCommandTimeoutSeconds;
+
+        public int ManagerHandleCount { get; set; } = 1;
+
+        public int ActiveSlotLeaseCount { get; set; }
+
+        public Stack<SharedBaselineSlot> IdleSlots { get; } = new();
     }
 
-    private sealed class SharedBaselineState(string snapshotName, MssqlGeneratedDdlTestDatabase database)
+    private sealed class SharedBaselineSlot(string snapshotName, MssqlGeneratedDdlTestDatabase database)
         : IAsyncDisposable
     {
         public string SnapshotName { get; } = snapshotName;
@@ -352,4 +466,40 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
     }
 
     private sealed record MssqlSnapshotSourceFile(string LogicalName, string SnapshotPath);
+}
+
+internal sealed class MssqlGeneratedDdlBaselineLease : IAsyncDisposable
+{
+    private readonly Func<ValueTask> _releaseLeaseAsync;
+    private bool _disposed;
+
+    public MssqlGeneratedDdlBaselineLease(
+        MssqlGeneratedDdlTestDatabase database,
+        string snapshotName,
+        Func<ValueTask> releaseLeaseAsync
+    )
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotName);
+        ArgumentNullException.ThrowIfNull(releaseLeaseAsync);
+
+        Database = database;
+        SnapshotName = snapshotName;
+        _releaseLeaseAsync = releaseLeaseAsync;
+    }
+
+    public MssqlGeneratedDdlTestDatabase Database { get; }
+
+    public string SnapshotName { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await _releaseLeaseAsync();
+    }
 }

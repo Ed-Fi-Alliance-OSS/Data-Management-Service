@@ -39,43 +39,54 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     }
 
     [Test]
-    public async Task It_restores_a_single_generated_ddl_database_to_a_clean_snapshot_baseline()
+    public async Task It_restores_a_returned_slot_to_a_clean_snapshot_baseline_before_reuse()
     {
         await using var baselineDatabase = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
             CreateFixtureSignature("clean-snapshot-baseline"),
             _fixture.GeneratedDdl
         );
 
-        var database = await baselineDatabase.RestoreAsync();
-        var baselineCounts = await ReadBaselineCountsAsync(database);
-        var firstDocumentState = await InsertSchoolDocumentAsync(
-            database,
-            Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            100
-        );
-        var firstCollectionItemId = await InsertSchoolAddressAsync(
-            database,
-            firstDocumentState.DocumentId,
-            1,
-            "Austin"
-        );
+        string databaseName = string.Empty;
+        string snapshotName = string.Empty;
+        MssqlGeneratedDdlBaselineCounts baselineCounts = null!;
+        MssqlGeneratedDdlDocumentState firstDocumentState = null!;
+        var firstCollectionItemId = 0L;
 
-        var restoredDatabase = await baselineDatabase.RestoreAsync();
-        var resetBaselineCounts = await ReadBaselineCountsAsync(restoredDatabase);
-        var resetMutableCounts = await ReadMutableCountsAsync(restoredDatabase);
+        await using (var firstLease = await baselineDatabase.AcquireRestoredDatabaseAsync())
+        {
+            databaseName = firstLease.Database.DatabaseName;
+            snapshotName = firstLease.SnapshotName;
+            baselineCounts = await ReadBaselineCountsAsync(firstLease.Database);
+            firstDocumentState = await InsertSchoolDocumentAsync(
+                firstLease.Database,
+                Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                100
+            );
+            firstCollectionItemId = await InsertSchoolAddressAsync(
+                firstLease.Database,
+                firstDocumentState.DocumentId,
+                1,
+                "Austin"
+            );
+        }
+
+        await using var secondLease = await baselineDatabase.AcquireRestoredDatabaseAsync();
+        var resetBaselineCounts = await ReadBaselineCountsAsync(secondLease.Database);
+        var resetMutableCounts = await ReadMutableCountsAsync(secondLease.Database);
         var secondDocumentState = await InsertSchoolDocumentAsync(
-            restoredDatabase,
+            secondLease.Database,
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
             100
         );
         var secondCollectionItemId = await InsertSchoolAddressAsync(
-            restoredDatabase,
+            secondLease.Database,
             secondDocumentState.DocumentId,
             1,
             "Austin"
         );
 
-        restoredDatabase.Should().BeSameAs(database);
+        secondLease.Database.DatabaseName.Should().Be(databaseName);
+        secondLease.SnapshotName.Should().Be(snapshotName);
         resetBaselineCounts.Should().Be(baselineCounts);
         resetMutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
         secondDocumentState.Should().Be(firstDocumentState);
@@ -83,14 +94,63 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     }
 
     [Test]
-    public async Task It_reuses_a_shared_baseline_until_the_last_handle_is_disposed()
+    public async Task It_provides_isolated_slots_to_overlapping_consumers_sharing_a_fixture_signature()
+    {
+        var fixtureSignature = CreateFixtureSignature("isolated-overlapping-consumers");
+        await using var firstBaseline = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+            fixtureSignature,
+            _fixture.GeneratedDdl
+        );
+        await using var secondBaseline = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+            fixtureSignature,
+            _fixture.GeneratedDdl
+        );
+        await using var firstLease = await firstBaseline.AcquireRestoredDatabaseAsync();
+        await using var secondLease = await secondBaseline.AcquireRestoredDatabaseAsync();
+
+        firstLease.Database.DatabaseName.Should().NotBe(secondLease.Database.DatabaseName);
+        firstLease.SnapshotName.Should().NotBe(secondLease.SnapshotName);
+
+        var firstDocumentState = await InsertSchoolDocumentAsync(
+            firstLease.Database,
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            100
+        );
+        var firstCollectionItemId = await InsertSchoolAddressAsync(
+            firstLease.Database,
+            firstDocumentState.DocumentId,
+            1,
+            "Austin"
+        );
+
+        var secondMutableCountsBeforeInsert = await ReadMutableCountsAsync(secondLease.Database);
+        var secondDocumentState = await InsertSchoolDocumentAsync(
+            secondLease.Database,
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            100
+        );
+        var secondCollectionItemId = await InsertSchoolAddressAsync(
+            secondLease.Database,
+            secondDocumentState.DocumentId,
+            1,
+            "Austin"
+        );
+
+        secondMutableCountsBeforeInsert.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
+        secondDocumentState.Should().Be(firstDocumentState);
+        secondCollectionItemId.Should().Be(firstCollectionItemId);
+    }
+
+    [Test]
+    public async Task It_keeps_pooled_slots_alive_until_the_last_manager_and_slot_lease_are_disposed()
     {
         var fixtureSignature = CreateFixtureSignature("shared-baseline-reuse");
         MssqlGeneratedDdlBaselineDatabase? firstBaseline =
             await MssqlGeneratedDdlBaselineDatabase.CreateAsync(fixtureSignature, _fixture.GeneratedDdl);
         MssqlGeneratedDdlBaselineDatabase? secondBaseline = null;
-        var databaseName = firstBaseline.Database.DatabaseName;
-        var snapshotName = firstBaseline.SnapshotName;
+        MssqlGeneratedDdlBaselineLease? baselineLease = null;
+        var databaseName = string.Empty;
+        var snapshotName = string.Empty;
 
         try
         {
@@ -98,25 +158,30 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
                 fixtureSignature,
                 _fixture.GeneratedDdl
             );
-            secondBaseline.Database.DatabaseName.Should().Be(databaseName);
-            secondBaseline.SnapshotName.Should().Be(snapshotName);
+            baselineLease = await secondBaseline.AcquireRestoredDatabaseAsync();
+            databaseName = baselineLease.Database.DatabaseName;
+            snapshotName = baselineLease.SnapshotName;
 
             await firstBaseline.DisposeAsync();
             firstBaseline = null;
+            await secondBaseline.DisposeAsync();
+            secondBaseline = null;
 
-            var databaseExistsAfterFirstDispose = await DatabaseExistsAsync(databaseName);
-            var snapshotExistsAfterFirstDispose = await DatabaseExistsAsync(snapshotName);
-            databaseExistsAfterFirstDispose.Should().BeTrue();
-            snapshotExistsAfterFirstDispose.Should().BeTrue();
+            var databaseExistsAfterManagerDispose = await DatabaseExistsAsync(databaseName);
+            var snapshotExistsAfterManagerDispose = await DatabaseExistsAsync(snapshotName);
+            databaseExistsAfterManagerDispose.Should().BeTrue();
+            snapshotExistsAfterManagerDispose.Should().BeTrue();
 
-            var restoredDatabase = await secondBaseline.RestoreAsync();
-            restoredDatabase.DatabaseName.Should().Be(databaseName);
-
-            var mutableCounts = await ReadMutableCountsAsync(restoredDatabase);
+            var mutableCounts = await ReadMutableCountsAsync(baselineLease.Database);
             mutableCounts.Should().Be(new MssqlGeneratedDdlBaselineMutableCounts(0, 0, 0));
         }
         finally
         {
+            if (baselineLease is not null)
+            {
+                await baselineLease.DisposeAsync();
+            }
+
             if (secondBaseline is not null)
             {
                 await secondBaseline.DisposeAsync();
