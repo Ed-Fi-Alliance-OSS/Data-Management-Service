@@ -58,9 +58,14 @@ internal static class NoProfileSyntheticProfileAdapter
         // only probes root-level keys (collection/extension-collection scopes are handled by
         // VisibleStoredCollectionRows, not StoredScopeStates).
         var flattenedScopeKeys = BuildFlattenedPresenceSet(flattenedWriteSet);
+        var requestTableBackedScopes = BuildRequestTableBackedScopeSet(flattenedWriteSet);
 
         // Phase 2: Build RequestScopeStates
-        var requestScopeStates = BuildRequestScopeStates(flattenedWriteSet, catalog);
+        var requestScopeStates = BuildRequestScopeStates(
+            flattenedWriteSet,
+            catalog,
+            requestTableBackedScopes
+        );
 
         // Phase 3: Build VisibleRequestCollectionItems
         var visibleRequestCollectionItems = BuildVisibleRequestCollectionItems(flattenedWriteSet);
@@ -129,7 +134,8 @@ internal static class NoProfileSyntheticProfileAdapter
     /// </summary>
     private static ImmutableArray<RequestScopeState> BuildRequestScopeStates(
         FlattenedWriteSet flattenedWriteSet,
-        ImmutableArray<CompiledScopeDescriptor> catalog
+        ImmutableArray<CompiledScopeDescriptor> catalog,
+        HashSet<string> requestTableBackedScopes
     )
     {
         var states = new List<RequestScopeState>();
@@ -154,7 +160,8 @@ internal static class NoProfileSyntheticProfileAdapter
                 states,
                 extRow.CollectionCandidates,
                 ImmutableArray<AncestorCollectionInstance>.Empty,
-                catalog
+                catalog,
+                requestTableBackedScopes
             );
         }
 
@@ -163,7 +170,7 @@ internal static class NoProfileSyntheticProfileAdapter
             d.ScopeKind == ScopeKind.NonCollection
             && d.CollectionAncestorsInOrder.IsEmpty
             && d.JsonScope != "$"
-            && !IsTableBacked(d.JsonScope, flattenedWriteSet)
+            && !requestTableBackedScopes.Contains(d.JsonScope)
         );
         foreach (var inlinedScope in rootLevelInlinedScopes)
         {
@@ -179,7 +186,8 @@ internal static class NoProfileSyntheticProfileAdapter
             states,
             flattenedWriteSet.RootRow.CollectionCandidates,
             ImmutableArray<AncestorCollectionInstance>.Empty,
-            catalog
+            catalog,
+            requestTableBackedScopes
         );
 
         return [.. states];
@@ -193,7 +201,8 @@ internal static class NoProfileSyntheticProfileAdapter
         List<RequestScopeState> states,
         IReadOnlyList<CollectionWriteCandidate> candidates,
         ImmutableArray<AncestorCollectionInstance> parentAncestors,
-        ImmutableArray<CompiledScopeDescriptor> catalog
+        ImmutableArray<CompiledScopeDescriptor> catalog,
+        HashSet<string> requestTableBackedScopes
     )
     {
         foreach (var candidate in candidates)
@@ -206,20 +215,13 @@ internal static class NoProfileSyntheticProfileAdapter
             var ancestorInstance = new AncestorCollectionInstance(collectionJsonScope, semanticIdentityParts);
             var childAncestors = parentAncestors.Add(ancestorInstance);
 
-            // Find inlined scopes under this collection
-            var inlinedScopesUnderCollection = catalog.Where(d =>
-                d.ScopeKind == ScopeKind.NonCollection
-                && d.CollectionAncestorsInOrder.Length > 0
-                && d.CollectionAncestorsInOrder[^1] == collectionJsonScope
+            AddInlinedScopeStatesForParent(
+                states,
+                catalog,
+                childAncestors,
+                collectionJsonScope,
+                requestTableBackedScopes
             );
-
-            foreach (var inlinedScope in inlinedScopesUnderCollection)
-            {
-                var address = new ScopeInstanceAddress(inlinedScope.JsonScope, childAncestors);
-                states.Add(
-                    new RequestScopeState(address, ProfileVisibilityKind.VisiblePresent, Creatable: true)
-                );
-            }
 
             // Attached aligned scopes
             foreach (var attachedScope in candidate.AttachedAlignedScopeData)
@@ -234,40 +236,64 @@ internal static class NoProfileSyntheticProfileAdapter
                     )
                 );
 
-                // Emit states for inlined scopes whose immediate parent is this
-                // attached aligned scope. The merge synthesizer's
-                // CollectInlinedScopePathsForCollectionInstance processes aligned
-                // scope tables and expects per-instance RequestScopeState entries
-                // for any inlined children (e.g. nested _ext containers).
-                var inlinedScopesUnderAttached = catalog.Where(d =>
-                    d.ScopeKind == ScopeKind.NonCollection
-                    && d.ImmediateParentJsonScope is not null
-                    && string.Equals(d.ImmediateParentJsonScope, attachedJsonScope, StringComparison.Ordinal)
+                AddInlinedScopeStatesForParent(
+                    states,
+                    catalog,
+                    childAncestors,
+                    attachedJsonScope,
+                    requestTableBackedScopes
                 );
-
-                foreach (var inlinedScope in inlinedScopesUnderAttached)
-                {
-                    var inlinedAddress = new ScopeInstanceAddress(inlinedScope.JsonScope, childAncestors);
-                    states.Add(
-                        new RequestScopeState(
-                            inlinedAddress,
-                            ProfileVisibilityKind.VisiblePresent,
-                            Creatable: true
-                        )
-                    );
-                }
 
                 // Recurse into collections under attached aligned scopes
                 AddCollectionContextScopeStates(
                     states,
                     attachedScope.CollectionCandidates,
                     childAncestors,
-                    catalog
+                    catalog,
+                    requestTableBackedScopes
                 );
             }
 
             // Recurse into nested collections
-            AddCollectionContextScopeStates(states, candidate.CollectionCandidates, childAncestors, catalog);
+            AddCollectionContextScopeStates(
+                states,
+                candidate.CollectionCandidates,
+                childAncestors,
+                catalog,
+                requestTableBackedScopes
+            );
+        }
+    }
+
+    private static void AddInlinedScopeStatesForParent(
+        List<RequestScopeState> states,
+        ImmutableArray<CompiledScopeDescriptor> catalog,
+        ImmutableArray<AncestorCollectionInstance> ancestors,
+        string parentJsonScope,
+        HashSet<string> requestTableBackedScopes
+    )
+    {
+        foreach (
+            var inlinedJsonScope in catalog
+                .Where(d =>
+                    d.ScopeKind == ScopeKind.NonCollection
+                    && d.ImmediateParentJsonScope is not null
+                    && string.Equals(d.ImmediateParentJsonScope, parentJsonScope, StringComparison.Ordinal)
+                    && !requestTableBackedScopes.Contains(d.JsonScope)
+                )
+                .Select(d => d.JsonScope)
+        )
+        {
+            var address = new ScopeInstanceAddress(inlinedJsonScope, ancestors);
+            states.Add(new RequestScopeState(address, ProfileVisibilityKind.VisiblePresent, Creatable: true));
+
+            AddInlinedScopeStatesForParent(
+                states,
+                catalog,
+                ancestors,
+                inlinedJsonScope,
+                requestTableBackedScopes
+            );
         }
     }
 
@@ -752,21 +778,43 @@ internal static class NoProfileSyntheticProfileAdapter
     }
 
     /// <summary>
-    /// Checks if a scope is backed by a table in the write plan
-    /// (i.e., appears as a root extension row in the flattened set).
-    /// Inlined scopes are NOT table-backed.
+    /// Builds the set of table-backed scopes materialized by the flattened request.
+    /// This includes root, root extensions, collection scopes, and collection-aligned scopes.
     /// </summary>
-    private static bool IsTableBacked(string jsonScope, FlattenedWriteSet flattenedWriteSet)
+    private static HashSet<string> BuildRequestTableBackedScopeSet(FlattenedWriteSet flattenedWriteSet)
     {
-        // Check root extension rows
+        var scopes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            flattenedWriteSet.RootRow.TableWritePlan.TableModel.JsonScope.Canonical,
+        };
+
         foreach (var extRow in flattenedWriteSet.RootRow.RootExtensionRows)
         {
-            if (extRow.TableWritePlan.TableModel.JsonScope.Canonical == jsonScope)
-            {
-                return true;
-            }
+            scopes.Add(extRow.TableWritePlan.TableModel.JsonScope.Canonical);
+            AddCandidateTableBackedScopes(scopes, extRow.CollectionCandidates);
         }
 
-        return false;
+        AddCandidateTableBackedScopes(scopes, flattenedWriteSet.RootRow.CollectionCandidates);
+
+        return scopes;
+    }
+
+    private static void AddCandidateTableBackedScopes(
+        HashSet<string> scopes,
+        IReadOnlyList<CollectionWriteCandidate> candidates
+    )
+    {
+        foreach (var candidate in candidates)
+        {
+            scopes.Add(candidate.TableWritePlan.TableModel.JsonScope.Canonical);
+
+            foreach (var attachedScope in candidate.AttachedAlignedScopeData)
+            {
+                scopes.Add(attachedScope.TableWritePlan.TableModel.JsonScope.Canonical);
+                AddCandidateTableBackedScopes(scopes, attachedScope.CollectionCandidates);
+            }
+
+            AddCandidateTableBackedScopes(scopes, candidate.CollectionCandidates);
+        }
     }
 }

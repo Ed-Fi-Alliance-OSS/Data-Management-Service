@@ -535,6 +535,120 @@ public class Given_update_with_root_extension_and_collection_all_present
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
+// Test 7: Nested inlined descendant under collection-aligned scope
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_resource_with_a_nested_inlined_descendant_under_a_collection_aligned_scope
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "School",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns: [("SchoolId", "$.schoolId")]
+        );
+
+        var extensionPlan = PlanBuilder.CreateTablePlan(
+            tableName: "SchoolExtension",
+            jsonScope: "$._ext.sample",
+            tableKind: DbTableKind.RootExtension,
+            columns: [("CampusCode", "$.campusCode")]
+        );
+
+        var extensionCollectionPlan = PlanBuilder.CreateCollectionTablePlan(
+            tableName: "SchoolExtensionAddress",
+            jsonScope: "$._ext.sample.addresses[*]",
+            columns: [("City", "$.city")],
+            semanticIdentityRelativePaths: ["$.city"]
+        );
+
+        var collectionAlignedScopePlan = PlanBuilder.CreateTablePlan(
+            tableName: "SchoolExtensionAddressSample",
+            jsonScope: "$._ext.sample.addresses[*]._ext.sample",
+            tableKind: DbTableKind.CollectionExtensionScope,
+            columns: [("NestedSampleField", "$._ext.sample.someField")]
+        );
+
+        var plan = PlanBuilder.BuildPlan([
+            rootPlan,
+            extensionPlan,
+            extensionCollectionPlan,
+            collectionAlignedScopePlan,
+        ]);
+
+        var addressCandidate = AdapterTestHelpers.BuildCollectionCandidate(
+            extensionCollectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            semanticIdentityValues: ["Austin"],
+            semanticIdentityPresenceFlags: [true],
+            attachedAlignedScopeData:
+            [
+                new CandidateAttachedAlignedScopeData(
+                    collectionAlignedScopePlan,
+                    collectionAlignedScopePlan.ColumnBindings.Select<WriteColumnBinding, FlattenedWriteValue>(
+                        _ => new FlattenedWriteValue.Literal(null)
+                    )
+                ),
+            ]
+        );
+
+        var extensionRow = AdapterTestHelpers.BuildRootExtensionRow(
+            extensionPlan,
+            collectionCandidates: [addressCandidate]
+        );
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [extensionRow],
+            collectionCandidates: []
+        );
+
+        var selectedBody = new JsonObject { ["schoolId"] = 255901 };
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            selectedBody,
+            currentState: null
+        );
+    }
+
+    [Test]
+    public void It_includes_the_nested_inlined_descendant_in_the_catalog()
+    {
+        _result
+            .Catalog.Should()
+            .Contain(d => d.JsonScope == "$._ext.sample.addresses[*]._ext.sample._ext.sample");
+    }
+
+    [Test]
+    public void It_emits_a_per_instance_request_scope_state_for_the_nested_inlined_descendant()
+    {
+        var nestedStates = _result
+            .Request.RequestScopeStates.Where(s =>
+                s.Address.JsonScope == "$._ext.sample.addresses[*]._ext.sample._ext.sample"
+            )
+            .ToList();
+
+        nestedStates.Should().ContainSingle();
+        nestedStates[0].Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+        nestedStates[0].Creatable.Should().BeTrue();
+        nestedStates[0].Address.AncestorCollectionInstances.Should().ContainSingle();
+        nestedStates[0]
+            .Address.AncestorCollectionInstances[0]
+            .JsonScope.Should()
+            .Be("$._ext.sample.addresses[*]");
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
 // Shared test helpers for adapter tests
 // ────────────────────────────────────────────────────────────────────────────────
 
@@ -569,7 +683,10 @@ internal static class AdapterTestHelpers
     /// <summary>
     /// Builds a minimal RootExtensionWriteRowBuffer for an extension table plan.
     /// </summary>
-    public static RootExtensionWriteRowBuffer BuildRootExtensionRow(TableWritePlan extensionTablePlan)
+    public static RootExtensionWriteRowBuffer BuildRootExtensionRow(
+        TableWritePlan extensionTablePlan,
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
+    )
     {
         var values = extensionTablePlan
             .ColumnBindings.Select<WriteColumnBinding, FlattenedWriteValue>(
@@ -577,7 +694,11 @@ internal static class AdapterTestHelpers
             )
             .ToList();
 
-        return new RootExtensionWriteRowBuffer(tableWritePlan: extensionTablePlan, values: values);
+        return new RootExtensionWriteRowBuffer(
+            tableWritePlan: extensionTablePlan,
+            values: values,
+            collectionCandidates: collectionCandidates
+        );
     }
 
     /// <summary>
@@ -588,7 +709,9 @@ internal static class AdapterTestHelpers
         IEnumerable<int> ordinalPath,
         int requestOrder,
         IEnumerable<object?> semanticIdentityValues,
-        IEnumerable<bool> semanticIdentityPresenceFlags
+        IEnumerable<bool> semanticIdentityPresenceFlags,
+        IEnumerable<CandidateAttachedAlignedScopeData>? attachedAlignedScopeData = null,
+        IEnumerable<CollectionWriteCandidate>? collectionCandidates = null
     )
     {
         var values = collectionTablePlan
@@ -603,7 +726,9 @@ internal static class AdapterTestHelpers
             requestOrder: requestOrder,
             values: values,
             semanticIdentityValues: semanticIdentityValues,
-            semanticIdentityPresenceFlags: semanticIdentityPresenceFlags
+            semanticIdentityPresenceFlags: semanticIdentityPresenceFlags,
+            attachedAlignedScopeData: attachedAlignedScopeData,
+            collectionCandidates: collectionCandidates
         );
     }
 
