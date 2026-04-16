@@ -1996,6 +1996,51 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_rejects_non_creatable_empty_scope_insert()
+    {
+        var fixture = CreateFixtureWithExtension();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                rootExtensionRows:
+                [
+                    new RootExtensionWriteRowBuffer(
+                        fixture.RootExtensionPlan,
+                        [Literal(345L), Literal(null), Literal(null)]
+                    ),
+                ]
+            )
+        );
+
+        var extensionScope = "$._ext.sample";
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            new RequestScopeState(
+                ScopeAddress(extensionScope),
+                ProfileVisibilityKind.VisiblePresent,
+                Creatable: false
+            ),
+        ]);
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                CurrentState: null,
+                profileRequest,
+                ProfileContext: null,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ValidationFailure>();
+        var failure = (RelationalWriteMergeSynthesisOutcome.ValidationFailure)outcome;
+        failure.Failures.Should().ContainSingle();
+        failure.Failures[0].Message.Should().Contain(extensionScope);
+    }
+
+    [Test]
     public void It_allows_update_when_scope_is_not_creatable_but_already_exists()
     {
         var fixture = CreateFixtureWithExtension();
@@ -2068,6 +2113,83 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         var extensionState = result.TablesInDependencyOrder[1];
         extensionState.Updates.Should().ContainSingle();
         extensionState.Inserts.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_allows_update_for_empty_scope_when_the_existing_root_extension_row_is_hidden_by_profile()
+    {
+        var fixture = CreateFixtureWithExtension();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                rootExtensionRows:
+                [
+                    new RootExtensionWriteRowBuffer(
+                        fixture.RootExtensionPlan,
+                        [Literal(345L), Literal(null), Literal(null)]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithExtension(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            rootExtensionRows:
+            [
+                [345L, "original-ext", "HIDDEN_EXT_VALUE"],
+            ]
+        );
+
+        var extensionScope = "$._ext.sample";
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            new RequestScopeState(
+                ScopeAddress(extensionScope),
+                ProfileVisibilityKind.VisiblePresent,
+                Creatable: false
+            ),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    ScopeAddress(extensionScope),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["extValue", "hiddenExt"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+        var extensionState = result.TablesInDependencyOrder[1];
+
+        extensionState.Inserts.Should().BeEmpty();
+        extensionState.Updates.Should().ContainSingle();
+        extensionState.Deletes.Should().BeEmpty();
+        LiteralValue(extensionState.Updates[0].Values[1]).Should().Be("original-ext");
+        LiteralValue(extensionState.Updates[0].Values[2]).Should().Be("HIDDEN_EXT_VALUE");
     }
 
     [Test]
@@ -5625,6 +5747,114 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_rejects_non_creatable_empty_collection_aligned_scope_insert()
+    {
+        var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("UpdatedValue1"),
+                        ],
+                        attachedAlignedScopeData:
+                        [
+                            new CandidateAttachedAlignedScopeData(
+                                fixture.AlignedExtensionScopePlan,
+                                [Literal(345L), Literal(100L), Literal(null), Literal(null)]
+                            ),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithCollectionAndAlignedExtensionScope(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "OrigValue1"],
+            ],
+            alignedExtensionScopeRows:
+            [
+                [345L, 100L, "stored-ext-1", "STORED_REF_1"],
+            ]
+        );
+
+        var period1Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period1"),
+                    IsPresent: true
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [
+                new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ],
+            [CreateVisibleRequestCollectionItem("$.classPeriods", "Period1")]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["extValue", "someRef.refId"]
+                ),
+            ],
+            [CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", [])]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ValidationFailure>();
+        var failure = (RelationalWriteMergeSynthesisOutcome.ValidationFailure)outcome;
+        failure.Failures.Should().ContainSingle();
+        failure.Failures[0].Message.Should().Contain("$.classPeriods._ext.sample");
+    }
+
+    [Test]
     public void It_returns_contract_mismatch_when_inlined_scope_under_collection_has_no_per_instance_request_scope_state()
     {
         // Scenario: collection table $.classPeriods has an inlined non-table-backed child scope
@@ -5928,6 +6158,60 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         );
 
         candidate2.SemanticIdentityPresenceFlags[0].Should().BeTrue();
+    }
+
+    // --- Non-collection reverse coverage tests ---
+
+    [Test]
+    public void It_returns_ContractMismatch_when_empty_visible_present_root_extension_scope_is_missing_from_the_buffer()
+    {
+        var fixture = CreateFixtureWithExtension();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")]
+            )
+        );
+
+        var extensionScope = "$._ext.sample";
+        var profileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: System.Text.Json.Nodes.JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {}
+                  }
+                }
+                """
+            )!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    ScopeAddress(extensionScope),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                CurrentState: null,
+                profileRequest,
+                ProfileContext: null,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ContractMismatch>();
+        var mismatch = (RelationalWriteMergeSynthesisOutcome.ContractMismatch)outcome;
+        mismatch.Messages.Should().ContainSingle();
+        mismatch.Messages[0].Should().Contain(extensionScope).And.Contain("did not visit");
     }
 
     // --- StoredScopeStates second-pass tests ---

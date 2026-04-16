@@ -195,6 +195,33 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_root_extension_row_for_an_explicit_empty_object_scope()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {}
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
+        result
+            .RootRow.RootExtensionRows[0]
+            .Values.Should()
+            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal(null));
+        result.RootRow.RootExtensionRows[0].CollectionCandidates.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_attaches_collection_aligned_extension_scope_rows_to_the_owning_collection_candidate()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -242,6 +269,52 @@ public class Given_RelationalWriteFlattener
             .Values[1]
             .Should()
             .Be(new FlattenedWriteValue.Literal("Purple"));
+        addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_attaches_collection_aligned_extension_scope_rows_for_an_explicit_empty_object_scope()
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "addresses": [
+                    {
+                      "addressType": "Home",
+                      "_ext": {
+                        "sample": {}
+                      }
+                    }
+                  ]
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences()
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+
+        addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
+        var addressCollectionItemId = addressCandidate
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        var alignedScopeCollectionItemId = addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values[0]
+            .Should()
+            .BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>()
+            .Subject;
+        alignedScopeCollectionItemId.Token.Should().Be(addressCollectionItemId.Token);
+        addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values[1]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(null));
         addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
     }
 
@@ -336,7 +409,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_does_not_emit_collection_aligned_extension_scope_rows_for_empty_extension_sites()
+    public void It_emits_collection_aligned_extension_scope_rows_for_empty_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -361,11 +434,18 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
 
-        result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Should().BeEmpty();
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
+        addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values[1]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(null));
+        addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
     }
 
     [Test]
-    public void It_does_not_emit_collection_aligned_extension_scope_rows_for_deeply_nested_all_array_extension_sites()
+    public void It_emits_collection_aligned_extension_scope_rows_for_deeply_nested_all_array_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -392,7 +472,14 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
 
-        result.RootRow.CollectionCandidates.Single().AttachedAlignedScopeData.Should().BeEmpty();
+        var addressCandidate = result.RootRow.CollectionCandidates.Single();
+        addressCandidate.AttachedAlignedScopeData.Should().ContainSingle();
+        addressCandidate
+            .AttachedAlignedScopeData[0]
+            .Values[1]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(null));
+        addressCandidate.AttachedAlignedScopeData[0].CollectionCandidates.Should().BeEmpty();
     }
 
     [Test]
@@ -798,7 +885,7 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
-    public void It_does_not_emit_root_extension_rows_for_empty_extension_sites()
+    public void It_emits_root_extension_rows_for_empty_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -818,11 +905,16 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
 
-        result.RootRow.RootExtensionRows.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
+        result
+            .RootRow.RootExtensionRows[0]
+            .Values.Should()
+            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal(null));
+        result.RootRow.RootExtensionRows[0].CollectionCandidates.Should().BeEmpty();
     }
 
     [Test]
-    public void It_does_not_emit_root_extension_rows_for_deeply_nested_all_array_extension_sites()
+    public void It_emits_root_extension_rows_for_deeply_nested_all_array_extension_sites()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -844,7 +936,12 @@ public class Given_RelationalWriteFlattener
 
         var result = _sut.Flatten(flatteningInput);
 
-        result.RootRow.RootExtensionRows.Should().BeEmpty();
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
+        result
+            .RootRow.RootExtensionRows[0]
+            .Values.Should()
+            .Equal(new FlattenedWriteValue.Literal(345L), new FlattenedWriteValue.Literal(null));
+        result.RootRow.RootExtensionRows[0].CollectionCandidates.Should().BeEmpty();
     }
 
     [Test]

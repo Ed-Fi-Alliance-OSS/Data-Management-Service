@@ -267,11 +267,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (!HasBoundScopeData(scopeObject) && collectionCandidates.Count == 0)
-            {
-                continue;
-            }
-
+            // Keep explicit empty-object separate-table scopes so downstream profile merge
+            // can deterministically apply creatability and existing-row semantics.
             yield return new RootExtensionWriteRowBuffer(
                 tableWritePlan,
                 MaterializeValues(
@@ -454,11 +451,8 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 resolvedReferenceLookups
             );
 
-            if (!HasBoundScopeData(scopeObject) && childCollectionCandidates.Count == 0)
-            {
-                continue;
-            }
-
+            // Keep explicit empty-object separate-table scopes so downstream profile merge
+            // can deterministically apply creatability and existing-row semantics.
             attachedScopeData.Add(
                 new CandidateAttachedAlignedScopeData(
                     attachedScopePlan.TableWritePlan,
@@ -1443,21 +1437,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     {
         var segments = RelationalJsonPathSupport.GetRestrictedSegments(relativePath);
         return TryNavigateRelativeNode(scopeNode, segments, out value);
-    }
-
-    private static bool HasBoundScopeData(JsonNode scopeNode)
-    {
-        ArgumentNullException.ThrowIfNull(scopeNode);
-
-        return scopeNode switch
-        {
-            JsonObject jsonObject => jsonObject.Any(static property =>
-                property.Value is not JsonArray
-                && (property.Value is null || HasBoundScopeData(property.Value))
-            ),
-            JsonArray => false,
-            _ => true,
-        };
     }
 
     private static bool TryGetScopeNode(

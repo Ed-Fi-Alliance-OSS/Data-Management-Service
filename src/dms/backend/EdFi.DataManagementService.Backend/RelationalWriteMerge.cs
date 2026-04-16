@@ -426,15 +426,14 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         // Mirrors the collection reverse check (VisibleRequestCollectionItems ↔ candidates).
         // Every VisiblePresent RequestScopeState targeting a separate-table non-collection
         // scope must have been visited by buffer iteration. If not, the flattener dropped
-        // the buffer row (e.g. empty scope object) and the scope would silently fall through
-        // the cracks — preserving stale data on update or skipping insert/creatability on create.
+        // the buffer row and the scope would silently fall through the cracks — preserving
+        // stale data on update or skipping insert/creatability on create.
         // Only applies to real profiled requests — the null-profile adapter synthesizes broad
         // VisiblePresent states that don't imply buffer presence for all table-backed scopes.
         if (!isNullProfile && request.ProfileRequest is not null)
         {
             var reverseValidationOutcome = ValidateNonCollectionScopeReverseCoverage(
                 request.ProfileRequest.RequestScopeStates,
-                request.ProfileRequest.WritableRequestBody,
                 request.WritePlan,
                 visitedScopeKeys
             );
@@ -1745,22 +1744,18 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// <summary>
     /// Reverse contract validation for non-collection separate-table scopes. Every VisiblePresent
     /// RequestScopeState targeting a separate-table non-collection scope must have been visited
-    /// by buffer iteration. If not, the flattener dropped the buffer row (e.g. empty scope object)
-    /// and the scope would silently fall through — preserving stale data on update or skipping
-    /// insert/creatability checks on create.
+    /// by buffer iteration. If not, the flattener dropped the buffer row and the scope would
+    /// silently fall through — preserving stale data on update or skipping insert/creatability
+    /// checks on create.
     /// </summary>
     /// <remarks>
     /// Mirrors the collection reverse check (VisibleRequestCollectionItems ↔ candidates).
     /// Inlined scopes are excluded because they share the parent table's buffer row.
     /// Collection scopes are excluded because they have their own reverse validation.
     /// The root scope ($) is excluded because it always has a buffer row.
-    /// Scopes whose content in the request body is null or empty are excluded because the
-    /// flattener correctly produces no buffer row when there is nothing to write (e.g. all
-    /// visible fields are hidden by the profile, so the client sends <c>{}</c>).
     /// </remarks>
     private static RelationalWriteMergeSynthesisOutcome? ValidateNonCollectionScopeReverseCoverage(
         ImmutableArray<RequestScopeState> requestScopeStates,
-        JsonNode writableRequestBody,
         ResourceWritePlan writePlan,
         HashSet<string> visitedScopeKeys
     )
@@ -1811,15 +1806,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
             if (!visitedScopeKeys.Contains(scopeKey))
             {
-                // If the scope content in the request body is null or an empty object, the
-                // flattener correctly produced no buffer row — there is nothing to write.
-                // This happens when all visible fields are hidden by the profile (client
-                // sends {} to acknowledge the scope without providing data).
-                if (IsScopeContentEmptyInRequestBody(writableRequestBody, requestState.Address.JsonScope))
-                {
-                    continue;
-                }
-
                 return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
                     $"Profile merge encountered VisiblePresent RequestScopeState for "
                         + $"separate-table scope '{requestState.Address.JsonScope}' "
@@ -1831,25 +1817,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Navigates the request body to the given JSON scope path and returns true if the
-    /// scope content is null or an empty object. Scope paths use dot-separated segments
-    /// starting with "$" (e.g. "$._ext.sample").
-    /// </summary>
-    private static bool IsScopeContentEmptyInRequestBody(JsonNode requestBody, string jsonScope)
-    {
-        var segments = jsonScope.Split('.');
-        JsonNode? current = requestBody;
-
-        // Skip the first segment ("$" = root) and navigate to the scope
-        for (int i = 1; i < segments.Length && current is not null; i++)
-        {
-            current = current[segments[i]];
-        }
-
-        return current is null || (current is JsonObject obj && obj.Count == 0);
     }
 
     /// <summary>
