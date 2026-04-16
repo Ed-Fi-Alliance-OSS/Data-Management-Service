@@ -511,6 +511,7 @@ So the projector does not require reverse dependency expansion. A minimal approa
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.
+- Interim behavior: DMS-1010 ships a placeholder name (`"(referenced document)"` / `"(referenced descriptor)"`) in `DeleteFailureReference`; constraint-name-to-resource mapping is implemented by DMS-1011.
 
 ---
 

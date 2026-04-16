@@ -282,6 +282,8 @@ public sealed class RelationalDocumentStoreRepository(
             else
             {
                 // Authorization-check statements will be prepended to this command in a future story.
+                // If-Match/ETag validation against resolved.ContentVersion is likewise deferred and must be
+                // added before this path carries production traffic.
                 var deleteCommand = mappingSet.Key.Dialect switch
                 {
                     SqlDialect.Pgsql => new RelationalCommand(
