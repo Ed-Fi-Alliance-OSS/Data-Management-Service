@@ -92,8 +92,6 @@ Use this shorter pass when reviewing a PR without doing a full design replay:
 
 ## Primary Code Surfaces
 
-Start here when a PR claims to be "just a small profile-aware write change":
-
 - `src/dms/core/EdFi.DataManagementService.Core/Profile/ProfileWritePipeline.cs`
 - `src/dms/core/EdFi.DataManagementService.Core/Middleware/ProfileWritePipelineMiddleware.cs`
 - `src/dms/backend/EdFi.DataManagementService.Backend/DefaultRelationalWriteExecutor.cs`
