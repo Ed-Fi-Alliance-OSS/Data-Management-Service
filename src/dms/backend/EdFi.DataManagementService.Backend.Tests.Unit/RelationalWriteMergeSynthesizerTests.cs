@@ -167,6 +167,77 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         LiteralValue(insert.Values[2]).Should().Be("NEW_CODE");
     }
 
+    [Test]
+    public void It_inserts_extension_table_on_create_when_scope_is_visible_present_and_creatable()
+    {
+        var fixture = CreateFixtureWithExtension();
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("New School")],
+                rootExtensionRows:
+                [
+                    new RootExtensionWriteRowBuffer(
+                        fixture.RootExtensionPlan,
+                        [
+                            FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                            Literal("new-ext-value"),
+                            Literal("new-hidden-ext"),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        var extensionScope = "$._ext.sample";
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            new RequestScopeState(
+                ScopeAddress(extensionScope),
+                ProfileVisibilityKind.VisiblePresent,
+                Creatable: true
+            ),
+        ]);
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                CurrentState: null,
+                profileRequest,
+                ProfileContext: null,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        result.TablesInDependencyOrder.Should().HaveCount(2);
+
+        // Root table should have an insert
+        var rootState = result.TablesInDependencyOrder[0];
+        rootState.Inserts.Should().ContainSingle();
+        rootState.Updates.Should().BeEmpty();
+        rootState.Deletes.Should().BeEmpty();
+
+        var rootInsert = rootState.Inserts[0];
+        rootInsert.Values[0].Should().BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        LiteralValue(rootInsert.Values[1]).Should().Be("New School");
+
+        // Extension table should have an insert (not an update or delete)
+        var extensionState = result.TablesInDependencyOrder[1];
+        extensionState.Inserts.Should().ContainSingle();
+        extensionState.Updates.Should().BeEmpty();
+        extensionState.Deletes.Should().BeEmpty();
+        extensionState.PreservedRows.Should().BeEmpty();
+
+        var extInsert = extensionState.Inserts[0];
+        extInsert.Values[0].Should().BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        LiteralValue(extInsert.Values[1]).Should().Be("new-ext-value");
+        LiteralValue(extInsert.Values[2]).Should().Be("new-hidden-ext");
+    }
+
     /// <remarks>
     /// This test uses Core's real <c>HiddenMemberPaths</c> vocabulary: bare
     /// scope-relative member names (e.g. <c>"hiddenExt"</c>), matching what
