@@ -17,7 +17,7 @@ This slice adds:
 
 ## In Scope
 
-- Top-level collection/common-type/extension collection scopes directly under root
+- Top-level base collection/common-type scopes directly under root
 - Visible stored collection row matching using `VisibleStoredCollectionRows`
 - Visible request item matching using `VisibleRequestCollectionItems`
 - Hidden row preservation for top-level collections
@@ -141,6 +141,7 @@ The next slice removes the fence for:
 
 - nested collections,
 - root-level extension child collections, and
-- collection-aligned extension child collections.
+- collection-aligned extension child collections, and
+- nested extension child collections under extension-child parents.
 
 That slice owns ancestor-address matching, descendant preservation, and nested second-pass behavior.

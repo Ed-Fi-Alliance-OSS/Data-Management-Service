@@ -10,7 +10,8 @@ Remove the remaining collection-shape fences by adding:
 
 - nested collections,
 - root-level extension child collections, and
-- collection-aligned extension child collections.
+- collection-aligned extension child collections, and
+- nested extension child collections under extension-child parents.
 
 This slice finishes the profile-aware collection merge surface that the earlier slices deliberately deferred so top-level collection behavior could be reviewed separately.
 
@@ -19,6 +20,7 @@ This slice finishes the profile-aware collection merge surface that the earlier 
 - Nested collection merge under collection ancestors
 - Root-level extension child collection merge
 - Collection-aligned extension child collection merge
+- Nested extension child collection merge under extension-child ancestors
 - Ancestor-address matching for nested collection instances
 - Hidden descendant preservation under matched or hidden parents
 - Nested second-pass behavior where stored scope-state handling interacts with collection ancestry
@@ -31,9 +33,9 @@ This slice finishes the profile-aware collection merge surface that the earlier 
 
 ## Supported After This Slice
 
-- Profiled writes may succeed for nested collection shapes and extension child collection shapes when all earlier slices already support the involved root/separate-table behavior.
+- Profiled writes may succeed for nested collection shapes and extension child collection shapes, including nested extension-child chains, when all earlier slices already support the involved root/separate-table behavior.
 - Nested visible-row update/delete/insert behavior is supported.
-- Root-level and collection-aligned extension child collections follow the same merge/preservation rules as base collection data.
+- Root-level, collection-aligned, and nested extension child collections follow the same merge/preservation rules as base collection data.
 - Hidden descendants are preserved under both matched-update and hidden-parent cases for supported shapes.
 
 ## Still Fenced After This Slice
@@ -79,7 +81,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 ## Acceptance Criteria
 
 - Nested collection rows attach to the correct parent scope instance by ancestor-address context.
-- Root-level extension child collections and collection-aligned extension child collections merge under the same preservation rules as base collection data.
+- Root-level extension child collections, collection-aligned extension child collections, and nested extension child collections merge under the same preservation rules as base collection data.
 - Hidden descendants are preserved under matched and hidden parents.
 - Nested and extension-child `VisibleStoredCollectionRows` remain covered one-for-one by real current DB rows within the correct ancestor context before DML.
 - Nested and extension-child visible request candidates remain covered one-for-one by `VisibleRequestCollectionItems` within the correct ancestor context before DML.
@@ -106,6 +108,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested second-pass delete protection
 - Root-level extension child collection matching and preservation
 - Collection-aligned extension child collection matching and preservation
+- Nested extension child collection matching and preservation
 
 ### Integration tests
 
@@ -113,6 +116,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested `ProfileVisibleRowDeleteWithHiddenRowPreservation`
 - Root-level extension child collection variant
 - Collection-aligned extension child collection variant
+- Nested extension child collection variant
 - `ProfileHiddenExtensionChildCollectionPreservation`
 - Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
 - Three-level update-allowed/create-denied chain variant
