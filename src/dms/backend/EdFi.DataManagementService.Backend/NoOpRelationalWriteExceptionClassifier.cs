@@ -8,7 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal sealed class NoOpRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
+public sealed class NoOpRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
 {
     public bool TryClassify(
         DbException exception,
@@ -17,6 +17,12 @@ internal sealed class NoOpRelationalWriteExceptionClassifier : IRelationalWriteE
     {
         ArgumentNullException.ThrowIfNull(exception);
         classification = null;
+        return false;
+    }
+
+    public bool IsTransientFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
         return false;
     }
 }

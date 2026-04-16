@@ -27,7 +27,8 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalReadTargetLookupService readTargetLookupService,
     IRelationalReadMaterializer readMaterializer,
     IReadableProfileProjector readableProfileProjector,
-    IRelationalCommandExecutor commandExecutor
+    IRelationalCommandExecutor commandExecutor,
+    IRelationalWriteExceptionClassifier writeExceptionClassifier
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -50,6 +51,8 @@ public sealed class RelationalDocumentStoreRepository(
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -256,46 +259,46 @@ public sealed class RelationalDocumentStoreRepository(
     {
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
 
+        var resolved = await RelationalDocumentUuidLookupSupport
+            .TryResolveByDocumentUuidAndResourceAsync(
+                _commandExecutor,
+                mappingSet,
+                resource,
+                relationalDeleteRequest.DocumentUuid
+            )
+            .ConfigureAwait(false);
+
+        if (resolved is null)
+        {
+            return new DeleteResult.DeleteFailureNotExists();
+        }
+
+        // Authorization-check statements will be prepended to this command in a future story.
+        var deleteCommand = mappingSet.Key.Dialect switch
+        {
+            SqlDialect.Pgsql => new RelationalCommand(
+                """
+                DELETE FROM dms."Document"
+                WHERE "DocumentId" = @documentId
+                RETURNING "DocumentId";
+                """,
+                [new RelationalParameter("@documentId", resolved.DocumentId)]
+            ),
+            SqlDialect.Mssql => new RelationalCommand(
+                """
+                DELETE FROM [dms].[Document]
+                OUTPUT DELETED.[DocumentId]
+                WHERE [DocumentId] = @documentId;
+                """,
+                [new RelationalParameter("@documentId", resolved.DocumentId)]
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
+            ),
+        };
+
         try
         {
-            var resolved = await RelationalDocumentUuidLookupSupport
-                .TryResolveByDocumentUuidAndResourceAsync(
-                    _commandExecutor,
-                    mappingSet,
-                    resource,
-                    relationalDeleteRequest.DocumentUuid
-                )
-                .ConfigureAwait(false);
-
-            if (resolved is null)
-            {
-                return new DeleteResult.DeleteFailureNotExists();
-            }
-
-            // Authorization-check statements will be prepended to this command in a future story.
-            var deleteCommand = mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => new RelationalCommand(
-                    """
-                    DELETE FROM dms."Document"
-                    WHERE "DocumentId" = @documentId
-                    RETURNING "DocumentId";
-                    """,
-                    [new RelationalParameter("@documentId", resolved.DocumentId)]
-                ),
-                SqlDialect.Mssql => new RelationalCommand(
-                    """
-                    DELETE FROM [dms].[Document]
-                    OUTPUT DELETED.[DocumentId]
-                    WHERE [DocumentId] = @documentId;
-                    """,
-                    [new RelationalParameter("@documentId", resolved.DocumentId)]
-                ),
-                _ => throw new NotSupportedException(
-                    $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            };
-
             var deleted = await _commandExecutor
                 .ExecuteReaderAsync(
                     deleteCommand,
@@ -305,7 +308,10 @@ public sealed class RelationalDocumentStoreRepository(
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
         }
-        catch (DbException ex) when (RelationalExceptionSupport.IsForeignKeyViolation(ex))
+        catch (DbException ex)
+            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
+                && classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation
+            )
         {
             _logger.LogDebug(
                 ex,
@@ -315,6 +321,17 @@ public sealed class RelationalDocumentStoreRepository(
             );
 
             return new DeleteResult.DeleteFailureReference(["(referenced document)"]);
+        }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on relational DELETE for {DocumentUuid} - {TraceId}",
+                relationalDeleteRequest.DocumentUuid.Value,
+                relationalDeleteRequest.TraceId.Value
+            );
+
+            return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (DbException ex)
         {

@@ -10,15 +10,21 @@ using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteExceptionClassifier
+public interface IRelationalWriteExceptionClassifier
 {
     bool TryClassify(
         DbException exception,
         [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
     );
+
+    /// <summary>
+    /// Reports whether the exception represents a transient, retry-eligible database failure
+    /// (deadlock victim, serialization failure, lock-request timeout).
+    /// </summary>
+    bool IsTransientFailure(DbException exception);
 }
 
-internal abstract record RelationalWriteExceptionClassification
+public abstract record RelationalWriteExceptionClassification
 {
     public abstract record ConstraintViolation : RelationalWriteExceptionClassification
     {

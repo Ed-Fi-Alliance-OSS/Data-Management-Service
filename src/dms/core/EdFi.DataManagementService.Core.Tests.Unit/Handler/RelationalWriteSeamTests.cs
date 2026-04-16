@@ -726,7 +726,8 @@ actual: {requestInfo.FrontendResponse.Body}
                 A.Fake<IRelationalReadTargetLookupService>(),
                 A.Fake<IRelationalReadMaterializer>(),
                 A.Fake<IReadableProfileProjector>(),
-                A.Fake<IRelationalCommandExecutor>()
+                A.Fake<IRelationalCommandExecutor>(),
+                new NoOpRelationalWriteExceptionClassifier()
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

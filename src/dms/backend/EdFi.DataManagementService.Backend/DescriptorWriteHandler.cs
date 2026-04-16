@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class DescriptorWriteHandler(
     IRelationalWriteTargetLookupService targetLookupService,
     IRelationalCommandExecutor commandExecutor,
+    IRelationalWriteExceptionClassifier writeExceptionClassifier,
     ILogger<DescriptorWriteHandler> logger
 ) : IDescriptorWriteHandler
 {
@@ -25,6 +26,8 @@ internal sealed class DescriptorWriteHandler(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
     private readonly ILogger<DescriptorWriteHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -100,11 +103,25 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
         }
-        catch (DbException ex) when (IsUniqueConstraintViolation(ex))
+        catch (DbException ex)
+            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
+                && classification is RelationalWriteExceptionClassification.UniqueConstraintViolation
+            )
         {
             _logger.LogDebug(
                 ex,
                 "Unique constraint violation on descriptor POST for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on descriptor POST for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
                 request.TraceId.Value
             );
@@ -231,6 +248,17 @@ internal sealed class DescriptorWriteHandler(
                 RelationalApiMetadataFormatter.FormatEtag(body)
             );
         }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
+                RelationalWriteSupport.FormatResource(request.Resource),
+                request.TraceId.Value
+            );
+
+            return new UpdateResult.UpdateFailureWriteConflict();
+        }
         catch (DbException ex)
         {
             _logger.LogError(
@@ -297,7 +325,10 @@ internal sealed class DescriptorWriteHandler(
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
         }
-        catch (DbException ex) when (RelationalExceptionSupport.IsForeignKeyViolation(ex))
+        catch (DbException ex)
+            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
+                && classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation
+            )
         {
             _logger.LogDebug(
                 ex,
@@ -307,6 +338,17 @@ internal sealed class DescriptorWriteHandler(
             );
 
             return new DeleteResult.DeleteFailureReference(["(referenced descriptor)"]);
+        }
+        catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "Transient conflict on descriptor DELETE for {DocumentUuid} - {TraceId}",
+                documentUuid.Value,
+                traceId.Value
+            );
+
+            return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (DbException ex)
         {
@@ -778,25 +820,5 @@ internal sealed class DescriptorWriteHandler(
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@discriminator", body.Discriminator));
         return parameters;
-    }
-
-    // ── SQL error classification ────────────────────────────────────────
-
-    /// <summary>
-    /// Detects unique constraint violations across Postgres (23505) and SQL Server (2627/2601).
-    /// </summary>
-    private static bool IsUniqueConstraintViolation(DbException ex)
-    {
-        // Postgres: SqlState "23505" (unique_violation)
-        // SQL Server: Number 2627 (unique key) or 2601 (unique index)
-        return ex.SqlState == "23505"
-            || (
-                ex is { HResult: var hr }
-                && hr is unchecked((int)0x80131904)
-                && (
-                    ex.Message.Contains("2627", StringComparison.Ordinal)
-                    || ex.Message.Contains("2601", StringComparison.Ordinal)
-                )
-            );
     }
 }

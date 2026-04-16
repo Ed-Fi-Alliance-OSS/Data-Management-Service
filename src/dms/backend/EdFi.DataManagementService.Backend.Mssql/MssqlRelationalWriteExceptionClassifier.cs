@@ -62,6 +62,14 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
         return classification is not null;
     }
 
+    public bool IsTransientFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is SqlException sqlException
+            && sqlException.Number is DeadlockVictimNumber or LockRequestTimeoutNumber;
+    }
+
     private static RelationalWriteExceptionClassification BuildConstraintClassification(
         string message,
         Regex constraintNamePattern,

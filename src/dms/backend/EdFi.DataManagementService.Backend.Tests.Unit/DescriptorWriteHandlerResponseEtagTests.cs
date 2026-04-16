@@ -209,6 +209,7 @@ public class Given_Descriptor_Write_Response_Etags
         return new DescriptorWriteHandler(
             targetLookupService,
             commandExecutor,
+            new NoOpRelationalWriteExceptionClassifier(),
             NullLogger<DescriptorWriteHandler>.Instance
         );
     }

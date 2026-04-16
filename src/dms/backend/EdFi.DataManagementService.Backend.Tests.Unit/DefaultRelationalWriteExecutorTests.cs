@@ -3934,6 +3934,8 @@ public class Given_Default_Relational_Write_Executor
             classification = ClassificationToReturn;
             return classification is not null;
         }
+
+        public bool IsTransientFailure(DbException exception) => false;
     }
 
     private sealed class RecordingRelationalWriteConstraintResolver : IRelationalWriteConstraintResolver

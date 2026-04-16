@@ -110,6 +110,31 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
         classification.Should().BeNull();
     }
 
+    [TestCase(PostgresErrorCodes.DeadlockDetected)]
+    [TestCase(PostgresErrorCodes.SerializationFailure)]
+    public void It_reports_transient_failure_for_deadlock_or_serialization_errors(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        _sut.IsTransientFailure(exception).Should().BeTrue();
+    }
+
+    [TestCase(PostgresErrorCodes.UniqueViolation)]
+    [TestCase(PostgresErrorCodes.ForeignKeyViolation)]
+    [TestCase(PostgresErrorCodes.CheckViolation)]
+    public void It_does_not_report_transient_failure_for_non_transient_sql_states(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        _sut.IsTransientFailure(exception).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_report_transient_failure_for_non_postgresql_db_exceptions()
+    {
+        _sut.IsTransientFailure(new FakeDbException()).Should().BeFalse();
+    }
+
     private static PostgresException CreatePostgresException(string sqlState, string? constraintName = null)
     {
         return new PostgresException(

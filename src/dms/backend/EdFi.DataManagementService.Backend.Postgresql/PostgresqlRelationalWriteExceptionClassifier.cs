@@ -46,6 +46,14 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
         return classification is not null;
     }
 
+    public bool IsTransientFailure(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception is PostgresException { SqlState: var sqlState }
+            && sqlState is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure;
+    }
+
     private static RelationalWriteExceptionClassification BuildConstraintClassification(
         string? constraintName,
         Func<string, RelationalWriteExceptionClassification.ConstraintViolation> createClassification

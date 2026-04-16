@@ -152,6 +152,32 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         classification.Should().BeNull();
     }
 
+    [TestCase(1205)]
+    [TestCase(1222)]
+    public void It_reports_transient_failure_for_deadlock_or_lock_timeout_errors(int errorNumber)
+    {
+        var exception = CreateSqlException(errorNumber, "Transient SQL Server condition.");
+
+        _sut.IsTransientFailure(exception).Should().BeTrue();
+    }
+
+    [TestCase(547)]
+    [TestCase(2627)]
+    [TestCase(2601)]
+    [TestCase(8152)]
+    public void It_does_not_report_transient_failure_for_non_transient_error_numbers(int errorNumber)
+    {
+        var exception = CreateSqlException(errorNumber, "Non-transient SQL Server condition.");
+
+        _sut.IsTransientFailure(exception).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_report_transient_failure_for_non_sql_server_db_exceptions()
+    {
+        _sut.IsTransientFailure(new FakeNonSqlDbException("not sql server")).Should().BeFalse();
+    }
+
     /// <summary>
     /// Creates a real <see cref="SqlException"/> for testing.
     /// <see cref="SqlException"/> has no public constructor; instances are built via
