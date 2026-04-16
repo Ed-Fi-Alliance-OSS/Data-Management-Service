@@ -73,7 +73,7 @@ The slice fence remains in place for any profiled write involving:
 - Visible-absent inlined scopes may clear only bindings classified as clearable.
 - Hidden-governed bindings must never be cleared by visible-absent behavior.
 - Hidden FK/descriptor bindings must preserve stored values when any governing profile-hidden member requires preservation.
-- Key-unification canonical source selection must preserve hidden-governed stored state correctly.
+- Key-unification canonical source selection must preserve hidden-governed stored state correctly and continue to follow the normative `key-unification.md` contract, including full `KeyUnificationWritePlan.MembersInOrder` evaluation and fail-closed disagreement handling.
 - Synthetic presence flags governed by hidden members must preserve stored values.
 - No unsupported non-root shape may silently fall through; those cases remain fenced.
 

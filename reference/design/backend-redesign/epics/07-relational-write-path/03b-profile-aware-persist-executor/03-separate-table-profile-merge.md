@@ -95,7 +95,7 @@ The slice fence remains in place for any profiled write involving:
 - Root-level separate-table `_ext` rows and hidden extension columns are preserved under the same rules as base separate-table data.
 - Existing visible scope update remains allowed even when creating a brand-new visible scope at the same logical profile shape would be rejected.
 - Runtime decisions consume `StoredScopeStates` and `RequestScopeStates`; they do not infer hidden-vs-absent from `VisibleStoredBody` or buffer presence alone.
-- Matched separate-table updates preserve hidden-governed values through the inherited Slice 2 binding-accounting model for affected non-storage-managed bindings.
+- Matched separate-table updates preserve hidden-governed values through the inherited Slice 2 binding-accounting model for affected non-storage-managed bindings, including hidden FK/descriptor bindings, canonical key-unification storage, and synthetic presence flags when those bindings are driven by hidden members.
 
 ## Tests Required
 
@@ -104,6 +104,8 @@ The slice fence remains in place for any profiled write involving:
 - Separate-table visible-present insert when stored scope absent and `Creatable=true`
 - Separate-table create rejection when stored scope absent and `Creatable=false`
 - Separate-table matched update preserves hidden-governed values
+- Separate-table matched update preserves hidden FK/descriptor bindings driven by hidden members
+- Separate-table matched update preserves canonical key-unification storage and synthetic presence values in mixed hidden/visible cases
 - Separate-table visible-absent delete
 - Hidden separate-table scope preservation
 - Root-level separate-table extension row preservation
@@ -114,6 +116,7 @@ The slice fence remains in place for any profiled write involving:
 - `ProfileHiddenExtensionRowPreservation`
 - Existing-visible-update / create-denied non-collection pair
 - One root-level separate-table extension update case with hidden-member preservation
+- One separate-table hidden-binding preservation case covering FK/descriptor or key-unification/synthetic-presence behavior outside the root row
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus

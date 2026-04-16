@@ -84,6 +84,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested and extension-child `VisibleStoredCollectionRows` remain covered one-for-one by real current DB rows within the correct ancestor context before DML.
 - Nested and extension-child visible request candidates remain covered one-for-one by `VisibleRequestCollectionItems` within the correct ancestor context before DML.
 - Unmatched nested and extension-child visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
+- Matched nested and extension-child rows preserve hidden FK/descriptor bindings, canonical key-unification storage, and synthetic presence values when those bindings are driven by hidden members.
 - Nested second-pass handling does not delete scopes incorrectly under collection ancestry.
 - Ordinal recomputation for supported nested and extension-child shapes is deterministic and consistent with the profile-scoped sibling-order rule.
 
@@ -98,6 +99,8 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested or extension-child orphan or mismatched `VisibleRequestCollectionItem` rejection
 - Hidden descendant preservation under matched parent update
 - Hidden descendant preservation under hidden parent preservation
+- Nested matched update preserves hidden FK/descriptor bindings driven by hidden members
+- Nested or extension-child matched update preserves canonical key-unification storage and synthetic presence values in mixed hidden/visible cases
 - Nested non-creatable insert rejection with matched visible nested row update allowed
 - Extension-child non-creatable insert rejection with existing visible parent update allowed
 - Nested second-pass delete protection
@@ -114,6 +117,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
 - Three-level update-allowed/create-denied chain variant
 - One nested delete-all-visible-while-hidden-rows-remain variant
+- One nested or extension-child hidden-binding preservation case covering FK/descriptor or key-unification/synthetic-presence behavior
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus

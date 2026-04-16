@@ -22,7 +22,7 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 - Dialect-sensitive batching, parameterization, and locking checks where behavior could diverge
 - Remaining reverse-coverage or contract-hardening work required for safe merge
 - Explicit follow-up extraction for unresolved but non-blocking risks
-- Explicit handoff to `DMS-1132` for presence-sensitive semantic identity fidelity unless that work is intentionally absorbed here
+- Explicit handoff to `DMS-1132` / `../07-semantic-identity-presence-fidelity.md` for presence-sensitive semantic identity fidelity unless that work is intentionally absorbed here
 
 ## Explicitly Out Of Scope
 
@@ -46,7 +46,7 @@ Earlier slices still own parity expectations for any SQL-sensitive behavior they
 - The supported profiled runtime baseline passes on both PostgreSQL and SQL Server.
 - Dialect-sensitive batching/locking/parameterization behavior has explicit coverage or explicit review rationale.
 - Remaining unresolved correctness assumptions are documented as explicit follow-ups, not hidden in comments or oral history.
-- `DMS-1132` remains the named follow-on for presence-sensitive semantic identity fidelity unless the implementation truly closes that gap here.
+- `DMS-1132` / `../07-semantic-identity-presence-fidelity.md` remains the named follow-on for presence-sensitive semantic identity fidelity unless the implementation truly closes that gap here.
 
 ## Tests Required
 

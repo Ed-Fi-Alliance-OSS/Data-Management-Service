@@ -89,6 +89,7 @@ The slice fence remains in place for any profiled write involving:
 - Unmatched visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
 - Hidden top-level collection rows are preserved.
 - Top-level visible request candidates and `VisibleRequestCollectionItems` are validated one-for-one before DML.
+- Matched top-level collection rows preserve hidden FK/descriptor bindings, canonical key-unification storage, and synthetic presence values when those bindings are driven by hidden members.
 - Top-level ordinal recomputation preserves hidden-row gaps and renumbers contiguously after merge.
 
 ## Tests Required
@@ -101,6 +102,8 @@ The slice fence remains in place for any profiled write involving:
 - Request-side orphan or mismatched `VisibleRequestCollectionItem` rejection
 - Reverse stored-row coverage rejection
 - Hidden row preservation during top-level update
+- Top-level matched update preserves hidden FK/descriptor bindings driven by hidden members
+- Top-level matched update preserves canonical key-unification storage and synthetic presence values in mixed hidden/visible cases
 - Top-level non-creatable insert rejection with matched visible row update still allowed
 - Delete-all-visible while hidden rows remain
 - No-previously-visible top-level insert case
@@ -114,6 +117,7 @@ The slice fence remains in place for any profiled write involving:
 - Top-level update-allowed/create-denied pair
 - Delete-all-visible-while-hidden-rows-remain case
 - No-previously-visible top-level variant
+- One top-level collection hidden-binding preservation case covering FK/descriptor or key-unification/synthetic-presence behavior
 - PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus

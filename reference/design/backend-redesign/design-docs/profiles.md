@@ -760,6 +760,7 @@ backend MUST assign exactly one of the following outcomes:
 - **Visible and writable**
   - the binding is driven by the visible request surface for that scope instance and is written from request/resolved/precomputed values.
   - this includes canonical key-unification storage bindings when at least one visible member path in the corresponding unification class is being written.
+  - this binding-accounting summary does not relax the normative key-unification algorithm in `key-unification.md`: canonical source selection still evaluates the full `KeyUnificationWritePlan.MembersInOrder`, and disagreement between present member values still fails closed rather than silently preferring a visible value over a preserved hidden one.
 
 - **Hidden and preserved**
   - the binding is governed only by hidden member paths for that scope instance, so backend copies the current stored value unchanged.
