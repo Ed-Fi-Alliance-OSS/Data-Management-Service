@@ -17,12 +17,13 @@ env:
 
 jobs:
   build-and-test:
-    name: Build and Run Tests
+    name: Build and Run Tests (${{ matrix.identityprovider }})
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
     strategy:
+      fail-fast: false
       matrix:
         identityprovider: [keycloak, self-contained]
     steps:
@@ -83,9 +84,96 @@ jobs:
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
 
-      - name: Run End to End Tests - IdentityProvider (${{matrix.identityprovider}})
+      - name: Run legacy End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
+        id: legacy_e2e
         if: success()
-        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
+        continue-on-error: true
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend'
+
+      - name: Export Legacy Docker Logs
+        if: always() && steps.legacy_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/legacy"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+
+      - name: Upload Legacy Logs
+        if: always() && steps.legacy_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-logs-${{ matrix.identityprovider }}-legacy
+          path: |
+            ${{ github.workspace }}/logs/legacy
+          retention-days: 10
+
+      - name: Upload Legacy End to End Test Results
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-e2e-results-${{ matrix.identityprovider }}-legacy
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.legacy.trx
+          if-no-files-found: ignore
+
+      - name: Run relational End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
+        id: relational_e2e
+        if: success()
+        continue-on-error: true
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'
+
+      - name: Export Relational Docker Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/relational"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+
+      - name: Upload Relational Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-logs-${{ matrix.identityprovider }}-relational
+          path: |
+            ${{ github.workspace }}/logs/relational
+          retention-days: 10
+
+      - name: Upload Relational End to End Test Results
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-e2e-results-${{ matrix.identityprovider }}-relational
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+          if-no-files-found: ignore
+
+      - name: Fail if an E2E lane failed
+        if: always() && (steps.legacy_e2e.outcome == 'failure' || steps.relational_e2e.outcome == 'failure')
+        run: |
+          Write-Host "Legacy lane outcome: ${{ steps.legacy_e2e.outcome }}"
+          Write-Host "Relational lane outcome: ${{ steps.relational_e2e.outcome }}"
+          throw "One or more E2E lanes failed."
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs

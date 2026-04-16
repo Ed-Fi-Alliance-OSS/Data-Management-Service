@@ -56,7 +56,7 @@ public static class ProfileAwareAuthorizationProvider
         string namespacePrefixes,
         string edOrgIds,
         string systemAdministratorToken,
-        string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet",
+        string claimSetName = AuthorizationClaimSetNames.NoFurtherAuthRequired,
         params string[] profileNames
     )
     {
@@ -228,7 +228,7 @@ public static class ProfileAwareAuthorizationProvider
         {
             instanceType = "Test",
             instanceName = $"E2E Profile Test DMS Instance {Guid.NewGuid():N}",
-            connectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+            connectionString = DmsInstanceConnectionStringProvider.Create(),
         };
 
         using StringContent content = new(

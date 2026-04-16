@@ -1,0 +1,91 @@
+2026-04-14
+Task completed: E2E Test Settings. Story: CANARY-RELATIONAL-E2E.md phase 1 shared settings surface.
+Decisions: load `appsettings.json` + env vars in test harness; support both `AppSettings__*` and top-level keys; default relational mode false and DB `edfi_datamanagementservice`; added focused unit tests instead of stack-dependent E2E coverage.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Given_App_Settings.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj`.
+Notes next iteration: auth routing and harness cleanup should consume `AppSettings.UseRelationalBackend` and `AppSettings.DmsInstanceDatabaseName`; repo root loop prompt referenced `CANARY-RELATIONAL-E2E.md.md`, actual file is `CANARY-RELATIONAL-E2E.md`.
+
+Task completed: Authorization Routing. Story: CANARY-RELATIONAL-E2E.md phase 1 auth helpers target shared DMS instance DB setting.
+Decisions: added shared auth-harness connection-string provider; both auth helpers now consume `AppSettings.DmsInstanceDatabaseName`; kept legacy DB default path unchanged; added focused unit tests instead of stack-dependent coverage.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/ProfileAwareAuthorizationProvider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/DmsInstanceConnectionStringProvider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/Given_Dms_Instance_Connection_String_Provider.cs`.
+Notes next iteration: claim-set default mismatch and relational cleanup gating remain open in auth/management harness; full relational E2E verify still blocked on environment/provision/build automation tasks.
+
+Task completed: Harness Cleanup. Story: CANARY-RELATIONAL-E2E.md phase 1 relational lane skips legacy table-delete cleanup.
+Decisions: gated `SearchContainerSetup.ResetData()` on `AppSettings.UseRelationalBackend`; kept `ContainerSetupBase.ResetDatabase()` unchanged for legacy runs; injected delegates into `SearchContainerSetup` so focused unit tests cover both branches without Docker/Postgres.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/SearchContainerSetup.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/Given_Search_Container_Setup.cs`.
+Notes next iteration: claim-set default mismatch and canary tagging remain open in test harness; full relational path still blocked on environment/provision/build automation tasks.
+
+Task completed: Authorization Claim Sets. Story: CANARY-RELATIONAL-E2E.md phase 1 auth helper default alignment.
+Decisions: added shared auth claim-set constants; generic helper default now `SISVendor`; kept profile-aware default on `E2E-NoFurtherAuthRequiredClaimSet`; added focused reflection/payload tests instead of CMS stack coverage.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationClaimSetNames.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/ProfileAwareAuthorizationProvider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/Given_Authorization_Data_Provider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/Given_Profile_Aware_Authorization_Provider.cs`.
+Notes next iteration: canary tagging is the remaining test-only task; env/provision/build/workflow items still block full relational lane validation.
+
+Task completed: Canary Tagging. Story: CANARY-RELATIONAL-E2E.md phase 1 single-scenario relational lane.
+Decisions: tagged only `Scenario: 01 Put an existing document (Resource)` with `@relational-backend`; left every other feature/scenario untagged; `dotnet test --list-tests` on current VSTest path ignores filters even for impossible expressions, so isolation verified via feature grep, successful build, and compiled assembly strings containing the new tag.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/UpdateResourcesValidation.feature`.
+Notes next iteration: remaining work is env/provision/build/workflow automation; if CI/local verification depends on filtered listing, investigate VSTest/adapter behavior because `--list-tests` is not honoring `--filter` in this project.
+
+Task completed: E2E Environment. Story: CANARY-RELATIONAL-E2E.md phase 1 separate relational lane bootstrap.
+Decisions: added compose pass-through for `AppSettings__UseRelationalBackend`; created dedicated `.env.e2e.relational` that keeps bootstrap DB connection strings on `edfi_datamanagementservice` while adding `RELATIONAL_E2E_DATABASE_NAME`; parameterized E2E setup wrapper with default `./.env.e2e`.
+Files changed: `tasks.json`, `progress.txt`, `eng/docker-compose/local-dms.yml`, `eng/docker-compose/.env.e2e.relational`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`.
+Notes next iteration: host-side relational provision/reset helper is next prerequisite; verified wrapper run with `-EnvironmentFile './.env.e2e.relational'`, live container env values, and Release build for E2E test project.
+
+Task completed: Provisioning. Story: CANARY-RELATIONAL-E2E.md phase 1 relational reset/provision helper.
+Decisions: added `eng/docker-compose/provision-relational-e2e-database.ps1`; parse multiline `SCHEMA_PACKAGES` with same quoted-json rule as preflight; drop only `RELATIONAL_E2E_DATABASE_NAME` via `dropdb`, then provision through `SchemaTools ddl provision --create-database`; build host pgsql connection string from mapped port/password so legacy bootstrap DB stays untouched.
+Files changed: `tasks.json`, `progress.txt`, `eng/docker-compose/provision-relational-e2e-database.ps1`.
+Notes next iteration: build automation should call new helper before relational canary runs; verified live relational stack + helper twice, relational `dms` tables present, seed counts `EffectiveSchema=1`, `SchemaComponent=4`, `ResourceKey=398`, bootstrap DB still present.
+
+Task completed: Build Automation. Story: CANARY-RELATIONAL-E2E.md phase 1 standard E2E entry point split by lane.
+Decisions: added `-TestFilter` to `build-dms.ps1`; resolve env files once and derive relational test-process overrides from env values; clear/restore `NODE_OPTIONS` plus AppSettings env overrides around E2E runs; normalize `Category=@tag` to VSTest `Category=tag`; call relational provision helper before relational runs; suffix trx names with `.legacy`/`.relational`; patched claimset hook to lazily initialize Playwright API context so startup-health/cache clear no longer NREs.
+Files changed: `tasks.json`, `progress.txt`, `build-dms.ps1`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Hooks/ClaimSetManagementHooks.cs`.
+Notes next iteration: relational command `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` passed and wrote `TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx`; sequential legacy rerun after relational showed container env back on `AppSettings__UseRelationalBackend=false` and DB `edfi_datamanagementservice`; remaining work is GitHub Actions split + final full-lane validation.
+
+Task completed: GitHub Actions. Story: CANARY-RELATIONAL-E2E.md phase 1 CI lane split.
+Decisions: split PR and scheduled DMS E2E workflows into `legacy`/`relational` matrix lanes per identityprovider; pass `./.env.e2e` + `Category!=@relational-backend` vs `./.env.e2e.relational` + `Category=@relational-backend`; disable matrix fail-fast; make log/test-result names lane-specific so `.trx` artifacts do not collide.
+Files changed: `tasks.json`, `progress.txt`, `.github/workflows/on-dms-pullrequest.yml`, `.github/workflows/scheduled-build.yml`, `.github/workflows/scheduled-pre-image-test.yml`.
+Notes next iteration: verified YAML parse plus workflow grep; local `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend' -IdentityProvider self-contained` passed `735/0/31` in `26m 38s` to `TestResults/EdFi.DataManagementService.Tests.E2E.legacy.trx`; local relational command passed `1/0/0` to `TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx`; `-UsePublishedImage` lane not exercised locally in this iteration; only End-to-End Validation remains.
+
+Task completed: End-to-End Validation. Story: CANARY-RELATIONAL-E2E.md phase 1 final lane verification.
+Decisions: validated only through standard `build-dms.ps1 E2ETest` entry point; ran legacy -> relational -> legacy in one iteration; used live container env inspect after relational run to prove legacy rerun restored `AppSettings__UseRelationalBackend=false` and bootstrap DB `edfi_datamanagementservice`.
+Files changed: `tasks.json`, `progress.txt`.
+Notes next iteration: legacy run passed `735/0/31` in `26m 40s`; relational canary passed `1/0/0` in `2s` after host-side provision; follow-up legacy rerun passed `735/0/31` in `26m 38s`; distinct results at `TestResults/EdFi.DataManagementService.Tests.E2E.legacy.trx` and `TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx`; no blockers.
+
+Task completed: E2E Test Settings. Story: CANARY-RELATIONAL-E2E.md AppSettings dead reload cleanup.
+Decisions: removed unused static `Reload()`; made cached settings immutable with `readonly`; set `reloadOnChange: false` because harness snapshots settings once; added focused top-level-key test to keep relational override contract covered.
+Files changed: `tasks.json`, `progress.txt`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Given_App_Settings.cs`.
+Notes next iteration: focused checks passed `dotnet build ... -c Release` and `dotnet test --no-restore --filter "FullyQualifiedName~Given_App_Settings"` with `3/0/0`; remaining open tasks are docs/env/provisioning cleanup outside this test-code-only loop.
+
+2026-04-15
+Task completed: Verification Guidance. Story: CANARY-RELATIONAL-E2E.md phase 1 tracked verification instructions align with working harness behavior.
+Decisions: replaced stale raw `dotnet test --filter ... --list-tests` guidance with the proven `build-dms.ps1 E2ETest` legacy/relational commands; left older `progress.txt` notes that explicitly document `--list-tests` as unsupported in this project; did not touch implementation code for this tracking-only cleanup.
+Files changed: `CANARY-RELATIONAL-E2E.md`, `tasks.json`, `progress.txt`.
+Notes next iteration: remaining open tasks are non-test cleanup outside this loop: provisioning helper dedupe and `.env.e2e.relational` DRY-up.
+
+Task completed: Provisioning Refactor. Story: CANARY-RELATIONAL-E2E.md shared schema-package helper dedupe.
+Decisions: extracted quoted `SCHEMA_PACKAGES` parsing + download/new-file resolution into `eng/schema-package-utility.psm1`; reused helper from preflight and relational provision scripts; fixed helper to capture/replay downloader stdout so only schema paths flow into callers.
+Files changed: `tasks.json`, `progress.txt`, `eng/schema-package-utility.psm1`, `eng/preflight-dms-schema-compile.ps1`, `eng/docker-compose/provision-relational-e2e-database.ps1`.
+Notes next iteration: verification passed `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`, `dotnet test --no-build -c Release --filter "FullyQualifiedName~Given_App_Settings"` `3/0/0`, `pwsh ./eng/preflight-dms-schema-compile.ps1 -EnvironmentFile './eng/docker-compose/.env.e2e' -Configuration Release`, and `pwsh ./eng/docker-compose/provision-relational-e2e-database.ps1 -EnvironmentFile './.env.e2e.relational' -Configuration Release`; only `.env.e2e.relational` DRY-up remains open.
+
+Task completed: E2E Environment. Story: CANARY-RELATIONAL-E2E.md relational env bootstrap DB DRY-up.
+Decisions: replaced repeated bootstrap DB literals in `.env.e2e.relational` connection strings with `${POSTGRES_DB_NAME}`; kept bootstrap DB pinned to `edfi_datamanagementservice`; left relational-only isolation on `RELATIONAL_E2E_DATABASE_NAME`.
+Files changed: `eng/docker-compose/.env.e2e.relational`, `tasks.json`, `progress.txt`.
+Notes next iteration: all tracked tasks now complete; verify with relational env diff/grep and stack startup to confirm runtime connection string still resolves bootstrap DB through `POSTGRES_DB_NAME`.
+
+Task completed: E2E Environment. Story: CANARY-RELATIONAL-E2E.md published-image relational flag propagation.
+Decisions: added `AppSettings__UseRelationalBackend` pass-through to `eng/docker-compose/published-dms.yml` to match local stack wiring; no workflow changes needed because scheduled pre-image lane split was already correct; verified both live published-image lanes so relational sets `true` and legacy stays `false` without changing bootstrap DB target.
+Files changed: `eng/docker-compose/published-dms.yml`, `tasks.json`, `progress.txt`.
+Notes next iteration: relational published-image canary passed `1/0/0` with `pwsh ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`; remaining open task is workflow log export for exited containers.
+
+Task completed: GitHub Actions. Story: CANARY-RELATIONAL-E2E.md workflow failure-log export.
+Decisions: switched DMS E2E failure log export in PR + scheduled workflows from `docker ps` to `docker ps -a`; capture `docker logs` stderr into per-container files so exited startup/provision containers are not dropped; kept lane-specific artifact names unchanged.
+Files changed: `.github/workflows/on-dms-pullrequest.yml`, `.github/workflows/scheduled-build.yml`, `.github/workflows/scheduled-pre-image-test.yml`, `tasks.json`, `progress.txt`.
+Notes next iteration: verified workflow grep, local exited-container simulation, `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`, and `dotnet test ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj --no-build -c Release --filter "FullyQualifiedName~Given_App_Settings"` `3/0/0`; all tracked tasks complete.
+
+Task completed: Fast Regression Tests. Story: CANARY-RELATIONAL-E2E.md phase 1 standalone relational-lane regression project.
+Decisions: created non-Reqnroll `EdFi.DataManagementService.Tests.Unit`; referenced E2E harness assembly + exposed needed internals via `InternalsVisibleTo`; moved AppSettings/search-container-setup/DMS-instance/default-claim-set regression tests out of Reqnroll-backed E2E assembly; excluded `EdFi.DataManagementService.Tests.E2E` from `build-dms.ps1 UnitTest` coverage merge so unit totals stay meaningful.
+Files changed: `build-dms.ps1`, `src/dms/EdFi.DataManagementService.sln`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/EdFi.DataManagementService.Tests.Unit.csproj`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Given_App_Settings.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Authorization/Given_Authorization_Data_Provider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Authorization/Given_Dms_Instance_Connection_String_Provider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Authorization/Given_Profile_Aware_Authorization_Provider.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Management/Given_Search_Container_Setup.cs`, `src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj`, `tasks.json`, `progress.txt`.
+Notes next iteration: Docker daemon unavailable during isolated fast-test verify; `dotnet test ./src/dms/tests/EdFi.DataManagementService.Tests.Unit/EdFi.DataManagementService.Tests.Unit.csproj -c Release --no-build` passed `10/0/0`; filtered E2E command reports no matching `Given_*` tests; `pwsh ./build-dms.ps1 UnitTest -Configuration Release` passed and picked up `EdFi.DataManagementService.Tests.Unit.dll`; remaining tracked tasks are Harness Guardrails and provisioning `POSTGRES_USER` cleanup.
+
+Task completed: Provisioning. Story: CANARY-RELATIONAL-E2E.md POSTGRES_USER cleanup in relational provision helper.
+Decisions: threaded resolved `POSTGRES_USER` into readiness + reset helper params; kept `postgres` only as env fallback; added fast script regression test that fails on hardcoded `-U postgres`; verified against standard relational stack and disposable `POSTGRES_USER=codexadmin` container.
+Files changed: `eng/docker-compose/provision-relational-e2e-database.ps1`, `src/dms/tests/EdFi.DataManagementService.Tests.Unit/Given_Relational_Provisioning_Helper.cs`, `tasks.json`, `progress.txt`.
+Notes next iteration: all tracked tasks complete; verification passed targeted provisioning helper grep, unit tests `11/0/0`, live standard-env provision, default stack metadata counts `1/4/398`, and disposable custom-user provision + `ResourceKey=398`.

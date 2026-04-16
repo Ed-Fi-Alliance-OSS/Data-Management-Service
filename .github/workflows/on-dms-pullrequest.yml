@@ -500,9 +500,10 @@ jobs:
         run: docker rm -f dms-ci-mssql
 
   run-e2e-tests:
-    name: Run ${{matrix.queryhandler}} E2E Tests (IdentityProvider ${{matrix.identityprovider}})
+    name: Run ${{ matrix.queryhandler }} E2E Tests (IdentityProvider ${{ matrix.identityprovider }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         identityprovider: [keycloak, self-contained]
         queryhandler: [postgresql]
@@ -571,45 +572,110 @@ jobs:
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
 
-      - name: Run ${{matrix.queryhandler}} - IdentityProvider (${{matrix.identityprovider}}) E2E Tests
+      - name: Run ${{ matrix.queryhandler }} legacy - IdentityProvider (${{ matrix.identityprovider }}) E2E Tests
+        id: legacy_e2e
         if: success()
+        continue-on-error: true
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend'
 
-      - name: Export Docker Logs
-        if: failure()
+      - name: Export Legacy Docker Logs
+        if: always() && steps.legacy_e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs"
+          $logDir = "${{ github.workspace }}/logs/legacy"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
-          docker ps --format "{{.Names}}" | ForEach-Object {
-              $container = $_
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
               $logPath = Join-Path $logDir "$container.log"
-              docker logs $container > $logPath
+              docker logs $container > $logPath 2>&1
           }
         shell: pwsh
 
-      - name: Upload Logs
-        if: failure()
+      - name: Upload Legacy Logs
+        if: always() && steps.legacy_e2e.outcome == 'failure'
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: ${{matrix.queryhandler}}-test-logs
+          name: ${{ matrix.queryhandler }}-${{ matrix.identityprovider }}-legacy-test-logs
           path: |
-            ${{ github.workspace }}/logs
+            ${{ github.workspace }}/logs/legacy
           retention-days: 10
 
-      - name: Upload Test Results
+      - name: Upload Legacy Test Results
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
-        if: (success() || failure())
+        if: always() && hashFiles('TestResults/EdFi.DataManagementService.Tests.E2E.legacy.trx') != ''
         with:
-          name: E2E Test Results
-          path: "**/*.trx"
+          name: E2E Test Results (${{ matrix.identityprovider }}, legacy)
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.legacy.trx
           path-replace-backslashes: "true"
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
+
+      - name: Run ${{ matrix.queryhandler }} relational - IdentityProvider (${{ matrix.identityprovider }}) E2E Tests
+        id: relational_e2e
+        if: success()
+        continue-on-error: true
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
+        run: |
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'
+
+      - name: Export Relational Docker Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/relational"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+        shell: pwsh
+
+      - name: Upload Relational Logs
+        if: always() && steps.relational_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: ${{ matrix.queryhandler }}-${{ matrix.identityprovider }}-relational-test-logs
+          path: |
+            ${{ github.workspace }}/logs/relational
+          retention-days: 10
+
+      - name: Upload Relational Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: always() && hashFiles('TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx') != ''
+        with:
+          name: E2E Test Results (${{ matrix.identityprovider }}, relational)
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.relational.trx
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Fail if an E2E lane failed
+        if: always() && (steps.legacy_e2e.outcome == 'failure' || steps.relational_e2e.outcome == 'failure')
+        run: |
+          Write-Host "Legacy lane outcome: ${{ steps.legacy_e2e.outcome }}"
+          Write-Host "Relational lane outcome: ${{ steps.relational_e2e.outcome }}"
+          throw "One or more E2E lanes failed."
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Route Qualifiers)

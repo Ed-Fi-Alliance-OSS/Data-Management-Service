@@ -5,8 +5,13 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-public class SearchContainerSetup : ContainerSetupBase
+public class SearchContainerSetup(Func<bool>? useRelationalBackend = null, Func<Task>? resetDatabase = null)
+    : ContainerSetupBase
 {
+    private readonly Func<bool> _useRelationalBackend =
+        useRelationalBackend ?? (() => AppSettings.UseRelationalBackend);
+    private readonly Func<Task> _resetDatabase = resetDatabase ?? ResetDatabase;
+
     public override string ApiUrl()
     {
         return $"http://localhost:{AppSettings.DmsPort}/";
@@ -14,6 +19,11 @@ public class SearchContainerSetup : ContainerSetupBase
 
     public override async Task ResetData()
     {
-        await ResetDatabase();
+        if (_useRelationalBackend())
+        {
+            return;
+        }
+
+        await _resetDatabase();
     }
 }

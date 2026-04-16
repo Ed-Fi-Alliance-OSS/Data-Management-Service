@@ -5,20 +5,64 @@
 
 using Microsoft.Extensions.Configuration;
 
-namespace EdFi.DataManagementService.Tests.E2E
-{
-    public static class AppSettings
-    {
-        private static readonly IConfiguration _configuration =
-            new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .Build()
-            ?? throw new InvalidOperationException("Unable to read appsettings.json");
+namespace EdFi.DataManagementService.Tests.E2E;
 
-        public static string DmsPort = "8080"; //5198 for local
-        public static string ConfigServicePort = "8081"; //5126 for local
-        public static string AuthenticationService =
-            _configuration["AuthenticationService"]
-            ?? "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token";
+public static class AppSettings
+{
+    public const string LegacyDmsInstanceDatabaseName = "edfi_datamanagementservice";
+
+    private const string DefaultDmsPort = "8080";
+    private const string DefaultConfigServicePort = "8081";
+    private const string DefaultAuthenticationService =
+        "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token";
+
+    private static readonly AppSettingsValues _settings = LoadFromDefaultSources();
+
+    public static string DmsPort => _settings.DmsPort;
+    public static string ConfigServicePort => _settings.ConfigServicePort;
+    public static string AuthenticationService => _settings.AuthenticationService;
+    public static bool UseRelationalBackend => _settings.UseRelationalBackend;
+    public static string DmsInstanceDatabaseName => _settings.DmsInstanceDatabaseName;
+
+    internal static AppSettingsValues Create(IConfiguration configuration)
+    {
+        return new AppSettingsValues(
+            GetString(configuration, nameof(DmsPort), DefaultDmsPort),
+            GetString(configuration, nameof(ConfigServicePort), DefaultConfigServicePort),
+            GetString(configuration, nameof(AuthenticationService), DefaultAuthenticationService),
+            GetBoolean(configuration, nameof(UseRelationalBackend), defaultValue: false),
+            GetString(configuration, nameof(DmsInstanceDatabaseName), LegacyDmsInstanceDatabaseName)
+        );
+    }
+
+    private static AppSettingsValues LoadFromDefaultSources()
+    {
+        return Create(
+            new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .AddEnvironmentVariables()
+                .Build()
+        );
+    }
+
+    private static string GetString(IConfiguration configuration, string key, string defaultValue)
+    {
+        string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
+        return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
+    }
+
+    private static bool GetBoolean(IConfiguration configuration, string key, bool defaultValue)
+    {
+        string? value = configuration[$"AppSettings:{key}"] ?? configuration[key];
+        return bool.TryParse(value, out bool parsedValue) ? parsedValue : defaultValue;
     }
 }
+
+internal sealed record AppSettingsValues(
+    string DmsPort,
+    string ConfigServicePort,
+    string AuthenticationService,
+    bool UseRelationalBackend,
+    string DmsInstanceDatabaseName
+);

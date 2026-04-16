@@ -1,0 +1,207 @@
+[
+  {
+    "category": "E2E Environment",
+    "description": "Add a separate relational E2E environment lane without repurposing the legacy bootstrap database. Acceptance: `eng/docker-compose/local-dms.yml` passes `AppSettings__UseRelationalBackend` from a `USE_RELATIONAL_BACKEND` environment variable; `eng/docker-compose/.env.e2e.relational` exists with `USE_RELATIONAL_BACKEND=true` and `RELATIONAL_E2E_DATABASE_NAME=edfi_datamanagementservice_relational`; `POSTGRES_DB_NAME`, `DATABASE_CONNECTION_STRING`, `DATABASE_CONNECTION_STRING_ADMIN`, and `DMS_CONFIG_DATABASE_CONNECTION_STRING` remain pointed at `edfi_datamanagementservice`; `NEED_DATABASE_SETUP=true` and `DMS_DEPLOY_DATABASE_ON_STARTUP=false` remain in the relational lane; `src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1` accepts an environment-file argument and still defaults to `./.env.e2e` for legacy runs.",
+    "steps-to-verify": [
+      "Run: `pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile './.env.e2e.relational'`",
+      "Run: `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'AppSettings__UseRelationalBackend=true'`",
+      "Run: `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'ConnectionStrings__DatabaseConnection=.*database=edfi_datamanagementservice;'`",
+      "Run: `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'NEED_DATABASE_SETUP=true'`",
+      "Run: `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'AppSettings__DeployDatabaseOnStartup=false'`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "E2E Test Settings",
+    "description": "Add one shared E2E test-process configuration surface for relational-lane detection and CMS-created DMS-instance targeting. Acceptance: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs` loads environment variables in addition to `appsettings.json`; it exposes `UseRelationalBackend` and `DmsInstanceDatabaseName` or equivalent with legacy defaults of `false` and `edfi_datamanagementservice`; the relational lane can override those values without editing tracked JSON; later auth, cleanup, and build-automation changes consume this shared setting surface instead of introducing separate hardcoded lane-detection logic.",
+    "steps-to-verify": [
+      "Run: `rg -n 'AddEnvironmentVariables|UseRelationalBackend|DmsInstanceDatabaseName' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Run: `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`",
+      "Run: `rg -n 'UseRelationalBackend|DmsInstanceDatabaseName' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management ./build-dms.ps1` and confirm downstream code consumes the shared setting surface rather than new hardcoded values."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Provisioning",
+    "description": "Add a host-side relational reset/provision helper for the canary lane. Acceptance: a new script under `eng/docker-compose/` drops and recreates only `RELATIONAL_E2E_DATABASE_NAME`, resolves schema files from `SCHEMA_PACKAGES` using the same package-resolution rules as `eng/preflight-dms-schema-compile.ps1`, runs `EdFi.DataManagementService.SchemaTools ddl provision --create-database`, seeds relational metadata in `dms.\"EffectiveSchema\"`, `dms.\"SchemaComponent\"`, and `dms.\"ResourceKey\"`, and never mutates `POSTGRES_DB_NAME` or the legacy bootstrap database.",
+    "steps-to-verify": [
+      "Start the relational stack, then run the new helper with `-EnvironmentFile './.env.e2e.relational'`.",
+      "Run `psql` inside `dms-postgresql` using the admin username resolved from `./eng/docker-compose/.env.e2e.relational` against `edfi_datamanagementservice_relational`, and confirm the `dms.*` tables exist.",
+      "Run `psql` the same way and confirm `dms.\"EffectiveSchema\"`, `dms.\"SchemaComponent\"`, and `dms.\"ResourceKey\"` each contain at least one row.",
+      "Run the helper a second time and confirm it succeeds again without touching `edfi_datamanagementservice`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authorization Routing",
+    "description": "Parameterize E2E-created CMS DMS instances so auth helpers can target the relational canary database. Acceptance: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs` and `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/ProfileAwareAuthorizationProvider.cs` both build instance connection strings from the shared E2E database-name setting introduced above; the default target remains `edfi_datamanagementservice`; the relational lane points created DMS instances at `RELATIONAL_E2E_DATABASE_NAME`; duplicated hardcoded connection-string database names are removed from both providers.",
+    "steps-to-verify": [
+      "Run: `rg -n 'DmsInstanceDatabaseName|edfi_datamanagementservice' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization` and confirm the database name is defined in one shared place rather than hardcoded in both providers.",
+      "Run: `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`",
+      "After the relational stack, shared E2E settings, provision helper, and `build-dms.ps1` automation updates are ready, run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Authorization Claim Sets",
+    "description": "Normalize the generic auth-helper default claim set so it matches the current CMS metadata. Acceptance: the generic helper default no longer uses the mismatched `SIS-Vendor` name and instead aligns with `SISVendor` through a shared constant or configuration value; explicit claim-set parameters still pass through unchanged; the existing `E2E-NoFurtherAuthRequiredClaimSet` path used by the canary scenario remains untouched.",
+    "steps-to-verify": [
+      "Run: `rg -n 'SIS-Vendor|SISVendor' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E` and confirm the helper default is aligned to `SISVendor` while explicit scenario strings are unchanged where intended.",
+      "Run: `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`",
+      "Exercise a caller that omits the `claimSetName` argument when invoking `AuthorizationDataProvider.CreateClientCredentials`, or add/update a targeted automated test for that default path, and confirm CMS application creation succeeds with `SISVendor`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Harness Cleanup",
+    "description": "Isolate relational cleanup from the current legacy table-delete path. Acceptance: the E2E harness detects when the relational lane is active using the shared E2E relational setting introduced above, skips `ContainerSetupBase.ResetDatabase()` for relational runs, and leaves the existing legacy deletes against `dms.Reference`, `dms.Alias`, and `dms.Document` unchanged for non-relational runs.",
+    "steps-to-verify": [
+      "Run: `rg -n 'UseRelationalBackend|ResetDatabase\\(' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management`",
+      "Run: `dotnet build ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release`",
+      "With the relational stack running, execute the relational provision helper, then run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`",
+      "Execute the relational provision helper again and rerun the same filtered command to confirm the canary relies on the dedicated relational reset path rather than legacy table deletes."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Canary Tagging",
+    "description": "Move exactly one scenario to the relational lane by tag. Acceptance: only `Scenario: 01 Put an existing document (Resource)` in `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/UpdateResourcesValidation.feature` gains the `@relational-backend` tag; no other feature or scenario is tagged in phase 1.",
+    "steps-to-verify": [
+      "Run: `rg -n '@relational-backend|Scenario: 01 Put an existing document \\(Resource\\)' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/Resources/UpdateResourcesValidation.feature`",
+      "Run: `rg -n '@relational-backend' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features` and confirm the tag appears only on the intended canary scenario.",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` and confirm only the canary scenario executes."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Build Automation",
+    "description": "Extend `build-dms.ps1` so the standard E2E entry point can run either the legacy or relational lane without custom workflow logic. Acceptance: `E2ETest` accepts a test filter, preserves current behavior when no filter is supplied, honors the existing `-EnvironmentFile` override for both lanes, continues to work for both `-SkipDockerBuild` and `-UsePublishedImage` callers, sets the shared E2E relational-lane and database-name overrides for the test process when a relational environment file is selected, does not leak those overrides into a subsequent legacy run, invokes the relational reset/provision helper before the filtered relational run, and preserves distinct `.trx` output names or directories when both lanes run sequentially.",
+    "steps-to-verify": [
+      "Run: `rg -n 'TestFilter|EnvironmentFile|UsePublishedImage|UseRelationalBackend|DmsInstanceDatabaseName|TestResults|trx' ./build-dms.ps1`",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend' -IdentityProvider self-contained`",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`",
+      "Run the legacy command again in the same shell after the relational command and confirm it still behaves as a legacy run rather than reusing relational overrides.",
+      "When a published-image test image is available, run: `pwsh ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`",
+      "Confirm the legacy command does not run the tagged canary, the relational command provisions `RELATIONAL_E2E_DATABASE_NAME` before executing the filtered test, and sequential legacy/relational invocations leave distinct `.trx` results instead of overwriting one another."
+    ],
+    "completed": true
+  },
+  {
+    "category": "GitHub Actions",
+    "description": "Split every current DMS GitHub Actions workflow that invokes `./build-dms.ps1 E2ETest` into explicit legacy and relational canary behavior so no workflow keeps running the tagged relational scenario against `./.env.e2e`. Acceptance: `.github/workflows/on-dms-pullrequest.yml` runs both `Category!=@relational-backend` with `./.env.e2e` and `Category=@relational-backend` with `./.env.e2e.relational` for each `identityprovider` matrix entry; `.github/workflows/scheduled-build.yml` and `.github/workflows/scheduled-pre-image-test.yml` are updated to use explicit legacy/relational filtering or otherwise avoid running `@relational-backend` against the legacy environment; the relational lane runs the host-side relational reset/provision helper before tests; the pre-image workflow preserves its `-UsePublishedImage` path while splitting the lanes; and the workflows either run the two lanes in separate jobs/matrix entries or otherwise preserve separate logs and test results for both lanes.",
+    "steps-to-verify": [
+      "Run: `rg -n '.env.e2e.relational|Category=@relational-backend|Category!=@relational-backend|UsePublishedImage' ./.github/workflows/on-dms-pullrequest.yml ./.github/workflows/scheduled-build.yml ./.github/workflows/scheduled-pre-image-test.yml`",
+      "Run the same `build-dms.ps1 E2ETest` commands locally that the workflows now use for the legacy and relational lanes.",
+      "Inspect workflow job and upload/report steps to confirm legacy and relational lanes do not overwrite each other's `.trx` files or log artifacts.",
+      "Open a draft PR or use the Actions UI to confirm the PR workflow displays separate legacy and relational E2E executions for each identity provider, and verify no remaining scheduled workflow invocation runs unfiltered `E2ETest` against `./.env.e2e`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "End-to-End Validation",
+    "description": "Validate the finished phase 1 canary flow end to end after the implementation tasks land. Acceptance: the legacy lane still passes locally with `Category!=@relational-backend` against `./.env.e2e`; the relational lane passes locally with `Category=@relational-backend` against `./.env.e2e.relational` after relational reset/provision; both runs use the standard `build-dms.ps1 E2ETest` entry point; running the two lanes sequentially does not leak relational settings into the legacy lane; and distinct test results plus container logs are available to diagnose failures.",
+    "steps-to-verify": [
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend' -IdentityProvider self-contained`",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained`",
+      "Run the legacy command once more after the relational command and confirm it still excludes the canary and uses the legacy database path.",
+      "Confirm the legacy run excludes the canary, the relational run executes only the canary, the follow-up legacy run remains non-relational, and the runs leave distinct `.trx` output. Inspect exported container logs on failure."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Verification Guidance",
+    "description": "Correct the tracked plan and task verification instructions so they match the actual VSTest filtering behavior used by the implementation. Acceptance: `CANARY-RELATIONAL-E2E.md` and `tasks.json` no longer instruct reviewers to rely on raw `dotnet test --filter 'Category=@relational-backend' --list-tests'` verification that this project does not honor reliably; the documented verification path uses either `build-dms.ps1 E2ETest` or a proven direct `dotnet test` filter form that works with this test project; and the plan, tasks, and implementation guidance are internally consistent about how the legacy and relational canary lanes are selected.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Category=@relational-backend|Category!=@relational-backend|--list-tests\" ./CANARY-RELATIONAL-E2E.md ./tasks.json ./progress.txt` and confirm any remaining references are either implementation inputs or explicitly documented as normalized/unsupported for direct verification.",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` and confirm the documented relational verification entry point succeeds.",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend' -IdentityProvider self-contained` and confirm the documented legacy verification entry point succeeds."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Provisioning Refactor",
+    "description": "Remove the duplicated schema-package parsing and download logic shared by `eng/preflight-dms-schema-compile.ps1` and `eng/docker-compose/provision-relational-e2e-database.ps1`. Acceptance: the quoted `SCHEMA_PACKAGES` parsing, schema download, and new-file resolution behavior lives in one shared helper/module or one script-owned implementation that the other script reuses; the relational provision helper and the preflight script still resolve the same schema package set in the same order; and behavior stays unchanged for both preflight compilation and relational canary provisioning.",
+    "steps-to-verify": [
+      "Run: `rg -n \"function Get-QuotedEnvJson|function Get-NewSchemaFiles|function Resolve-SchemaFiles|SCHEMA_PACKAGES\" ./eng/preflight-dms-schema-compile.ps1 ./eng/docker-compose/provision-relational-e2e-database.ps1 ./eng/docker-compose -g '*.ps1'` and confirm the duplicated helper logic has been consolidated.",
+      "Run: `pwsh ./eng/preflight-dms-schema-compile.ps1 -EnvironmentFile './eng/docker-compose/.env.e2e' -Configuration Release` and confirm schema preflight still succeeds.",
+      "With the relational stack running, run: `pwsh ./eng/docker-compose/provision-relational-e2e-database.ps1 -EnvironmentFile './.env.e2e.relational' -Configuration Release` and confirm relational provisioning still succeeds."
+    ],
+    "completed": true
+  },
+  {
+    "category": "E2E Environment",
+    "description": "Simplify `.env.e2e.relational` so the bootstrap database connection strings derive from `POSTGRES_DB_NAME` instead of repeating `edfi_datamanagementservice` inline. Acceptance: `eng/docker-compose/.env.e2e.relational` still keeps the bootstrap database on `edfi_datamanagementservice`; `DATABASE_CONNECTION_STRING`, `DATABASE_CONNECTION_STRING_ADMIN`, and `DMS_CONFIG_DATABASE_CONNECTION_STRING` reference `${POSTGRES_DB_NAME}` or one equivalent shared source rather than hardcoding the same database name three times; and the relational-only database remains isolated behind `RELATIONAL_E2E_DATABASE_NAME`.",
+    "steps-to-verify": [
+      "Run: `diff -u ./eng/docker-compose/.env.e2e ./eng/docker-compose/.env.e2e.relational` and confirm the relational env file still differs only where the relational lane actually needs different values.",
+      "Run: `rg -n \"DATABASE_CONNECTION_STRING=|DATABASE_CONNECTION_STRING_ADMIN=|DMS_CONFIG_DATABASE_CONNECTION_STRING=|POSTGRES_DB_NAME=|RELATIONAL_E2E_DATABASE_NAME=\" ./eng/docker-compose/.env.e2e.relational` and confirm the bootstrap DB name comes from a shared variable rather than repeated literals.",
+      "Run: `pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile './.env.e2e.relational'` and then `docker inspect dms-local-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'ConnectionStrings__DatabaseConnection=.*database=edfi_datamanagementservice;'` to confirm runtime behavior is unchanged."
+    ],
+    "completed": true
+  },
+  {
+    "category": "E2E Test Settings",
+    "description": "Remove or justify dead reload code in the E2E `AppSettings` surface. Acceptance: `src/dms/tests/EdFi.DataManagementService.Tests.E2E/AppSettings.cs` no longer contains an unused `Reload()` path or misleading `reloadOnChange` behavior unless the test harness actually consumes it; if reload behavior is kept, at least one real caller and targeted automated test prove it works; and the static settings surface remains the single source of truth for relational-lane detection and DMS instance database selection.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Reload\\(|reloadOnChange\" ./src/dms/tests/EdFi.DataManagementService.Tests.E2E` and confirm the remaining code matches the intended behavior with no dead reload path.",
+      "Run the AppSettings-focused regression tests in the project that currently owns `Given_App_Settings` and confirm they still pass; once the fast-regression-project task lands, this verification should use that standalone project instead of the Reqnroll-backed E2E assembly.",
+      "Run: `rg -n \"UseRelationalBackend|DmsInstanceDatabaseName\" ./src/dms/tests/EdFi.DataManagementService.Tests.E2E` and confirm the shared settings surface remains intact after the cleanup."
+    ],
+    "completed": true
+  },
+  {
+    "category": "E2E Environment",
+    "description": "Propagate the relational-backend flag through the published-image E2E stack so the `-UsePublishedImage` canary lane actually runs DMS in relational mode. Acceptance: `eng/docker-compose/published-dms.yml` passes `AppSettings__UseRelationalBackend` from `USE_RELATIONAL_BACKEND` just like `eng/docker-compose/local-dms.yml`; `pwsh ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` starts DMS with `AppSettings__UseRelationalBackend=true`; the same published-image entry point with `./.env.e2e` keeps `AppSettings__UseRelationalBackend=false`; and the scheduled pre-image relational lane no longer boots the legacy pipeline by mistake.",
+    "steps-to-verify": [
+      "Run: `rg -n 'AppSettings__UseRelationalBackend|USE_RELATIONAL_BACKEND' ./eng/docker-compose/local-dms.yml ./eng/docker-compose/published-dms.yml` and confirm both compose files now expose the same relational flag wiring.",
+      "Run: `docker compose -f ./eng/docker-compose/published-dms.yml --env-file ./eng/docker-compose/.env.e2e.relational config | rg 'AppSettings__UseRelationalBackend: \"true\"'` and confirm the published-image relational env resolves to `true`.",
+      "Run: `docker compose -f ./eng/docker-compose/published-dms.yml --env-file ./eng/docker-compose/.env.e2e config | rg 'AppSettings__UseRelationalBackend: \"false\"'` and confirm the published-image legacy env resolves to `false`.",
+      "When a published-image test image is available, run: `pwsh ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` and inspect `docker inspect dms-published-dms-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'AppSettings__UseRelationalBackend=true'`.",
+      "Confirm the scheduled pre-image workflow still runs the legacy lane with `./.env.e2e`, runs the relational lane with `./.env.e2e.relational`, and no longer depends on the host default `UseRelationalBackend=false` baked into the image."
+    ],
+    "completed": true
+  },
+  {
+    "category": "GitHub Actions",
+    "description": "Capture logs from exited as well as running containers in DMS E2E workflow failures so startup and provisioning crashes are diagnosable. Acceptance: `.github/workflows/on-dms-pullrequest.yml`, `.github/workflows/scheduled-build.yml`, and `.github/workflows/scheduled-pre-image-test.yml` no longer enumerate logs with `docker ps` alone; the failure-log export includes containers that exited before collection, such as DMS or CMS startup failures; lane-specific log artifact names remain distinct; and a relational startup crash still leaves container logs in the uploaded artifact instead of silently omitting the failed service.",
+    "steps-to-verify": [
+      "Run: `rg -n 'docker ps --format|docker ps -a --format|docker logs' ./.github/workflows/on-dms-pullrequest.yml ./.github/workflows/scheduled-build.yml ./.github/workflows/scheduled-pre-image-test.yml` and confirm each failure-log step includes exited containers, not only running ones.",
+      "Simulate an exited container locally with `docker run --name codex-log-export-check alpine:3.21 sh -c 'echo startup-failed >&2; exit 1'` and confirm the log-collection command pattern used by the workflows still discovers `codex-log-export-check` after it has exited.",
+      "If a DMS E2E lane fails during startup, inspect the uploaded log artifact and confirm it contains logs for stopped containers such as `dms-local-dms-1`, `dms-local-config-1`, or their published-image equivalents.",
+      "Confirm the updated workflow artifact names remain lane- and identity-provider-specific so a failed relational run cannot overwrite the legacy logs."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Harness Guardrails",
+    "description": "Enforce the phase 1 invariant that the relational canary lane runs only the single intended `@relational-backend` scenario while `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/SearchContainerSetup.cs` skips per-feature cleanup for relational runs. Acceptance: the relational E2E entry point validates scenario selection before test execution; a relational run fails fast unless it resolves to exactly one `@relational-backend` scenario and no additional scenarios are selected; a second tagged scenario or a relational run with no filter or an overly broad filter causes a clear, fail-fast error instead of silently sharing `RELATIONAL_E2E_DATABASE_NAME`; the error identifies the offending tagged scenarios or explains that the relational lane selected too many scenarios; and the current single tagged canary still runs with the intended relational filter and no additional manual cleanup changes.",
+    "steps-to-verify": [
+      "Run: `rg -n '@relational-backend' ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features` and confirm the normal branch state still contains only the intended canary tag.",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend' -IdentityProvider self-contained` and confirm only the intended canary scenario executes.",
+      "Run: `pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -EnvironmentFile './.env.e2e.relational' -IdentityProvider self-contained` and confirm the run fails before executing tests with a message that phase 1 relational runs must resolve to exactly the single tagged canary scenario.",
+      "Run the new validation test or temporarily add `@relational-backend` to a second scenario, then rerun the filtered relational command and confirm the run fails before executing tests with a message that identifies the conflicting tagged scenarios or files.",
+      "Restore the single-tagged state and rerun the intended relational canary command to confirm the expected canary still executes."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Fast Regression Tests",
+    "description": "Create a separate non-Reqnroll fast regression test project under `src/dms/tests` for the current unit-style relational-lane regression tests so they are not blocked by `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Hooks/SetupHooks.cs`. Acceptance: `Given_App_Settings`, `Given_Search_Container_Setup`, `Given_Dms_Instance_Connection_String_Provider`, `Given_Authorization_Data_Provider`, `Given_Profile_Aware_Authorization_Provider`, and any similar pure regression tests for lane selection, relational cleanup routing, or default claim-set/configuration behavior move out of the Reqnroll-backed E2E assembly into the standalone project; the new project is added to `src/dms/EdFi.DataManagementService.sln` and is named or wired so the standard `pwsh ./build-dms.ps1 UnitTest` path executes it locally and in CI without bespoke commands; those tests no longer depend on the Reqnroll assembly hooks or `SystemAdministrator.Register`; they pass without CMS or DMS containers running; they still cover `UseRelationalBackend`, `DmsInstanceDatabaseName`, relational-versus-legacy cleanup behavior, and the current default claim-set expectations; and the existing E2E Reqnroll assembly keeps its full startup behavior for scenario tests only.",
+    "steps-to-verify": [
+      "With the local DMS/CMS stack stopped, run the standalone fast regression test project command and confirm the moved AppSettings, search-container-setup, DMS-instance-connection-string, and default-claim-set regression tests pass in isolation.",
+      "Run: `pwsh ./build-dms.ps1 UnitTest -Configuration Release` and confirm the new fast regression test project is built and executed as part of the standard unit-test path used by local development and CI.",
+      "Run: `dotnet test ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release --filter 'FullyQualifiedName~Given_App_Settings|FullyQualifiedName~Given_Search_Container_Setup|FullyQualifiedName~Given_Dms_Instance_Connection_String_Provider|FullyQualifiedName~Given_Authorization_Data_Provider|FullyQualifiedName~Given_Profile_Aware_Authorization_Provider'` and confirm those tests are no longer discovered in the Reqnroll-backed E2E assembly.",
+      "Confirm the isolated fast-test run does not attempt to call `localhost:8081` or invoke `SystemAdministrator.Register`, and that the normal relational canary command still runs through the full E2E harness."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Provisioning",
+    "description": "Make `eng/docker-compose/provision-relational-e2e-database.ps1` use the resolved `POSTGRES_USER` consistently instead of hardcoding `-U postgres` in readiness and reset operations. Acceptance: `Wait-ForPostgresql`, `Reset-RelationalDatabase`, and any direct `psql` or `dropdb` calls use the same resolved admin username value; the script still defaults to `postgres` when `POSTGRES_USER` is unset; and relational provisioning succeeds both with the current default environment file and with a disposable environment that overrides `POSTGRES_USER`.",
+    "steps-to-verify": [
+      "Run: `rg -n '\\-U postgres|POSTGRES_USER|postgresUsername|Wait-ForPostgresql|Reset-RelationalDatabase' ./eng/docker-compose/provision-relational-e2e-database.ps1` and confirm any remaining `postgres` literal is only the default fallback when `POSTGRES_USER` is absent.",
+      "Start the relational stack with the standard environment and run: `pwsh ./eng/docker-compose/provision-relational-e2e-database.ps1 -EnvironmentFile './.env.e2e.relational' -Configuration Release`; confirm readiness, reset, and provision still succeed.",
+      "Start a disposable stack configuration that overrides `POSTGRES_USER`, then run the same provisioning script against that environment file and confirm the readiness check, drop/reset path, and SchemaTools provisioning all succeed without reverting to `-U postgres`."
+    ],
+    "completed": true
+  }
+]
