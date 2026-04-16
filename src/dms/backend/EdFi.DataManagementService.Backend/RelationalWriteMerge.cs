@@ -1195,6 +1195,33 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
 
+        // Step 2b: Reverse coverage — every VisibleStoredCollectionRow must have matched
+        // a current DB row. If Core emits a VisibleStoredCollectionRow for an identity
+        // that doesn't exist in the current database state, that orphan would never enter
+        // visibleCurrentRows, and the request candidate whose identity matches the orphan
+        // would fall into unmatchedCandidates as a new insert — potentially creating a
+        // duplicate row that fails with a DB constraint violation rather than a deterministic
+        // contract mismatch.
+        var matchedStoredRowAddresses = new HashSet<string>(
+            visibleCurrentRows.Select(vcr => BuildSemanticIdentityKeyFromVisibleStoredRow(vcr.StoredRow)),
+            StringComparer.Ordinal
+        );
+
+        foreach (var storedRow in visibleStoredRows)
+        {
+            var storedRowKey = BuildSemanticIdentityKeyFromVisibleStoredRow(storedRow);
+            if (!matchedStoredRowAddresses.Contains(storedRowKey))
+            {
+                return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                    $"Profile merge for collection scope '{jsonScope}' has a "
+                        + $"VisibleStoredCollectionRow with semantic identity '{storedRowKey}' "
+                        + "that has no matching current DB row. Core must emit "
+                        + "VisibleStoredCollectionRows only for rows that exist in "
+                        + "the current database state.",
+                ]);
+            }
+        }
+
         // Step 3: Match visible stored rows to request candidates by semantic identity
         var matchedPairs =
             new List<(
@@ -2398,6 +2425,25 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     private static string BuildSemanticIdentityKeyFromVisibleItem(VisibleRequestCollectionItem visibleItem)
     {
         var parts = visibleItem.Address.SemanticIdentityInOrder;
+        var values = new JsonNode?[parts.Length];
+        var flags = new bool[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            values[i] = parts[i].Value;
+            flags[i] = parts[i].IsPresent;
+        }
+
+        return BuildSemanticIdentityKeyString(values, flags);
+    }
+
+    /// <summary>
+    /// Builds a string key from a <see cref="VisibleStoredCollectionRow"/>'s semantic
+    /// identity parts. Used by the reverse coverage check to verify that every stored
+    /// row Core declared visible actually exists in the current database state.
+    /// </summary>
+    private static string BuildSemanticIdentityKeyFromVisibleStoredRow(VisibleStoredCollectionRow storedRow)
+    {
+        var parts = storedRow.Address.SemanticIdentityInOrder;
         var values = new JsonNode?[parts.Length];
         var flags = new bool[parts.Length];
         for (var i = 0; i < parts.Length; i++)

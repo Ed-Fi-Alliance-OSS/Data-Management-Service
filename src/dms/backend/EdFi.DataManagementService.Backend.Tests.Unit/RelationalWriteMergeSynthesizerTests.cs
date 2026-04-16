@@ -2282,7 +2282,9 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     {
         var fixture = CreateExtensionWithChildCollectionFixture();
 
-        // Request includes extension scope + descendant child collection candidate
+        // Request includes extension scope + descendant child collection candidate.
+        // Current state has NO extension data (rootExtensionRows: [] below), so the
+        // extension scope is a new insert — creatability is checked.
         var flattenedWriteSet = new FlattenedWriteSet(
             new RootWriteRowBuffer(
                 fixture.RootPlan,
@@ -2348,10 +2350,13 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
+                // VisibleAbsent: extension scope has no stored data (rootExtensionRows: []),
+                // so Core classifies with null scopeData → VisibleAbsent. No hidden members
+                // are possible for an absent scope.
                 new StoredScopeState(
                     ScopeAddress(extensionScope),
-                    ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: ["$.hiddenExt"]
+                    ProfileVisibilityKind.VisibleAbsent,
+                    HiddenMemberPaths: []
                 ),
             ],
             []
@@ -5252,9 +5257,12 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
+                // VisiblePresent: Period2's stored collection row has non-null
+                // calendarReference data ("STORED_CAL_REF_2"), so Core classifies
+                // the inlined scope with non-null scopeData → VisiblePresent.
                 new StoredScopeState(
                     new ScopeInstanceAddress("$.classPeriods.calendarReference", [period2Ancestor]),
-                    ProfileVisibilityKind.VisibleAbsent,
+                    ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
             ],
@@ -6003,9 +6011,11 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     [Test]
     public void It_does_not_emit_duplicate_delete_when_buffer_iteration_already_processed_scope()
     {
-        // Scenario: extension scope is VisibleAbsent and IS in the flattened buffer.
-        // The buffer iteration already emits a delete. The second pass should NOT emit
-        // a second delete because the scope key is already in visitedScopeKeys.
+        // Scenario: extension scope has stored data (VisiblePresent in StoredScopeStates,
+        // since Core classifies existing scopes with non-null scopeData as VisiblePresent)
+        // and IS in the flattened buffer. The buffer iteration already emits a delete.
+        // The second pass should NOT emit a second delete because the scope key is
+        // already in visitedScopeKeys.
         var fixture = CreateFixtureWithExtension();
 
         // Extension row IS present in the flattened write set buffer
@@ -6052,9 +6062,12 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
+                // VisiblePresent: Core classifies existing stored scopes with data
+                // as VisiblePresent. The second pass finds this scope in visitedScopeKeys
+                // (buffer iteration already processed it) and skips — no duplicate delete.
                 new StoredScopeState(
                     ScopeAddress(extensionScope),
-                    ProfileVisibilityKind.VisibleAbsent,
+                    ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
             ]
