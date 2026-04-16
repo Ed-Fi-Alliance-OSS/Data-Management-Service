@@ -47,8 +47,13 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 - `DMS-983` — `02-flattening-executor.md` — Flatten validated write bodies into row buffers and collection candidates using compiled mapping (thin slice)
 - `DMS-1123` — `02b-profile-applied-request-flattening.md` — Integrate `ProfileAppliedWriteRequest.WritableRequestBody` into the flattener after `DMS-1106`
 - `DMS-984` — `03-persist-and-batch.md` — Persist rows with stable-identity merge semantics, batching, and guarded no-op freshness for the shared/no-profile executor foundation (pgsql + mssql); blocked on `DMS-1108` for the executor-facing collection merge-plan contract
-- `DMS-1124` — `03b-profile-aware-persist-executor.md` — Apply profile-aware merge, hidden-data preservation, and creatability in the persist executor after `DMS-984`, `DMS-1106`, `DMS-1105`, and `DMS-1123`
+- `DMS-1124` — `03b-profile-aware-persist-executor.md` — Apply profile-aware merge, hidden-data preservation, and creatability in the persist executor after `DMS-984`, `DMS-1106`, `DMS-1105`, and `DMS-1123`; planning recut on this branch is split into serial slice docs under `03b-profile-aware-persist-executor/`
 - `DMS-985` — `04-propagated-reference-identity-columns.md` — Populate propagated reference identity columns (no reverse-edge table)
 - `DMS-986` — `05-write-error-mapping.md` — Map DB constraint errors to DMS error shapes (consistent across dialects)
 - `DMS-1104` — `05b-profile-error-classification.md` — Classify and map profile write failures to DMS error shapes
 - `DMS-987` — `06-descriptor-writes.md` — Descriptor POST/PUT: maintain `dms.Descriptor` + descriptor referential identities (no per-descriptor tables)
+- `DMS-1132` — `07-semantic-identity-presence-fidelity.md` — Close the presence-sensitive semantic identity fidelity gap exposed by `DMS-1124` so the merge never depends on upstream null-pruning invariants to distinguish absent vs explicit-null identity members
+
+## Review Aid
+
+- `review-checklist-profile-aware-write-path.md` — reviewer checklist for profile-aware shared write-path stories, including a short PR checklist for `DMS-1124`-class work
