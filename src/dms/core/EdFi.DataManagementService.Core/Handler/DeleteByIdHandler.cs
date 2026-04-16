@@ -60,7 +60,8 @@ internal class DeleteByIdHandler(
                                 requestInfo.ResourceSchema.ResourceName
                             )
                         ),
-                        Headers: requestInfo.FrontendRequest.Headers
+                        Headers: requestInfo.FrontendRequest.Headers,
+                        MappingSet: requestInfo.MappingSet
                     )
                 ),
             requestInfo

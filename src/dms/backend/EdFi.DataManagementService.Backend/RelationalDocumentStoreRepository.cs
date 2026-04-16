@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -25,7 +26,8 @@ public sealed class RelationalDocumentStoreRepository(
     IDocumentHydrator documentHydrator,
     IRelationalReadTargetLookupService readTargetLookupService,
     IRelationalReadMaterializer readMaterializer,
-    IReadableProfileProjector readableProfileProjector
+    IReadableProfileProjector readableProfileProjector,
+    IRelationalCommandExecutor commandExecutor
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -46,6 +48,8 @@ public sealed class RelationalDocumentStoreRepository(
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
+    private readonly IRelationalCommandExecutor _commandExecutor =
+        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -221,25 +225,110 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         ArgumentNullException.ThrowIfNull(deleteRequest);
+        var relationalDeleteRequest = RequireRelationalRequest<IRelationalDeleteRequest>(
+            deleteRequest,
+            nameof(deleteRequest)
+        );
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
-            deleteRequest.TraceId.Value
+            relationalDeleteRequest.TraceId.Value
         );
 
-        if (deleteRequest.ResourceInfo.IsDescriptor)
+        if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
-                deleteRequest.DocumentUuid,
-                deleteRequest.TraceId
+                relationalDeleteRequest.DocumentUuid,
+                relationalDeleteRequest.TraceId
             );
         }
 
-        return Task.FromResult<DeleteResult>(
-            new DeleteResult.UnknownFailure(
-                $"Relational DELETE is not implemented for resource '{FormatResource(RelationalWriteSupport.ToQualifiedResourceName(deleteRequest.ResourceInfo))}'."
-            )
-        );
+        var mappingSet = relationalDeleteRequest.MappingSet;
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet);
+    }
+
+    private async Task<DeleteResult> DeleteDocumentByIdAsync(
+        IRelationalDeleteRequest relationalDeleteRequest,
+        MappingSet mappingSet
+    )
+    {
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
+
+        try
+        {
+            var resolved = await RelationalDocumentUuidLookupSupport
+                .TryResolveByDocumentUuidAndResourceAsync(
+                    _commandExecutor,
+                    mappingSet,
+                    resource,
+                    relationalDeleteRequest.DocumentUuid
+                )
+                .ConfigureAwait(false);
+
+            if (resolved is null)
+            {
+                return new DeleteResult.DeleteFailureNotExists();
+            }
+
+            // Authorization-check statements will be prepended to this command in a future story.
+            var deleteCommand = mappingSet.Key.Dialect switch
+            {
+                SqlDialect.Pgsql => new RelationalCommand(
+                    """
+                    DELETE FROM dms."Document"
+                    WHERE "DocumentId" = @documentId
+                    RETURNING "DocumentId";
+                    """,
+                    [new RelationalParameter("@documentId", resolved.DocumentId)]
+                ),
+                SqlDialect.Mssql => new RelationalCommand(
+                    """
+                    DELETE FROM [dms].[Document]
+                    OUTPUT DELETED.[DocumentId]
+                    WHERE [DocumentId] = @documentId;
+                    """,
+                    [new RelationalParameter("@documentId", resolved.DocumentId)]
+                ),
+                _ => throw new NotSupportedException(
+                    $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                ),
+            };
+
+            var deleted = await _commandExecutor
+                .ExecuteReaderAsync(
+                    deleteCommand,
+                    static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false)
+                )
+                .ConfigureAwait(false);
+
+            return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
+        }
+        catch (DbException ex) when (RelationalExceptionSupport.IsForeignKeyViolation(ex))
+        {
+            _logger.LogDebug(
+                ex,
+                "FK constraint violation on relational DELETE for {DocumentUuid} - {TraceId}",
+                relationalDeleteRequest.DocumentUuid.Value,
+                relationalDeleteRequest.TraceId.Value
+            );
+
+            return new DeleteResult.DeleteFailureReference(["(referenced document)"]);
+        }
+        catch (DbException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Database error on relational DELETE for {DocumentUuid} - {TraceId}",
+                relationalDeleteRequest.DocumentUuid.Value,
+                relationalDeleteRequest.TraceId.Value
+            );
+
+            return new DeleteResult.UnknownFailure(
+                "An unexpected error occurred while processing the delete request."
+            );
+        }
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)

@@ -76,7 +76,8 @@ public class Given_No_Profile_Relational_Post
             A.Fake<IDocumentHydrator>(),
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
-            A.Fake<IReadableProfileProjector>()
+            A.Fake<IReadableProfileProjector>(),
+            A.Fake<IRelationalCommandExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -184,7 +185,8 @@ public class Given_No_Profile_Relational_Put
             A.Fake<IDocumentHydrator>(),
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
-            A.Fake<IReadableProfileProjector>()
+            A.Fake<IReadableProfileProjector>(),
+            A.Fake<IRelationalCommandExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -292,7 +294,8 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<IDocumentHydrator>(),
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
-            A.Fake<IReadableProfileProjector>()
+            A.Fake<IReadableProfileProjector>(),
+            A.Fake<IRelationalCommandExecutor>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -399,7 +402,8 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<IDocumentHydrator>(),
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
-            A.Fake<IReadableProfileProjector>()
+            A.Fake<IReadableProfileProjector>(),
+            A.Fake<IRelationalCommandExecutor>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();

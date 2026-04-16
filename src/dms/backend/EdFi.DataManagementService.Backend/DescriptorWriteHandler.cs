@@ -297,7 +297,7 @@ internal sealed class DescriptorWriteHandler(
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
         }
-        catch (DbException ex) when (IsForeignKeyViolation(ex))
+        catch (DbException ex) when (RelationalExceptionSupport.IsForeignKeyViolation(ex))
         {
             _logger.LogDebug(
                 ex,
@@ -797,21 +797,6 @@ internal sealed class DescriptorWriteHandler(
                     ex.Message.Contains("2627", StringComparison.Ordinal)
                     || ex.Message.Contains("2601", StringComparison.Ordinal)
                 )
-            );
-    }
-
-    /// <summary>
-    /// Detects foreign key constraint violations across Postgres (23503) and SQL Server (547).
-    /// </summary>
-    private static bool IsForeignKeyViolation(DbException ex)
-    {
-        // Postgres: SqlState "23503" (foreign_key_violation)
-        // SQL Server: Number 547 (FK constraint)
-        return ex.SqlState == "23503"
-            || (
-                ex is { HResult: var hr }
-                && hr is unchecked((int)0x80131904)
-                && ex.Message.Contains("547", StringComparison.Ordinal)
             );
     }
 }

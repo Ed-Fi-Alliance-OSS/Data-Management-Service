@@ -36,3 +36,16 @@ public interface IRelationalUpsertRequest : IUpsertRequest, IRelationalWriteRequ
 /// Backend-local relational update request.
 /// </summary>
 public interface IRelationalUpdateRequest : IUpdateRequest, IRelationalWriteRequest;
+
+/// <summary>
+/// Backend-local relational delete request.
+/// </summary>
+public interface IRelationalDeleteRequest : IDeleteRequest
+{
+    /// <summary>
+    /// The resolved runtime mapping set for the active request.
+    /// Supported relational middleware-owned execution paths populate this before repository
+    /// execution; null remains possible only for direct-call or pipeline-bypass scenarios.
+    /// </summary>
+    MappingSet? MappingSet { get; }
+}

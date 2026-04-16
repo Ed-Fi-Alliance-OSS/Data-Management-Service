@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend;
 /// <summary>
 /// Executes a request-scoped relational command and owns the lifetime of the reader exposed to the callback.
 /// </summary>
-internal interface IRelationalCommandExecutor
+public interface IRelationalCommandExecutor
 {
     SqlDialect Dialect { get; }
 
@@ -25,7 +25,7 @@ internal interface IRelationalCommandExecutor
 /// <summary>
 /// Provider-agnostic relational command definition used by write-prerequisite adapters.
 /// </summary>
-internal sealed record RelationalCommand
+public sealed record RelationalCommand
 {
     public RelationalCommand(string commandText, IReadOnlyList<RelationalParameter>? parameters = null)
     {
@@ -43,7 +43,7 @@ internal sealed record RelationalCommand
 /// <summary>
 /// Provider-agnostic relational parameter definition with optional provider-specific configuration.
 /// </summary>
-internal sealed record RelationalParameter
+public sealed record RelationalParameter
 {
     public RelationalParameter(string name, object? value, Action<DbParameter>? configureParameter = null)
     {
@@ -98,7 +98,7 @@ internal static class SessionRelationalCommandFactory
 /// <summary>
 /// Minimal relational reader surface for shared write-prerequisite materializers.
 /// </summary>
-internal interface IRelationalCommandReader : IAsyncDisposable
+public interface IRelationalCommandReader : IAsyncDisposable
 {
     Task<bool> ReadAsync(CancellationToken cancellationToken = default);
 
