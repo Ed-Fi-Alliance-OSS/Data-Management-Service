@@ -76,87 +76,59 @@ public sealed record ProfileWritePipelineResult
 }
 
 /// <summary>
-/// C5 orchestrator that chains profile write processing steps and produces
-/// the final <see cref="ProfileAppliedWriteRequest"/> (and optionally
-/// <see cref="ProfileAppliedWriteContext"/> for update/upsert flows).
+/// Pre-resolution result carrying request-side shaping that is safe to compute
+/// before POST/PUT target resolution.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Pipeline sequence:
-/// <list type="number">
-///   <item>Profile-mode validation (must be Write)</item>
-///   <item>No-profile short-circuit when WriteContentType is null</item>
-///   <item>C2: Semantic identity compatibility validation</item>
-///   <item>C3: Request-side visibility and writable request shaping</item>
-///   <item>Build stored-side existence lookup</item>
-///   <item>C4: Creatability analysis and duplicate collection-item detection</item>
-///   <item>Assemble ProfileAppliedWriteRequest</item>
-///   <item>For update/upsert: invoke C6 stored-state projector</item>
-/// </list>
-/// </para>
-/// <para>
-/// Integration status: This pipeline is staged infrastructure being built and
-/// proven with unit tests (DMS-1116/DMS-1117/DMS-1118). It is not yet wired
-/// into the runtime write path — POST/PUT still flow through the existing
-/// ProfileWriteValidationMiddleware. Runtime integration will replace that
-/// middleware with this pipeline once all pipeline steps are complete.
-/// </para>
-/// </remarks>
+internal sealed record ProfileWritePreResolutionResult
+{
+    public bool HasProfile { get; init; }
+
+    public ProfilePreResolvedWriteRequest? Request { get; init; }
+
+    public ImmutableArray<ProfileFailure> Failures { get; init; }
+
+    public bool IsSuccess => HasProfile && Failures.IsEmpty;
+
+    public static ProfileWritePreResolutionResult NoProfile() => new() { HasProfile = false, Failures = [] };
+
+    public static ProfileWritePreResolutionResult Success(ProfilePreResolvedWriteRequest request) =>
+        new()
+        {
+            HasProfile = true,
+            Request = request,
+            Failures = [],
+        };
+
+    public static ProfileWritePreResolutionResult Failure(params ProfileFailure[] failures) =>
+        new() { HasProfile = true, Failures = [.. failures] };
+
+    public static ProfileWritePreResolutionResult Failure(IEnumerable<ProfileFailure> failures) =>
+        new() { HasProfile = true, Failures = [.. failures] };
+}
+
+/// <summary>
+/// Orchestrates profile write processing across pre-resolution and resolved-target phases.
+/// </summary>
 internal static class ProfileWritePipeline
 {
     /// <summary>
-    /// Orchestrates the full profile write pipeline from request validation
-    /// through stored-state projection.
+    /// Executes the request-side phase that is safe before POST/PUT target resolution.
+    /// Covers profile mode validation, semantic identity checks, and writable request shaping.
     /// </summary>
-    /// <param name="canonicalizedRequestBody">
-    /// The canonicalized JSON request body to shape.
-    /// </param>
-    /// <param name="writeContentType">
-    /// The writable profile's content-type definition, or null if no profile applies.
-    /// </param>
-    /// <param name="resolvedContentType">
-    /// The resolved profile content type (Read or Write), or null if no profile applies.
-    /// </param>
-    /// <param name="scopeCatalog">
-    /// The compiled scope descriptors for the target resource.
-    /// </param>
-    /// <param name="storedDocument">
-    /// The stored JSON document for update/upsert flows, or null for create flows.
-    /// </param>
-    /// <param name="isCreate">
-    /// True for POST/create flows, false for PUT/upsert or update flows.
-    /// </param>
-    /// <param name="profileName">The profile name for failure reporting.</param>
-    /// <param name="resourceName">The resource name for failure reporting.</param>
-    /// <param name="method">The HTTP method for failure reporting.</param>
-    /// <param name="operation">The operation label for failure reporting.</param>
-    /// <param name="effectiveSchemaRequiredMembersByScope">
-    /// Schema-required members by scope for creatability analysis.
-    /// </param>
-    /// <returns>
-    /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
-    /// optional stored context, or typed failures.
-    /// </returns>
-    public static ProfileWritePipelineResult Execute(
+    public static ProfileWritePreResolutionResult ExecutePreResolution(
         JsonNode canonicalizedRequestBody,
         ContentTypeDefinition? writeContentType,
         ProfileContentType? resolvedContentType,
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
-        JsonNode? storedDocument,
-        bool isCreate,
         string profileName,
         string resourceName,
         string method,
-        string operation,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+        string operation
     )
     {
-        // ------------------------------------------------------------------
-        // Step 1: Profile-mode validation — reject non-writable profile usage
-        // ------------------------------------------------------------------
         if (resolvedContentType != null && resolvedContentType != ProfileContentType.Write)
         {
-            return ProfileWritePipelineResult.Failure(
+            return ProfileWritePreResolutionResult.Failure(
                 ProfileFailures.ProfileModeMismatch(
                     profileName,
                     resourceName,
@@ -168,17 +140,11 @@ internal static class ProfileWritePipeline
             );
         }
 
-        // ------------------------------------------------------------------
-        // Step 2: No-profile short-circuit
-        // ------------------------------------------------------------------
-        if (writeContentType == null)
+        if (writeContentType is null)
         {
-            return ProfileWritePipelineResult.NoProfile();
+            return ProfileWritePreResolutionResult.NoProfile();
         }
 
-        // ------------------------------------------------------------------
-        // Step 3: C2 — Semantic identity compatibility validation
-        // ------------------------------------------------------------------
         ProfileDefinition syntheticDefinition = new(
             profileName,
             [new ResourceProfile(resourceName, LogicalSchema: null, ReadContentType: null, writeContentType)]
@@ -189,12 +155,9 @@ internal static class ProfileWritePipeline
 
         if (identityFailures.Count > 0)
         {
-            return ProfileWritePipelineResult.Failure(identityFailures);
+            return ProfileWritePreResolutionResult.Failure(identityFailures);
         }
 
-        // ------------------------------------------------------------------
-        // Step 4: C3 — Request-side visibility and writable request shaping
-        // ------------------------------------------------------------------
         var classifier = new ProfileVisibilityClassifier(writeContentType, scopeCatalog);
         var addressEngine = new AddressDerivationEngine(scopeCatalog);
         var shaper = new WritableRequestShaper(
@@ -208,13 +171,40 @@ internal static class ProfileWritePipeline
 
         WritableRequestShapingResult shapingResult = shaper.Shape(canonicalizedRequestBody);
 
-        // Bail early if C3 shaping produced validation failures
         if (!shapingResult.ValidationFailures.IsEmpty)
         {
-            return ProfileWritePipelineResult.Failure(
+            return ProfileWritePreResolutionResult.Failure(
                 shapingResult.ValidationFailures.CastArray<ProfileFailure>()
             );
         }
+
+        return ProfileWritePreResolutionResult.Success(
+            new ProfilePreResolvedWriteRequest(
+                shapingResult.WritableRequestBody,
+                shapingResult.RequestScopeStates,
+                shapingResult.VisibleRequestCollectionItems
+            )
+        );
+    }
+
+    /// <summary>
+    /// Executes the target-aware phase after POST/PUT target resolution is known.
+    /// </summary>
+    public static ProfileWritePipelineResult ExecuteResolvedTarget(
+        ProfilePreResolvedWriteRequest preResolvedRequest,
+        ContentTypeDefinition writeContentType,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        JsonNode? storedDocument,
+        bool isCreate,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+    )
+    {
+        var classifier = new ProfileVisibilityClassifier(writeContentType, scopeCatalog);
+        var addressEngine = new AddressDerivationEngine(scopeCatalog);
 
         // ------------------------------------------------------------------
         // Step 5: Build stored-side existence lookup
@@ -239,8 +229,8 @@ internal static class ProfileWritePipeline
         );
 
         CreatabilityResult creatabilityResult = creatabilityAnalyzer.Analyze(
-            shapingResult.RequestScopeStates,
-            shapingResult.VisibleRequestCollectionItems,
+            preResolvedRequest.RequestScopeStates,
+            preResolvedRequest.VisibleRequestCollectionItems,
             existenceLookupResult.Lookup,
             isCreate,
             effectiveSchemaRequiredMembersByScope
@@ -269,7 +259,7 @@ internal static class ProfileWritePipeline
         // Step 7: Assemble ProfileAppliedWriteRequest
         // ------------------------------------------------------------------
         ProfileAppliedWriteRequest request = new(
-            WritableRequestBody: shapingResult.WritableRequestBody,
+            WritableRequestBody: preResolvedRequest.WritableRequestBody,
             RootResourceCreatable: creatabilityResult.RootResourceCreatable,
             RequestScopeStates: creatabilityResult.EnrichedScopeStates,
             VisibleRequestCollectionItems: creatabilityResult.EnrichedCollectionItems
@@ -287,5 +277,63 @@ internal static class ProfileWritePipeline
         }
 
         return ProfileWritePipelineResult.Success(request, context);
+    }
+
+    /// <summary>
+    /// Backward-compatible full pipeline entry point used by direct unit tests and legacy callers.
+    /// </summary>
+    public static ProfileWritePipelineResult Execute(
+        JsonNode canonicalizedRequestBody,
+        ContentTypeDefinition? writeContentType,
+        ProfileContentType? resolvedContentType,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        JsonNode? storedDocument,
+        bool isCreate,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+    )
+    {
+        var preResolutionResult = ExecutePreResolution(
+            canonicalizedRequestBody,
+            writeContentType,
+            resolvedContentType,
+            scopeCatalog,
+            profileName,
+            resourceName,
+            method,
+            operation
+        );
+
+        if (!preResolutionResult.HasProfile)
+        {
+            return ProfileWritePipelineResult.NoProfile();
+        }
+
+        if (!preResolutionResult.Failures.IsEmpty)
+        {
+            return ProfileWritePipelineResult.Failure(preResolutionResult.Failures);
+        }
+
+        return ExecuteResolvedTarget(
+            preResolutionResult.Request
+                ?? throw new InvalidOperationException(
+                    "Profile pre-resolution succeeded without producing a pre-resolved request."
+                ),
+            writeContentType
+                ?? throw new InvalidOperationException(
+                    "Resolved-target execution requires a writable content type."
+                ),
+            scopeCatalog,
+            storedDocument,
+            isCreate,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            effectiveSchemaRequiredMembersByScope
+        );
     }
 }

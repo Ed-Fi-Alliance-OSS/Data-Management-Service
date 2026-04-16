@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
@@ -26,13 +28,10 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ProfileWritePipelineMiddleware(
     IOptions<AppSettings> appSettings,
+    IEffectiveSchemaRequiredMembersProvider effectiveSchemaRequiredMembersProvider,
     ILogger<ProfileWritePipelineMiddleware> logger
 ) : IPipelineStep
 {
-    // Empty schema-required members for now (will be populated in future work)
-    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptySchemaRequiredMembers =
-        new Dictionary<string, IReadOnlyList<string>>();
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Short-circuit: not relational backend
@@ -65,19 +64,12 @@ internal class ProfileWritePipelineMiddleware(
 
         var profileContext = requestInfo.ProfileContext;
         var writeContentType = profileContext.ResourceProfile.WriteContentType;
-
-        // No writable profile content type — pass through
-        if (writeContentType is null)
-        {
-            await next();
-            return;
-        }
+        var resolvedContentType = profileContext.ContentType;
 
         var profileName = profileContext.ProfileName;
         var resourceName = profileContext.ResourceProfile.ResourceName;
         var method = requestInfo.Method == RequestMethod.POST ? "POST" : "PUT";
         var operation = requestInfo.Method == RequestMethod.POST ? "upsert" : "update";
-        var isCreate = requestInfo.Method == RequestMethod.POST;
 
         logger.LogDebug(
             "ProfileWritePipelineMiddleware: Executing profile write pipeline for profile {ProfileName}, "
@@ -117,129 +109,171 @@ internal class ProfileWritePipelineMiddleware(
         var tableScopeSet = new HashSet<string>(
             writePlan.TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
         );
-        var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
+        var inlinedScopes = writeContentType is null
+            ? []
+            : ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
+        var effectiveSchemaRequiredMembersByScope = effectiveSchemaRequiredMembersProvider.Resolve(
+            writePlan,
+            scopeCatalog
+        );
 
-        // Execute the profile write pipeline (request-side only, no stored document yet).
-        // This middleware only runs for POST/PUT with a writable profile (guarded above),
-        // so the resolved content type is always Write.
-        ProfileWritePipelineResult result = ProfileWritePipeline.Execute(
+        var preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
             canonicalizedRequestBody: requestInfo.ParsedBody,
             writeContentType: writeContentType,
-            resolvedContentType: ProfileContentType.Write,
+            resolvedContentType: resolvedContentType,
             scopeCatalog: scopeCatalog,
-            storedDocument: null,
-            isCreate: isCreate,
             profileName: profileName,
             resourceName: resourceName,
             method: method,
-            operation: operation,
-            effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+            operation: operation
         );
 
-        // Handle failures
-        if (result.HasProfile && !result.Failures.IsEmpty)
+        if (preResolutionResult.HasProfile && !preResolutionResult.Failures.IsEmpty)
         {
             logger.LogDebug(
-                "ProfileWritePipelineMiddleware: Profile pipeline returned {FailureCount} failures "
+                "ProfileWritePipelineMiddleware: Profile pre-resolution returned {FailureCount} failures "
                     + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
-                result.Failures.Length,
+                preResolutionResult.Failures.Length,
                 LoggingSanitizer.SanitizeForLogging(profileName),
                 LoggingSanitizer.SanitizeForLogging(resourceName),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
-            int statusCode = result.Failures[0].Category switch
-            {
-                ProfileFailureCategory.CreatabilityViolation => 403,
-                ProfileFailureCategory.CoreBackendContractMismatch => 500,
-                ProfileFailureCategory.InvalidProfileDefinition => 500,
-                ProfileFailureCategory.BindingAccountingFailure => 500,
-                _ => 400, // WritableProfileValidationFailure, InvalidProfileUsage
-            };
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: statusCode,
-                Body: statusCode >= 500
-                    ? FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId)
-                    : FailureResponse.ForDataPolicyEnforced(profileName, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            requestInfo.FrontendResponse = BuildFailureResponse(
+                preResolutionResult.Failures,
+                profileName,
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
 
-        // No profile applies from the pipeline's perspective
-        if (!result.HasProfile || result.Request is null)
+        if (!preResolutionResult.HasProfile || preResolutionResult.Request is null)
         {
             await next();
             return;
         }
 
-        // Build the backend profile write context with a captured stored-state projection invoker
-        var invoker = new CapturedStoredStateProjectionInvoker(
-            writeContentType,
+        var preResolvedRequest = preResolutionResult.Request;
+        var resolvedWriteContentType =
+            writeContentType
+            ?? throw new InvalidOperationException(
+                "Profile pre-resolution produced a request without a writable content type."
+            );
+        var resolvedTargetInvoker = new CapturedResolvedProfileWriteInvoker(
+            preResolvedRequest,
+            resolvedWriteContentType,
             profileName,
             resourceName,
-            method
+            method,
+            operation,
+            effectiveSchemaRequiredMembersByScope
         );
 
+        if (requestInfo.Method == RequestMethod.PUT)
+        {
+            var putResolvedTargetResult = resolvedTargetInvoker.Execute(
+                storedDocument: null,
+                isCreate: false,
+                scopeCatalog: scopeCatalog
+            );
+
+            if (!putResolvedTargetResult.Failures.IsEmpty)
+            {
+                logger.LogDebug(
+                    "ProfileWritePipelineMiddleware: Profile resolved-target execution returned {FailureCount} failures "
+                        + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
+                    putResolvedTargetResult.Failures.Length,
+                    LoggingSanitizer.SanitizeForLogging(profileName),
+                    LoggingSanitizer.SanitizeForLogging(resourceName),
+                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                );
+
+                requestInfo.FrontendResponse = BuildFailureResponse(
+                    putResolvedTargetResult.Failures,
+                    profileName,
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            }
+        }
+
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
-            Request: result.Request,
+            PreResolvedRequest: preResolvedRequest,
             ProfileName: profileContext.ProfileName,
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: invoker
+            ResolvedProfileWriteInvoker: resolvedTargetInvoker
         );
 
         await next();
     }
 
     /// <summary>
-    /// Captured invoker that re-executes the profile write pipeline with a stored
-    /// document to produce the stored-state projection (ProfileAppliedWriteContext).
+    /// Captured invoker that re-executes the resolved-target phase after the backend
+    /// knows whether the write targets a new or existing document.
     /// </summary>
-    private sealed class CapturedStoredStateProjectionInvoker(
+    private sealed class CapturedResolvedProfileWriteInvoker(
+        ProfilePreResolvedWriteRequest preResolvedRequest,
         ContentTypeDefinition writeContentType,
         string profileName,
         string resourceName,
-        string method
-    ) : IStoredStateProjectionInvoker
+        string method,
+        string operation,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+    ) : IResolvedProfileWriteInvoker
     {
-        public ProfileAppliedWriteContext ProjectStoredState(
-            JsonNode storedDocument,
-            ProfileAppliedWriteRequest request,
+        public ResolvedProfileWriteResult Execute(
+            JsonNode? storedDocument,
+            bool isCreate,
             IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
         )
         {
-            var operation = method == "POST" ? "upsert" : "update";
-
-            ProfileWritePipelineResult result = ProfileWritePipeline.Execute(
-                canonicalizedRequestBody: request.WritableRequestBody,
+            var result = ProfileWritePipeline.ExecuteResolvedTarget(
+                preResolvedRequest: preResolvedRequest,
                 writeContentType: writeContentType,
-                resolvedContentType: ProfileContentType.Write,
                 scopeCatalog: scopeCatalog,
                 storedDocument: storedDocument,
-                isCreate: false,
+                isCreate: isCreate,
                 profileName: profileName,
                 resourceName: resourceName,
                 method: method,
                 operation: operation,
-                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+                effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope
             );
 
-            if (result.Context is not null)
-            {
-                return result.Context;
-            }
-
-            var failureDetail =
-                result.Failures.Length > 0
-                    ? $" Failures ({result.Failures.Length}): {LoggingSanitizer.SanitizeForLogging(string.Join("; ", result.Failures.Select(f => f.Message)))}"
-                    : string.Empty;
-
-            throw new InvalidOperationException(
-                $"Profile pipeline did not produce a ProfileAppliedWriteContext for stored-state projection. "
-                    + $"Profile: {LoggingSanitizer.SanitizeForLogging(profileName)}, Resource: {LoggingSanitizer.SanitizeForLogging(resourceName)}, Method: {method}.{failureDetail}"
-            );
+            return result.Failures.IsEmpty
+                ? ResolvedProfileWriteResult.Success(
+                    result.Request
+                        ?? throw new InvalidOperationException(
+                            "Resolved profile write execution completed without producing a request contract."
+                        ),
+                    result.Context
+                )
+                : ResolvedProfileWriteResult.Failure(result.Failures);
         }
+    }
+
+    private static FrontendResponse BuildFailureResponse(
+        ImmutableArray<ProfileFailure> failures,
+        string profileName,
+        TraceId traceId
+    )
+    {
+        var statusCode = failures[0].Category switch
+        {
+            ProfileFailureCategory.CreatabilityViolation => 403,
+            ProfileFailureCategory.CoreBackendContractMismatch => 500,
+            ProfileFailureCategory.InvalidProfileDefinition => 500,
+            ProfileFailureCategory.BindingAccountingFailure => 500,
+            _ => 400,
+        };
+
+        return new FrontendResponse(
+            StatusCode: statusCode,
+            Body: statusCode >= 500
+                ? FailureResponse.ForSystemError(traceId)
+                : FailureResponse.ForDataPolicyEnforced(profileName, traceId),
+            Headers: []
+        );
     }
 }

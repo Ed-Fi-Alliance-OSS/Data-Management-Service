@@ -156,32 +156,56 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
             );
 
+            ProfileAppliedWriteRequest? resolvedProfileRequest = null;
             ProfileAppliedWriteContext? profileWriteContext = null;
 
             if (request.ProfileWriteContext is not null)
             {
-                // Gate 1: Reject creation when profile marks root as non-creatable.
-                // Defense-in-depth — the middleware normally catches this via CreatabilityViolation
-                // failures, but if the pipeline sets RootResourceCreatable=false without emitting
-                // a failure, this gate ensures a 403 rather than silent acceptance.
-                if (
-                    targetContext is RelationalWriteTargetContext.CreateNew
-                    && !request.ProfileWriteContext.Request.RootResourceCreatable
-                )
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildProfileCreatabilityRejectionResult();
-                }
-
-                // Validate Core-emitted contract addresses before merge
                 var resourceDisplayName =
                     $"{request.WritePlan.Model.Resource.ProjectName}/{request.WritePlan.Model.Resource.ResourceName}";
                 var httpMethod = request.OperationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT";
                 var operationLabel =
                     request.OperationKind == RelationalWriteOperationKind.Post ? "create" : "update";
 
+                var resolvedProfileResult = request.ProfileWriteContext.ResolvedProfileWriteInvoker.Execute(
+                    targetContext is RelationalWriteTargetContext.ExistingDocument
+                        ? currentState?.ReconstitutedDocument
+                        : null,
+                    targetContext is RelationalWriteTargetContext.CreateNew,
+                    request.ProfileWriteContext.CompiledScopeCatalog
+                );
+
+                if (!resolvedProfileResult.Failures.IsEmpty)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildResolvedProfileFailureResult(
+                        request.OperationKind,
+                        resolvedProfileResult.Failures
+                    );
+                }
+
+                if (resolvedProfileResult.Request is null)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildContractMismatchResultFromMessages(
+                        request.OperationKind,
+                        ["Resolved profile write execution did not produce a request contract."]
+                    );
+                }
+
+                resolvedProfileRequest = resolvedProfileResult.Request;
+
+                if (
+                    targetContext is RelationalWriteTargetContext.CreateNew
+                    && !resolvedProfileRequest.RootResourceCreatable
+                )
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileCreatabilityRejectionResult(request.OperationKind);
+                }
+
                 var requestContractFailures = ProfileWriteContractValidator.ValidateRequestContract(
-                    request.ProfileWriteContext.Request,
+                    resolvedProfileRequest,
                     request.ProfileWriteContext.CompiledScopeCatalog,
                     request.ProfileWriteContext.ProfileName,
                     resourceDisplayName,
@@ -200,15 +224,18 @@ internal sealed class DefaultRelationalWriteExecutor(
                     && currentState is not null
                 )
                 {
-                    profileWriteContext =
-                        request.ProfileWriteContext.StoredStateProjectionInvoker.ProjectStoredState(
-                            currentState.ReconstitutedDocument
-                                ?? throw new InvalidOperationException(
-                                    "Reconstituted document is required for profile-constrained update/upsert."
-                                ),
-                            request.ProfileWriteContext.Request,
-                            request.ProfileWriteContext.CompiledScopeCatalog
+                    if (resolvedProfileResult.Context is null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return BuildContractMismatchResultFromMessages(
+                            request.OperationKind,
+                            [
+                                "Resolved profile write execution did not produce a stored-state context for an existing target.",
+                            ]
                         );
+                    }
+
+                    profileWriteContext = resolvedProfileResult.Context;
 
                     var writeContextContractFailures = ProfileWriteContractValidator.ValidateWriteContext(
                         profileWriteContext,
@@ -235,7 +262,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     request.WritePlan,
                     flattenedWriteSet,
                     currentState,
-                    ProfileRequest: request.ProfileWriteContext?.Request,
+                    ProfileRequest: resolvedProfileRequest,
                     ProfileContext: profileWriteContext,
                     CompiledScopeCatalog: request.ProfileWriteContext?.CompiledScopeCatalog,
                     SelectedBody: request.ProfileWriteContext is null ? executionRequest.SelectedBody : null
@@ -537,10 +564,38 @@ internal sealed class DefaultRelationalWriteExecutor(
     /// Only reachable under <see cref="RelationalWriteTargetContext.CreateNew"/>, which
     /// <see cref="RelationalWriteExecutorRequest"/> constrains to <see cref="RelationalWriteOperationKind.Post"/>.
     /// </summary>
-    private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult()
+    private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(
+        RelationalWriteOperationKind operationKind,
+        IReadOnlyList<string>? errorMessages = null
+    )
     {
-        string[] errors = ["The profile does not allow creating new instances of this resource."];
-        return new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureNotAuthorized(errors));
+        string[] errors = errorMessages is { Count: > 0 }
+            ? [.. errorMessages]
+            : ["The profile does not allow creating new instances of this resource."];
+
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureNotAuthorized(errors)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNotAuthorized(errors)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildResolvedProfileFailureResult(
+        RelationalWriteOperationKind operationKind,
+        ImmutableArray<ProfileFailure> failures
+    )
+    {
+        return failures.All(failure => failure.Category == ProfileFailureCategory.CreatabilityViolation)
+            ? BuildProfileCreatabilityRejectionResult(
+                operationKind,
+                failures.Select(failure => failure.Message).ToArray()
+            )
+            : BuildContractMismatchResult(operationKind, failures);
     }
 
     /// <summary>
@@ -550,7 +605,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     /// </summary>
     private static RelationalWriteExecutorResult BuildContractMismatchResult(
         RelationalWriteOperationKind operationKind,
-        ProfileFailure[] contractFailures
+        IEnumerable<ProfileFailure> contractFailures
     ) =>
         BuildContractMismatchResultFromMessages(
             operationKind,

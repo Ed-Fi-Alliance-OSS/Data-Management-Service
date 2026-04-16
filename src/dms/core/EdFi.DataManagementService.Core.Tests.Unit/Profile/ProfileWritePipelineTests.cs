@@ -742,4 +742,221 @@ public abstract class ProfileWritePipelineTests
             _result.IsSuccess.Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class Given_Profile_PreResolution_When_Profile_Mode_Mismatch : ProfileWritePipelineTests
+    {
+        private ProfileWritePreResolutionResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
+                resolvedContentType: ProfileContentType.Read,
+                scopeCatalog: SharedFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation
+            );
+        }
+
+        [Test]
+        public void It_should_return_the_pre_resolution_failure()
+        {
+            _result.HasProfile.Should().BeTrue();
+            _result.Failures.Should().ContainSingle();
+            _result.Failures[0].Should().BeOfType<ProfileModeMismatchProfileUsageFailure>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_PreResolution_When_Forbidden_Data_Is_Submitted : ProfileWritePipelineTests
+    {
+        private ProfileWritePreResolutionResult _result = null!;
+
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation
+            );
+        }
+
+        [Test]
+        public void It_should_return_the_c3_validation_failures()
+        {
+            _result.Failures.Should().NotBeEmpty();
+            _result
+                .Failures.OfType<ForbiddenSubmittedDataWritableProfileValidationFailure>()
+                .Should()
+                .NotBeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_Resolved_Target_When_Create_With_Hidden_Required_Root_Member
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            var preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation
+            );
+
+            _result = ProfileWritePipeline.ExecuteResolvedTarget(
+                preResolvedRequest: preResolutionResult.Request!,
+                writeContentType: BuildProfileHidingEntryDate(),
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers
+            );
+        }
+
+        [Test]
+        public void It_should_emit_the_create_sensitive_creatability_failure()
+        {
+            _result.Failures.Should().NotBeEmpty();
+            _result
+                .Failures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .NotBeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_Resolved_Target_When_Post_As_Update_With_Existing_Stored_Document
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: BuildStandardRequestBody(),
+                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation
+            );
+
+            JsonNode storedDocument = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "entryDate": "2024-08-01",
+                    "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Original",
+                    "calendarReference": { "calendarCode": "2024-01" },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1", "officialAttendancePeriod": true }
+                    ]
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.ExecuteResolvedTarget(
+                preResolvedRequest: preResolutionResult.Request!,
+                writeContentType: ProfileTestFixtures.BuildIncludeAllProfile(),
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: storedDocument,
+                isCreate: false,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: "upsert",
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers
+            );
+        }
+
+        [Test]
+        public void It_should_succeed_for_the_existing_target_flow()
+        {
+            _result.IsSuccess.Should().BeTrue();
+            _result.Request!.RootResourceCreatable.Should().BeFalse();
+            _result.Context.Should().NotBeNull();
+        }
+    }
 }

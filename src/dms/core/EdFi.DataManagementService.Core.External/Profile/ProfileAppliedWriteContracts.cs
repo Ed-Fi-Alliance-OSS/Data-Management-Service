@@ -9,6 +9,17 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Core.Profile;
 
 /// <summary>
+/// The request-side contract produced during profile pre-resolution.
+/// Backend consumes this to defer target-aware creatability until POST/PUT
+/// target resolution is complete.
+/// </summary>
+public sealed record ProfilePreResolvedWriteRequest(
+    JsonNode WritableRequestBody,
+    ImmutableArray<RequestScopeState> RequestScopeStates,
+    ImmutableArray<VisibleRequestCollectionItem> VisibleRequestCollectionItems
+);
+
+/// <summary>
 /// The request-side contract produced by the profile write pipeline.
 /// Backend consumes this to execute profile-constrained writes.
 /// </summary>

@@ -1626,6 +1626,263 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_executes_resolved_profile_write_as_create_when_post_target_is_new()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var resolvedProfileRequest = CreateProfileAppliedWriteRequest(
+            selectedBody,
+            rootResourceCreatable: true
+        );
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Success(resolvedProfileRequest),
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.InsertSuccess(
+                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
+                        ExpectedEtag(request)
+                    ),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        resolvedProfileWriteInvoker.ExecuteCallCount.Should().Be(1);
+        resolvedProfileWriteInvoker.CapturedStoredDocument.Should().BeNull();
+        resolvedProfileWriteInvoker.CapturedIsCreate.Should().BeTrue();
+        resolvedProfileWriteInvoker.CapturedScopeCatalog.Should().BeSameAs(scopeCatalog);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _noProfileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().BeSameAs(resolvedProfileRequest);
+        _noProfileMergeSynthesizer.CapturedRequest!.SelectedBody.Should().BeNull();
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_executes_resolved_profile_write_as_update_when_post_target_is_existing()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!;
+        var storedDocument = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var resolvedProfileRequest = CreateProfileAppliedWriteRequest(
+            selectedBody,
+            rootResourceCreatable: true
+        );
+        var resolvedProfileContext = CreateProfileAppliedWriteContext(resolvedProfileRequest, storedDocument);
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Success(
+                resolvedProfileRequest,
+                resolvedProfileContext
+            ),
+        };
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var existingTargetContext = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            existingDocumentUuid,
+            45L
+        );
+
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(
+            request with
+            {
+                TargetContext = existingTargetContext,
+            },
+            45L
+        ) with
+        {
+            ReconstitutedDocument = storedDocument,
+        };
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        resolvedProfileWriteInvoker.ExecuteCallCount.Should().Be(1);
+        resolvedProfileWriteInvoker.CapturedStoredDocument.Should().BeSameAs(storedDocument);
+        resolvedProfileWriteInvoker.CapturedIsCreate.Should().BeFalse();
+        resolvedProfileWriteInvoker.CapturedScopeCatalog.Should().BeSameAs(scopeCatalog);
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _currentStateLoader.CapturedRequest.Should().NotBeNull();
+        _currentStateLoader.CapturedRequest!.RequiresReconstitution.Should().BeTrue();
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _noProfileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().BeSameAs(resolvedProfileRequest);
+        _noProfileMergeSynthesizer.CapturedRequest!.ProfileContext.Should().BeSameAs(resolvedProfileContext);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_rejects_non_creatable_resolved_create_with_profile_forbidden()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Success(
+                CreateProfileAppliedWriteRequest(selectedBody, rootResourceCreatable: false)
+            ),
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureNotAuthorized([
+                        "The profile does not allow creating new instances of this resource.",
+                    ])
+                )
+            );
+        resolvedProfileWriteInvoker.ExecuteCallCount.Should().Be(1);
+        resolvedProfileWriteInvoker.CapturedStoredDocument.Should().BeNull();
+        resolvedProfileWriteInvoker.CapturedIsCreate.Should().BeTrue();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(0);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_allows_profiled_post_as_update_to_continue_when_resolved_request_is_valid()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!;
+        var storedDocument = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var resolvedProfileRequest = CreateProfileAppliedWriteRequest(
+            selectedBody,
+            rootResourceCreatable: false
+        );
+        var resolvedProfileContext = CreateProfileAppliedWriteContext(resolvedProfileRequest, storedDocument);
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Success(
+                resolvedProfileRequest,
+                resolvedProfileContext
+            ),
+        };
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var existingTargetContext = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            existingDocumentUuid,
+            45L
+        );
+
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(
+            request with
+            {
+                TargetContext = existingTargetContext,
+            },
+            45L
+        ) with
+        {
+            ReconstitutedDocument = storedDocument,
+        };
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpdateSuccess(existingDocumentUuid, ExpectedEtag(request)),
+                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
+                )
+            );
+        resolvedProfileWriteInvoker.ExecuteCallCount.Should().Be(1);
+        resolvedProfileWriteInvoker.CapturedStoredDocument.Should().BeSameAs(storedDocument);
+        resolvedProfileWriteInvoker.CapturedIsCreate.Should().BeFalse();
+        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _currentStateLoader.LoadCallCount.Should().Be(1);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_routes_profiled_writes_through_profile_merge_and_persist_path()
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
@@ -2045,6 +2302,64 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
+
+    private static BackendProfileWriteContext CreateResolvedProfileWriteContext(
+        JsonNode writableRequestBody,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        IResolvedProfileWriteInvoker resolvedProfileWriteInvoker
+    ) =>
+        new(
+            PreResolvedRequest: new ProfilePreResolvedWriteRequest(
+                writableRequestBody,
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            ResolvedProfileWriteInvoker: resolvedProfileWriteInvoker
+        );
+
+    private static ProfileAppliedWriteRequest CreateProfileAppliedWriteRequest(
+        JsonNode writableRequestBody,
+        bool rootResourceCreatable
+    ) =>
+        new(
+            WritableRequestBody: writableRequestBody,
+            RootResourceCreatable: rootResourceCreatable,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: rootResourceCreatable
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+    private static ProfileAppliedWriteContext CreateProfileAppliedWriteContext(
+        ProfileAppliedWriteRequest request,
+        JsonNode visibleStoredBody
+    ) =>
+        new(
+            Request: request,
+            VisibleStoredBody: visibleStoredBody.DeepClone(),
+            StoredScopeStates:
+            [
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            VisibleStoredCollectionRows: []
+        );
 
     private static RelationalWriteExecutorRequest CreateRequest(
         RelationalWriteOperationKind operationKind,
@@ -2912,6 +3227,32 @@ public class Given_Default_Relational_Write_Executor
                 new FlattenedWriteValue.Literal(name),
             ]
         );
+
+    private sealed class RecordingResolvedProfileWriteInvoker : IResolvedProfileWriteInvoker
+    {
+        public ResolvedProfileWriteResult? ResultToReturn { get; set; }
+
+        public int ExecuteCallCount { get; private set; }
+        public JsonNode? CapturedStoredDocument { get; private set; }
+        public bool CapturedIsCreate { get; private set; }
+        public IReadOnlyList<CompiledScopeDescriptor>? CapturedScopeCatalog { get; private set; }
+
+        public ResolvedProfileWriteResult Execute(
+            JsonNode? storedDocument,
+            bool isCreate,
+            IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+        )
+        {
+            ExecuteCallCount++;
+            CapturedStoredDocument = storedDocument;
+            CapturedIsCreate = isCreate;
+            CapturedScopeCatalog = scopeCatalog;
+            return ResultToReturn
+                ?? throw new InvalidOperationException(
+                    "RecordingResolvedProfileWriteInvoker.ResultToReturn must be configured."
+                );
+        }
+    }
 
     private sealed class RecordingRelationalWriteSessionFactory : IRelationalWriteSessionFactory
     {

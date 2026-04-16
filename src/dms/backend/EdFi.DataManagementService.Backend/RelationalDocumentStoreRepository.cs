@@ -77,7 +77,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var profileWriteContext = relationalUpsertRequest.BackendProfileWriteContext;
         var selectedBody =
-            profileWriteContext?.Request.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
+            profileWriteContext?.PreResolvedRequest.WritableRequestBody ?? relationalUpsertRequest.EdfiDoc;
 
         var result = await ExecuteWriteGuardRails<UpsertResult>(
                 requestBody: selectedBody,
@@ -183,7 +183,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         var profileWriteContext = relationalUpdateRequest.BackendProfileWriteContext;
         var selectedBody =
-            profileWriteContext?.Request.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
+            profileWriteContext?.PreResolvedRequest.WritableRequestBody ?? relationalUpdateRequest.EdfiDoc;
 
         var result = await ExecuteWriteGuardRails<UpdateResult>(
                 requestBody: selectedBody,

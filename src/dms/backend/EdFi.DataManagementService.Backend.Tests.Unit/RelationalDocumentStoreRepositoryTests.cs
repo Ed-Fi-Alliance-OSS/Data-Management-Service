@@ -554,6 +554,54 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_uses_the_pre_resolved_profile_body_for_post_requests()
+    {
+        const string committedEtag = "\"94\"";
+        var requestBody = CreateRequestBody("Unprofiled Body");
+        var profiledBody = CreateRequestBody("Profiled Body");
+        var traceId = new TraceId("profiled-post-trace");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var profileWriteContext = new BackendProfileWriteContext(
+            PreResolvedRequest: new ProfilePreResolvedWriteRequest(profiledBody, [], []),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: [],
+            ResolvedProfileWriteInvoker: A.Fake<IResolvedProfileWriteInvoker>()
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.InsertSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
+        var upsertRequest = A.Fake<IRelationalUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => upsertRequest.TraceId).Returns(traceId);
+        A.CallTo(() => upsertRequest.BackendProfileWriteContext).Returns(profileWriteContext);
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
+        _capturedExecutorRequest.SelectedBody.Should().BeSameAs(profiledBody);
+        _capturedExecutorRequest.ProfileWriteContext.Should().BeSameAs(profileWriteContext);
+    }
+
+    [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
         const string committedEtag = "\"92\"";
@@ -682,6 +730,54 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Be(descriptorReference);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
         _targetLookupService.ResolveForPutCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_uses_the_pre_resolved_profile_body_for_put_requests()
+    {
+        const string committedEtag = "\"95\"";
+        var requestBody = CreateRequestBody("Unprofiled Body");
+        var profiledBody = CreateRequestBody("Profiled Body");
+        var traceId = new TraceId("profiled-put-trace");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var profileWriteContext = new BackendProfileWriteContext(
+            PreResolvedRequest: new ProfilePreResolvedWriteRequest(profiledBody, [], []),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: [],
+            ResolvedProfileWriteInvoker: A.Fake<IResolvedProfileWriteInvoker>()
+        );
+
+        A.CallTo(() =>
+                _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
+            )
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorRequest>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, committedEtag)
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IRelationalUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
+        A.CallTo(() => updateRequest.TraceId).Returns(traceId);
+        A.CallTo(() => updateRequest.BackendProfileWriteContext).Returns(profileWriteContext);
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
+        _capturedExecutorRequest.SelectedBody.Should().BeSameAs(profiledBody);
+        _capturedExecutorRequest.ProfileWriteContext.Should().BeSameAs(profileWriteContext);
     }
 
     [Test]
