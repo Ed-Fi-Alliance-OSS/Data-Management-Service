@@ -798,8 +798,17 @@ internal static class NoProfileSyntheticProfileAdapter
         {
             0 => null,
             1 => FindColumnOrdinalByName(tableModel, immediateParentLocatorColumns[0]),
+            // Explicit design boundary: synthetic no-profile adaptation requires exactly
+            // zero or one parent scope locator column. Multi-column composite parent keys
+            // would require composite-key-aware ancestor chain lookup, which is not
+            // implemented. If this fires, the schema model has changed and this method
+            // must be extended to support composite parent references.
             _ => throw new InvalidOperationException(
-                $"Synthetic no-profile adaptation expects at most one immediate parent scope locator column for table '{tableModel.Table.Name}'."
+                $"Synthetic no-profile adaptation expects at most one immediate parent scope "
+                    + $"locator column for table '{tableModel.Table.Name}', but found "
+                    + $"{immediateParentLocatorColumns.Length}: "
+                    + $"[{string.Join(", ", immediateParentLocatorColumns.Select(c => c.Value))}]. "
+                    + "Multi-column composite parent keys require composite-key-aware lookup."
             ),
         };
     }
