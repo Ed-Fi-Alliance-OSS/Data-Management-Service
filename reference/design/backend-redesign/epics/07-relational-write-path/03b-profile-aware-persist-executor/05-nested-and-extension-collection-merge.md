@@ -43,6 +43,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 ## Design Constraints
 
 - Parent/child attachment must be driven by compiled address derivation and ancestor context, not by request ordinals.
+- Request-side coverage checks from Slice 4 must extend to nested and extension-child collection scopes using stable parent address plus ancestor context.
 - Hidden descendants must survive both:
   - visible parent-row merge, and
   - hidden parent-row preservation.
@@ -78,6 +79,8 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested collection rows attach to the correct parent scope instance by ancestor-address context.
 - Root-level extension child collections and collection-aligned extension child collections merge under the same preservation rules as base collection data.
 - Hidden descendants are preserved under matched and hidden parents.
+- Nested and extension-child visible request candidates remain covered one-for-one by `VisibleRequestCollectionItems` within the correct ancestor context before DML.
+- Unmatched nested and extension-child visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
 - Nested second-pass handling does not delete scopes incorrectly under collection ancestry.
 - Ordinal recomputation for supported nested and extension-child shapes is deterministic and consistent with the profile-scoped sibling-order rule.
 
@@ -87,8 +90,12 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 
 - Nested current-row matching by ancestor context and semantic identity
 - Wrong-parent / ancestor mismatch protection
+- Nested request-side visible candidate coverage rejection
+- Nested or extension-child orphan or mismatched `VisibleRequestCollectionItem` rejection
 - Hidden descendant preservation under matched parent update
 - Hidden descendant preservation under hidden parent preservation
+- Nested non-creatable insert rejection with matched visible nested row update allowed
+- Extension-child non-creatable insert rejection with existing visible parent update allowed
 - Nested second-pass delete protection
 - Root-level extension child collection matching and preservation
 - Collection-aligned extension child collection matching and preservation
@@ -99,6 +106,8 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested `ProfileVisibleRowDeleteWithHiddenRowPreservation`
 - Root-level extension child collection variant
 - Collection-aligned extension child collection variant
+- Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
+- Three-level update-allowed/create-denied chain variant
 - One nested delete-all-visible-while-hidden-rows-remain variant
 
 ## Reviewer Focus

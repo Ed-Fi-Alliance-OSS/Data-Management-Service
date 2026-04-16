@@ -47,11 +47,11 @@ All slices inherit these constraints:
    - Still fenced: all collections and descendant collection-aligned behavior, guarded no-op
 4. [04-top-level-collection-merge.md](03b-profile-aware-persist-executor/04-top-level-collection-merge.md)
    - Goal: support top-level collection merge only
-   - After merge: visible-row update/delete/insert semantics with hidden-row preservation and top-level ordinal behavior
+   - After merge: visible-row update/delete/insert semantics with hidden-row preservation, top-level create-denied handling, and top-level ordinal behavior
    - Still fenced: nested collections, root-level extension child collections, collection-aligned extension child collections, guarded no-op
 5. [05-nested-and-extension-collection-merge.md](03b-profile-aware-persist-executor/05-nested-and-extension-collection-merge.md)
    - Goal: add nested collections plus root-level and collection-aligned extension child collections
-   - After merge: full descendant-aware collection behavior for supported shapes
+   - After merge: full descendant-aware collection behavior for supported shapes, including nested and extension-child create-denied handling
    - Still fenced: guarded no-op if not yet landed
 6. [06-profile-guarded-no-op.md](03b-profile-aware-persist-executor/06-profile-guarded-no-op.md)
    - Goal: enable profiled guarded no-op using the same merge synthesis as execution
@@ -71,7 +71,9 @@ All slices inherit these constraints:
 - Non-collection update-allowed/create-denied pair — Slice 3
 - Top-level `ProfileVisibleRowUpdateWithHiddenRowPreservation` — Slice 4
 - Top-level `ProfileVisibleRowDeleteWithHiddenRowPreservation` — Slice 4
+- Top-level `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` and update-allowed/create-denied pair — Slice 4
 - Nested / root-level extension child / collection-aligned extension child variants of `ProfileVisibleRowUpdateWithHiddenRowPreservation` — Slice 5
+- Nested / root-level extension child / collection-aligned extension child variants of `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, including the update-allowed/create-denied chain — Slice 5
 - `ProfileHiddenExtensionChildCollectionPreservation` — Slice 5
 - `ProfileUnchangedWriteGuardedNoOp` — Slice 6
 - pgsql/mssql parity closure and explicit `DMS-1132` handoff — Slice 7

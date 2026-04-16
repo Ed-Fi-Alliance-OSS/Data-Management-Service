@@ -117,7 +117,7 @@ For invalid profile contract:
 - `POST` create-new vs `POST`-as-update is determined by final in-session target resolution.
 - Root creatability is enforced only when final target outcome is create-new.
 - Request-side and stored-side profile metadata are validated against the compiled scope catalog before merge logic consumes them.
-- Unknown `JsonScope`, broken ancestor chain, wrong scope kind, and semantic-identity ordering mismatches fail deterministically.
+- Unknown `JsonScope`, duplicate `JsonScope`, broken ancestor chain, wrong scope kind, and semantic-identity ordering mismatches fail deterministically.
 - Unsupported profiled shapes fail with deterministic slice-fence messages before DML.
 - No-profile behavior remains unchanged.
 
@@ -132,6 +132,7 @@ For invalid profile contract:
 - Root creatability rejection occurs only for final create-new outcome.
 - Contract mismatch tests cover:
   - unknown `JsonScope`,
+  - duplicate `JsonScope`,
   - ancestor-chain mismatch,
   - wrong scope kind,
   - semantic-identity mismatch.

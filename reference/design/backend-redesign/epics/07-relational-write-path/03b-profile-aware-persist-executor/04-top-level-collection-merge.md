@@ -53,6 +53,7 @@ The slice fence remains in place for any profiled write involving:
 - Current-row partitioning into visible vs hidden must be driven by emitted stored-row metadata, not inferred from current DB rows alone.
 - Duplicate visible request candidates for the same semantic identity must fail deterministically before DML.
 - Reverse coverage checks must fail deterministically if visible stored-row metadata cannot be matched to current DB rows.
+- Request-side coverage checks must fail deterministically if flattened visible request candidates and `VisibleRequestCollectionItems` do not cover each other one-for-one for the same top-level scope instance and semantic identity.
 - Hidden top-level collection rows must remain untouched when visible data merges around them.
 
 ## Runtime Decision Matrix
@@ -84,7 +85,9 @@ The slice fence remains in place for any profiled write involving:
 - Matched top-level collection rows update in place.
 - Omitted visible rows delete without deleting hidden rows.
 - Unmatched visible items insert only when `Creatable=true`.
+- Unmatched visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
 - Hidden top-level collection rows are preserved.
+- Top-level visible request candidates and `VisibleRequestCollectionItems` are validated one-for-one before DML.
 - Top-level ordinal recomputation preserves hidden-row gaps and renumbers contiguously after merge.
 
 ## Tests Required
@@ -93,8 +96,11 @@ The slice fence remains in place for any profiled write involving:
 
 - Match visible stored row to visible request item by compiled semantic identity
 - Duplicate visible request candidate rejection
+- Request-side visible candidate coverage rejection when a flattened visible request candidate has no matching `VisibleRequestCollectionItem`
+- Request-side orphan or mismatched `VisibleRequestCollectionItem` rejection
 - Reverse stored-row coverage rejection
 - Hidden row preservation during top-level update
+- Top-level non-creatable insert rejection with matched visible row update still allowed
 - Delete-all-visible while hidden rows remain
 - No-previously-visible top-level insert case
 - Top-level ordinal recomputation with hidden interleaving
@@ -103,6 +109,8 @@ The slice fence remains in place for any profiled write involving:
 
 - Top-level `ProfileVisibleRowUpdateWithHiddenRowPreservation`
 - Top-level `ProfileVisibleRowDeleteWithHiddenRowPreservation`
+- Top-level `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
+- Top-level update-allowed/create-denied pair
 - Delete-all-visible-while-hidden-rows-remain case
 - No-previously-visible top-level variant
 
