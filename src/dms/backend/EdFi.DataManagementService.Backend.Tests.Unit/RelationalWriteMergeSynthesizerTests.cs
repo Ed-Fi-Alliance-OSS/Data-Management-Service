@@ -7695,6 +7695,157 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         LiteralValue(extScopeState.PreservedRows[0].Values[3]).Should().Be("STORED_REF_2");
     }
 
+    /// <summary>
+    /// When the collection parent ($.classPeriods) is Hidden, both its rows and any
+    /// aligned extension child ($.classPeriods._ext.sample) rows must be preserved from
+    /// stored state — the request carries no items for hidden collections.
+    /// Per-instance StoredScopeState addresses are required for collection-aligned scopes.
+    /// </summary>
+    [Test]
+    public void It_preserves_aligned_extension_descendants_when_Hidden_Collection_Parent()
+    {
+        var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
+
+        // No collection candidates in request — the collection is hidden
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithCollectionAndAlignedExtensionScope(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "Value1"],
+                [345L, 101L, 1, "Period2", "Value2"],
+            ],
+            alignedExtensionScopeRows:
+            [
+                [345L, 100L, "ext-1", "REF_1"],
+                [345L, 101L, "ext-2", "REF_2"],
+            ]
+        );
+
+        // Build per-instance ancestor addresses for the aligned extension scope
+        var period1Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period1"),
+                    IsPresent: true
+                ),
+            ]
+        );
+        var period2Ancestor = new AncestorCollectionInstance(
+            "$.classPeriods",
+            [
+                new SemanticIdentityPart(
+                    "$.classPeriodName",
+                    System.Text.Json.Nodes.JsonValue.Create("Period2"),
+                    IsPresent: true
+                ),
+            ]
+        );
+
+        // No request scope state for collection or aligned extension — both are hidden
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true)],
+            [] // No visible request collection items — collection is hidden
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    ScopeAddress("$.classPeriods"),
+                    ProfileVisibilityKind.Hidden,
+                    HiddenMemberPaths: []
+                ),
+                // Per-instance Hidden StoredScopeState for each aligned extension instance
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period1Ancestor]),
+                    ProfileVisibilityKind.Hidden,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$.classPeriods._ext.sample", [period2Ancestor]),
+                    ProfileVisibilityKind.Hidden,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            [] // No visible stored collection rows — collection is hidden
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog:
+                [
+                    new CompiledScopeDescriptor("$", ScopeKind.Root, null, [], [], []),
+                    new CompiledScopeDescriptor(
+                        "$.classPeriods",
+                        ScopeKind.Collection,
+                        ImmediateParentJsonScope: "$",
+                        CollectionAncestorsInOrder: [],
+                        SemanticIdentityRelativePathsInOrder: [],
+                        CanonicalScopeRelativeMemberPaths: []
+                    ),
+                    new CompiledScopeDescriptor(
+                        "$.classPeriods._ext.sample",
+                        ScopeKind.NonCollection,
+                        ImmediateParentJsonScope: "$.classPeriods",
+                        CollectionAncestorsInOrder: ["$.classPeriods"],
+                        SemanticIdentityRelativePathsInOrder: [],
+                        CanonicalScopeRelativeMemberPaths: []
+                    ),
+                ]
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        // Root table should have an update (visible)
+        var rootState = result.TablesInDependencyOrder[0];
+        rootState.Updates.Should().ContainSingle();
+        rootState.Inserts.Should().BeEmpty();
+        rootState.Deletes.Should().BeEmpty();
+
+        // Collection rows are ALL preserved (hidden collection)
+        var collectionState = result.TablesInDependencyOrder[1];
+        collectionState.Inserts.Should().BeEmpty();
+        collectionState.Updates.Should().BeEmpty();
+        collectionState.Deletes.Should().BeEmpty();
+        collectionState.PreservedRows.Should().HaveCount(2);
+        LiteralValue(collectionState.PreservedRows[0].Values[3]).Should().Be("Period1");
+        LiteralValue(collectionState.PreservedRows[1].Values[3]).Should().Be("Period2");
+
+        // Aligned extension scope rows are ALL preserved (hidden aligned descendant)
+        var extScopeState = result.TablesInDependencyOrder[2];
+        extScopeState.Inserts.Should().BeEmpty();
+        extScopeState.Updates.Should().BeEmpty();
+        extScopeState.Deletes.Should().BeEmpty();
+        extScopeState.PreservedRows.Should().HaveCount(2);
+        LiteralValue(extScopeState.PreservedRows[0].Values[2]).Should().Be("ext-1");
+        LiteralValue(extScopeState.PreservedRows[1].Values[2]).Should().Be("ext-2");
+    }
+
     [Test]
     public void It_returns_ContractMismatch_when_collection_aligned_scope_state_has_no_ancestors()
     {

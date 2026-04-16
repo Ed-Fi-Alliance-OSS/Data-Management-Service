@@ -2186,6 +2186,242 @@ public class Given_Visible_StoredScopeState_For_TopLevel_Collection_Instance_Wit
     }
 }
 
+[TestFixture]
+public class Given_Visible_Collection_Instance_Missing_Child_Scope_RequestScopeState_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog:
+        //   $ (root)
+        //   $.classPeriods[*] (collection, identified by classPeriodName)
+        //   $.classPeriods[*]._ext.sample (non-collection aligned extension under collection)
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.classPeriods[*]",
+                CollectionAncestorsInOrder: ["$.classPeriods[*]"],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["extValue"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var itemOneIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("classPeriodName", JsonValue.Create("First")!, true)
+        );
+        var itemTwoIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("classPeriodName", JsonValue.Create("Second")!, true)
+        );
+
+        var itemOneAddress = new CollectionRowAddress("$.classPeriods[*]", rootAddress, itemOneIdentity);
+        var itemTwoAddress = new CollectionRowAddress("$.classPeriods[*]", rootAddress, itemTwoIdentity);
+
+        // Extension child scope's RequestScopeState is emitted for item "First" only —
+        // item "Second" is missing, which should be flagged by completeness validation.
+        var extensionScopeForItemOne = new ScopeInstanceAddress(
+            "$.classPeriods[*]._ext.sample",
+            ImmutableArray.Create(new AncestorCollectionInstance("$.classPeriods[*]", itemOneIdentity))
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    extensionScopeForItemOne,
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    itemOneAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.classPeriods[0]"
+                ),
+                new VisibleRequestCollectionItem(
+                    itemTwoAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.classPeriods[1]"
+                ),
+            ]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, [])],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "ClassPeriod",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_reports_missing_child_scope_as_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0].Category.Should().Be(ProfileFailureCategory.CoreBackendContractMismatch);
+        _result[0].Message.Should().Contain("$.classPeriods[*]._ext.sample");
+        _result[0].Message.Should().Contain("no corresponding RequestScopeState");
+        _result[0].Message.Should().Contain("Second");
+    }
+}
+
+[TestFixture]
+public class Given_Hidden_Child_Scope_With_Visible_Collection_Ancestor_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog:
+        //   $ (root)
+        //   $.classPeriods[*] (collection, identified by classPeriodName)
+        //   $.classPeriods[*]._ext.sample (non-collection aligned extension under collection)
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.classPeriods[*]",
+                CollectionAncestorsInOrder: ["$.classPeriods[*]"],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["extValue"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+
+        var itemOneIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("classPeriodName", JsonValue.Create("First")!, true)
+        );
+        var itemTwoIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("classPeriodName", JsonValue.Create("Second")!, true)
+        );
+
+        var itemOneAddress = new CollectionRowAddress("$.classPeriods[*]", rootAddress, itemOneIdentity);
+        var itemTwoAddress = new CollectionRowAddress("$.classPeriods[*]", rootAddress, itemTwoIdentity);
+
+        // Extension child scope is VisiblePresent for item "First" but Hidden for item "Second".
+        // The Hidden instance does not need a RequestScopeState because it is preserved via
+        // StoredScopeState during the merge.
+        var extensionScopeForItemOne = new ScopeInstanceAddress(
+            "$.classPeriods[*]._ext.sample",
+            ImmutableArray.Create(new AncestorCollectionInstance("$.classPeriods[*]", itemOneIdentity))
+        );
+        var extensionScopeForItemTwo = new ScopeInstanceAddress(
+            "$.classPeriods[*]._ext.sample",
+            ImmutableArray.Create(new AncestorCollectionInstance("$.classPeriods[*]", itemTwoIdentity))
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    extensionScopeForItemOne,
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                // No RequestScopeState for itemTwo's extension — legal because the
+                // stored state marks that specific instance Hidden.
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    itemOneAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.classPeriods[0]"
+                ),
+                new VisibleRequestCollectionItem(
+                    itemTwoAddress,
+                    Creatable: true,
+                    RequestJsonPath: "$.classPeriods[1]"
+                ),
+            ]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(extensionScopeForItemTwo, ProfileVisibilityKind.Hidden, []),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "ClassPeriod",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_does_not_report_a_failure_for_the_hidden_child()
+    {
+        _result.Should().BeEmpty();
+    }
+}
+
 internal static class DuplicateProfileContractValidatorTestData
 {
     public static List<CompiledScopeDescriptor> BuildRootAndNonCollectionCatalog(string childScope) =>
