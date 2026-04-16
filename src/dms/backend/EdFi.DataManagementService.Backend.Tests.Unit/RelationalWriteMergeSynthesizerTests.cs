@@ -6742,6 +6742,357 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
             .And.Contain("no per-instance RequestScopeState");
     }
 
+    // --- Inlined non-scalar clearing, collection reverse-coverage, and key-unification presence tests ---
+
+    /// <remarks>
+    /// Exercises the clearing of descriptor-reference columns (not just scalars) when an
+    /// inlined scope is VisibleAbsent. The binding classifier at
+    /// <see cref="RelationalWriteBindingClassifier"/> classifies <see cref="WriteValueSource.DescriptorReference"/>
+    /// bindings through <c>ClassifyMemberBinding</c> using <c>RelativePath.Canonical</c>,
+    /// so a DescriptorReference whose path falls inside a clearable inlined scope should be
+    /// classified as <see cref="BindingClassification.ClearOnVisibleAbsent"/> and set to NULL
+    /// during the overlay phase.
+    /// </remarks>
+    [Test]
+    public void It_clears_inlined_descriptor_reference_column_when_scope_is_visible_absent()
+    {
+        // Root table with an inlined scope "$.inlined" that contains a descriptor binding.
+        // Columns: 0: DocumentId, 1: Name (root scope), 2: DescriptorValue (inlined scope descriptor ref)
+        var rootPlan = CreateRootPlanWithInlinedDescriptorReference();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal(99L), // descriptor FK value from request (should be cleared)
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        [345L, "Original Name", 42L], // stored descriptor FK value
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            new RequestScopeState(
+                ScopeAddress("$.inlined"),
+                ProfileVisibilityKind.VisibleAbsent,
+                Creatable: false
+            ),
+        ]);
+
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    ScopeAddress("$.inlined"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog:
+                [
+                    new CompiledScopeDescriptor(
+                        JsonScope: "$.inlined",
+                        ScopeKind: ScopeKind.NonCollection,
+                        ImmediateParentJsonScope: "$",
+                        CollectionAncestorsInOrder: [],
+                        SemanticIdentityRelativePathsInOrder: [],
+                        CanonicalScopeRelativeMemberPaths: ["descriptorField"]
+                    ),
+                ]
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        var update = result.TablesInDependencyOrder[0].Updates[0];
+        // DocumentId passes through
+        update.Values[0].Should().BeSameAs(FlattenedWriteValue.UnresolvedRootDocumentId.Instance);
+        // Visible root scope scalar uses request value
+        LiteralValue(update.Values[1]).Should().Be("Updated Name");
+        // Descriptor reference in VisibleAbsent inlined scope: cleared to NULL
+        LiteralValue(update.Values[2])
+            .Should()
+            .BeNull("descriptor reference in VisibleAbsent inlined scope must be cleared to NULL");
+    }
+
+    /// <remarks>
+    /// Exercises the reverse-coverage guard at <c>RelationalWriteMerge.cs:1304-1330</c> on the
+    /// UPDATE path (current state exists). A <see cref="VisibleRequestCollectionItem"/> with
+    /// identity "OrphanPeriod" has no matching <see cref="CollectionWriteCandidate"/>. Without
+    /// the reverse-coverage check the matching current row would fall into
+    /// unmatchedVisibleCurrentRows and be silently queued for delete. The merge surfaces a
+    /// category-5 <see cref="RelationalWriteMergeSynthesisOutcome.ContractMismatch"/> instead.
+    /// </remarks>
+    [Test]
+    public void It_returns_contract_mismatch_when_visible_collection_item_has_no_matching_candidate_on_update()
+    {
+        var fixture = CreateCollectionFixture();
+
+        // One candidate (Period1) but TWO visible items (Period1 and OrphanPeriod).
+        // OrphanPeriod is the orphan — no backend-flattened candidate counterpart.
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")],
+                collectionCandidates:
+                [
+                    CreateCollectionCandidate(
+                        fixture.CollectionPlan,
+                        requestOrder: 0,
+                        semanticIdentityValues: ["Period1"],
+                        values:
+                        [
+                            Literal(345L),
+                            FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                            Literal(0),
+                            Literal("Period1"),
+                            Literal("Updated Value1"),
+                            Literal(null),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        // UPDATE path: current state exists with both Period1 and OrphanPeriod rows
+        var currentState = CreateCurrentStateWithCollection(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            collectionRows:
+            [
+                [345L, 100L, 0, "Period1", "StoredValue1", "Hidden1"],
+                [345L, 101L, 1, "OrphanPeriod", "StoredValue2", "Hidden2"],
+            ]
+        );
+
+        var profileRequest = CreateProfileRequestWithCollectionItems(
+            [new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true)],
+            [
+                CreateVisibleRequestCollectionItem("$.classPeriods", "Period1"),
+                CreateVisibleRequestCollectionItem("$.classPeriods", "OrphanPeriod"),
+            ]
+        );
+
+        var profileContext = CreateProfileContextWithCollectionRows(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            [
+                CreateVisibleStoredCollectionRow("$.classPeriods", "Period1", []),
+                CreateVisibleStoredCollectionRow("$.classPeriods", "OrphanPeriod", []),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.ContractMismatch>();
+        var mismatch = (RelationalWriteMergeSynthesisOutcome.ContractMismatch)outcome;
+        mismatch.Messages.Should().HaveCount(1);
+        mismatch.Messages[0].Should().Contain("'$.classPeriods'");
+        // Message must name both origins rather than blaming only one side.
+        mismatch.Messages[0].Should().ContainAll("backend flattener", "Core");
+    }
+
+    /// <remarks>
+    /// Exercises the interaction between <see cref="BindingClassification.ClearOnVisibleAbsent"/>
+    /// and <see cref="BindingClassification.HiddenPreserved"/> in key-unification canonical
+    /// resolution. The first member in <c>MembersInOrder</c> (primaryType) lives in an inlined
+    /// scope marked VisibleAbsent — its value and presence are cleared to NULL. The second
+    /// member (secondaryType) is hidden-and-preserved from stored state with presence = true.
+    /// Per the first-present-in-MembersInOrder rule at <c>RelationalWriteMerge.cs:3118-3130</c>,
+    /// the canonical source is the first <em>present</em> member: primaryType is cleared
+    /// (presence = NULL), so secondaryType (hidden, stored presence = true) becomes the
+    /// first-present member. Since it is hidden, the canonical is preserved from stored state.
+    /// </remarks>
+    [Test]
+    public void It_preserves_stored_canonical_when_first_present_member_is_cleared_and_second_is_hidden()
+    {
+        // Fixture: root table with mixed-scope key-unification.
+        // Columns: 0: DocumentId, 1: Name (root), 2: PrimaryType (inlined scope), 3: SecondaryType (root, hidden),
+        //          4: PrimaryType_Unified (canonical), 5: PrimaryType_Present (synthetic), 6: SecondaryType_Present (synthetic)
+        var rootPlan = CreateRootPlanWithMixedScopeKeyUnification();
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+
+        // Request: primaryType from inlined scope (will be cleared), no secondaryType (hidden).
+        // Flattener produces canonical from the one visible member, but it will be cleared.
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    Literal("Updated Name"),
+                    Literal("RequestPrimary"), // primaryType — will be cleared (inlined scope VisibleAbsent)
+                    Literal(null), // secondaryType — absent from request (hidden)
+                    Literal("RequestPrimary"), // canonical — from flattener (will be overridden)
+                    Literal(true), // primaryType presence — from request (will be cleared)
+                    Literal(null), // secondaryType presence — absent (hidden)
+                ]
+            )
+        );
+
+        var currentState = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                44L,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [
+                new HydratedTableRows(
+                    rootPlan.TableModel,
+                    [
+                        // Stored: primaryType present with "StoredPrimary", secondaryType present with stored presence
+                        [
+                            345L,
+                            "Original Name",
+                            "StoredPrimary",
+                            "StoredSecondary",
+                            "StoredSecondary",
+                            true,
+                            true,
+                        ],
+                    ]
+                ),
+            ]
+        );
+
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            new RequestScopeState(
+                ScopeAddress("$.inlined"),
+                ProfileVisibilityKind.VisibleAbsent,
+                Creatable: false
+            ),
+        ]);
+
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["secondaryType"]
+                ),
+                new StoredScopeState(
+                    ScopeAddress("$.inlined"),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                writePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog:
+                [
+                    new CompiledScopeDescriptor(
+                        JsonScope: "$.inlined",
+                        ScopeKind: ScopeKind.NonCollection,
+                        ImmediateParentJsonScope: "$",
+                        CollectionAncestorsInOrder: [],
+                        SemanticIdentityRelativePathsInOrder: [],
+                        CanonicalScopeRelativeMemberPaths: ["primaryType"]
+                    ),
+                ]
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        var update = result.TablesInDependencyOrder[0].Updates[0];
+        // Visible root scope scalar uses request value
+        LiteralValue(update.Values[1]).Should().Be("Updated Name");
+        // PrimaryType (index 2): cleared to NULL (inlined scope VisibleAbsent)
+        LiteralValue(update.Values[2]).Should().BeNull();
+        // SecondaryType (index 3): preserved from stored (hidden)
+        LiteralValue(update.Values[3]).Should().Be("StoredSecondary");
+        // Canonical (index 4): preserved from stored — first-present is secondaryType (hidden, stored present)
+        LiteralValue(update.Values[4]).Should().Be("StoredSecondary");
+        // PrimaryType_Present (index 5): cleared to NULL (inlined scope VisibleAbsent)
+        LiteralValue(update.Values[5]).Should().BeNull();
+        // SecondaryType_Present (index 6): preserved from stored (hidden)
+        LiteralValue(update.Values[6]).Should().Be(true);
+    }
+
     // --- Guarded no-op detection tests ---
 
     [Test]
@@ -8030,6 +8381,313 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
         var mismatch = (RelationalWriteMergeSynthesisOutcome.ContractMismatch)outcome;
         mismatch.Messages.Should().HaveCount(1);
         mismatch.Messages[0].Should().Contain(unknownScope).And.Contain("CompiledScopeCatalog");
+    }
+
+    // --- Fixture builders for Task 9 tests ---
+
+    /// <summary>
+    /// Root table with an inlined scope "$.inlined" that has a descriptor-reference binding:
+    /// 0: DocumentId (DocumentId), 1: Name (Scalar "$.name"),
+    /// 2: DescriptorValue (DescriptorReference "$.inlined.descriptorField" for descriptor "Ed-Fi.GradeLevelDescriptor").
+    /// </summary>
+    private static TableWritePlan CreateRootPlanWithInlinedDescriptorReference()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Name"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("DescriptorValue"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64, MaxLength: null),
+                    true,
+                    new JsonPathExpression(
+                        "$.inlined.descriptorField",
+                        [
+                            new JsonPathSegment.Property("inlined"),
+                            new JsonPathSegment.Property("descriptorField"),
+                        ]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@p)",
+            UpdateSql: "update edfi.\"School\" set @p where DocumentId = @id",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                    ),
+                    "Name"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.DescriptorReference(
+                        new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                        new JsonPathExpression(
+                            "$.inlined.descriptorField",
+                            [
+                                new JsonPathSegment.Property("inlined"),
+                                new JsonPathSegment.Property("descriptorField"),
+                            ]
+                        )
+                    ),
+                    "DescriptorValue"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+    }
+
+    /// <summary>
+    /// Root table with mixed-scope key-unification: one member lives in an inlined scope
+    /// "$.inlined" and the other lives at the root scope. 7 columns:
+    /// 0: DocumentId, 1: Name (root scope Scalar "$.name"),
+    /// 2: PrimaryType (inlined scope Scalar "$.inlined.primaryType"),
+    /// 3: SecondaryType (root scope Scalar "$.secondaryType"),
+    /// 4: PrimaryType_Unified (canonical Precomputed),
+    /// 5: PrimaryType_Present (synthetic Precomputed),
+    /// 6: SecondaryType_Present (synthetic Precomputed).
+    /// Key-unification class: PrimaryType (member 0, inlined scope) and
+    /// SecondaryType (member 1, root scope), canonical at index 4.
+    /// </summary>
+    private static TableWritePlan CreateRootPlanWithMixedScopeKeyUnification()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Name"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 75),
+                    false,
+                    new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PrimaryType"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    true,
+                    new JsonPathExpression(
+                        "$.inlined.primaryType",
+                        [new JsonPathSegment.Property("inlined"), new JsonPathSegment.Property("primaryType")]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SecondaryType"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    true,
+                    new JsonPathExpression(
+                        "$.secondaryType",
+                        [new JsonPathSegment.Property("secondaryType")]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PrimaryType_Unified"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    true,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("PrimaryType_Present"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    true,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SecondaryType_Present"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    true,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        return new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@p)",
+            UpdateSql: "update edfi.\"School\" set @p where DocumentId = @id",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 7, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.name", [new JsonPathSegment.Property("name")]),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                    ),
+                    "Name"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.inlined.primaryType",
+                            [
+                                new JsonPathSegment.Property("inlined"),
+                                new JsonPathSegment.Property("primaryType"),
+                            ]
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "PrimaryType"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression(
+                            "$.secondaryType",
+                            [new JsonPathSegment.Property("secondaryType")]
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "SecondaryType"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Precomputed(),
+                    "PrimaryType_Unified"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[5],
+                    new WriteValueSource.Precomputed(),
+                    "PrimaryType_Present"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[6],
+                    new WriteValueSource.Precomputed(),
+                    "SecondaryType_Present"
+                ),
+            ],
+            KeyUnificationPlans:
+            [
+                new KeyUnificationWritePlan(
+                    CanonicalColumn: new DbColumnName("PrimaryType_Unified"),
+                    CanonicalBindingIndex: 4,
+                    MembersInOrder:
+                    [
+                        new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: new DbColumnName("PrimaryType"),
+                            RelativePath: new JsonPathExpression(
+                                "$.inlined.primaryType",
+                                [
+                                    new JsonPathSegment.Property("inlined"),
+                                    new JsonPathSegment.Property("primaryType"),
+                                ]
+                            ),
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                            PresenceColumn: new DbColumnName("PrimaryType_Present"),
+                            PresenceBindingIndex: 5,
+                            PresenceIsSynthetic: true
+                        ),
+                        new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: new DbColumnName("SecondaryType"),
+                            RelativePath: new JsonPathExpression(
+                                "$.secondaryType",
+                                [new JsonPathSegment.Property("secondaryType")]
+                            ),
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                            PresenceColumn: new DbColumnName("SecondaryType_Present"),
+                            PresenceBindingIndex: 6,
+                            PresenceIsSynthetic: true
+                        ),
+                    ]
+                ),
+            ]
+        );
     }
 
     // --- Value helpers ---
