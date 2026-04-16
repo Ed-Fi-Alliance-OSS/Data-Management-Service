@@ -19,7 +19,7 @@ function Get-QuotedEnvJson {
     return $match.Groups["value"].Value
 }
 
-function Get-NewSchemaFiles {
+function Get-NewSchemaFilePath {
     param(
         [string]$DirectoryPath,
         [string[]]$ExistingFiles
@@ -32,6 +32,10 @@ function Get-NewSchemaFiles {
     return @($currentFiles | Where-Object { $_ -notin $ExistingFiles })
 }
 
+<#
+.SYNOPSIS
+    Reads the schema package definitions from an environment file.
+#>
 function Get-SchemaPackagesFromEnvironmentFile {
     param([string]$EnvironmentFilePath)
 
@@ -46,6 +50,10 @@ function Get-SchemaPackagesFromEnvironmentFile {
     return $schemaPackages
 }
 
+<#
+.SYNOPSIS
+    Downloads the configured schema packages and returns the resolved schema file paths.
+#>
 function Resolve-SchemaFilesFromEnvironmentFile {
     param(
         [string]$EnvironmentFilePath,
@@ -67,7 +75,7 @@ function Resolve-SchemaFilesFromEnvironmentFile {
         $packageVersion = [string]$schemaPackage.version
         $feedUrl = [string]$schemaPackage.feedUrl
 
-        Write-Host "Downloading schema package: $packageName $packageVersion"
+        Write-Information "Downloading schema package: $packageName $packageVersion" -InformationAction Continue
 
         $existingFiles =
             @(Get-ChildItem -Path $SchemaDirectory -Filter "ApiSchema*.json" -File -ErrorAction SilentlyContinue) |
@@ -94,14 +102,16 @@ function Resolve-SchemaFilesFromEnvironmentFile {
         $downloadOutput = & dotnet @downloadArgs 2>&1
 
         if ($downloadOutput) {
-            $downloadOutput | ForEach-Object { Write-Host $_ }
+            $downloadOutput | ForEach-Object {
+                Write-Information $_ -InformationAction Continue
+            }
         }
 
         if ($LASTEXITCODE -ne 0) {
             throw "ApiSchema download failed for package $packageName $packageVersion."
         }
 
-        $newFiles = @(Get-NewSchemaFiles -DirectoryPath $SchemaDirectory -ExistingFiles $existingFiles)
+        $newFiles = @(Get-NewSchemaFilePath -DirectoryPath $SchemaDirectory -ExistingFiles $existingFiles)
 
         if ($newFiles.Count -ne 1) {
             $joinedFiles = if ($newFiles.Count -eq 0) { "<none>" } else { $newFiles -join ", " }
@@ -110,7 +120,7 @@ function Resolve-SchemaFilesFromEnvironmentFile {
 
         $schemaFilePath = [System.IO.Path]::GetFullPath($newFiles[0])
         $schemaFiles.Add($schemaFilePath)
-        Write-Host "Resolved schema file: $schemaFilePath"
+        Write-Information "Resolved schema file: $schemaFilePath" -InformationAction Continue
     }
 
     return $schemaFiles.ToArray()

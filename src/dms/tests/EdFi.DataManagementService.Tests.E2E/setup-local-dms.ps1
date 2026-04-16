@@ -14,6 +14,7 @@
     ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
 param(
     [string] $EnvironmentFile = "./.env.e2e"
@@ -45,7 +46,7 @@ catch {
     }
     exit 1
 }
-Write-Host "Docker is running ✓" -ForegroundColor Green
+Write-Host "Docker is running" -ForegroundColor Green
 Write-Host ""
 
 # Store current location and navigate to docker-compose directory

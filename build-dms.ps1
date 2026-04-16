@@ -285,7 +285,7 @@ function Get-E2ETestResultSuffix {
     return "filtered"
 }
 
-function Normalize-TestFilter {
+function ConvertTo-NormalizedTestFilter {
     param(
         [string]
         $TestFilter
@@ -359,7 +359,7 @@ function Assert-E2ETestLaneMatchesFilter {
         $TestFilter
     )
 
-    $normalizedTestFilter = Normalize-TestFilter -TestFilter $TestFilter
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
     $includesRelationalCategory = Test-FilterIncludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
     $excludesRelationalCategory = Test-FilterExcludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
     $usesOrOperator = Test-FilterUsesOrOperator -NormalizedTestFilter $normalizedTestFilter
@@ -397,7 +397,7 @@ function Assert-E2ETestLaneMatchesFilter {
     }
 }
 
-function Get-E2ETestEnvironmentSettings {
+function Get-E2ETestEnvironmentContext {
     param(
         [string]
         $EnvironmentFile,
@@ -439,7 +439,7 @@ function Get-E2ETestEnvironmentSettings {
     }
 }
 
-function Invoke-WithE2ETestProcessSettings {
+function Invoke-WithE2ETestProcessContext {
     param(
         [pscustomobject]
         $E2ETestSettings,
@@ -507,7 +507,7 @@ function RunTests {
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse |
     Sort-Object -Property { $_.Name.Length }
-    $normalizedTestFilter = Normalize-TestFilter -TestFilter $TestFilter
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
 
     if ($testAssemblies.Length -eq 0) {
         Write-Output "no test assemblies found in $testAssemblyPath"
@@ -622,7 +622,7 @@ function RunE2E {
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
-    Invoke-WithE2ETestProcessSettings -E2ETestSettings $E2ETestSettings -Action {
+    Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
         Invoke-Execute {
             RunTests `
                 -Filter "EdFi.DataManagementService.Tests.E2E" `
@@ -699,7 +699,7 @@ function Start-DockerEnvironment {
         }
 }
 
-function Provision-RelationalE2EDatabase {
+function Initialize-RelationalE2EDatabase {
     param(
         [pscustomobject]
         $E2ETestSettings
@@ -740,7 +740,7 @@ function E2ETests {
         $TestFilter
     )
 
-    $e2eTestSettings = Get-E2ETestEnvironmentSettings -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
+    $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
 
     Invoke-Step {
         Start-DockerEnvironment `
@@ -752,13 +752,13 @@ function E2ETests {
     }
 
     if ($e2eTestSettings.UseRelationalBackend) {
-        Invoke-Step { Provision-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings }
+        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings }
     }
 
     Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
 }
 
-function Wait-ForConfigServiceAndClients {
+function Wait-ForConfigServiceAndClientRegistration {
     Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
     $maxAttempts = 60
     $attempt = 0
@@ -922,7 +922,7 @@ function InstanceE2ETests {
     }
 
     # Wait for config service to have all clients registered
-    Invoke-Step { Wait-ForConfigServiceAndClients }
+    Invoke-Step { Wait-ForConfigServiceAndClientRegistration }
 
     # Restart DMS so it can authenticate with the registered clients
     Invoke-Step { Restart-DmsContainer }

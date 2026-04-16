@@ -34,7 +34,7 @@ function Resolve-ScriptRelativePath {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $Path))
 }
 
-function Read-EnvironmentValues {
+function Get-EnvironmentValueMap {
     param([string]$EnvironmentFilePath)
 
     $environmentValues = @{}
@@ -179,13 +179,13 @@ function Wait-ForPostgresql {
             docker exec $ContainerName psql -U $PostgresUsername -d postgres -c "SELECT 1;" 2>$null | Out-Null
 
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "PostgreSQL container is ready: $ContainerName" -ForegroundColor Green
+                Write-Information "PostgreSQL container is ready: $ContainerName" -InformationAction Continue
                 return
             }
         }
 
         if ($attempt -eq 1 -or $attempt % 10 -eq 0) {
-            Write-Host "Waiting for PostgreSQL container '$ContainerName' to become ready..." -ForegroundColor Yellow
+            Write-Information "Waiting for PostgreSQL container '$ContainerName' to become ready..." -InformationAction Continue
             docker ps -a --filter "name=^/${ContainerName}$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             docker logs --tail 10 $ContainerName 2>$null
         }
@@ -199,6 +199,7 @@ function Wait-ForPostgresql {
 }
 
 function Reset-RelationalDatabase {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$ContainerName,
         [string]$DatabaseName,
@@ -206,6 +207,10 @@ function Reset-RelationalDatabase {
     )
 
     Assert-SafeDatabaseName -DatabaseName $DatabaseName
+
+    if (-not $PSCmdlet.ShouldProcess($DatabaseName, "Reset relational PostgreSQL database")) {
+        return
+    }
 
     $terminateConnectionsSql =
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DatabaseName' AND pid <> pg_backend_pid();"
@@ -227,18 +232,17 @@ function Build-ConnectionString {
     param(
         [string]$ServerHost,
         [string]$Port,
-        [string]$Username,
-        [string]$Password,
+        [System.Management.Automation.PSCredential]$Credential,
         [string]$DatabaseName
     )
 
-    return "Host=$ServerHost;Port=$Port;Username=$Username;Password=$Password;Database=$DatabaseName;NoResetOnClose=true;"
+    return "Host=$ServerHost;Port=$Port;Username=$($Credential.UserName);Password=$($Credential.GetNetworkCredential().Password);Database=$DatabaseName;NoResetOnClose=true;"
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $environmentFilePath = Resolve-ScriptRelativePath $EnvironmentFile
 
-$environmentValues = Read-EnvironmentValues $environmentFilePath
+$environmentValues = Get-EnvironmentValueMap $environmentFilePath
 $postgresPort = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PORT"
 $postgresPassword = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "POSTGRES_PASSWORD"
 $relationalDatabaseName = Get-RequiredEnvValue -EnvironmentValues $environmentValues -Key "RELATIONAL_E2E_DATABASE_NAME"
@@ -249,12 +253,21 @@ $postgresUsername =
     else {
         [string]$environmentValues["POSTGRES_USER"]
     }
+$securePostgresPassword = New-Object System.Security.SecureString
+foreach ($character in $postgresPassword.ToCharArray()) {
+    $securePostgresPassword.AppendChar($character)
+}
+$securePostgresPassword.MakeReadOnly()
+$postgresCredential = [System.Management.Automation.PSCredential]::new(
+    $postgresUsername,
+    $securePostgresPassword
+)
 
-Write-Host "Provisioning relational E2E database" -ForegroundColor Cyan
-Write-Host "Environment file: $environmentFilePath"
-Write-Host "PostgreSQL container: $PostgresContainerName"
-Write-Host "Relational database: $relationalDatabaseName"
-Write-Host "Configuration: $Configuration"
+Write-Information "Provisioning relational E2E database" -InformationAction Continue
+Write-Information "Environment file: $environmentFilePath" -InformationAction Continue
+Write-Information "PostgreSQL container: $PostgresContainerName" -InformationAction Continue
+Write-Information "Relational database: $relationalDatabaseName" -InformationAction Continue
+Write-Information "Configuration: $Configuration" -InformationAction Continue
 
 Assert-RelationalDatabaseIsDedicated `
     -EnvironmentValues $environmentValues `
@@ -273,7 +286,7 @@ $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
         -DownloaderDotnetRunArgs @("--no-launch-profile"))
 
 try {
-    Write-Host "Dropping relational database if it exists: $relationalDatabaseName" -ForegroundColor Yellow
+    Write-Information "Dropping relational database if it exists: $relationalDatabaseName" -InformationAction Continue
     Reset-RelationalDatabase `
         -ContainerName $PostgresContainerName `
         -DatabaseName $relationalDatabaseName `
@@ -283,11 +296,10 @@ try {
     $connectionString = Build-ConnectionString `
         -ServerHost "127.0.0.1" `
         -Port $postgresPort `
-        -Username $postgresUsername `
-        -Password $postgresPassword `
+        -Credential $postgresCredential `
         -DatabaseName $relationalDatabaseName
 
-    Write-Host "Running SchemaTools ddl provision for $relationalDatabaseName" -ForegroundColor Cyan
+    Write-Information "Running SchemaTools ddl provision for $relationalDatabaseName" -InformationAction Continue
 
     $provisionArgs = @(
         "run",
@@ -314,7 +326,7 @@ try {
         throw "SchemaTools provisioning failed for database '$relationalDatabaseName'."
     }
 
-    Write-Host "Relational E2E database provisioned successfully: $relationalDatabaseName" -ForegroundColor Green
+    Write-Information "Relational E2E database provisioned successfully: $relationalDatabaseName" -InformationAction Continue
 }
 finally {
     if (-not [string]::IsNullOrWhiteSpace($script:ResolvedSchemaDirectory) -and (Test-Path $script:ResolvedSchemaDirectory)) {
