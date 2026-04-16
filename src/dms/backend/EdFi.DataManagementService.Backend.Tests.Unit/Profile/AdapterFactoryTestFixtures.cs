@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 
@@ -432,6 +433,185 @@ internal static class AdapterFactoryTestFixtures
 
         return new ResourceWritePlan(model, [rootPlan]);
     }
+
+    /// <summary>
+    /// Builds a ResourceWritePlan with a collection table whose columns include
+    /// scope-relative paths under an inlined child object scope. This tests the
+    /// case where BuildInlinedMemberPaths must handle scope-relative column paths
+    /// (starting with "$." relative to the collection table scope) rather than
+    /// absolute paths.
+    /// </summary>
+    public static ResourceWritePlan BuildCollectionWithInlinedObjectPlan()
+    {
+        var rootTableModel = BuildRootTableModel();
+
+        var collectionTableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "SchoolAddress"),
+            JsonScope: Path(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                Column("CollectionItemId", ColumnKind.CollectionKey, null, isNullable: false),
+                Column("School_DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                Column("Ordinal", ColumnKind.Ordinal, null, isNullable: false),
+                Column(
+                    "AddressType",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: false,
+                    sourceJsonPath: Path("$.addressType", new JsonPathSegment.Property("addressType"))
+                ),
+                // Inlined scope columns: scope-relative paths under $.calendarReference
+                Column(
+                    "CalendarCode",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.calendarReference.calendarCode",
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    )
+                ),
+                Column(
+                    "SchoolYear",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.calendarReference.schoolYear",
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("schoolYear")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Collection,
+                PhysicalRowIdentityColumns: [new DbColumnName("CollectionItemId")],
+                RootScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("School_DocumentId")],
+                SemanticIdentityBindings:
+                [
+                    new CollectionSemanticIdentityBinding(
+                        Path("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new DbColumnName("AddressType")
+                    ),
+                ]
+            ),
+        };
+
+        var rootPlan = BuildRootTableWritePlan(rootTableModel);
+
+        var collectionPlan = new TableWritePlan(
+            TableModel: collectionTableModel,
+            InsertSql: "INSERT INTO edfi.\"SchoolAddress\" VALUES (...)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, collectionTableModel.Columns.Count, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[0],
+                    new WriteValueSource.Precomputed(),
+                    "CollectionItemId"
+                ),
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[1],
+                    new WriteValueSource.DocumentId(),
+                    "School_DocumentId"
+                ),
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[2],
+                    new WriteValueSource.Ordinal(),
+                    "Ordinal"
+                ),
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        Path("$.addressType", new JsonPathSegment.Property("addressType")),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "AddressType"
+                ),
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[4],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.calendarReference.calendarCode",
+                            new JsonPathSegment.Property("calendarReference"),
+                            new JsonPathSegment.Property("calendarCode")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "CalendarCode"
+                ),
+                new WriteColumnBinding(
+                    collectionTableModel.Columns[5],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.calendarReference.schoolYear",
+                            new JsonPathSegment.Property("calendarReference"),
+                            new JsonPathSegment.Property("schoolYear")
+                        ),
+                        new RelationalScalarType(ScalarKind.Int32)
+                    ),
+                    "SchoolYear"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionMergePlan: new CollectionMergePlan(
+                SemanticIdentityBindings:
+                [
+                    new CollectionMergeSemanticIdentityBinding(
+                        Path("$.addressType", new JsonPathSegment.Property("addressType")),
+                        3
+                    ),
+                ],
+                StableRowIdentityBindingIndex: 0,
+                UpdateByStableRowIdentitySql: "UPDATE ...",
+                DeleteByStableRowIdentitySql: "DELETE ...",
+                OrdinalBindingIndex: 2,
+                CompareBindingIndexesInOrder: [3, 4, 5, 2]
+            ),
+            CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlan(
+                new DbColumnName("CollectionItemId"),
+                0
+            )
+        );
+
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: _schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel, collectionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new ResourceWritePlan(model, [rootPlan, collectionPlan]);
+    }
+
+    /// <summary>
+    /// The additional scopes to pass to <see cref="CompiledScopeAdapterFactory.BuildFromWritePlan"/>
+    /// for the collection-with-inlined-object plan. This simulates what the profile content type
+    /// tree discovery would produce for an inlined scope under a collection.
+    /// </summary>
+    public static IReadOnlyList<(
+        string JsonScope,
+        ScopeKind Kind
+    )> CollectionWithInlinedObjectAdditionalScopes =>
+        [("$.addresses[*].calendarReference", ScopeKind.NonCollection)];
 
     // ── Helpers ───────────────────────────────────────────────────────────
 

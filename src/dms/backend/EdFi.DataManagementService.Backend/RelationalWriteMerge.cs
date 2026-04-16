@@ -422,10 +422,33 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             return collectionFailure;
         }
 
+        // --- Reverse contract validation for non-collection separate-table scopes ---
+        // Mirrors the collection reverse check (VisibleRequestCollectionItems ↔ candidates).
+        // Every VisiblePresent RequestScopeState targeting a separate-table non-collection
+        // scope must have been visited by buffer iteration. If not, the flattener dropped
+        // the buffer row (e.g. empty scope object) and the scope would silently fall through
+        // the cracks — preserving stale data on update or skipping insert/creatability on create.
+        // Only applies to real profiled requests — the null-profile adapter synthesizes broad
+        // VisiblePresent states that don't imply buffer presence for all table-backed scopes.
+        if (!isNullProfile && request.ProfileRequest is not null)
+        {
+            var reverseValidationOutcome = ValidateNonCollectionScopeReverseCoverage(
+                request.ProfileRequest.RequestScopeStates,
+                request.ProfileRequest.WritableRequestBody,
+                request.WritePlan,
+                visitedScopeKeys
+            );
+
+            if (reverseValidationOutcome is not null)
+            {
+                return reverseValidationOutcome;
+            }
+        }
+
         // --- Second pass: emit deletes for StoredScopeStates not visited by buffer iteration ---
-        // This closes a pre-existing profile-mode gap where omitted separate-table scopes
-        // with current-state data were never deleted because the flattener drops omitted scopes,
-        // leaving no buffer entry for the merge's existing VisibleAbsent branch to fire.
+        // This closes a profile-mode gap where omitted separate-table scopes with current-state
+        // data were never deleted because the flattener drops omitted scopes, leaving no buffer
+        // entry for the merge's buffer-iteration branches to fire.
         if (request.ProfileContext is not null && !isCreate)
         {
             var secondPassOutcome = ApplyStoredScopeStatesSecondPass(
@@ -434,7 +457,8 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 tableStateBuilders,
                 request.WritePlan,
                 compiledScopeCatalog,
-                visitedScopeKeys
+                visitedScopeKeys,
+                isNullProfile
             );
 
             if (secondPassOutcome is not null)
@@ -1692,17 +1716,141 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     }
 
     /// <summary>
+    /// Reverse contract validation for non-collection separate-table scopes. Every VisiblePresent
+    /// RequestScopeState targeting a separate-table non-collection scope must have been visited
+    /// by buffer iteration. If not, the flattener dropped the buffer row (e.g. empty scope object)
+    /// and the scope would silently fall through — preserving stale data on update or skipping
+    /// insert/creatability checks on create.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors the collection reverse check (VisibleRequestCollectionItems ↔ candidates).
+    /// Inlined scopes are excluded because they share the parent table's buffer row.
+    /// Collection scopes are excluded because they have their own reverse validation.
+    /// The root scope ($) is excluded because it always has a buffer row.
+    /// Scopes whose content in the request body is null or empty are excluded because the
+    /// flattener correctly produces no buffer row when there is nothing to write (e.g. all
+    /// visible fields are hidden by the profile, so the client sends <c>{}</c>).
+    /// </remarks>
+    private static RelationalWriteMergeSynthesisOutcome? ValidateNonCollectionScopeReverseCoverage(
+        ImmutableArray<RequestScopeState> requestScopeStates,
+        JsonNode writableRequestBody,
+        ResourceWritePlan writePlan,
+        HashSet<string> visitedScopeKeys
+    )
+    {
+        var tablePlansByJsonScope = writePlan.TablePlansInDependencyOrder.ToDictionary(
+            plan => plan.TableModel.JsonScope.Canonical,
+            StringComparer.Ordinal
+        );
+
+        foreach (var requestState in requestScopeStates)
+        {
+            if (requestState.Visibility != ProfileVisibilityKind.VisiblePresent)
+            {
+                continue;
+            }
+
+            // Skip the root scope — always processed by the main synthesis path
+            if (requestState.Address.JsonScope == "$")
+            {
+                continue;
+            }
+
+            // Skip scopes nested under collections (collection-aligned extensions, scopes
+            // under collection items). Their buffer visitation is tracked per-collection-item
+            // via attached scope data, not in the root-level visitedScopeKeys set.
+            if (!requestState.Address.AncestorCollectionInstances.IsEmpty)
+            {
+                continue;
+            }
+
+            // Only validate separate-table scopes (those with their own table plan)
+            if (!tablePlansByJsonScope.TryGetValue(requestState.Address.JsonScope, out var tablePlan))
+            {
+                continue;
+            }
+
+            // Skip collection scopes — they have their own reverse validation
+            if (tablePlan.CollectionMergePlan is not null)
+            {
+                continue;
+            }
+
+            // Build the same scope key format used by buffer iteration tracking
+            var ancestorKey = AncestorKeyHelpers.BuildAncestorKeyFromScopeInstanceAddress(
+                requestState.Address
+            );
+            var scopeKey = $"{requestState.Address.JsonScope}|{ancestorKey}";
+
+            if (!visitedScopeKeys.Contains(scopeKey))
+            {
+                // If the scope content in the request body is null or an empty object, the
+                // flattener correctly produced no buffer row — there is nothing to write.
+                // This happens when all visible fields are hidden by the profile (client
+                // sends {} to acknowledge the scope without providing data).
+                if (IsScopeContentEmptyInRequestBody(writableRequestBody, requestState.Address.JsonScope))
+                {
+                    continue;
+                }
+
+                return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                    $"Profile merge encountered VisiblePresent RequestScopeState for "
+                        + $"separate-table scope '{requestState.Address.JsonScope}' "
+                        + "but buffer iteration did not visit it. The flattener must produce "
+                        + "a buffer row for every VisiblePresent separate-table scope; an empty "
+                        + "scope object may have been incorrectly dropped.",
+                ]);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Navigates the request body to the given JSON scope path and returns true if the
+    /// scope content is null or an empty object. Scope paths use dot-separated segments
+    /// starting with "$" (e.g. "$._ext.sample").
+    /// </summary>
+    private static bool IsScopeContentEmptyInRequestBody(JsonNode requestBody, string jsonScope)
+    {
+        var segments = jsonScope.Split('.');
+        JsonNode? current = requestBody;
+
+        // Skip the first segment ("$" = root) and navigate to the scope
+        for (int i = 1; i < segments.Length && current is not null; i++)
+        {
+            current = current[segments[i]];
+        }
+
+        return current is null || (current is JsonObject obj && obj.Count == 0);
+    }
+
+    /// <summary>
     /// Second pass over StoredScopeStates: handles separate-table scopes that were not visited
     /// by buffer iteration (because the flattener dropped them from the profiled selected body).
-    /// VisibleAbsent scopes emit deletes; Hidden scopes preserve current rows and descendants.
+    /// VisiblePresent stored scopes not visited by buffer iteration are deleted (the request
+    /// omitted a visible scope that has stored data). Hidden scopes preserve current rows and
+    /// descendants.
     /// </summary>
     /// <remarks>
     /// This closes a profile-mode gap: when a scope is present in current state but omitted from
     /// the request body, the flattener produces no buffer entry for it, so the merge's normal
-    /// buffer-iteration branches never trigger. The second pass walks StoredScopeStates and:
-    ///   - VisibleAbsent: emits deletes (the scope was visible but the client omitted it).
-    ///   - Hidden: preserves current rows and all descendants so that hidden data is not lost
-    ///     and guarded no-op comparison remains correct.
+    /// buffer-iteration branches never trigger. The second pass walks StoredScopeStates and
+    /// applies mode-dependent visibility logic:
+    ///
+    /// Real profile mode:
+    ///   - VisiblePresent (not in visitedScopeKeys): emits deletes. Core classifies existing
+    ///     stored scopes as VisiblePresent (ClassifyScope with non-null scopeData). When buffer
+    ///     iteration did not visit the scope, the request omitted it — delete per the design's
+    ///     "request VisibleAbsent + stored visible existence → Delete" rule.
+    ///   - Hidden: preserves current rows and all descendants.
+    ///   - VisibleAbsent: skipped (no data in database, nothing to delete or preserve).
+    ///
+    /// Null-profile mode:
+    ///   - VisibleAbsent: emits deletes. The null-profile adapter uses VisibleAbsent to signal
+    ///     "the request omitted this scope" (a request-side semantic, not a stored-data semantic).
+    ///   - Hidden: preserves current rows and all descendants.
+    ///   - VisiblePresent: skipped (handled by buffer iteration).
     ///
     /// Shortcut: only separate-table scopes are handled here. Inlined-scope VisibleAbsent
     /// handling remains in the buffer iteration path. Hidden collection scopes under visible
@@ -1714,7 +1862,8 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         IReadOnlyDictionary<DbTableName, MergeTableStateBuilder> tableStateBuilders,
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
-        HashSet<string> visitedScopeKeys
+        HashSet<string> visitedScopeKeys,
+        bool isNullProfile
     )
     {
         var tablePlansByJsonScope = writePlan.TablePlansInDependencyOrder.ToDictionary(
@@ -1724,12 +1873,33 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         foreach (var storedState in storedScopeStates)
         {
-            // Only process VisibleAbsent (delete) and Hidden (preserve) scopes.
-            // VisiblePresent scopes are handled by buffer iteration.
-            if (
-                storedState.Visibility != ProfileVisibilityKind.VisibleAbsent
-                && storedState.Visibility != ProfileVisibilityKind.Hidden
-            )
+            // Mode-dependent visibility filter:
+            // - Null-profile: the adapter uses VisibleAbsent to signal "request omitted this
+            //   scope" (a request-side semantic). Process VisibleAbsent for delete, skip
+            //   VisiblePresent (handled by buffer iteration).
+            // - Real profile: Core classifies existing stored scopes as VisiblePresent (non-null
+            //   scopeData) and absent scopes as VisibleAbsent (null scopeData). Skip VisibleAbsent
+            //   (no data to delete/preserve). Process VisiblePresent not in buffer for delete.
+            if (isNullProfile)
+            {
+                if (
+                    storedState.Visibility != ProfileVisibilityKind.VisibleAbsent
+                    && storedState.Visibility != ProfileVisibilityKind.Hidden
+                )
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (storedState.Visibility == ProfileVisibilityKind.VisibleAbsent)
+                {
+                    continue;
+                }
+            }
+
+            // Skip the root scope — always handled by the main synthesis path
+            if (storedState.Address.JsonScope == "$")
             {
                 continue;
             }
@@ -1822,10 +1992,17 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 }
             }
 
-            if (storedState.Visibility == ProfileVisibilityKind.Hidden)
+            if (
+                storedState.Visibility == ProfileVisibilityKind.Hidden
+                || storedState.HiddenMemberPaths.Length > 0
+            )
             {
-                // Hidden scope: preserve the current row and all descendant rows so that
-                // hidden data is not lost and guarded no-op row counts remain correct.
+                // Hidden scope or scope with hidden members: preserve the current row and
+                // all descendant rows so that hidden data is not lost and guarded no-op row
+                // counts remain correct. A VisiblePresent scope with HiddenMemberPaths (e.g.
+                // an extension where some fields are hidden by the profile) must be preserved
+                // even when buffer iteration did not visit it — deleting would lose the
+                // hidden member data.
                 foreach (var values in scopeCurrentRows.Select(static currentRow => currentRow.Values))
                 {
                     var comparableValues = ProjectComparableValues(matchedTablePlan, values);
@@ -1843,7 +2020,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
             else
             {
-                // VisibleAbsent: emit delete — the scope was visible but the client omitted it.
+                // Delete: either VisibleAbsent (null-profile adapter signals request omitted
+                // the scope) or VisiblePresent not visited by buffer (real profile — the
+                // request omitted a visible scope that has stored data and no hidden members).
                 foreach (var values in scopeCurrentRows.Select(static currentRow => currentRow.Values))
                 {
                     tableStateBuilder.AddDelete(

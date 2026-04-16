@@ -151,6 +151,17 @@ public static class CompiledScopeAdapterFactory
     /// Only direct child members are included — deeper nested paths belong to their
     /// own scope entries and are excluded by the <c>!Contains('.')</c> filter.
     /// </summary>
+    /// <remarks>
+    /// Column <c>SourceJsonPath</c> values use two conventions:
+    /// <list type="bullet">
+    ///   <item>Root-backed tables: absolute paths (e.g. <c>$.calendarReference.schoolYear</c>).</item>
+    ///   <item>Collection-backed tables: scope-relative paths starting with <c>$.</c>
+    ///         (e.g. <c>$.calendarReference.schoolId</c> relative to <c>$.addresses[*]</c>).</item>
+    /// </list>
+    /// When the parent table is a collection, the absolute inlined-scope prefix won't match
+    /// scope-relative column paths. This method computes a scope-relative prefix for that case,
+    /// stripping the parent table scope from the inlined scope and prepending <c>$.</c>.
+    /// </remarks>
     private static ImmutableArray<string> BuildInlinedMemberPaths(
         string jsonScope,
         Dictionary<string, DbTableModel> tableByScope
@@ -161,19 +172,73 @@ public static class CompiledScopeAdapterFactory
             return [];
 
         var parentTable = tableByScope[parentTableScope];
-        var scopePrefix = jsonScope + ".";
+        var absolutePrefix = jsonScope + ".";
+
+        // For non-root parent tables, columns may use scope-relative paths. Compute the
+        // scope-relative form of the inlined scope prefix for matching those columns.
+        // E.g. inlined scope "$.addresses[*].calendarReference" under parent "$.addresses[*]"
+        //   → relative part = "calendarReference" → scope-relative prefix = "$.calendarReference."
+        string? scopeRelativePrefix = null;
+        string parentScopePrefix = parentTableScope + ".";
+        if (parentTableScope != "$" && jsonScope.StartsWith(parentScopePrefix, StringComparison.Ordinal))
+        {
+            var relativePart = jsonScope[parentScopePrefix.Length..];
+            scopeRelativePrefix = "$." + relativePart + ".";
+        }
 
         return
         [
             .. parentTable
                 .Columns.Where(c =>
                     c.SourceJsonPath.HasValue
-                    && c.SourceJsonPath.Value.Canonical.StartsWith(scopePrefix, StringComparison.Ordinal)
+                    && (
+                        c.SourceJsonPath.Value.Canonical.StartsWith(absolutePrefix, StringComparison.Ordinal)
+                        || (
+                            scopeRelativePrefix is not null
+                            && c.SourceJsonPath.Value.Canonical.StartsWith(
+                                scopeRelativePrefix,
+                                StringComparison.Ordinal
+                            )
+                        )
+                    )
                 )
-                .Select(c => ToScopeRelativePath(c.SourceJsonPath!.Value.Canonical, jsonScope))
-                .Where(p => !p.Contains('.'))
+                .Select(c =>
+                    StripToDirectMember(
+                        c.SourceJsonPath!.Value.Canonical,
+                        absolutePrefix,
+                        scopeRelativePrefix
+                    )
+                )
+                .Where(p => p is not null && !p.Contains('.'))
+                .Select(p => p!)
                 .Distinct(),
         ];
+    }
+
+    /// <summary>
+    /// Strips a column's SourceJsonPath to a direct member name relative to the inlined scope,
+    /// trying the absolute prefix first, then the scope-relative prefix.
+    /// </summary>
+    private static string? StripToDirectMember(
+        string canonicalPath,
+        string absolutePrefix,
+        string? scopeRelativePrefix
+    )
+    {
+        if (canonicalPath.StartsWith(absolutePrefix, StringComparison.Ordinal))
+        {
+            return canonicalPath[absolutePrefix.Length..];
+        }
+
+        if (
+            scopeRelativePrefix is not null
+            && canonicalPath.StartsWith(scopeRelativePrefix, StringComparison.Ordinal)
+        )
+        {
+            return canonicalPath[scopeRelativePrefix.Length..];
+        }
+
+        return null;
     }
 
     /// <summary>

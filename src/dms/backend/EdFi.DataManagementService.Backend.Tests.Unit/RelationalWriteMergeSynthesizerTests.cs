@@ -5925,11 +5925,13 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     // --- StoredScopeStates second-pass tests ---
 
     [Test]
-    public void It_emits_delete_for_StoredScopeState_VisibleAbsent_separate_table_scope_not_in_buffer()
+    public void It_emits_delete_for_StoredScopeState_VisiblePresent_separate_table_scope_not_in_buffer()
     {
-        // Scenario: extension scope is VisibleAbsent in StoredScopeStates but NOT in the
+        // Scenario: extension scope is VisiblePresent in StoredScopeStates (Core classifies
+        // existing stored scopes with non-null scopeData as VisiblePresent) but NOT in the
         // flattened buffer (the flattener dropped it because it was omitted from the request).
-        // Current state has data for the extension table. The second pass should emit a delete.
+        // Current state has data for the extension table. The second pass should emit a delete
+        // because the request omitted a visible scope that has stored data.
         var fixture = CreateFixtureWithExtension();
 
         // No extension row in the flattened write set (scope was omitted from request)
@@ -5965,11 +5967,12 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
-                // VisibleAbsent in stored scope states — scope exists in current state but
-                // was omitted from the request body, signaling intentional deletion.
+                // VisiblePresent in stored scope states — Core classifies existing stored
+                // scopes with data as VisiblePresent. The second pass detects that buffer
+                // iteration did not visit this scope (request omitted it) and emits a delete.
                 new StoredScopeState(
                     ScopeAddress(extensionScope),
-                    ProfileVisibilityKind.VisibleAbsent,
+                    ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
             ]
@@ -6077,7 +6080,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
-    public void It_matches_the_correct_collection_aligned_scope_row_for_StoredScopeState_VisibleAbsent()
+    public void It_matches_the_correct_collection_aligned_scope_row_for_StoredScopeState_VisiblePresent_not_in_buffer()
     {
         var fixture = CreateCollectionWithAlignedExtensionScopeFixture();
 
@@ -6196,9 +6199,12 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
+                // VisiblePresent: Core classifies existing stored scopes with data as
+                // VisiblePresent. The second pass detects that buffer iteration did not
+                // visit this scope (request omitted Period2's extension) and emits a delete.
                 new StoredScopeState(
                     new ScopeInstanceAddress("$.classPeriods._ext.sample", [period2Ancestor]),
-                    ProfileVisibilityKind.VisibleAbsent,
+                    ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
             ],
@@ -6467,7 +6473,7 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     [Test]
     public void It_returns_ContractMismatch_when_StoredScopeState_references_unknown_scope()
     {
-        // Scenario: StoredScopeStates contains a VisibleAbsent entry for a scope that
+        // Scenario: StoredScopeStates contains a VisiblePresent entry for a scope that
         // is not in the CompiledScopeCatalog and has no table plan. The second pass
         // should return a ContractMismatch outcome.
         var fixture = CreateFixtureWithExtension();
@@ -6503,10 +6509,11 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
                     ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
-                // Unknown scope in StoredScopeStates
+                // Unknown scope in StoredScopeStates — uses VisiblePresent because
+                // VisibleAbsent stored scopes are skipped (no data to process)
                 new StoredScopeState(
                     ScopeAddress(unknownScope),
-                    ProfileVisibilityKind.VisibleAbsent,
+                    ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
             ]

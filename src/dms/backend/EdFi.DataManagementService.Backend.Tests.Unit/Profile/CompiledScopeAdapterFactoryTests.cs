@@ -282,3 +282,63 @@ public class Given_no_additionalScopes_the_factory_behaves_as_before
         result[0].JsonScope.Should().Be("$");
     }
 }
+
+[TestFixture]
+public class Given_a_collection_with_inlined_object_scope
+{
+    private CompiledScopeDescriptor[] _result = null!;
+    private CompiledScopeDescriptor _inlinedScope = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = AdapterFactoryTestFixtures.BuildCollectionWithInlinedObjectPlan();
+        _result = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            plan,
+            AdapterFactoryTestFixtures.CollectionWithInlinedObjectAdditionalScopes
+        );
+        _inlinedScope = _result.Single(s => s.JsonScope == "$.addresses[*].calendarReference");
+    }
+
+    [Test]
+    public void It_produces_three_scopes()
+    {
+        // Root ($), collection ($.addresses[*]), inlined ($.addresses[*].calendarReference)
+        _result.Should().HaveCount(3);
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_JsonScope_correctly()
+    {
+        _inlinedScope.JsonScope.Should().Be("$.addresses[*].calendarReference");
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_ScopeKind_to_NonCollection()
+    {
+        _inlinedScope.ScopeKind.Should().Be(ScopeKind.NonCollection);
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_ImmediateParentJsonScope_to_collection()
+    {
+        _inlinedScope.ImmediateParentJsonScope.Should().Be("$.addresses[*]");
+    }
+
+    [Test]
+    public void It_sets_inlined_scope_CollectionAncestorsInOrder_to_collection()
+    {
+        _inlinedScope.CollectionAncestorsInOrder.Should().Equal("$.addresses[*]");
+    }
+
+    [Test]
+    public void It_derives_CanonicalScopeRelativeMemberPaths_from_scope_relative_columns()
+    {
+        // Collection table has scope-relative columns $.calendarReference.calendarCode and
+        // $.calendarReference.schoolYear — BuildInlinedMemberPaths must match these using
+        // the scope-relative prefix "$.calendarReference." not just the absolute prefix.
+        _inlinedScope
+            .CanonicalScopeRelativeMemberPaths.Should()
+            .BeEquivalentTo("calendarCode", "schoolYear");
+    }
+}

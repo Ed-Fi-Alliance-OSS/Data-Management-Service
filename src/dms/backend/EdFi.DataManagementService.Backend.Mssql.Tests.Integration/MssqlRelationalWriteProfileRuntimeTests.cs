@@ -1039,13 +1039,16 @@ file static class MssqlProfileRuntimeContextFactory
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: []
                     ),
+                    // VisiblePresent: Core classifies existing stored scopes with data as
+                    // VisiblePresent. The second pass detects that buffer iteration did not
+                    // visit this scope (request omitted it) and emits a delete.
                     new StoredScopeState(
                         Address: new ScopeInstanceAddress("$._ext.sample", []),
-                        Visibility: ProfileVisibilityKind.VisibleAbsent,
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
                         HiddenMemberPaths: []
                     ),
                     .. CreateAlignedExtensionAddressStoredScopeStates(
-                        ProfileVisibilityKind.VisibleAbsent,
+                        ProfileVisibilityKind.VisiblePresent,
                         ["Austin", "Dallas"]
                     ),
                 ],
