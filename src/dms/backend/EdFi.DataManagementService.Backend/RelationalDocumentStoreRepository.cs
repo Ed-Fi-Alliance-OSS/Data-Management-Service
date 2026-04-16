@@ -329,10 +329,7 @@ public sealed class RelationalDocumentStoreRepository(
             await writeSession.CommitAsync().ConfigureAwait(false);
             return new DeleteResult.DeleteSuccess();
         }
-        catch (DbException ex)
-            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
-                && classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation
-            )
+        catch (DbException ex) when (_writeExceptionClassifier.IsForeignKeyViolation(ex))
         {
             _logger.LogDebug(
                 ex,

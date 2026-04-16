@@ -200,6 +200,47 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         _sut.IsTransientFailure(new FakeNonSqlDbException("not sql server")).Should().BeFalse();
     }
 
+    [Test]
+    public void It_reports_foreign_key_violation_for_error_547_with_parseable_constraint_name()
+    {
+        var exception = CreateSqlException(
+            547,
+            "The DELETE statement conflicted with the REFERENCE constraint "
+                + "\"FK_StudentSchoolAssociation_Student_DocumentId_StudentDocumentId_a1b2c3d4e5\"."
+        );
+
+        _sut.IsForeignKeyViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_foreign_key_violation_for_error_547_when_constraint_name_cannot_be_parsed()
+    {
+        var exception = CreateSqlException(
+            547,
+            "Localized or reworded server message without a quoted constraint name."
+        );
+
+        _sut.IsForeignKeyViolation(exception).Should().BeTrue();
+    }
+
+    [TestCase(2627)]
+    [TestCase(2601)]
+    [TestCase(1205)]
+    [TestCase(1222)]
+    [TestCase(8152)]
+    public void It_does_not_report_foreign_key_violation_for_other_error_numbers(int errorNumber)
+    {
+        var exception = CreateSqlException(errorNumber, "Non-FK SQL Server error.");
+
+        _sut.IsForeignKeyViolation(exception).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_report_foreign_key_violation_for_non_sql_server_db_exceptions()
+    {
+        _sut.IsForeignKeyViolation(new FakeNonSqlDbException("not sql server")).Should().BeFalse();
+    }
+
     /// <summary>
     /// Creates a real <see cref="SqlException"/> for testing.
     /// <see cref="SqlException"/> has no public constructor; instances are built via

@@ -3935,6 +3935,8 @@ public class Given_Default_Relational_Write_Executor
             return classification is not null;
         }
 
+        public bool IsForeignKeyViolation(DbException exception) => false;
+
         public bool IsTransientFailure(DbException exception) => false;
     }
 

@@ -325,10 +325,7 @@ internal sealed class DescriptorWriteHandler(
 
             return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
         }
-        catch (DbException ex)
-            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
-                && classification is RelationalWriteExceptionClassification.ForeignKeyConstraintViolation
-            )
+        catch (DbException ex) when (_writeExceptionClassifier.IsForeignKeyViolation(ex))
         {
             _logger.LogDebug(
                 ex,

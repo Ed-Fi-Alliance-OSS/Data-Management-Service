@@ -20,9 +20,7 @@ public sealed class NoOpRelationalWriteExceptionClassifier : IRelationalWriteExc
         return false;
     }
 
-    public bool IsTransientFailure(DbException exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        return false;
-    }
+    public bool IsForeignKeyViolation(DbException exception) => false;
+
+    public bool IsTransientFailure(DbException exception) => false;
 }

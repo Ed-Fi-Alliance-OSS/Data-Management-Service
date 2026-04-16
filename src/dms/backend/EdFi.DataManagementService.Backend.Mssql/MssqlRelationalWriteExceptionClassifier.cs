@@ -62,6 +62,17 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
         return classification is not null;
     }
 
+    public bool IsForeignKeyViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // SQL Server error 547 covers FOREIGN KEY (INSERT/UPDATE) and REFERENCE (DELETE)
+        // constraint violations; rely on the numeric code so localized or reworded
+        // server messages still produce a 409 DeleteFailureReference.
+        return exception is SqlException sqlException
+            && sqlException.Number == ForeignKeyConstraintViolationNumber;
+    }
+
     public bool IsTransientFailure(DbException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

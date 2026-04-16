@@ -46,6 +46,15 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
         return classification is not null;
     }
 
+    public bool IsForeignKeyViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // Rely on SqlState 23503 directly so FK violations still map to a 409
+        // DeleteFailureReference even if the constraint name is absent.
+        return exception is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation };
+    }
+
     public bool IsTransientFailure(DbException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

@@ -2011,8 +2011,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.ClassificationToReturn =
-            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation("FK_Document_xxx");
+        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(
             CreateSupportedMappingSet(_schoolResourceInfo, dialect)
@@ -2021,7 +2020,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeEquivalentTo(new DeleteResult.DeleteFailureReference(["(referenced document)"]));
-        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
+        _writeExceptionClassifier.IsForeignKeyViolationCallCount.Should().Be(1);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -2116,8 +2115,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteThrows(new StubDbException("constraint violation"));
-        _writeExceptionClassifier.ClassificationToReturn =
-            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation("FK_Document_xxx");
+        _writeExceptionClassifier.IsForeignKeyViolationToReturn = true;
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
 
@@ -2474,11 +2472,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {
-        public RelationalWriteExceptionClassification? ClassificationToReturn { get; set; }
+        public bool IsForeignKeyViolationToReturn { get; set; }
 
         public bool IsTransientFailureToReturn { get; set; }
 
-        public int TryClassifyCallCount { get; private set; }
+        public int IsForeignKeyViolationCallCount { get; private set; }
 
         public int IsTransientFailureCallCount { get; private set; }
 
@@ -2487,9 +2485,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
             [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
         )
         {
-            TryClassifyCallCount++;
-            classification = ClassificationToReturn;
-            return classification is not null;
+            classification = null;
+            return false;
+        }
+
+        public bool IsForeignKeyViolation(DbException exception)
+        {
+            IsForeignKeyViolationCallCount++;
+            return IsForeignKeyViolationToReturn;
         }
 
         public bool IsTransientFailure(DbException exception)
