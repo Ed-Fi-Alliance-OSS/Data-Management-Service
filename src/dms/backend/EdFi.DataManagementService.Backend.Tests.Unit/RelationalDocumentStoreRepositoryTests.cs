@@ -50,6 +50,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private IReadableProfileProjector _readableProfileProjector = null!;
     private IRelationalCommandExecutor _commandExecutor = null!;
     private ConfigurableRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
+    private RecordingWriteSessionFactory _writeSessionFactory = null!;
     private RelationalWriteExecutorRequest _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorRequest> _capturedExecutorRequests = null!;
 
@@ -65,6 +66,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _readableProfileProjector = A.Fake<IReadableProfileProjector>();
         _commandExecutor = A.Fake<IRelationalCommandExecutor>();
         _writeExceptionClassifier = new ConfigurableRelationalWriteExceptionClassifier();
+        _writeSessionFactory = new RecordingWriteSessionFactory(_commandExecutor);
         _capturedExecutorRequests = [];
         A.CallTo(() =>
                 _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorRequest>._, A<CancellationToken>._)
@@ -92,8 +94,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            _commandExecutor,
-            _writeExceptionClassifier
+            _writeExceptionClassifier,
+            _writeSessionFactory
         );
     }
 
@@ -1765,8 +1767,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            _writeSessionFactory
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -1807,8 +1809,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            _writeSessionFactory
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -1879,8 +1881,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            _commandExecutor,
-            _writeExceptionClassifier
+            _writeExceptionClassifier,
+            _writeSessionFactory
         );
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
@@ -1933,8 +1935,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _readTargetLookupService,
             _readMaterializer,
             _readableProfileProjector,
-            _commandExecutor,
-            _writeExceptionClassifier
+            _writeExceptionClassifier,
+            _writeSessionFactory
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteOutcome(deleted: true);
@@ -2062,6 +2064,99 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "An unexpected error occurred while processing the delete request."
                 )
             );
+    }
+
+    [Test]
+    public async Task It_commits_the_write_session_when_the_delete_succeeds()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteOutcome(deleted: true);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_the_write_session_when_the_document_uuid_is_not_resolvable()
+    {
+        // Default fake command executor returns null for the UUID lookup.
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_the_write_session_when_the_delete_yields_no_rows()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteOutcome(deleted: false);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_the_write_session_when_a_foreign_key_violation_is_classified()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteThrows(new StubDbException("constraint violation"));
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation("FK_Document_xxx");
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_the_write_session_when_a_transient_failure_is_classified()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteThrows(new StubDbException("deadlock"));
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rolls_back_the_write_session_on_generic_database_failure()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteThrows(new StubDbException("boom"));
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.UnknownFailure>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     [Test]
@@ -2317,6 +2412,65 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     private sealed class StubDbException(string message) : DbException(message);
+
+    private sealed class RecordingWriteSessionFactory(IRelationalCommandExecutor commandExecutor)
+        : IRelationalWriteSessionFactory
+    {
+        public RecordingWriteSession Session { get; } = new(commandExecutor);
+
+        public int CreateAsyncCallCount { get; private set; }
+
+        public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
+        {
+            CreateAsyncCallCount++;
+            return Task.FromResult<IRelationalWriteSession>(Session);
+        }
+    }
+
+    private sealed class RecordingWriteSession(IRelationalCommandExecutor commandExecutor)
+        : IRelationalWriteSession
+    {
+        public IRelationalCommandExecutor CommandExecutor { get; } = commandExecutor;
+
+        public DbConnection Connection =>
+            throw new InvalidOperationException(
+                "RecordingWriteSession exposes CommandExecutor directly; Connection is not used in tests."
+            );
+
+        public DbTransaction Transaction =>
+            throw new InvalidOperationException(
+                "RecordingWriteSession exposes CommandExecutor directly; Transaction is not used in tests."
+            );
+
+        public int CommitCallCount { get; private set; }
+
+        public int RollbackCallCount { get; private set; }
+
+        public int DisposeCallCount { get; private set; }
+
+        public DbCommand CreateCommand(RelationalCommand command) =>
+            throw new InvalidOperationException(
+                "RecordingWriteSession does not expose DbCommand; callers should use CommandExecutor."
+            );
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            CommitCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            RollbackCallCount++;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCallCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class ConfigurableRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {

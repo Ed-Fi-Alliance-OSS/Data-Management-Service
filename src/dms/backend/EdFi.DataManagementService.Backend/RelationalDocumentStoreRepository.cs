@@ -27,8 +27,8 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalReadTargetLookupService readTargetLookupService,
     IRelationalReadMaterializer readMaterializer,
     IReadableProfileProjector readableProfileProjector,
-    IRelationalCommandExecutor commandExecutor,
-    IRelationalWriteExceptionClassifier writeExceptionClassifier
+    IRelationalWriteExceptionClassifier writeExceptionClassifier,
+    IRelationalWriteSessionFactory writeSessionFactory
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private readonly ILogger<RelationalDocumentStoreRepository> _logger =
@@ -49,10 +49,10 @@ public sealed class RelationalDocumentStoreRepository(
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
     private readonly IReadableProfileProjector _readableProfileProjector =
         readableProfileProjector ?? throw new ArgumentNullException(nameof(readableProfileProjector));
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
+    private readonly IRelationalWriteSessionFactory _writeSessionFactory =
+        writeSessionFactory ?? throw new ArgumentNullException(nameof(writeSessionFactory));
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -259,17 +259,31 @@ public sealed class RelationalDocumentStoreRepository(
     {
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
 
-        var resolved = await RelationalDocumentUuidLookupSupport
-            .TryResolveByDocumentUuidAndResourceAsync(
-                _commandExecutor,
-                mappingSet,
-                resource,
-                relationalDeleteRequest.DocumentUuid
-            )
-            .ConfigureAwait(false);
+        await using var writeSession = await _writeSessionFactory.CreateAsync().ConfigureAwait(false);
+        var sessionCommandExecutor = writeSession.CommandExecutor;
+
+        RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid? resolved;
+
+        try
+        {
+            resolved = await RelationalDocumentUuidLookupSupport
+                .TryResolveByDocumentUuidAndResourceAsync(
+                    sessionCommandExecutor,
+                    mappingSet,
+                    resource,
+                    relationalDeleteRequest.DocumentUuid
+                )
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            await writeSession.RollbackAsync().ConfigureAwait(false);
+            throw;
+        }
 
         if (resolved is null)
         {
+            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.DeleteFailureNotExists();
         }
 
@@ -299,14 +313,21 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            var deleted = await _commandExecutor
+            var deleted = await sessionCommandExecutor
                 .ExecuteReaderAsync(
                     deleteCommand,
                     static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false)
                 )
                 .ConfigureAwait(false);
 
-            return deleted ? new DeleteResult.DeleteSuccess() : new DeleteResult.DeleteFailureNotExists();
+            if (!deleted)
+            {
+                await writeSession.RollbackAsync().ConfigureAwait(false);
+                return new DeleteResult.DeleteFailureNotExists();
+            }
+
+            await writeSession.CommitAsync().ConfigureAwait(false);
+            return new DeleteResult.DeleteSuccess();
         }
         catch (DbException ex)
             when (_writeExceptionClassifier.TryClassify(ex, out var classification)
@@ -320,6 +341,7 @@ public sealed class RelationalDocumentStoreRepository(
                 relationalDeleteRequest.TraceId.Value
             );
 
+            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.DeleteFailureReference(["(referenced document)"]);
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
@@ -331,6 +353,7 @@ public sealed class RelationalDocumentStoreRepository(
                 relationalDeleteRequest.TraceId.Value
             );
 
+            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (DbException ex)
@@ -342,6 +365,7 @@ public sealed class RelationalDocumentStoreRepository(
                 relationalDeleteRequest.TraceId.Value
             );
 
+            await writeSession.RollbackAsync().ConfigureAwait(false);
             return new DeleteResult.UnknownFailure(
                 "An unexpected error occurred while processing the delete request."
             );

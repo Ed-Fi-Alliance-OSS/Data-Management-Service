@@ -100,8 +100,10 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     )]
     private static partial Regex UniqueIndexNameRegex();
 
+    // SQL Server error 547 phrasing differs by statement: INSERT/UPDATE produce
+    // "FOREIGN KEY constraint \"...\"", while DELETE produces "REFERENCE constraint \"...\"".
     [GeneratedRegex(
-        """\bforeign\s+key\s+constraint\s+["'](?<constraintName>[^"']+)["']""",
+        """\b(?:foreign\s+key|reference)\s+constraint\s+["'](?<constraintName>[^"']+)["']""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     )]
     private static partial Regex ForeignKeyConstraintNameRegex();

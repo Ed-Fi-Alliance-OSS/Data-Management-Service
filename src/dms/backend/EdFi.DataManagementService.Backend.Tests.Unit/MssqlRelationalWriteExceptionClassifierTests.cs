@@ -85,6 +85,28 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     }
 
     [Test]
+    public void It_classifies_reference_constraint_violations_from_delete_statements()
+    {
+        var exception = CreateSqlException(
+            547,
+            "The DELETE statement conflicted with the REFERENCE constraint "
+                + "\"FK_StudentSchoolAssociation_Student_DocumentId_StudentDocumentId_a1b2c3d4e5\"."
+                + " The conflict occurred in database \"EdFi_Datastore\", table \"dms.StudentSchoolAssociation\"."
+        );
+
+        var classified = _sut.TryClassify(exception, out var classification);
+
+        classified.Should().BeTrue();
+        classification
+            .Should()
+            .BeOfType<RelationalWriteExceptionClassification.ForeignKeyConstraintViolation>();
+        classification
+            .As<RelationalWriteExceptionClassification.ForeignKeyConstraintViolation>()
+            .ConstraintName.Should()
+            .Be("FK_StudentSchoolAssociation_Student_DocumentId_StudentDocumentId_a1b2c3d4e5");
+    }
+
+    [Test]
     public void It_falls_back_when_constraint_name_parsing_fails()
     {
         var exception = CreateSqlException(

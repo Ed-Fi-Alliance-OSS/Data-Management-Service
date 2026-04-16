@@ -410,6 +410,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IRelationalReadMaterializer>();
                 services.RemoveAll<IReadableProfileProjector>();
                 services.RemoveAll<IReferenceResolver>();
+                services.RemoveAll<IRelationalWriteSessionFactory>();
 
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
@@ -430,6 +431,9 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
                 services.AddSingleton<IRelationalWriteExceptionClassifier>(
                     new NoOpRelationalWriteExceptionClassifier()
+                );
+                services.AddSingleton<IRelationalWriteSessionFactory>(
+                    A.Fake<IRelationalWriteSessionFactory>()
                 );
             });
         });

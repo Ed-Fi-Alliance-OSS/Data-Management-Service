@@ -7,18 +7,21 @@ using System.Data.Common;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteSessionFactory
+public interface IRelationalWriteSessionFactory
 {
     Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default);
 }
 
-internal interface IRelationalWriteSession : IAsyncDisposable
+public interface IRelationalWriteSession : IAsyncDisposable
 {
     DbConnection Connection { get; }
 
     DbTransaction Transaction { get; }
 
     DbCommand CreateCommand(RelationalCommand command);
+
+    IRelationalCommandExecutor CommandExecutor =>
+        new SessionRelationalCommandExecutor(Connection, Transaction);
 
     Task CommitAsync(CancellationToken cancellationToken = default);
 
@@ -30,12 +33,22 @@ internal sealed class RelationalWriteSession(DbConnection connection, DbTransact
 {
     private RelationalWriteSessionState _state = RelationalWriteSessionState.Pending;
     private bool _disposed;
+    private IRelationalCommandExecutor? _commandExecutor;
 
     public DbConnection Connection { get; } =
         connection ?? throw new ArgumentNullException(nameof(connection));
 
     public DbTransaction Transaction { get; } =
         transaction ?? throw new ArgumentNullException(nameof(transaction));
+
+    public IRelationalCommandExecutor CommandExecutor
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _commandExecutor ??= new SessionRelationalCommandExecutor(Connection, Transaction);
+        }
+    }
 
     public DbCommand CreateCommand(RelationalCommand command)
     {

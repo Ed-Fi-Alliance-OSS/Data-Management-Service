@@ -77,8 +77,8 @@ public class Given_No_Profile_Relational_Post
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
             A.Fake<IReadableProfileProjector>(),
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalWriteSessionFactory>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -187,8 +187,8 @@ public class Given_No_Profile_Relational_Put
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
             A.Fake<IReadableProfileProjector>(),
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalWriteSessionFactory>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
@@ -297,8 +297,8 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
             A.Fake<IReadableProfileProjector>(),
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalWriteSessionFactory>()
         );
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
@@ -406,8 +406,8 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<IRelationalReadTargetLookupService>(),
             A.Fake<IRelationalReadMaterializer>(),
             A.Fake<IReadableProfileProjector>(),
-            A.Fake<IRelationalCommandExecutor>(),
-            new NoOpRelationalWriteExceptionClassifier()
+            new NoOpRelationalWriteExceptionClassifier(),
+            A.Fake<IRelationalWriteSessionFactory>()
         );
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
