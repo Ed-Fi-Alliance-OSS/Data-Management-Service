@@ -2565,7 +2565,9 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
     private static bool IsAlignedToParentScope(TableWritePlan parentTablePlan, TableWritePlan childPlan)
     {
-        var alignedBaseJsonScope = TryGetAlignedBaseJsonScope(childPlan.TableModel.JsonScope.Canonical);
+        var alignedBaseJsonScope = JsonScopePathHelper.ResolveAlignedBaseJsonScope(
+            childPlan.TableModel.JsonScope.Canonical
+        );
 
         return alignedBaseJsonScope is not null
             && string.Equals(
@@ -2590,42 +2592,6 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 && fk.Columns.SequenceEqual(expectedColumns)
                 && fk.TargetColumns.SequenceEqual(expectedTargetColumns)
             );
-    }
-
-    private static string? TryGetAlignedBaseJsonScope(string jsonScope)
-    {
-        if (!jsonScope.Contains("._ext.", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var segments = jsonScope.Split('.');
-        List<string> baseScopeSegments = [];
-        var index = 0;
-
-        while (index < segments.Length)
-        {
-            if (string.Equals(segments[index], "_ext", StringComparison.Ordinal))
-            {
-                if (index + 1 >= segments.Length)
-                {
-                    return null;
-                }
-
-                index += 2;
-                continue;
-            }
-
-            baseScopeSegments.Add(segments[index]);
-            index += 1;
-        }
-
-        if (baseScopeSegments.Count == 0 || baseScopeSegments.Count == segments.Length)
-        {
-            return null;
-        }
-
-        return string.Join(".", baseScopeSegments);
     }
 
     private static IReadOnlyList<DbColumnName> BuildParentScopeForeignKeyColumns(

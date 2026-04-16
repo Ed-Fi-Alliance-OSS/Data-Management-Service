@@ -85,7 +85,7 @@ public static class CompiledScopeAdapterFactory
 
         var immediateParentJsonScope =
             tableModel.IdentityMetadata.TableKind == DbTableKind.CollectionExtensionScope
-                ? ResolveAlignedBaseJsonScope(jsonScopeCanonical)
+                ? JsonScopePathHelper.ResolveAlignedBaseJsonScope(jsonScopeCanonical)
                 : ResolveImmediateParentJsonScope(jsonScopeCanonical, scopeKindByCanonical);
 
         var collectionAncestorsInOrder = BuildCollectionAncestors(
@@ -306,37 +306,6 @@ public static class CompiledScopeAdapterFactory
 
         // Fall back to root
         return "$";
-    }
-
-    private static string? ResolveAlignedBaseJsonScope(string jsonScopeCanonical)
-    {
-        if (!jsonScopeCanonical.Contains("._ext.", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var segments = jsonScopeCanonical.Split('.');
-        List<string> baseScopeSegments = [];
-        var index = 0;
-
-        while (index < segments.Length)
-        {
-            if (string.Equals(segments[index], "_ext", StringComparison.Ordinal))
-            {
-                if (index + 1 >= segments.Length)
-                {
-                    return null;
-                }
-
-                index += 2;
-                continue;
-            }
-
-            baseScopeSegments.Add(segments[index]);
-            index++;
-        }
-
-        return baseScopeSegments.Count > 0 ? string.Join(".", baseScopeSegments) : null;
     }
 
     /// <summary>
