@@ -678,6 +678,97 @@ public class Given_Relational_Write_Binding_Classifier
         act.Should().NotThrow();
     }
 
+    [Test]
+    public void It_classifies_key_unification_synthetic_columns_as_clearable_when_all_members_are_clearable()
+    {
+        var tableModel = CreateRootTableModelWithKeyUnificationSyntheticColumns();
+
+        var plan = new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"School\" values (@p)",
+            UpdateSql: "update edfi.\"School\" set @p where \"DocumentId\" = @DocumentId",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 6, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    tableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.inlined.primaryType", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "PrimaryType"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        new JsonPathExpression("$.inlined.secondaryType", []),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 60)
+                    ),
+                    "SecondaryType"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[3],
+                    new WriteValueSource.Precomputed(),
+                    "PrimaryType_Unified"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[4],
+                    new WriteValueSource.Precomputed(),
+                    "PrimaryType_Present"
+                ),
+                new WriteColumnBinding(
+                    tableModel.Columns[5],
+                    new WriteValueSource.Precomputed(),
+                    "SecondaryType_Present"
+                ),
+            ],
+            KeyUnificationPlans:
+            [
+                new KeyUnificationWritePlan(
+                    CanonicalColumn: new DbColumnName("PrimaryType_Unified"),
+                    CanonicalBindingIndex: 3,
+                    MembersInOrder:
+                    [
+                        new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: new DbColumnName("PrimaryType"),
+                            RelativePath: new JsonPathExpression("$.inlined.primaryType", []),
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                            PresenceColumn: new DbColumnName("PrimaryType_Present"),
+                            PresenceBindingIndex: 4,
+                            PresenceIsSynthetic: true
+                        ),
+                        new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: new DbColumnName("SecondaryType"),
+                            RelativePath: new JsonPathExpression("$.inlined.secondaryType", []),
+                            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                            PresenceColumn: new DbColumnName("SecondaryType_Present"),
+                            PresenceBindingIndex: 5,
+                            PresenceIsSynthetic: true
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        var result = RelationalWriteBindingClassifier.Classify(
+            plan,
+            hiddenMemberPaths: [],
+            clearableMemberPaths: ["$.inlined.primaryType", "$.inlined.secondaryType"],
+            documentReferenceBindings: null
+        );
+
+        result[0].Should().Be(BindingClassification.StorageManaged);
+        result[3].Should().Be(BindingClassification.ClearOnVisibleAbsent);
+        result[4].Should().Be(BindingClassification.ClearOnVisibleAbsent);
+        result[5].Should().Be(BindingClassification.ClearOnVisibleAbsent);
+    }
+
     private static DbTableModel CreateRootTableModel(string tableName)
     {
         return new DbTableModel(
@@ -755,6 +846,36 @@ public class Given_Relational_Write_Binding_Classifier
                 [new DbColumnName("CollectionItemId")],
                 [new DbColumnName("School_DocumentId")],
                 [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+    }
+
+    private static DbTableModel CreateRootTableModelWithKeyUnificationSyntheticColumns()
+    {
+        return new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "School"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                CreateColumn("DocumentId", ColumnKind.ParentKeyPart),
+                CreateColumn("PrimaryType", ColumnKind.Scalar),
+                CreateColumn("SecondaryType", ColumnKind.Scalar),
+                CreateColumn("PrimaryType_Unified", ColumnKind.Scalar, isNullable: true),
+                CreateColumn("PrimaryType_Present", ColumnKind.Scalar, isNullable: true),
+                CreateColumn("SecondaryType_Present", ColumnKind.Scalar, isNullable: true),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
                 []
             ),
         };

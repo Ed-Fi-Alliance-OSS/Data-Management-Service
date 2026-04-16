@@ -2087,6 +2087,105 @@ public class Given_Duplicate_CompiledScope_In_Catalog_When_ValidatingRequestCont
     }
 }
 
+[TestFixture]
+public class Given_Visible_StoredScopeState_For_TopLevel_Collection_Instance_Without_VisibleStoredCollectionRow_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+            new(
+                JsonScope: "$.classPeriods[*].schoolReference",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$.classPeriods[*]",
+                CollectionAncestorsInOrder: ["$.classPeriods[*]"],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var periodIdentity = ImmutableArray.Create(
+            new SemanticIdentityPart("classPeriodName", JsonValue.Create("Period1")!, true)
+        );
+        var periodRowAddress = new CollectionRowAddress("$.classPeriods[*]", rootAddress, periodIdentity);
+        var nestedScopeAddress = new ScopeInstanceAddress(
+            "$.classPeriods[*].schoolReference",
+            [new AncestorCollectionInstance("$.classPeriods[*]", periodIdentity)]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    nestedScopeAddress,
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(periodRowAddress, Creatable: true, "$.classPeriods[0]"),
+            ]
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(nestedScopeAddress, ProfileVisibilityKind.VisiblePresent, []),
+            ],
+            // Top-level VisibleStoredCollectionRow deliberately missing.
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "ClassPeriod",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_emits_a_top_level_collection_row_coverage_contract_mismatch()
+    {
+        _result.Should().ContainSingle();
+        _result[0].Should().BeAssignableTo<CoreBackendContractMismatchFailure>();
+        _result[0]
+            .Message.Should()
+            .Contain("top-level collection scope")
+            .And.Contain("$.classPeriods[*]")
+            .And.Contain("VisibleStoredCollectionRow");
+    }
+}
+
 internal static class DuplicateProfileContractValidatorTestData
 {
     public static List<CompiledScopeDescriptor> BuildRootAndNonCollectionCatalog(string childScope) =>

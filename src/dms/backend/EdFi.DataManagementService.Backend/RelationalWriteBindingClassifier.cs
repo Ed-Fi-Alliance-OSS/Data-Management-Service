@@ -72,6 +72,8 @@ internal static class RelationalWriteBindingClassifier
             };
         }
 
+        ApplyKeyUnificationSyntheticClassifications(tableWritePlan, hiddenSet, clearableSet, result);
+
         return result;
     }
 
@@ -168,6 +170,56 @@ internal static class RelationalWriteBindingClassifier
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Applies Hidden/Clearable classification to key-unification synthetic columns so
+    /// VisibleAbsent inlined-scope clearing also clears synthetic presence/canonical state.
+    /// </summary>
+    private static void ApplyKeyUnificationSyntheticClassifications(
+        TableWritePlan tableWritePlan,
+        HashSet<string> hiddenSet,
+        HashSet<string> clearableSet,
+        BindingClassification[] classifications
+    )
+    {
+        foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
+        {
+            var hasHiddenMember = false;
+            var hasClearableMember = false;
+            var allMembersClearable = keyUnificationPlan.MembersInOrder.Length > 0;
+
+            foreach (var member in keyUnificationPlan.MembersInOrder)
+            {
+                var memberPath = member.RelativePath.Canonical;
+                var memberIsHidden = hiddenSet.Contains(memberPath);
+                var memberIsClearable = clearableSet.Contains(memberPath);
+
+                hasHiddenMember |= memberIsHidden;
+                hasClearableMember |= memberIsClearable;
+                allMembersClearable &= memberIsClearable;
+
+                if (!member.PresenceIsSynthetic || member.PresenceBindingIndex is not int presenceIndex)
+                {
+                    continue;
+                }
+
+                if (memberIsHidden)
+                {
+                    classifications[presenceIndex] = BindingClassification.HiddenPreserved;
+                }
+                else if (memberIsClearable)
+                {
+                    classifications[presenceIndex] = BindingClassification.ClearOnVisibleAbsent;
+                }
+            }
+
+            if (!hasHiddenMember && hasClearableMember && allMembersClearable)
+            {
+                classifications[keyUnificationPlan.CanonicalBindingIndex] =
+                    BindingClassification.ClearOnVisibleAbsent;
+            }
+        }
     }
 
     public static void ValidateCollectionKeyBinding(

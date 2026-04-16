@@ -435,6 +435,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             var reverseValidationOutcome = ValidateNonCollectionScopeReverseCoverage(
                 request.ProfileRequest.RequestScopeStates,
                 request.WritePlan,
+                compiledScopeCatalog,
                 visitedScopeKeys
             );
 
@@ -1194,6 +1195,21 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
 
+        if (
+            ancestorContextKey.Length == 0
+            && visibleStoredRows.Count > 0
+            && hiddenCurrentRows.Count > 0
+            && IsTopLevelCollectionScope(jsonScope, compiledScopeCatalog)
+        )
+        {
+            return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                $"Profile merge for top-level collection scope '{jsonScope}' found "
+                    + $"{hiddenCurrentRows.Count} current DB row(s) that were not represented "
+                    + "by VisibleStoredCollectionRows. Backend will fail closed instead of "
+                    + "silently preserving or re-inserting unmatched rows.",
+            ]);
+        }
+
         // Step 2b: Reverse coverage — every VisibleStoredCollectionRow must have matched
         // a current DB row. If Core emits a VisibleStoredCollectionRow for an identity
         // that doesn't exist in the current database state, that orphan would never enter
@@ -1741,6 +1757,19 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         return null;
     }
 
+    private static bool IsTopLevelCollectionScope(
+        string jsonScope,
+        IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog
+    )
+    {
+        var descriptor = compiledScopeCatalog.FirstOrDefault(scope =>
+            string.Equals(scope.JsonScope, jsonScope, StringComparison.Ordinal)
+        );
+
+        return descriptor
+            is { ScopeKind: ScopeKind.Collection, CollectionAncestorsInOrder.IsDefaultOrEmpty: true };
+    }
+
     /// <summary>
     /// Reverse contract validation for non-collection separate-table scopes. Every VisiblePresent
     /// RequestScopeState targeting a separate-table non-collection scope must have been visited
@@ -1750,13 +1779,13 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     /// </summary>
     /// <remarks>
     /// Mirrors the collection reverse check (VisibleRequestCollectionItems ↔ candidates).
-    /// Inlined scopes are excluded because they share the parent table's buffer row.
     /// Collection scopes are excluded because they have their own reverse validation.
     /// The root scope ($) is excluded because it always has a buffer row.
     /// </remarks>
     private static RelationalWriteMergeSynthesisOutcome? ValidateNonCollectionScopeReverseCoverage(
         ImmutableArray<RequestScopeState> requestScopeStates,
         ResourceWritePlan writePlan,
+        IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog,
         HashSet<string> visitedScopeKeys
     )
     {
@@ -1764,6 +1793,13 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             plan => plan.TableModel.JsonScope.Canonical,
             StringComparer.Ordinal
         );
+        var tableBackedScopes = new HashSet<string>(tablePlansByJsonScope.Keys, StringComparer.Ordinal);
+        Dictionary<string, CompiledScopeDescriptor> compiledScopesByJsonScope = new(StringComparer.Ordinal);
+
+        foreach (var scope in compiledScopeCatalog)
+        {
+            compiledScopesByJsonScope.TryAdd(scope.JsonScope, scope);
+        }
 
         foreach (var requestState in requestScopeStates)
         {
@@ -1778,45 +1814,166 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 continue;
             }
 
-            // Skip scopes nested under collections (collection-aligned extensions, scopes
-            // under collection items). Their buffer visitation is tracked per-collection-item
-            // via attached scope data, not in the root-level visitedScopeKeys set.
-            if (!requestState.Address.AncestorCollectionInstances.IsEmpty)
+            if (
+                !TryResolveTrackedScopeForReverseCoverage(
+                    requestState.Address.JsonScope,
+                    tablePlansByJsonScope,
+                    tableBackedScopes,
+                    compiledScopesByJsonScope,
+                    out var trackedScope,
+                    out var requestScopeIsInlined
+                )
+            )
             {
                 continue;
             }
 
-            // Only validate separate-table scopes (those with their own table plan)
-            if (!tablePlansByJsonScope.TryGetValue(requestState.Address.JsonScope, out var tablePlan))
+            // Root rows are always visited by the main synthesis path and do not have
+            // scope-key tracking in visitedScopeKeys.
+            if (trackedScope == "$")
             {
                 continue;
             }
 
-            // Skip collection scopes — they have their own reverse validation
+            var tablePlan = tablePlansByJsonScope[trackedScope];
+
+            // Collection scopes are validated by collection reverse coverage.
             if (tablePlan.CollectionMergePlan is not null)
             {
                 continue;
             }
 
-            // Build the same scope key format used by buffer iteration tracking
             var ancestorKey = AncestorKeyHelpers.BuildAncestorKeyFromScopeInstanceAddress(
                 requestState.Address
             );
-            var scopeKey = $"{requestState.Address.JsonScope}|{ancestorKey}";
+            var scopeKey = $"{trackedScope}|{ancestorKey}";
 
             if (!visitedScopeKeys.Contains(scopeKey))
             {
                 return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
-                    $"Profile merge encountered VisiblePresent RequestScopeState for "
-                        + $"separate-table scope '{requestState.Address.JsonScope}' "
-                        + "but buffer iteration did not visit it. The flattener must produce "
-                        + "a buffer row for every VisiblePresent separate-table scope; an empty "
-                        + "scope object may have been incorrectly dropped.",
+                    requestScopeIsInlined
+                        ? $"Profile merge encountered VisiblePresent RequestScopeState for "
+                            + $"inlined scope '{requestState.Address.JsonScope}', but owning "
+                            + $"scope '{trackedScope}' was not visited by buffer iteration. "
+                            + "The flattener must produce an attached row for every visible "
+                            + "collection-context aligned scope instance."
+                        : $"Profile merge encountered VisiblePresent RequestScopeState for "
+                            + $"separate-table scope '{requestState.Address.JsonScope}' "
+                            + "but buffer iteration did not visit it. The flattener must produce "
+                            + "a buffer row for every VisiblePresent separate-table scope; an empty "
+                            + "scope object may have been incorrectly dropped.",
                 ]);
             }
         }
 
         return null;
+    }
+
+    private static bool TryResolveTrackedScopeForReverseCoverage(
+        string requestJsonScope,
+        IReadOnlyDictionary<string, TableWritePlan> tablePlansByJsonScope,
+        HashSet<string> tableBackedScopes,
+        IReadOnlyDictionary<string, CompiledScopeDescriptor> compiledScopesByJsonScope,
+        out string trackedScope,
+        out bool requestScopeIsInlined
+    )
+    {
+        if (tablePlansByJsonScope.TryGetValue(requestJsonScope, out var directTablePlan))
+        {
+            if (directTablePlan.CollectionMergePlan is not null)
+            {
+                trackedScope = string.Empty;
+                requestScopeIsInlined = false;
+                return false;
+            }
+
+            trackedScope = requestJsonScope;
+            requestScopeIsInlined = false;
+            return true;
+        }
+
+        var owningTableScope = ResolveOwningTableBackedScope(
+            requestJsonScope,
+            tableBackedScopes,
+            compiledScopesByJsonScope
+        );
+
+        if (owningTableScope is null)
+        {
+            trackedScope = string.Empty;
+            requestScopeIsInlined = false;
+            return false;
+        }
+
+        trackedScope = owningTableScope;
+        requestScopeIsInlined = true;
+        return true;
+    }
+
+    private static string? ResolveOwningTableBackedScope(
+        string requestJsonScope,
+        HashSet<string> tableBackedScopes,
+        IReadOnlyDictionary<string, CompiledScopeDescriptor> compiledScopesByJsonScope
+    )
+    {
+        HashSet<string> visited = new(StringComparer.Ordinal);
+        var currentScope = requestJsonScope;
+
+        while (
+            compiledScopesByJsonScope.TryGetValue(currentScope, out var compiledScope)
+            && compiledScope.ImmediateParentJsonScope is not null
+        )
+        {
+            var parentScope = compiledScope.ImmediateParentJsonScope;
+
+            if (!visited.Add(parentScope))
+            {
+                break;
+            }
+
+            if (tableBackedScopes.Contains(parentScope))
+            {
+                return parentScope;
+            }
+
+            currentScope = parentScope;
+        }
+
+        return FindLongestTableBackedPrefixScope(requestJsonScope, tableBackedScopes);
+    }
+
+    private static string? FindLongestTableBackedPrefixScope(
+        string jsonScope,
+        HashSet<string> tableBackedScopes
+    )
+    {
+        string? bestMatch = null;
+
+        foreach (var tableBackedScope in tableBackedScopes)
+        {
+            if (tableBackedScope == "$")
+            {
+                if (
+                    jsonScope.StartsWith("$.", StringComparison.Ordinal)
+                    && (bestMatch is null || tableBackedScope.Length > bestMatch.Length)
+                )
+                {
+                    bestMatch = tableBackedScope;
+                }
+
+                continue;
+            }
+
+            if (
+                jsonScope.StartsWith(tableBackedScope + ".", StringComparison.Ordinal)
+                && (bestMatch is null || tableBackedScope.Length > bestMatch.Length)
+            )
+            {
+                bestMatch = tableBackedScope;
+            }
+        }
+
+        return bestMatch;
     }
 
     /// <summary>
@@ -2777,6 +2934,15 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 {
                     // No presence column — member is unconditionally present (required field).
                     isPresent = true;
+
+                    if (memberIsHidden)
+                    {
+                        anyHiddenStoredPresent = true;
+                    }
+                    else
+                    {
+                        anyVisiblePresent = true;
+                    }
                 }
                 else if (memberIsHidden)
                 {

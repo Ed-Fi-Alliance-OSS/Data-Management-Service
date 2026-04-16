@@ -604,6 +604,17 @@ internal static class ProfileWriteContractValidator
             list.Add(row);
         }
 
+        ValidateTopLevelCollectionRowCoverageFromStoredScopes(
+            context.StoredScopeStates,
+            scopeCatalog,
+            visibleStoredByCollectionScope,
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+
         // Root scope is validated explicitly — unlike request-side completeness (where the
         // request body itself signals the root is present), the merge reads root stored
         // hidden-member paths at the very start of synthesis and a missing entry silently
@@ -816,6 +827,91 @@ internal static class ProfileWriteContractValidator
         }
 
         return lookup;
+    }
+
+    private static void ValidateTopLevelCollectionRowCoverageFromStoredScopes(
+        ImmutableArray<StoredScopeState> storedScopeStates,
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog,
+        Dictionary<string, List<VisibleStoredCollectionRow>> visibleStoredByCollectionScope,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var topLevelCollectionScopes = new HashSet<string>(
+            scopeCatalog
+                .Where(scope =>
+                    scope.ScopeKind == ScopeKind.Collection
+                    && scope.CollectionAncestorsInOrder.IsDefaultOrEmpty
+                )
+                .Select(scope => scope.JsonScope),
+            StringComparer.Ordinal
+        );
+
+        if (topLevelCollectionScopes.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> visibleTopLevelRows = new(StringComparer.Ordinal);
+
+        foreach (var collectionScope in topLevelCollectionScopes)
+        {
+            if (
+                !visibleStoredByCollectionScope.TryGetValue(collectionScope, out var visibleRows)
+                || visibleRows.Count == 0
+            )
+            {
+                continue;
+            }
+
+            foreach (var row in visibleRows)
+            {
+                visibleTopLevelRows.Add(BuildCollectionRowInstanceKey(row.Address));
+            }
+        }
+
+        foreach (var storedState in storedScopeStates)
+        {
+            if (
+                storedState.Visibility != ProfileVisibilityKind.VisiblePresent
+                || storedState.Address.AncestorCollectionInstances.IsEmpty
+            )
+            {
+                continue;
+            }
+
+            var topLevelAncestor = storedState.Address.AncestorCollectionInstances[0];
+
+            if (!topLevelCollectionScopes.Contains(topLevelAncestor.JsonScope))
+            {
+                continue;
+            }
+
+            var rowKey = BuildCollectionRowInstanceKey(
+                new CollectionRowAddress(
+                    topLevelAncestor.JsonScope,
+                    new ScopeInstanceAddress("$", []),
+                    topLevelAncestor.SemanticIdentityInOrder
+                )
+            );
+
+            if (!visibleTopLevelRows.Contains(rowKey))
+            {
+                failures.Add(
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        $"StoredScopeState for top-level collection scope '{topLevelAncestor.JsonScope}' "
+                            + $"references collection instance '{rowKey}' without a corresponding "
+                            + "VisibleStoredCollectionRow. Backend requires visible stored row "
+                            + "coverage for visible top-level collection instances.",
+                        new ProfileFailureContext(profileName, resourceName, method, operation)
+                    )
+                );
+            }
+        }
     }
 
     private static void ValidateScopeInstanceAddress(
