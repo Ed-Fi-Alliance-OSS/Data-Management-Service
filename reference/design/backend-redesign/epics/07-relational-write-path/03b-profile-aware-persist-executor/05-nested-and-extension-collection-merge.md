@@ -43,7 +43,9 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 ## Design Constraints
 
 - Parent/child attachment must be driven by compiled address derivation and ancestor context, not by request ordinals.
+- Matched nested and extension-child collection-row overlay reuses the Slice 2 binding-classification and binding-accounting model for non-storage-managed bindings.
 - Request-side coverage checks from Slice 4 must extend to nested and extension-child collection scopes using stable parent address plus ancestor context.
+- Reverse stored-row coverage checks from Slice 4 must extend to nested and extension-child `VisibleStoredCollectionRows` within the correct ancestor context before DML.
 - Hidden descendants must survive both:
   - visible parent-row merge, and
   - hidden parent-row preservation.
@@ -79,6 +81,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested collection rows attach to the correct parent scope instance by ancestor-address context.
 - Root-level extension child collections and collection-aligned extension child collections merge under the same preservation rules as base collection data.
 - Hidden descendants are preserved under matched and hidden parents.
+- Nested and extension-child `VisibleStoredCollectionRows` remain covered one-for-one by real current DB rows within the correct ancestor context before DML.
 - Nested and extension-child visible request candidates remain covered one-for-one by `VisibleRequestCollectionItems` within the correct ancestor context before DML.
 - Unmatched nested and extension-child visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
 - Nested second-pass handling does not delete scopes incorrectly under collection ancestry.
@@ -90,6 +93,7 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 
 - Nested current-row matching by ancestor context and semantic identity
 - Wrong-parent / ancestor mismatch protection
+- Nested or extension-child reverse stored-row coverage rejection
 - Nested request-side visible candidate coverage rejection
 - Nested or extension-child orphan or mismatched `VisibleRequestCollectionItem` rejection
 - Hidden descendant preservation under matched parent update
@@ -106,9 +110,11 @@ Only profiled guarded no-op remains intentionally fenced if Slice 6 has not yet 
 - Nested `ProfileVisibleRowDeleteWithHiddenRowPreservation`
 - Root-level extension child collection variant
 - Collection-aligned extension child collection variant
+- `ProfileHiddenExtensionChildCollectionPreservation`
 - Nested or extension-child `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
 - Three-level update-allowed/create-denied chain variant
 - One nested delete-all-visible-while-hidden-rows-remain variant
+- PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus
 

@@ -165,6 +165,7 @@ A conservative first implementation is acceptable: if there is doubt whether a s
 - Root-table-only `ProfileHiddenInlinedColumnPreservation`
 - Root-table-only hidden FK/descriptor preservation case
 - Root-table-only key-unification / synthetic presence preservation case
+- PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus
 

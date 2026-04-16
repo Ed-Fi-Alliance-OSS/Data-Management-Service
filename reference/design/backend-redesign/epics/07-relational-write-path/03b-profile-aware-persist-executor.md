@@ -29,6 +29,8 @@ All slices inherit these constraints:
 - `WritableRequestBody` selection remains an orchestration-boundary concern from `DMS-1123`.
 - Final create-vs-update behavior comes from in-session target resolution.
 - Core-owned request/context metadata remains authoritative; backend does not re-evaluate writable-profile rules.
+- Slices that extend matched-row overlay beyond the root table inherit Slice 2's binding-classification and binding-accounting model for non-storage-managed bindings; they extend that model to their owned scope families rather than redefining it.
+- Any slice that changes SQL-sensitive behavior must address PostgreSQL and SQL Server parity for that slice's behavior; Slice 7 is the branch-wide audit and gap-closure pass, not the first point where parity becomes required.
 - Unsupported profiled shapes may remain fenced until their owning slice lands, but the fence must be deterministic and narrow.
 
 ## Slice Order

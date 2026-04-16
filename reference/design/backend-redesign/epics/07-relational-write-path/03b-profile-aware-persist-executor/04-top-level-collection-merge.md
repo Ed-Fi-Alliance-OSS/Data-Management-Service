@@ -51,6 +51,7 @@ The slice fence remains in place for any profiled write involving:
 ## Design Constraints
 
 - Current-row partitioning into visible vs hidden must be driven by emitted stored-row metadata, not inferred from current DB rows alone.
+- Matched top-level collection-row overlay reuses the Slice 2 binding-classification and binding-accounting model for non-storage-managed bindings.
 - Duplicate visible request candidates for the same semantic identity must fail deterministically before DML.
 - Reverse coverage checks must fail deterministically if visible stored-row metadata cannot be matched to current DB rows.
 - Request-side coverage checks must fail deterministically if flattened visible request candidates and `VisibleRequestCollectionItems` do not cover each other one-for-one for the same top-level scope instance and semantic identity.
@@ -82,7 +83,7 @@ The slice fence remains in place for any profiled write involving:
 ## Acceptance Criteria
 
 - Top-level profiled collection merge consumes `VisibleStoredCollectionRows` and `VisibleRequestCollectionItems` rather than backend-owned visibility inference.
-- Matched top-level collection rows update in place.
+- Matched top-level collection rows update in place using the inherited Slice 2 binding-accounting model for affected non-storage-managed bindings.
 - Omitted visible rows delete without deleting hidden rows.
 - Unmatched visible items insert only when `Creatable=true`.
 - Unmatched visible items reject deterministically when `Creatable=false`, while matched existing visible items remain updatable.
@@ -113,6 +114,7 @@ The slice fence remains in place for any profiled write involving:
 - Top-level update-allowed/create-denied pair
 - Delete-all-visible-while-hidden-rows-remain case
 - No-previously-visible top-level variant
+- PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus
 

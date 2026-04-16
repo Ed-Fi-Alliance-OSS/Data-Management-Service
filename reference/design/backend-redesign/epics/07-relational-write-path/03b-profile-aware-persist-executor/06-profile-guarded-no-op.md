@@ -65,6 +65,7 @@ No functional profiled behavior should remain intentionally fenced except explic
 - Unchanged profiled `PUT` and profiled `POST`-as-update can short-circuit successfully when current.
 - Stale compares return write conflict instead of success.
 - No DML-visible state or update-tracking-visible state changes occur on guarded no-op success.
+- Any dialect-sensitive freshness or locking behavior introduced by this slice has explicit PostgreSQL and SQL Server coverage or explicit review rationale.
 
 ## Tests Required
 
@@ -82,6 +83,7 @@ No functional profiled behavior should remain intentionally fenced except explic
 - `ProfileUnchangedWriteGuardedNoOp` for collection-supported shape
 - Stale compare conflict case for profiled `PUT`
 - Stale compare conflict case for profiled `POST`-as-update
+- PostgreSQL and SQL Server parity coverage for dialect-sensitive freshness or locking behavior introduced by this slice, or explicit review rationale when none is needed
 
 ## Reviewer Focus
 

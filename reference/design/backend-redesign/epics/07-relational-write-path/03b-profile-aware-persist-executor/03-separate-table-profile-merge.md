@@ -58,6 +58,7 @@ The slice fence remains in place for any profiled write involving:
 ## Design Constraints
 
 - Non-collection separate-table decisions must come from request/stored scope metadata, not inferred buffer presence alone.
+- Matched separate-table overlay reuses the Slice 2 binding-classification and binding-accounting model for non-storage-managed bindings.
 - Hidden separate-table scopes are preserved untouched.
 - Visible-absent separate-table scopes delete only when the scope is visible and intentionally absent.
 - New visible scope creation consults `Creatable`; matched existing visible scope update does not.
@@ -94,6 +95,7 @@ The slice fence remains in place for any profiled write involving:
 - Root-level separate-table `_ext` rows and hidden extension columns are preserved under the same rules as base separate-table data.
 - Existing visible scope update remains allowed even when creating a brand-new visible scope at the same logical profile shape would be rejected.
 - Runtime decisions consume `StoredScopeStates` and `RequestScopeStates`; they do not infer hidden-vs-absent from `VisibleStoredBody` or buffer presence alone.
+- Matched separate-table updates preserve hidden-governed values through the inherited Slice 2 binding-accounting model for affected non-storage-managed bindings.
 
 ## Tests Required
 
@@ -112,6 +114,7 @@ The slice fence remains in place for any profiled write involving:
 - `ProfileHiddenExtensionRowPreservation`
 - Existing-visible-update / create-denied non-collection pair
 - One root-level separate-table extension update case with hidden-member preservation
+- PostgreSQL and SQL Server parity coverage, or explicit review rationale when this slice introduces no dialect-sensitive behavior beyond previously covered paths
 
 ## Reviewer Focus
 

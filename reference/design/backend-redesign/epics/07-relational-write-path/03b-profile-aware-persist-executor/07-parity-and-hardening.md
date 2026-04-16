@@ -14,6 +14,8 @@ Close the planning sequence by:
 
 This slice exists to keep the earlier slices focused on semantic support rather than letting every review thread expand into "and also parity/hardening/cleanup."
 
+Earlier slices still own parity expectations for any SQL-sensitive behavior they introduce. This final slice is the branch-wide parity audit and gap-closure pass, not the first point where parity becomes required.
+
 ## In Scope
 
 - PostgreSQL and SQL Server parity review for supported profiled shapes
