@@ -254,6 +254,17 @@ internal sealed class DefaultRelationalWriteExecutor(
                             writeContextContractFailures
                         );
                     }
+
+                    if (!ReferenceEquals(resolvedProfileRequest, profileWriteContext.Request))
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return BuildContractMismatchResultFromMessages(
+                            request.OperationKind,
+                            [
+                                "Resolved profile write execution produced a mixed request/context contract pair.",
+                            ]
+                        );
+                    }
                 }
             }
 
@@ -590,13 +601,48 @@ internal sealed class DefaultRelationalWriteExecutor(
         ImmutableArray<ProfileFailure> failures
     )
     {
-        return failures.All(failure => failure.Category == ProfileFailureCategory.CreatabilityViolation)
-            ? BuildProfileCreatabilityRejectionResult(
+        if (failures.All(failure => failure.Category == ProfileFailureCategory.CreatabilityViolation))
+        {
+            return BuildProfileCreatabilityRejectionResult(
                 operationKind,
                 failures.Select(failure => failure.Message).ToArray()
+            );
+        }
+
+        if (
+            failures.All(failure =>
+                failure.Category == ProfileFailureCategory.WritableProfileValidationFailure
             )
-            : BuildContractMismatchResult(operationKind, failures);
+        )
+        {
+            return BuildValidationFailureResult(
+                operationKind,
+                BuildValidationFailuresFromResolvedProfileFailures(failures)
+            );
+        }
+
+        return BuildContractMismatchResult(operationKind, failures);
     }
+
+    private static WriteValidationFailure[] BuildValidationFailuresFromResolvedProfileFailures(
+        ImmutableArray<ProfileFailure> failures
+    ) =>
+        failures
+            .SelectMany(failure =>
+            {
+                var requestPaths = failure
+                    .Diagnostics.OfType<ProfileFailureDiagnostic.RequestPaths>()
+                    .SelectMany(diagnostic => diagnostic.JsonPaths)
+                    .ToArray();
+
+                return requestPaths.Length > 0
+                    ? requestPaths.Select(path => new WriteValidationFailure(
+                        new JsonPath(path),
+                        failure.Message
+                    ))
+                    : [new WriteValidationFailure(new JsonPath("$"), failure.Message)];
+            })
+            .ToArray();
 
     /// <summary>
     /// Returns a 500 (UnknownFailure) result when a contract mismatch is detected between

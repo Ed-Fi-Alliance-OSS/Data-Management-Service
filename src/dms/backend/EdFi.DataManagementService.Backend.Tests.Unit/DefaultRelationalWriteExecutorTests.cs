@@ -1883,6 +1883,138 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_preserves_resolved_profile_duplicate_validation_failures_on_the_validation_path()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!;
+        var storedDocument = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var duplicateFailure = ProfileFailures.DuplicateVisibleCollectionItemCollision(
+            profileName: "test-write-profile",
+            resourceName: "Ed-Fi/School",
+            method: "POST",
+            operation: "update",
+            jsonScope: "$.addresses[*]",
+            stableParentAddress: new ScopeInstanceAddress("$", []),
+            semanticIdentityPartsInOrder:
+            [
+                new SemanticIdentityPart("streetNumberName", JsonValue.Create("1000"), true),
+            ],
+            requestJsonPaths: ["$.addresses[0]", "$.addresses[1]"]
+        );
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Failure([duplicateFailure]),
+        };
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var existingTargetContext = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            existingDocumentUuid,
+            45L
+        );
+
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(
+            request with
+            {
+                TargetContext = existingTargetContext,
+            },
+            45L
+        ) with
+        {
+            ReconstitutedDocument = storedDocument,
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureValidation([
+                        new WriteValidationFailure(new JsonPath("$.addresses[0]"), duplicateFailure.Message),
+                        new WriteValidationFailure(new JsonPath("$.addresses[1]"), duplicateFailure.Message),
+                    ])
+                )
+            );
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rejects_mixed_resolved_profile_request_and_context_contracts_before_merge()
+    {
+        var selectedBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!;
+        var contextBody = JsonNode.Parse("""{"schoolId":255901,"name":"Central High Updated"}""")!;
+        var storedDocument = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: selectedBody);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(request.WritePlan);
+        var resolvedProfileRequest = CreateProfileAppliedWriteRequest(
+            selectedBody,
+            rootResourceCreatable: true
+        );
+        var mixedContextRequest = CreateProfileAppliedWriteRequest(contextBody, rootResourceCreatable: true);
+        var mixedContext = CreateProfileAppliedWriteContext(mixedContextRequest, storedDocument);
+        var resolvedProfileWriteInvoker = new RecordingResolvedProfileWriteInvoker
+        {
+            ResultToReturn = ResolvedProfileWriteResult.Success(resolvedProfileRequest, mixedContext),
+        };
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var existingTargetContext = new RelationalWriteTargetContext.ExistingDocument(
+            345L,
+            existingDocumentUuid,
+            45L
+        );
+
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
+        );
+        _currentStateLoader.ResultToReturn = CreateCurrentState(
+            request with
+            {
+                TargetContext = existingTargetContext,
+            },
+            45L
+        ) with
+        {
+            ReconstitutedDocument = storedDocument,
+        };
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = CreateResolvedProfileWriteContext(
+                    selectedBody,
+                    scopeCatalog,
+                    resolvedProfileWriteInvoker
+                ),
+            }
+        );
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var unknownFailure = upsertResult.Result.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        unknownFailure.FailureMessage.Should().Contain("Profile write contract mismatch");
+        unknownFailure.FailureMessage.Should().Contain("mixed request/context contract pair");
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_routes_profiled_writes_through_profile_merge_and_persist_path()
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
