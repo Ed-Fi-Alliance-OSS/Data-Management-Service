@@ -118,6 +118,31 @@ internal class ProfileWritePipelineMiddleware(
             scopeCatalog
         );
 
+        if (effectiveSchemaRequiredMembersByScope is null)
+        {
+            logger.LogError(
+                "ProfileWritePipelineMiddleware: Compiled scope catalog contains duplicate JsonScope entries "
+                    + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(profileName),
+                LoggingSanitizer.SanitizeForLogging(resourceName),
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            );
+
+            requestInfo.FrontendResponse = BuildFailureResponse(
+                [
+                    ProfileFailures.CoreBackendContractMismatch(
+                        ProfileFailureEmitter.BackendProfileWriteContext,
+                        "Compiled scope catalog contains duplicate JsonScope entries. "
+                            + "Backend requires exactly one compiled scope per JsonScope.",
+                        new ProfileFailureContext(profileName, resourceName, method, operation)
+                    ),
+                ],
+                profileName,
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
+
         var preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
             canonicalizedRequestBody: requestInfo.ParsedBody,
             writeContentType: writeContentType,

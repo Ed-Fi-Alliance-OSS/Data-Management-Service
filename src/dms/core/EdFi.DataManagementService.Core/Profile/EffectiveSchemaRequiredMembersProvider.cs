@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Profile;
 
 internal interface IEffectiveSchemaRequiredMembersProvider
 {
-    IReadOnlyDictionary<string, IReadOnlyList<string>> Resolve(
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? Resolve(
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     );
@@ -19,7 +19,7 @@ internal interface IEffectiveSchemaRequiredMembersProvider
 internal sealed class WritePlanEffectiveSchemaRequiredMembersProvider
     : IEffectiveSchemaRequiredMembersProvider
 {
-    public IReadOnlyDictionary<string, IReadOnlyList<string>> Resolve(
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? Resolve(
         ResourceWritePlan writePlan,
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     )
@@ -32,10 +32,14 @@ internal sealed class WritePlanEffectiveSchemaRequiredMembersProvider
             tablePlan => tablePlan.TableModel.JsonScope.Canonical,
             StringComparer.Ordinal
         );
-        var scopesByJsonScope = scopeCatalog.ToDictionary(
-            scopeDescriptor => scopeDescriptor.JsonScope,
-            StringComparer.Ordinal
-        );
+        var scopesByJsonScope = new Dictionary<string, CompiledScopeDescriptor>(StringComparer.Ordinal);
+        foreach (var scopeDescriptor in scopeCatalog)
+        {
+            if (!scopesByJsonScope.TryAdd(scopeDescriptor.JsonScope, scopeDescriptor))
+            {
+                return null;
+            }
+        }
 
         foreach (var scopeDescriptor in scopeCatalog)
         {
