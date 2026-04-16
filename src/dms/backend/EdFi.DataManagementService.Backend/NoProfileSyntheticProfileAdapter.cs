@@ -16,8 +16,9 @@ namespace EdFi.DataManagementService.Backend;
 /// Synthesizes <see cref="ProfileAppliedWriteRequest"/>, <see cref="ProfileAppliedWriteContext"/>,
 /// and a <see cref="CompiledScopeDescriptor"/> catalog for null-profile callers. All scopes are
 /// classified Visible and Creatable; table-backed scopes omitted from the request are VisibleAbsent
-/// on the stored side (so the merge's second-pass emits deletes); inlined scopes are always Visible
-/// (null-profile has no inlined-clear semantics). Catalog synthesis delegates to
+/// on the stored side (so the merge's second-pass emits deletes); inlined scopes are classified
+/// VisiblePresent when their JSON key is present in the request body, or VisibleAbsent when omitted
+/// (so the merge clears visible bindings). Catalog synthesis delegates to
 /// <see cref="CompiledScopeAdapterFactory.BuildFromWritePlan"/>.
 /// </summary>
 internal static class NoProfileSyntheticProfileAdapter
@@ -64,7 +65,8 @@ internal static class NoProfileSyntheticProfileAdapter
         var requestScopeStates = BuildRequestScopeStates(
             flattenedWriteSet,
             catalog,
-            requestTableBackedScopes
+            requestTableBackedScopes,
+            selectedBody
         );
 
         // Phase 3: Build VisibleRequestCollectionItems
@@ -135,7 +137,8 @@ internal static class NoProfileSyntheticProfileAdapter
     private static ImmutableArray<RequestScopeState> BuildRequestScopeStates(
         FlattenedWriteSet flattenedWriteSet,
         ImmutableArray<CompiledScopeDescriptor> catalog,
-        HashSet<string> requestTableBackedScopes
+        HashSet<string> requestTableBackedScopes,
+        JsonNode selectedBody
     )
     {
         var states = new List<RequestScopeState>();
@@ -161,24 +164,32 @@ internal static class NoProfileSyntheticProfileAdapter
                 extRow.CollectionCandidates,
                 ImmutableArray<AncestorCollectionInstance>.Empty,
                 catalog,
-                requestTableBackedScopes
+                requestTableBackedScopes,
+                selectedBody
             );
         }
 
         // Root-level inlined scopes (under root scope, not under any collection)
-        var rootLevelInlinedScopes = catalog.Where(d =>
-            d.ScopeKind == ScopeKind.NonCollection
-            && d.CollectionAncestorsInOrder.IsEmpty
-            && d.JsonScope != "$"
-            && !requestTableBackedScopes.Contains(d.JsonScope)
-        );
-        foreach (var inlinedScope in rootLevelInlinedScopes)
+        foreach (
+            var inlinedJsonScope in catalog
+                .Where(d =>
+                    d.ScopeKind == ScopeKind.NonCollection
+                    && d.CollectionAncestorsInOrder.IsEmpty
+                    && d.JsonScope != "$"
+                    && !requestTableBackedScopes.Contains(d.JsonScope)
+                )
+                .Select(d => d.JsonScope)
+        )
         {
+            var isPresent = IsScopePresentInBody(selectedBody, inlinedJsonScope);
+            var visibility = isPresent
+                ? ProfileVisibilityKind.VisiblePresent
+                : ProfileVisibilityKind.VisibleAbsent;
             var address = new ScopeInstanceAddress(
-                inlinedScope.JsonScope,
+                inlinedJsonScope,
                 ImmutableArray<AncestorCollectionInstance>.Empty
             );
-            states.Add(new RequestScopeState(address, ProfileVisibilityKind.VisiblePresent, Creatable: true));
+            states.Add(new RequestScopeState(address, visibility, Creatable: true));
         }
 
         // Collection-context scopes: walk through collection candidates recursively
@@ -187,7 +198,8 @@ internal static class NoProfileSyntheticProfileAdapter
             flattenedWriteSet.RootRow.CollectionCandidates,
             ImmutableArray<AncestorCollectionInstance>.Empty,
             catalog,
-            requestTableBackedScopes
+            requestTableBackedScopes,
+            selectedBody
         );
 
         return [.. states];
@@ -202,13 +214,21 @@ internal static class NoProfileSyntheticProfileAdapter
         IReadOnlyList<CollectionWriteCandidate> candidates,
         ImmutableArray<AncestorCollectionInstance> parentAncestors,
         ImmutableArray<CompiledScopeDescriptor> catalog,
-        HashSet<string> requestTableBackedScopes
+        HashSet<string> requestTableBackedScopes,
+        JsonNode selectedBody
     )
     {
         foreach (var candidate in candidates)
         {
             var collectionJsonScope = candidate.TableWritePlan.TableModel.JsonScope.Canonical;
             var mergePlan = candidate.TableWritePlan.CollectionMergePlan;
+
+            // Navigate to this collection item's JSON context for inlined scope presence checks
+            var itemJsonContext = NavigateToScopeJson(
+                selectedBody,
+                collectionJsonScope,
+                candidate.OrdinalPath
+            );
 
             // Build the ancestor chain for scopes nested under this collection item
             var semanticIdentityParts = BuildSemanticIdentityParts(candidate, mergePlan);
@@ -220,7 +240,8 @@ internal static class NoProfileSyntheticProfileAdapter
                 catalog,
                 childAncestors,
                 collectionJsonScope,
-                requestTableBackedScopes
+                requestTableBackedScopes,
+                itemJsonContext
             );
 
             // Attached aligned scopes
@@ -236,12 +257,17 @@ internal static class NoProfileSyntheticProfileAdapter
                     )
                 );
 
+                // Navigate from collection item to the attached scope's JSON context
+                var attachedRelativeKey = attachedJsonScope[(collectionJsonScope.Length + 1)..];
+                var attachedJsonContext = NavigateRelativeKey(itemJsonContext, attachedRelativeKey);
+
                 AddInlinedScopeStatesForParent(
                     states,
                     catalog,
                     childAncestors,
                     attachedJsonScope,
-                    requestTableBackedScopes
+                    requestTableBackedScopes,
+                    attachedJsonContext
                 );
 
                 // Recurse into collections under attached aligned scopes
@@ -250,7 +276,8 @@ internal static class NoProfileSyntheticProfileAdapter
                     attachedScope.CollectionCandidates,
                     childAncestors,
                     catalog,
-                    requestTableBackedScopes
+                    requestTableBackedScopes,
+                    selectedBody
                 );
             }
 
@@ -260,7 +287,8 @@ internal static class NoProfileSyntheticProfileAdapter
                 candidate.CollectionCandidates,
                 childAncestors,
                 catalog,
-                requestTableBackedScopes
+                requestTableBackedScopes,
+                selectedBody
             );
         }
     }
@@ -270,7 +298,8 @@ internal static class NoProfileSyntheticProfileAdapter
         ImmutableArray<CompiledScopeDescriptor> catalog,
         ImmutableArray<AncestorCollectionInstance> ancestors,
         string parentJsonScope,
-        HashSet<string> requestTableBackedScopes
+        HashSet<string> requestTableBackedScopes,
+        JsonNode? parentJsonContext
     )
     {
         foreach (
@@ -284,15 +313,24 @@ internal static class NoProfileSyntheticProfileAdapter
                 .Select(d => d.JsonScope)
         )
         {
+            // Derive the immediate JSON key from parent to this inlined scope
+            var relativeKey = inlinedJsonScope[(parentJsonScope.Length + 1)..];
+            var childJsonContext = NavigateRelativeKey(parentJsonContext, relativeKey);
+            var isPresent = childJsonContext is not null;
+            var visibility = isPresent
+                ? ProfileVisibilityKind.VisiblePresent
+                : ProfileVisibilityKind.VisibleAbsent;
+
             var address = new ScopeInstanceAddress(inlinedJsonScope, ancestors);
-            states.Add(new RequestScopeState(address, ProfileVisibilityKind.VisiblePresent, Creatable: true));
+            states.Add(new RequestScopeState(address, visibility, Creatable: true));
 
             AddInlinedScopeStatesForParent(
                 states,
                 catalog,
                 ancestors,
                 inlinedJsonScope,
-                requestTableBackedScopes
+                requestTableBackedScopes,
+                childJsonContext
             );
         }
     }
@@ -864,5 +902,106 @@ internal static class NoProfileSyntheticProfileAdapter
 
             AddCandidateTableBackedScopes(scopes, candidate.CollectionCandidates);
         }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    //  JSON body presence helpers
+    // ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Checks whether an inlined scope's full JSON path is present in the request body.
+    /// Navigates from the root body through each intermediate segment. Returns false
+    /// if any intermediate key is missing or null.
+    /// </summary>
+    private static bool IsScopePresentInBody(JsonNode selectedBody, string inlinedJsonScope)
+    {
+        // Strip "$." prefix to get the relative path from root
+        var relativePath = inlinedJsonScope[2..];
+        return NavigateRelativePath(selectedBody, relativePath) is not null;
+    }
+
+    /// <summary>
+    /// Navigates from the JSON root to a specific collection item, resolving array
+    /// wildcards ([*]) using the corresponding ordinal path elements.
+    /// Returns null if the path cannot be navigated.
+    /// </summary>
+    private static JsonNode? NavigateToScopeJson(
+        JsonNode root,
+        string jsonScope,
+        ImmutableArray<int> ordinalPath
+    )
+    {
+        if (jsonScope == "$")
+        {
+            return root;
+        }
+
+        var path = jsonScope[2..]; // strip "$."
+        var segments = path.Split('.');
+        JsonNode? current = root;
+        var ordinalIndex = 0;
+
+        foreach (var segment in segments)
+        {
+            if (current is not JsonObject obj)
+            {
+                return null;
+            }
+
+            if (segment.EndsWith("[*]", StringComparison.Ordinal))
+            {
+                var key = segment[..^3];
+                if (obj[key] is not JsonArray arr || ordinalIndex >= ordinalPath.Length)
+                {
+                    return null;
+                }
+
+                var idx = ordinalPath[ordinalIndex++];
+                current = idx < arr.Count ? arr[idx] : null;
+            }
+            else
+            {
+                current = obj[segment];
+            }
+        }
+
+        return current;
+    }
+
+    /// <summary>
+    /// Navigates a single relative key from a parent JSON context.
+    /// Handles dot-separated segments for multi-level relative keys.
+    /// Returns null if the parent context is null or the key is missing.
+    /// </summary>
+    private static JsonNode? NavigateRelativeKey(JsonNode? parentContext, string relativeKey)
+    {
+        if (parentContext is null)
+        {
+            return null;
+        }
+
+        return NavigateRelativePath(parentContext, relativeKey);
+    }
+
+    /// <summary>
+    /// Navigates a dot-separated relative path from a context node.
+    /// Returns null if any segment is missing or the context is not a JSON object.
+    /// </summary>
+    private static JsonNode? NavigateRelativePath(JsonNode context, string relativePath)
+    {
+        var segments = relativePath.Split('.');
+        JsonNode? current = context;
+
+        foreach (var segment in segments)
+        {
+            if (current is not JsonObject obj)
+            {
+                return null;
+            }
+
+            current = obj[segment];
+        }
+
+        return current;
     }
 }

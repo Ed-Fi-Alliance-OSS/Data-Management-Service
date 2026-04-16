@@ -610,7 +610,35 @@ public class Given_a_resource_with_a_nested_inlined_descendant_under_a_collectio
             collectionCandidates: []
         );
 
-        var selectedBody = new JsonObject { ["schoolId"] = 255901 };
+        // Body must include the full extension/collection/aligned-scope structure
+        // so that inlined scope presence detection can navigate to the nested scope.
+        var selectedBody = new JsonObject
+        {
+            ["schoolId"] = 255901,
+            ["_ext"] = new JsonObject
+            {
+                ["sample"] = new JsonObject
+                {
+                    ["campusCode"] = "001",
+                    ["addresses"] = new JsonArray(
+                        new JsonObject
+                        {
+                            ["city"] = "Austin",
+                            ["_ext"] = new JsonObject
+                            {
+                                ["sample"] = new JsonObject
+                                {
+                                    ["_ext"] = new JsonObject
+                                    {
+                                        ["sample"] = new JsonObject { ["someField"] = "value" },
+                                    },
+                                },
+                            },
+                        }
+                    ),
+                },
+            },
+        };
 
         _result = NoProfileSyntheticProfileAdapter.Build(
             plan,
@@ -645,6 +673,319 @@ public class Given_a_resource_with_a_nested_inlined_descendant_under_a_collectio
             .Address.AncestorCollectionInstances[0]
             .JsonScope.Should()
             .Be("$._ext.sample.addresses[*]");
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Test 8: Root-level inlined scope omitted from body — VisibleAbsent
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_root_level_inlined_scope_omitted_from_the_request_body
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Root table has columns for both root-level data and an inlined reference scope
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns:
+            [
+                ("SectionId", "$.sectionIdentifier"),
+                ("Ref_SchoolId", "$.courseOfferingReference.schoolId"),
+                ("Ref_SessionName", "$.courseOfferingReference.sessionName"),
+            ]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        // Body omits the courseOfferingReference entirely
+        var selectedBody = new JsonObject { ["sectionIdentifier"] = "sec1" };
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            selectedBody,
+            currentState: null
+        );
+    }
+
+    [Test]
+    public void It_discovers_the_inlined_reference_scope_in_the_catalog()
+    {
+        _result.Catalog.Should().Contain(d => d.JsonScope == "$.courseOfferingReference");
+    }
+
+    [Test]
+    public void It_marks_the_omitted_inlined_scope_as_VisibleAbsent()
+    {
+        var scopeState = _result.Request.RequestScopeStates.SingleOrDefault(s =>
+            s.Address.JsonScope == "$.courseOfferingReference"
+        );
+
+        scopeState.Should().NotBeNull();
+        scopeState!.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
+    }
+
+    [Test]
+    public void It_still_marks_the_root_scope_as_VisiblePresent()
+    {
+        var rootState = _result.Request.RequestScopeStates.Single(s => s.Address.JsonScope == "$");
+        rootState.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Test 9: Root-level inlined scope present in body — VisiblePresent
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_root_level_inlined_scope_present_in_the_request_body
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns:
+            [
+                ("SectionId", "$.sectionIdentifier"),
+                ("Ref_SchoolId", "$.courseOfferingReference.schoolId"),
+                ("Ref_SessionName", "$.courseOfferingReference.sessionName"),
+            ]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        // Body includes the courseOfferingReference
+        var selectedBody = new JsonObject
+        {
+            ["sectionIdentifier"] = "sec1",
+            ["courseOfferingReference"] = new JsonObject { ["schoolId"] = 123, ["sessionName"] = "Fall" },
+        };
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            selectedBody,
+            currentState: null
+        );
+    }
+
+    [Test]
+    public void It_marks_the_present_inlined_scope_as_VisiblePresent()
+    {
+        var scopeState = _result.Request.RequestScopeStates.SingleOrDefault(s =>
+            s.Address.JsonScope == "$.courseOfferingReference"
+        );
+
+        scopeState.Should().NotBeNull();
+        scopeState!.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Test 10: Collection-context inlined scope omitted from one item but present in another
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_collection_with_inlined_scope_present_in_one_item_and_absent_in_another
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Section",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns: [("SectionId", "$.sectionIdentifier")]
+        );
+
+        var collectionPlan = PlanBuilder.CreateCollectionTablePlan(
+            tableName: "SectionClassPeriod",
+            jsonScope: "$.classPeriods[*]",
+            columns: [("Ref_SchoolId", "$.classPeriodReference.schoolId")],
+            semanticIdentityRelativePaths: ["$.classPeriodReference.schoolId"]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, collectionPlan]);
+
+        // Item 0 includes classPeriodReference, item 1 omits it
+        var candidate0 = AdapterTestHelpers.BuildCollectionCandidate(
+            collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            semanticIdentityValues: ["SchoolA"],
+            semanticIdentityPresenceFlags: [true]
+        );
+
+        var candidate1 = AdapterTestHelpers.BuildCollectionCandidate(
+            collectionPlan,
+            ordinalPath: [1],
+            requestOrder: 1,
+            semanticIdentityValues: [null],
+            semanticIdentityPresenceFlags: [false]
+        );
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: [candidate0, candidate1]
+        );
+
+        var selectedBody = new JsonObject
+        {
+            ["sectionIdentifier"] = "sec1",
+            ["classPeriods"] = new JsonArray(
+                new JsonObject { ["classPeriodReference"] = new JsonObject { ["schoolId"] = "SchoolA" } },
+                new JsonObject()
+            ),
+        };
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            selectedBody,
+            currentState: null
+        );
+    }
+
+    [Test]
+    public void It_marks_the_present_instance_as_VisiblePresent()
+    {
+        var inlinedStates = _result
+            .Request.RequestScopeStates.Where(s =>
+                s.Address.JsonScope == "$.classPeriods[*].classPeriodReference"
+            )
+            .ToList();
+
+        // First instance (item 0) should be present
+        var presentState = inlinedStates.Find(s =>
+            s.Address.AncestorCollectionInstances[0].SemanticIdentityInOrder[0].Value?.ToString() == "SchoolA"
+        );
+        presentState.Should().NotBeNull();
+        presentState!.Visibility.Should().Be(ProfileVisibilityKind.VisiblePresent);
+    }
+
+    [Test]
+    public void It_marks_the_absent_instance_as_VisibleAbsent()
+    {
+        var inlinedStates = _result
+            .Request.RequestScopeStates.Where(s =>
+                s.Address.JsonScope == "$.classPeriods[*].classPeriodReference"
+            )
+            .ToList();
+
+        // Second instance (item 1) should be absent
+        var absentState = inlinedStates.Find(s =>
+            !s.Address.AncestorCollectionInstances[0].SemanticIdentityInOrder[0].IsPresent
+        );
+        absentState.Should().NotBeNull();
+        absentState!.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
+    }
+
+    [Test]
+    public void It_emits_two_inlined_scope_states_total()
+    {
+        _result
+            .Request.RequestScopeStates.Count(s =>
+                s.Address.JsonScope == "$.classPeriods[*].classPeriodReference"
+            )
+            .Should()
+            .Be(2);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Test 11: Nested inlined scope absent when parent inlined scope is also absent
+// ────────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Parallelizable]
+public class Given_a_nested_inlined_scope_absent_because_parent_inlined_scope_is_absent
+{
+    private NoProfileSyntheticProfileAdapter.AdapterOutput _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Root table has columns for a nested inlined scope: $.parentRef.childRef.childField
+        var rootPlan = PlanBuilder.CreateTablePlan(
+            tableName: "Course",
+            jsonScope: "$",
+            tableKind: DbTableKind.Root,
+            columns:
+            [
+                ("CourseCode", "$.courseCode"),
+                ("ParentRefId", "$.parentRef.refId"),
+                ("ChildRefField", "$.parentRef.childRef.childField"),
+            ]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan]);
+
+        var flattenedWriteSet = AdapterTestHelpers.BuildFlattenedWriteSet(
+            rootPlan,
+            rootExtensionRows: [],
+            collectionCandidates: []
+        );
+
+        // Body omits parentRef entirely — both parentRef and parentRef.childRef should be absent
+        var selectedBody = new JsonObject { ["courseCode"] = "ENG101" };
+
+        _result = NoProfileSyntheticProfileAdapter.Build(
+            plan,
+            flattenedWriteSet,
+            selectedBody,
+            currentState: null
+        );
+    }
+
+    [Test]
+    public void It_marks_the_parent_inlined_scope_as_VisibleAbsent()
+    {
+        var scopeState = _result.Request.RequestScopeStates.SingleOrDefault(s =>
+            s.Address.JsonScope == "$.parentRef"
+        );
+
+        scopeState.Should().NotBeNull();
+        scopeState!.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
+    }
+
+    [Test]
+    public void It_marks_the_nested_child_inlined_scope_as_VisibleAbsent()
+    {
+        var scopeState = _result.Request.RequestScopeStates.SingleOrDefault(s =>
+            s.Address.JsonScope == "$.parentRef.childRef"
+        );
+
+        scopeState.Should().NotBeNull();
+        scopeState!.Visibility.Should().Be(ProfileVisibilityKind.VisibleAbsent);
     }
 }
 
