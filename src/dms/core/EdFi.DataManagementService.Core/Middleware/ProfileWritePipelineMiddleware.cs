@@ -170,34 +170,9 @@ internal class ProfileWritePipelineMiddleware(
             effectiveSchemaRequiredMembersByScope
         );
 
-        if (requestInfo.Method == RequestMethod.PUT)
-        {
-            var putResolvedTargetResult = resolvedTargetInvoker.Execute(
-                storedDocument: null,
-                isCreate: false,
-                scopeCatalog: scopeCatalog
-            );
-
-            if (!putResolvedTargetResult.Failures.IsEmpty)
-            {
-                logger.LogDebug(
-                    "ProfileWritePipelineMiddleware: Profile resolved-target execution returned {FailureCount} failures "
-                        + "for profile {ProfileName}, resource {ResourceName}. TraceId: {TraceId}",
-                    putResolvedTargetResult.Failures.Length,
-                    LoggingSanitizer.SanitizeForLogging(profileName),
-                    LoggingSanitizer.SanitizeForLogging(resourceName),
-                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
-                );
-
-                requestInfo.FrontendResponse = BuildFailureResponse(
-                    putResolvedTargetResult.Failures,
-                    profileName,
-                    requestInfo.FrontendRequest.TraceId
-                );
-                return;
-            }
-        }
-
+        // PUT creatability for descendant scopes and collection items depends on the
+        // stored-document existence lookup the backend performs after target resolution.
+        // Keep the resolved-target phase deferred until that state is available.
         requestInfo.BackendProfileWriteContext = new BackendProfileWriteContext(
             PreResolvedRequest: preResolvedRequest,
             ProfileName: profileContext.ProfileName,

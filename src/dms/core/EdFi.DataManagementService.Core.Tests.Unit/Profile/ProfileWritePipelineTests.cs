@@ -54,6 +54,93 @@ public abstract class ProfileWritePipelineTests
             ["$"] = ["studentReference", "schoolReference", "entryDate"],
         };
 
+    protected static IReadOnlyList<CompiledScopeDescriptor> NonRootScopeFixtureScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.calendarReference",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["calendarCode", "calendarType"]
+            ),
+        ];
+
+    protected static ContentTypeDefinition BuildCalendarReferenceProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [],
+            Objects:
+            [
+                new ObjectRule(
+                    Name: "calendarReference",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("calendarType")],
+                    NestedObjects: null,
+                    Collections: null,
+                    Extensions: null
+                ),
+            ],
+            Collections: [],
+            Extensions: []
+        );
+
+    protected static IReadOnlyDictionary<string, IReadOnlyList<string>> NonRootScopeRequiredMembers =>
+        new Dictionary<string, IReadOnlyList<string>> { ["$.calendarReference"] = ["calendarCode"] };
+
+    protected static IReadOnlyList<CompiledScopeDescriptor> CollectionItemFixtureScopes =>
+        [
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.items[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["itemId"],
+                CanonicalScopeRelativeMemberPaths: ["itemId", "note", "hiddenField"]
+            ),
+        ];
+
+    protected static ContentTypeDefinition BuildItemsProfile() =>
+        new(
+            MemberSelection: MemberSelection.IncludeOnly,
+            Properties: [],
+            Objects: [],
+            Collections:
+            [
+                new CollectionRule(
+                    Name: "items",
+                    MemberSelection: MemberSelection.IncludeOnly,
+                    LogicalSchema: null,
+                    Properties: [new PropertyRule("itemId"), new PropertyRule("note")],
+                    NestedObjects: null,
+                    NestedCollections: null,
+                    Extensions: null,
+                    ItemFilter: null
+                ),
+            ],
+            Extensions: []
+        );
+
+    protected static IReadOnlyDictionary<string, IReadOnlyList<string>> CollectionItemRequiredMembers =>
+        new Dictionary<string, IReadOnlyList<string>> { ["$.items[*]"] = ["itemId", "hiddenField"] };
+
     // -----------------------------------------------------------------------
     //  1. Given_No_Profile — no-profile passthrough
     // -----------------------------------------------------------------------
@@ -740,6 +827,168 @@ public abstract class ProfileWritePipelineTests
         public void It_should_succeed()
         {
             _result.IsSuccess.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_SplitPhase_Put_With_An_Existing_NonRoot_Scope : ProfileWritePipelineTests
+    {
+        private ProfileWritePreResolutionResult _preResolutionResult = null!;
+        private ProfileWritePipelineResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "calendarReference": {
+                        "calendarType": "Main"
+                    }
+                }
+                """
+            )!;
+
+            _preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildCalendarReferenceProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: NonRootScopeFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "update"
+            );
+
+            JsonNode storedDocument = JsonNode.Parse(
+                """
+                {
+                    "calendarReference": {
+                        "calendarCode": "2024-01",
+                        "calendarType": "Main"
+                    }
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.ExecuteResolvedTarget(
+                preResolvedRequest: _preResolutionResult.Request!,
+                writeContentType: BuildCalendarReferenceProfile(),
+                scopeCatalog: NonRootScopeFixtureScopes,
+                storedDocument: storedDocument,
+                isCreate: false,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "update",
+                effectiveSchemaRequiredMembersByScope: NonRootScopeRequiredMembers
+            );
+        }
+
+        [Test]
+        public void It_should_keep_the_pre_resolution_pass_valid_without_stored_state()
+        {
+            _preResolutionResult.Failures.Should().BeEmpty();
+            _preResolutionResult.Request.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_succeed_once_the_existing_scope_can_be_confirmed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_mark_the_existing_scope_as_non_creatable()
+        {
+            _result
+                .Request!.RequestScopeStates.Should()
+                .Contain(state => state.Address.JsonScope == "$.calendarReference" && !state.Creatable);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Profile_SplitPhase_Put_With_An_Existing_Collection_Item : ProfileWritePipelineTests
+    {
+        private ProfileWritePreResolutionResult _preResolutionResult = null!;
+        private ProfileWritePipelineResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "items": [
+                        {
+                            "itemId": "Item1",
+                            "note": "Visible"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _preResolutionResult = ProfileWritePipeline.ExecutePreResolution(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildItemsProfile(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: CollectionItemFixtureScopes,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "update"
+            );
+
+            JsonNode storedDocument = JsonNode.Parse(
+                """
+                {
+                    "items": [
+                        {
+                            "itemId": "Item1",
+                            "note": "Visible",
+                            "hiddenField": "Stored"
+                        }
+                    ]
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.ExecuteResolvedTarget(
+                preResolvedRequest: _preResolutionResult.Request!,
+                writeContentType: BuildItemsProfile(),
+                scopeCatalog: CollectionItemFixtureScopes,
+                storedDocument: storedDocument,
+                isCreate: false,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: "PUT",
+                operation: "update",
+                effectiveSchemaRequiredMembersByScope: CollectionItemRequiredMembers
+            );
+        }
+
+        [Test]
+        public void It_should_keep_the_pre_resolution_pass_valid_without_stored_state()
+        {
+            _preResolutionResult.Failures.Should().BeEmpty();
+            _preResolutionResult.Request.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_succeed_once_the_existing_collection_item_can_be_confirmed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_mark_the_existing_collection_item_as_non_creatable()
+        {
+            _result
+                .Request!.VisibleRequestCollectionItems.Should()
+                .ContainSingle(item => item.Address.JsonScope == "$.items[*]" && !item.Creatable);
         }
     }
 
