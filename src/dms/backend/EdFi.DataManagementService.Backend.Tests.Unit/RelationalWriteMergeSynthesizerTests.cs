@@ -6009,6 +6009,71 @@ public class Given_Relational_Write_Profile_Merge_Synthesizer
     }
 
     [Test]
+    public void It_emits_delete_for_StoredScopeState_VisiblePresent_scope_with_hidden_members_not_in_buffer()
+    {
+        var fixture = CreateFixtureWithExtension();
+
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [FlattenedWriteValue.UnresolvedRootDocumentId.Instance, Literal("School Name")]
+            )
+        );
+
+        var currentState = CreateCurrentStateWithExtension(
+            fixture,
+            rootRows:
+            [
+                [345L, "School Name"],
+            ],
+            rootExtensionRows:
+            [
+                [345L, "stored-ext", "STORED_HIDDEN"],
+            ]
+        );
+
+        var extensionScope = "$._ext.sample";
+        var profileRequest = CreateProfileRequest([
+            new RequestScopeState(RootAddress(), ProfileVisibilityKind.VisiblePresent, Creatable: true),
+        ]);
+        var profileContext = CreateProfileContext(
+            profileRequest,
+            [
+                new StoredScopeState(
+                    RootAddress(),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    ScopeAddress(extensionScope),
+                    ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: ["hiddenExt"]
+                ),
+            ]
+        );
+
+        var outcome = _sut.Synthesize(
+            new RelationalWriteMergeRequest(
+                fixture.WritePlan,
+                flattenedWriteSet,
+                currentState,
+                profileRequest,
+                profileContext,
+                CompiledScopeCatalog: []
+            )
+        );
+
+        outcome.Should().BeOfType<RelationalWriteMergeSynthesisOutcome.Success>();
+        var result = ((RelationalWriteMergeSynthesisOutcome.Success)outcome).MergeResult;
+
+        var extensionState = result.TablesInDependencyOrder[1];
+        extensionState.Inserts.Should().BeEmpty();
+        extensionState.Updates.Should().BeEmpty();
+        extensionState.Deletes.Should().ContainSingle();
+        extensionState.PreservedRows.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_does_not_emit_duplicate_delete_when_buffer_iteration_already_processed_scope()
     {
         // Scenario: extension scope has stored data (VisiblePresent in StoredScopeStates,

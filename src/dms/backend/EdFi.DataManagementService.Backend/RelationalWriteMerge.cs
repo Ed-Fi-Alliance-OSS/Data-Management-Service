@@ -2019,17 +2019,12 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 }
             }
 
-            if (
-                storedState.Visibility == ProfileVisibilityKind.Hidden
-                || storedState.HiddenMemberPaths.Length > 0
-            )
+            if (storedState.Visibility == ProfileVisibilityKind.Hidden)
             {
-                // Hidden scope or scope with hidden members: preserve the current row and
-                // all descendant rows so that hidden data is not lost and guarded no-op row
-                // counts remain correct. A VisiblePresent scope with HiddenMemberPaths (e.g.
-                // an extension where some fields are hidden by the profile) must be preserved
-                // even when buffer iteration did not visit it — deleting would lose the
-                // hidden member data.
+                // Hidden scope: preserve the current row and all descendant rows so that
+                // hidden data is not lost and guarded no-op row counts remain correct.
+                // Omitted visible scopes still delete here. Hidden-column preservation for
+                // matched visible updates happens earlier during value overlay.
                 foreach (var values in scopeCurrentRows.Select(static currentRow => currentRow.Values))
                 {
                     var comparableValues = ProjectComparableValues(matchedTablePlan, values);
