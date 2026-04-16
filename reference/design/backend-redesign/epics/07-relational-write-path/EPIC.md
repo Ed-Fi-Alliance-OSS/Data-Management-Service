@@ -53,3 +53,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 - `DMS-1104` — `05b-profile-error-classification.md` — Classify and map profile write failures to DMS error shapes
 - `DMS-987` — `06-descriptor-writes.md` — Descriptor POST/PUT: maintain `dms.Descriptor` + descriptor referential identities (no per-descriptor tables)
 - `DMS-1132` — `07-semantic-identity-presence-fidelity.md` — Close the presence-sensitive semantic identity fidelity gap exposed by `DMS-1124` so the merge never depends on upstream null-pruning invariants to distinguish absent vs explicit-null identity members
+
+## Review Aid
+
+- `review-checklist-profile-aware-write-path.md` — reviewer checklist for profile-aware shared write-path stories, including a short PR checklist for `DMS-1124`-class work
