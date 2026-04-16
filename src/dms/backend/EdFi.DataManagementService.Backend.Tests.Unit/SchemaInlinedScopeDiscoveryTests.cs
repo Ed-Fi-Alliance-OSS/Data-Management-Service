@@ -94,6 +94,97 @@ public class Given_SchemaInlinedScopeDiscovery_with_collection_level_inlined_ref
 
 [TestFixture]
 [Parallelizable]
+public class Given_SchemaInlinedScopeDiscovery_with_absolute_paths_under_non_root_tables
+{
+    [Test]
+    public void It_does_not_duplicate_collection_scope_when_source_path_is_already_absolute()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan("School", "$", [("Name", "$.name")]);
+        var collectionPlan = PlanBuilder.CreateTablePlan(
+            tableName: "StudentSchoolAssociationAlternativeGraduationPlan",
+            jsonScope: "$.alternativeGraduationPlans[*]",
+            columns:
+            [
+                (
+                    "EducationOrganizationId",
+                    "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
+                ),
+            ]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, collectionPlan]);
+
+        var result = SchemaInlinedScopeDiscovery.Discover(plan);
+
+        result
+            .Should()
+            .ContainSingle(r =>
+                r.JsonScope == "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference"
+            );
+        result
+            .Should()
+            .NotContain(r =>
+                r.JsonScope
+                == "$.alternativeGraduationPlans[*].alternativeGraduationPlans[*].alternativeGraduationPlanReference"
+            );
+    }
+
+    [Test]
+    public void It_does_not_duplicate_root_extension_scope_when_source_path_is_already_absolute()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan("Student", "$", [("Id", "$.id")]);
+        var extensionPlan = PlanBuilder.CreateTablePlan(
+            tableName: "StudentExtension",
+            jsonScope: "$._ext.sample",
+            tableKind: DbTableKind.RootExtension,
+            columns: [("ProgramName", "$._ext.sample.favoriteProgramReference.programName")]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, extensionPlan]);
+
+        var result = SchemaInlinedScopeDiscovery.Discover(plan);
+
+        result.Should().ContainSingle(r => r.JsonScope == "$._ext.sample.favoriteProgramReference");
+        result.Should().NotContain(r => r.JsonScope == "$._ext.sample._ext.sample.favoriteProgramReference");
+    }
+
+    [Test]
+    public void It_does_not_duplicate_extension_collection_scope_when_source_path_is_already_absolute()
+    {
+        var rootPlan = PlanBuilder.CreateTablePlan("StudentSectionAssociation", "$", [("Id", "$.id")]);
+        var collectionPlan = PlanBuilder.CreateTablePlan(
+            tableName: "StudentSectionAssociationExtensionRelatedGeneralStudentProgramAssociation",
+            jsonScope: "$._ext.sample.relatedGeneralStudentProgramAssociations[*]",
+            columns:
+            [
+                (
+                    "BeginDate",
+                    "$._ext.sample.relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociationReference.beginDate"
+                ),
+            ]
+        );
+
+        var plan = PlanBuilder.BuildPlan([rootPlan, collectionPlan]);
+
+        var result = SchemaInlinedScopeDiscovery.Discover(plan);
+
+        result
+            .Should()
+            .ContainSingle(r =>
+                r.JsonScope
+                == "$._ext.sample.relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociationReference"
+            );
+        result
+            .Should()
+            .NotContain(r =>
+                r.JsonScope
+                == "$._ext.sample.relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociationReference"
+            );
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_SchemaInlinedScopeDiscovery_with_nested_inlined_scopes
 {
     [Test]

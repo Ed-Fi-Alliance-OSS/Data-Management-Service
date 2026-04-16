@@ -22,13 +22,14 @@ namespace EdFi.DataManagementService.Backend;
 /// some table in the plan is an inlined scope.
 /// </para>
 /// <para>
-/// Column <c>SourceJsonPath</c> values are scope-relative: they begin with <c>$</c>
-/// and their segments are interpreted relative to the owning table's <c>JsonScope</c>.
-/// For example, a column with path <c>$.calendarReference.schoolId</c> in a table
-/// whose <c>JsonScope</c> is <c>$.classPeriods</c> has the absolute path
-/// <c>$.classPeriods.calendarReference.schoolId</c>. The intermediate absolute prefix
-/// <c>$.classPeriods.calendarReference</c> is an inlined scope when no table carries
-/// that scope.
+/// Column <c>SourceJsonPath</c> values are not consistently encoded the same way for
+/// every non-root table. Root-backed tables use absolute paths (for example
+/// <c>$.calendarReference.schoolId</c>), while non-root tables may use either an
+/// already-absolute path or a scope-relative path rooted at <c>$</c>. For example, a
+/// column in table scope <c>$.classPeriods[*]</c> may appear as either
+/// <c>$.classPeriods[*].calendarReference.schoolId</c> or
+/// <c>$.calendarReference.schoolId</c>. Discovery normalizes both forms to the same
+/// absolute path before deriving intermediate inlined scopes.
 /// </para>
 /// <para>
 /// Scope kind is always <see cref="ScopeKind.NonCollection"/> for inlined scopes;
@@ -61,15 +62,7 @@ internal static class SchemaInlinedScopeDiscovery
                     .Select(p => p!.Value)
             )
             {
-                // Column paths are scope-relative (e.g., "$.calendarReference.schoolId").
-                // Compose the absolute path by appending the relative path (sans leading "$")
-                // to the table scope. For root scope "$", this is identity:
-                //   "$.name" -> "$" + ".name" = "$.name"
-                // For a collection scope "$.classPeriods":
-                //   "$.calendarReference.schoolId" -> "$.classPeriods" + ".calendarReference.schoolId"
-                //   = "$.classPeriods.calendarReference.schoolId"
-                var relativePathWithoutDollar = sourcePath.Canonical[1..]; // strip leading "$"
-                var absolutePath = tableScope + relativePathWithoutDollar; // compose absolute path
+                var absolutePath = ResolveAbsolutePath(tableScope, sourcePath.Canonical);
 
                 // The absolute path always starts with "tableScope." since we composed it above.
                 if (!absolutePath.StartsWith(prefix, StringComparison.Ordinal))
@@ -94,5 +87,24 @@ internal static class SchemaInlinedScopeDiscovery
         }
 
         return discovered.Select(scope => (JsonScope: scope, Kind: ScopeKind.NonCollection)).ToList();
+    }
+
+    private static string ResolveAbsolutePath(string tableScope, string sourcePath)
+    {
+        if (tableScope == "$")
+        {
+            return sourcePath;
+        }
+
+        var tableScopePrefix = tableScope + ".";
+
+        if (sourcePath == tableScope || sourcePath.StartsWith(tableScopePrefix, StringComparison.Ordinal))
+        {
+            return sourcePath;
+        }
+
+        return sourcePath.StartsWith("$", StringComparison.Ordinal)
+            ? tableScope + sourcePath[1..]
+            : sourcePath;
     }
 }
