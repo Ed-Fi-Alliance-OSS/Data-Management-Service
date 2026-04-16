@@ -1851,6 +1851,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .BeEquivalentTo(new DeleteResult.UnknownFailure("Descriptor DELETE write is not implemented."));
         _capturedExecutorRequests.Should().BeEmpty();
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
@@ -1899,6 +1900,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 descriptorHandler.HandleDeleteAsync(A<DocumentUuid>._, A<TraceId>._, A<CancellationToken>._)
             )
             .MustHaveHappenedOnceExactly();
+        _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
@@ -2157,6 +2159,52 @@ public class Given_RelationalDocumentStoreRepositoryTests
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_delete_failure_write_conflict_when_the_lookup_reports_a_transient_failure(
+        SqlDialect dialect
+    )
+    {
+        ConfigureLookupThrows(new StubDbException("deadlock on lookup"));
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_unknown_failure_when_the_lookup_throws_a_generic_database_exception(
+        SqlDialect dialect
+    )
+    {
+        ConfigureLookupThrows(new StubDbException("lookup boom"));
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo, dialect)
+        );
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new DeleteResult.UnknownFailure(
+                    "An unexpected error occurred while processing the delete request."
+                )
+            );
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
     [Test]
     public async Task It_returns_the_missing_write_plan_guard_rail_for_non_descriptor_post_requests()
     {
@@ -2407,6 +2455,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private void ConfigureDeleteThrows(DbException exception)
     {
         A.CallTo(_commandExecutor).WithReturnType<Task<bool>>().Throws(exception);
+    }
+
+    private void ConfigureLookupThrows(DbException exception)
+    {
+        A.CallTo(_commandExecutor)
+            .WithReturnType<Task<RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid?>>()
+            .Throws(exception);
     }
 
     private sealed class StubDbException(string message) : DbException(message);

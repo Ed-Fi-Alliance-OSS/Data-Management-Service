@@ -262,11 +262,11 @@ public sealed class RelationalDocumentStoreRepository(
         await using var writeSession = await _writeSessionFactory.CreateAsync().ConfigureAwait(false);
         var sessionCommandExecutor = writeSession.CommandExecutor;
 
-        RelationalDocumentUuidLookupSupport.ResolvedDocumentByUuid? resolved;
+        DeleteResult outcome;
 
         try
         {
-            resolved = await RelationalDocumentUuidLookupSupport
+            var resolved = await RelationalDocumentUuidLookupSupport
                 .TryResolveByDocumentUuidAndResourceAsync(
                     sessionCommandExecutor,
                     mappingSet,
@@ -274,60 +274,48 @@ public sealed class RelationalDocumentStoreRepository(
                     relationalDeleteRequest.DocumentUuid
                 )
                 .ConfigureAwait(false);
-        }
-        catch
-        {
-            await writeSession.RollbackAsync().ConfigureAwait(false);
-            throw;
-        }
 
-        if (resolved is null)
-        {
-            await writeSession.RollbackAsync().ConfigureAwait(false);
-            return new DeleteResult.DeleteFailureNotExists();
-        }
-
-        // Authorization-check statements will be prepended to this command in a future story.
-        var deleteCommand = mappingSet.Key.Dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                DELETE FROM dms."Document"
-                WHERE "DocumentId" = @documentId
-                RETURNING "DocumentId";
-                """,
-                [new RelationalParameter("@documentId", resolved.DocumentId)]
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                DELETE FROM [dms].[Document]
-                OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentId] = @documentId;
-                """,
-                [new RelationalParameter("@documentId", resolved.DocumentId)]
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
-            ),
-        };
-
-        try
-        {
-            var deleted = await sessionCommandExecutor
-                .ExecuteReaderAsync(
-                    deleteCommand,
-                    static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false)
-                )
-                .ConfigureAwait(false);
-
-            if (!deleted)
+            if (resolved is null)
             {
-                await writeSession.RollbackAsync().ConfigureAwait(false);
-                return new DeleteResult.DeleteFailureNotExists();
+                outcome = new DeleteResult.DeleteFailureNotExists();
             }
+            else
+            {
+                // Authorization-check statements will be prepended to this command in a future story.
+                var deleteCommand = mappingSet.Key.Dialect switch
+                {
+                    SqlDialect.Pgsql => new RelationalCommand(
+                        """
+                        DELETE FROM dms."Document"
+                        WHERE "DocumentId" = @documentId
+                        RETURNING "DocumentId";
+                        """,
+                        [new RelationalParameter("@documentId", resolved.DocumentId)]
+                    ),
+                    SqlDialect.Mssql => new RelationalCommand(
+                        """
+                        DELETE FROM [dms].[Document]
+                        OUTPUT DELETED.[DocumentId]
+                        WHERE [DocumentId] = @documentId;
+                        """,
+                        [new RelationalParameter("@documentId", resolved.DocumentId)]
+                    ),
+                    _ => throw new NotSupportedException(
+                        $"Relational delete does not support SQL dialect '{mappingSet.Key.Dialect}'."
+                    ),
+                };
 
-            await writeSession.CommitAsync().ConfigureAwait(false);
-            return new DeleteResult.DeleteSuccess();
+                var deleted = await sessionCommandExecutor
+                    .ExecuteReaderAsync(
+                        deleteCommand,
+                        static async (reader, ct) => await reader.ReadAsync(ct).ConfigureAwait(false)
+                    )
+                    .ConfigureAwait(false);
+
+                outcome = deleted
+                    ? new DeleteResult.DeleteSuccess()
+                    : new DeleteResult.DeleteFailureNotExists();
+            }
         }
         catch (DbException ex) when (_writeExceptionClassifier.IsForeignKeyViolation(ex))
         {
@@ -367,6 +355,20 @@ public sealed class RelationalDocumentStoreRepository(
                 "An unexpected error occurred while processing the delete request."
             );
         }
+
+        // Commit runs outside the catch ladder: a commit failure must not re-enter Rollback
+        // against a transaction whose commit already began (the session would throw
+        // InvalidOperationException). Any DbException here escapes to the caller.
+        if (outcome is DeleteResult.DeleteSuccess)
+        {
+            await writeSession.CommitAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            await writeSession.RollbackAsync().ConfigureAwait(false);
+        }
+
+        return outcome;
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
