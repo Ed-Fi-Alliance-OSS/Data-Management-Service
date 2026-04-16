@@ -383,6 +383,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             request.FlattenedWriteSet.RootRow.RootExtensionRows,
             rootPhysicalRowIdentityValues,
             scopeLookup,
+            request.ProfileContext,
             profileCollectionLookup,
             currentStateProjection,
             tableStateBuilders,
@@ -405,6 +406,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             request.FlattenedWriteSet.RootRow.CollectionCandidates,
             rootPhysicalRowIdentityValues,
             scopeLookup,
+            request.ProfileContext,
             profileCollectionLookup,
             currentStateProjection,
             tableStateBuilders,
@@ -501,6 +503,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         IReadOnlyList<RootExtensionWriteRowBuffer> rootExtensionRows,
         IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
         MergeScopeLookup scopeLookup,
+        ProfileAppliedWriteContext? profileContext,
         MergeCollectionLookup profileCollectionLookup,
         MergeCurrentStateProjection currentStateProjection,
         IReadOnlyDictionary<DbTableName, MergeTableStateBuilder> tableStateBuilders,
@@ -648,6 +651,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     rootExtensionRow.CollectionCandidates,
                     scopePhysicalRowIdentityValues,
                     scopeLookup,
+                    profileContext,
                     profileCollectionLookup,
                     currentStateProjection,
                     tableStateBuilders,
@@ -711,6 +715,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         IReadOnlyList<CandidateAttachedAlignedScopeData> attachedAlignedScopeData,
         IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
         MergeScopeLookup scopeLookup,
+        ProfileAppliedWriteContext? profileContext,
         MergeCollectionLookup profileCollectionLookup,
         MergeCurrentStateProjection currentStateProjection,
         IReadOnlyDictionary<DbTableName, MergeTableStateBuilder> tableStateBuilders,
@@ -906,6 +911,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                     alignedScopeData.CollectionCandidates,
                     scopePhysicalRowIdentityValues,
                     scopeLookup,
+                    profileContext,
                     profileCollectionLookup,
                     currentStateProjection,
                     tableStateBuilders,
@@ -961,6 +967,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         IReadOnlyList<CollectionWriteCandidate> collectionCandidates,
         IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
         MergeScopeLookup scopeLookup,
+        ProfileAppliedWriteContext? profileContext,
         MergeCollectionLookup profileCollectionLookup,
         MergeCurrentStateProjection currentStateProjection,
         IReadOnlyDictionary<DbTableName, MergeTableStateBuilder> tableStateBuilders,
@@ -1058,6 +1065,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 candidates,
                 parentPhysicalRowIdentityValues,
                 scopeLookup,
+                profileContext,
                 profileCollectionLookup,
                 currentStateProjection,
                 tableStateBuilders,
@@ -1089,6 +1097,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         IReadOnlyList<CollectionWriteCandidate> requestCandidates,
         IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
         MergeScopeLookup scopeLookup,
+        ProfileAppliedWriteContext? profileContext,
         MergeCollectionLookup profileCollectionLookup,
         MergeCurrentStateProjection currentStateProjection,
         IReadOnlyDictionary<DbTableName, MergeTableStateBuilder> tableStateBuilders,
@@ -1195,19 +1204,20 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
             }
         }
 
-        if (
-            ancestorContextKey.Length == 0
-            && visibleStoredRows.Count > 0
-            && hiddenCurrentRows.Count > 0
-            && IsTopLevelCollectionScope(jsonScope, compiledScopeCatalog)
-        )
+        if (ancestorContextKey.Length == 0)
         {
-            return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
-                $"Profile merge for top-level collection scope '{jsonScope}' found "
-                    + $"{hiddenCurrentRows.Count} current DB row(s) that were not represented "
-                    + "by VisibleStoredCollectionRows. Backend will fail closed instead of "
-                    + "silently preserving or re-inserting unmatched rows.",
-            ]);
+            var topLevelCoverageFailure = ValidateTopLevelVisibleStoredRowCoverage(
+                tablePlan,
+                mergePlan,
+                hiddenCurrentRows,
+                visibleRequestItems,
+                compiledScopeCatalog
+            );
+
+            if (topLevelCoverageFailure is not null)
+            {
+                return topLevelCoverageFailure;
+            }
         }
 
         // Step 2b: Reverse coverage — every VisibleStoredCollectionRow must have matched
@@ -1700,6 +1710,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 candidate.AttachedAlignedScopeData,
                 collectionPhysicalRowIdentityValues,
                 scopeLookup,
+                profileContext,
                 profileCollectionLookup,
                 currentStateProjection,
                 tableStateBuilders,
@@ -1722,6 +1733,7 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
                 candidate.CollectionCandidates,
                 collectionPhysicalRowIdentityValues,
                 scopeLookup,
+                profileContext,
                 profileCollectionLookup,
                 currentStateProjection,
                 tableStateBuilders,
@@ -1768,6 +1780,55 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
 
         return descriptor
             is { ScopeKind: ScopeKind.Collection, CollectionAncestorsInOrder.IsDefaultOrEmpty: true };
+    }
+
+    private static RelationalWriteMergeSynthesisOutcome? ValidateTopLevelVisibleStoredRowCoverage(
+        TableWritePlan tablePlan,
+        CollectionMergePlan mergePlan,
+        IReadOnlyList<(MergeTableRow Row, int CurrentIndex)> hiddenCurrentRows,
+        IReadOnlyList<VisibleRequestCollectionItem> visibleRequestItems,
+        IReadOnlyList<CompiledScopeDescriptor> compiledScopeCatalog
+    )
+    {
+        var jsonScope = tablePlan.TableModel.JsonScope.Canonical;
+
+        if (
+            hiddenCurrentRows.Count == 0
+            || visibleRequestItems.Count == 0
+            || !IsTopLevelCollectionScope(jsonScope, compiledScopeCatalog)
+        )
+        {
+            return null;
+        }
+
+        foreach (var (hiddenCurrentRow, _) in hiddenCurrentRows)
+        {
+            foreach (var visibleRequestItem in visibleRequestItems)
+            {
+                if (
+                    !MatchesSemanticIdentity(
+                        tablePlan,
+                        mergePlan,
+                        hiddenCurrentRow,
+                        visibleRequestItem.Address.SemanticIdentityInOrder
+                    )
+                )
+                {
+                    continue;
+                }
+
+                var identityKey = BuildSemanticIdentityKeyFromVisibleItem(visibleRequestItem);
+
+                return new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
+                    $"Profile merge for top-level collection scope '{jsonScope}' found a current DB row "
+                        + $"with semantic identity '{identityKey}' that matched a VisibleRequestCollectionItem "
+                        + "but missing from VisibleStoredCollectionRows. Backend requires visible "
+                        + "stored row coverage for top-level collection rows that participate in the request-visible merge.",
+                ]);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -2498,6 +2559,34 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
         return string.Equals(partString, candidateString, StringComparison.Ordinal);
     }
 
+    private static bool MatchesSemanticIdentity(
+        TableWritePlan tableWritePlan,
+        CollectionMergePlan mergePlan,
+        MergeTableRow currentRow,
+        ImmutableArray<SemanticIdentityPart> semanticIdentityParts
+    )
+    {
+        if (semanticIdentityParts.Length != mergePlan.SemanticIdentityBindings.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < mergePlan.SemanticIdentityBindings.Length; i++)
+        {
+            var binding = mergePlan.SemanticIdentityBindings[i];
+            var currentValue = currentRow.Values[binding.BindingIndex];
+            var semanticIdentityPart = semanticIdentityParts[i];
+            var scalarType = tableWritePlan.ColumnBindings[binding.BindingIndex].Column.ScalarType;
+
+            if (!CompareSemanticIdentityValue(currentValue, semanticIdentityPart, scalarType))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Formats a single identity key part, encoding whether the member was absent from the
     /// source JSON so that (absent, null) and (present, null) produce distinct keys. Keeps
@@ -2563,12 +2652,20 @@ internal sealed class RelationalWriteMergeSynthesizer : IRelationalWriteMergeSyn
     private static string BuildSemanticIdentityKeyFromVisibleStoredRow(VisibleStoredCollectionRow storedRow)
     {
         var parts = storedRow.Address.SemanticIdentityInOrder;
-        var values = new JsonNode?[parts.Length];
-        var flags = new bool[parts.Length];
-        for (var i = 0; i < parts.Length; i++)
+        return BuildSemanticIdentityKeyFromParts(parts);
+    }
+
+    private static string BuildSemanticIdentityKeyFromParts(
+        IReadOnlyList<SemanticIdentityPart> semanticIdentityParts
+    )
+    {
+        var values = new JsonNode?[semanticIdentityParts.Count];
+        var flags = new bool[semanticIdentityParts.Count];
+
+        for (var i = 0; i < semanticIdentityParts.Count; i++)
         {
-            values[i] = parts[i].Value;
-            flags[i] = parts[i].IsPresent;
+            values[i] = semanticIdentityParts[i].Value;
+            flags[i] = semanticIdentityParts[i].IsPresent;
         }
 
         return BuildSemanticIdentityKeyString(values, flags);
