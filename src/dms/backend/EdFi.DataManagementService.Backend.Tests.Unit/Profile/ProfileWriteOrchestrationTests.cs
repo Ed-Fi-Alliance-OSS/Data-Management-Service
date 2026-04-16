@@ -496,15 +496,10 @@ internal static class OrchestrationTestHelpers
         );
 
         return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: requestBody,
-                RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState],
-                VisibleRequestCollectionItems: []
-            ),
+            PreResolvedRequest: new ProfilePreResolvedWriteRequest(requestBody, [rootScopeState], []),
             ProfileName: "test-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+            ResolvedProfileWriteInvoker: A.Fake<IResolvedProfileWriteInvoker>()
         );
     }
 

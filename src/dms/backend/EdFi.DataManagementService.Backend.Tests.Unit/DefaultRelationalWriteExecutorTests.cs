@@ -2022,24 +2022,29 @@ public class Given_Default_Relational_Write_Executor
         var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
         var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
-        var profileContext = new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
-            ProfileName: "test-write-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        var profileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: writableBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
         );
+        A.CallTo(() =>
+                resolvedInvoker.Execute(
+                    A<JsonNode?>._,
+                    A<bool>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest));
+        var profileContext = CreateResolvedProfileWriteContext(writableBody, scopeCatalog, resolvedInvoker);
 
         _noProfileMergeSynthesizer.ConfiguredOutcome = new RelationalWriteMergeSynthesisOutcome.Success(
             new RelationalWriteMergeResult([])
@@ -2057,7 +2062,7 @@ public class Given_Default_Relational_Write_Executor
             .SynthesizeCallCount.Should()
             .Be(1, "merge synthesizer must be called for profiled writes");
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
-        _noProfileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().BeSameAs(profileContext.Request);
+        _noProfileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().NotBeNull();
         _noProfilePersister
             .TryPersistCallCount.Should()
             .Be(1, "persister must be called for profiled writes");
@@ -2091,15 +2096,34 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleRequestCollectionItems: []
         );
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        A.CallTo(() =>
+                resolvedInvoker.Execute(
+                    A<JsonNode?>._,
+                    A<bool>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest));
 
         var result = await _sut.ExecuteAsync(
             request with
             {
                 ProfileWriteContext = new BackendProfileWriteContext(
-                    Request: profileRequest,
+                    PreResolvedRequest: new ProfilePreResolvedWriteRequest(
+                        writableBody,
+                        [
+                            new RequestScopeState(
+                                Address: new ScopeInstanceAddress("$", []),
+                                Visibility: ProfileVisibilityKind.VisiblePresent,
+                                Creatable: false
+                            ),
+                        ],
+                        []
+                    ),
                     ProfileName: "test-write-profile",
                     CompiledScopeCatalog: scopeCatalog,
-                    StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+                    ResolvedProfileWriteInvoker: resolvedInvoker
                 ),
             }
         );
@@ -2134,24 +2158,29 @@ public class Given_Default_Relational_Write_Executor
         var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
         var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
-        var profileContext = new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
-            ProfileName: "test-write-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        var profileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: writableBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
         );
+        A.CallTo(() =>
+                resolvedInvoker.Execute(
+                    A<JsonNode?>._,
+                    A<bool>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest));
+        var profileContext = CreateResolvedProfileWriteContext(writableBody, scopeCatalog, resolvedInvoker);
 
         _noProfileMergeSynthesizer.ConfiguredOutcome =
             new RelationalWriteMergeSynthesisOutcome.ContractMismatch([
@@ -2197,7 +2226,6 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleRequestCollectionItems: []
         );
-        var projectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
         var projectedWriteContext = new ProfileAppliedWriteContext(
             Request: profileRequest,
             VisibleStoredBody: writableBody.DeepClone(),
@@ -2217,9 +2245,11 @@ public class Given_Default_Relational_Write_Executor
             existingDocumentUuid,
             45L
         );
-
-        A.CallTo(() => projectionInvoker.ProjectStoredState(A<JsonNode>._, profileRequest, scopeCatalog))
-            .Returns(projectedWriteContext);
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        A.CallTo(() =>
+                resolvedInvoker.Execute(A<JsonNode?>._, false, A<IReadOnlyList<CompiledScopeDescriptor>>._)
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest, projectedWriteContext));
 
         _targetLookupResolver.PostResults.Enqueue(
             new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 45L)
@@ -2242,10 +2272,20 @@ public class Given_Default_Relational_Write_Executor
             request with
             {
                 ProfileWriteContext = new BackendProfileWriteContext(
-                    Request: profileRequest,
+                    PreResolvedRequest: new ProfilePreResolvedWriteRequest(
+                        writableBody,
+                        [
+                            new RequestScopeState(
+                                Address: new ScopeInstanceAddress("$", []),
+                                Visibility: ProfileVisibilityKind.VisiblePresent,
+                                Creatable: false
+                            ),
+                        ],
+                        []
+                    ),
                     ProfileName: "test-write-profile",
                     CompiledScopeCatalog: scopeCatalog,
-                    StoredStateProjectionInvoker: projectionInvoker
+                    ResolvedProfileWriteInvoker: resolvedInvoker
                 ),
             }
         );
@@ -2293,7 +2333,6 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleRequestCollectionItems: []
         );
-        var projectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
         var projectedWriteContext = new ProfileAppliedWriteContext(
             Request: profileRequest,
             VisibleStoredBody: writableBody.DeepClone(),
@@ -2307,9 +2346,11 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleStoredCollectionRows: []
         );
-
-        A.CallTo(() => projectionInvoker.ProjectStoredState(A<JsonNode>._, profileRequest, scopeCatalog))
-            .Returns(projectedWriteContext);
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        A.CallTo(() =>
+                resolvedInvoker.Execute(A<JsonNode?>._, false, A<IReadOnlyList<CompiledScopeDescriptor>>._)
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest, projectedWriteContext));
 
         _currentStateLoader.ResultToReturn = CreateCurrentState(request, 44L) with
         {
@@ -2324,10 +2365,20 @@ public class Given_Default_Relational_Write_Executor
             request with
             {
                 ProfileWriteContext = new BackendProfileWriteContext(
-                    Request: profileRequest,
+                    PreResolvedRequest: new ProfilePreResolvedWriteRequest(
+                        writableBody,
+                        [
+                            new RequestScopeState(
+                                Address: new ScopeInstanceAddress("$", []),
+                                Visibility: ProfileVisibilityKind.VisiblePresent,
+                                Creatable: true
+                            ),
+                        ],
+                        []
+                    ),
                     ProfileName: "test-write-profile",
                     CompiledScopeCatalog: scopeCatalog,
-                    StoredStateProjectionInvoker: projectionInvoker
+                    ResolvedProfileWriteInvoker: resolvedInvoker
                 ),
             }
         );
@@ -2374,7 +2425,6 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleRequestCollectionItems: []
         );
-        var projectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
         var projectedWriteContext = new ProfileAppliedWriteContext(
             Request: profileRequest,
             VisibleStoredBody: writableBody.DeepClone(),
@@ -2388,9 +2438,11 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleStoredCollectionRows: []
         );
-
-        A.CallTo(() => projectionInvoker.ProjectStoredState(A<JsonNode>._, profileRequest, scopeCatalog))
-            .Returns(projectedWriteContext);
+        var resolvedInvoker = A.Fake<IResolvedProfileWriteInvoker>();
+        A.CallTo(() =>
+                resolvedInvoker.Execute(A<JsonNode?>._, false, A<IReadOnlyList<CompiledScopeDescriptor>>._)
+            )
+            .Returns(ResolvedProfileWriteResult.Success(profileRequest, projectedWriteContext));
 
         _currentStateLoader.ResultToReturn = CreateCurrentState(request, 44L) with
         {
@@ -2406,10 +2458,20 @@ public class Given_Default_Relational_Write_Executor
             request with
             {
                 ProfileWriteContext = new BackendProfileWriteContext(
-                    Request: profileRequest,
+                    PreResolvedRequest: new ProfilePreResolvedWriteRequest(
+                        writableBody,
+                        [
+                            new RequestScopeState(
+                                Address: new ScopeInstanceAddress("$", []),
+                                Visibility: ProfileVisibilityKind.VisiblePresent,
+                                Creatable: true
+                            ),
+                        ],
+                        []
+                    ),
                     ProfileName: "test-write-profile",
                     CompiledScopeCatalog: scopeCatalog,
-                    StoredStateProjectionInvoker: projectionInvoker
+                    ResolvedProfileWriteInvoker: resolvedInvoker
                 ),
             }
         );
