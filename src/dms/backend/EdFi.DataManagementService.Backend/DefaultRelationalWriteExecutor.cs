@@ -219,7 +219,20 @@ internal sealed class DefaultRelationalWriteExecutor(
                 }
 
                 // Step 4: Slice-fence classification
-                var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan);
+                // CompiledScopeCatalog includes any inlined (non-table-backed) scopes the profile
+                // middleware discovered via ContentTypeScopeDiscovery. Extract them by difference
+                // so the topology index inherits the correct ancestor topology for each one.
+                var tableBackedScopes = new HashSet<string>(
+                    request.WritePlan.TablePlansInDependencyOrder.Select(tp =>
+                        tp.TableModel.JsonScope.Canonical
+                    ),
+                    StringComparer.Ordinal
+                );
+                var inlinedScopes = profileWriteContext
+                    .CompiledScopeCatalog.Where(d => !tableBackedScopes.Contains(d.JsonScope))
+                    .Select(d => (d.JsonScope, d.ScopeKind))
+                    .ToArray();
+                var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan, inlinedScopes);
                 var requiredFamily = profileAppliedWriteContext is not null
                     ? ProfileSliceFenceClassifier.ClassifyForExistingDocument(
                         profileAppliedWriteContext,
