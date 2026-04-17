@@ -151,7 +151,76 @@ public class Given_Relational_Write_Current_State_Loader
             );
     }
 
-    private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(ResourceReadPlan? readPlan = null)
+    [Test]
+    public async Task It_passes_IncludeDescriptorProjection_false_to_the_hydrator_by_default()
+    {
+        var request = CreateLoadRequest();
+        var recordingHydrator = new RecordingSessionDocumentHydrator(
+            new HydrationBackedSessionDocumentHydrator()
+        );
+        var command = new RecordingDbCommand(
+            CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        345L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((345L, "Lincoln High"))
+            )
+        );
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var session = new TestRelationalWriteSession(connection, transaction);
+        var sut = new RelationalWriteCurrentStateLoader(recordingHydrator);
+
+        await sut.LoadAsync(request, session);
+
+        recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
+        recordingHydrator.CapturedExecutionOptions!.Value.IncludeDescriptorProjection.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_passes_IncludeDescriptorProjection_true_to_the_hydrator_when_requested()
+    {
+        var request = CreateLoadRequest(includeDescriptorProjection: true);
+        var recordingHydrator = new RecordingSessionDocumentHydrator(
+            new HydrationBackedSessionDocumentHydrator()
+        );
+        var command = new RecordingDbCommand(
+            CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        345L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((345L, "Lincoln High"))
+            )
+        );
+        var connection = new RecordingDbConnection(command);
+        var transaction = new RecordingDbTransaction(connection, IsolationLevel.ReadCommitted);
+        var session = new TestRelationalWriteSession(connection, transaction);
+        var sut = new RelationalWriteCurrentStateLoader(recordingHydrator);
+
+        await sut.LoadAsync(request, session);
+
+        recordingHydrator.CapturedExecutionOptions.Should().NotBeNull();
+        recordingHydrator.CapturedExecutionOptions!.Value.IncludeDescriptorProjection.Should().BeTrue();
+    }
+
+    private static RelationalWriteCurrentStateLoadRequest CreateLoadRequest(
+        ResourceReadPlan? readPlan = null,
+        bool includeDescriptorProjection = false
+    )
     {
         var effectiveReadPlan = readPlan ?? CreateReadPlan();
 
@@ -161,7 +230,8 @@ public class Given_Relational_Write_Current_State_Loader
                 345L,
                 new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
                 ObservedContentVersion: 44L
-            )
+            ),
+            includeDescriptorProjection
         );
     }
 
@@ -510,5 +580,31 @@ public class Given_Relational_Write_Current_State_Loader
                 executionOptions,
                 cancellationToken
             );
+    }
+
+    private sealed class RecordingSessionDocumentHydrator(ISessionDocumentHydrator inner)
+        : ISessionDocumentHydrator
+    {
+        public HydrationExecutionOptions? CapturedExecutionOptions { get; private set; }
+
+        public Task<HydratedPage> HydrateAsync(
+            DbConnection connection,
+            DbTransaction transaction,
+            ResourceReadPlan plan,
+            PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
+            CancellationToken cancellationToken = default
+        )
+        {
+            CapturedExecutionOptions = executionOptions;
+            return inner.HydrateAsync(
+                connection,
+                transaction,
+                plan,
+                keyset,
+                executionOptions,
+                cancellationToken
+            );
+        }
     }
 }

@@ -231,7 +231,8 @@ public class Given_Default_Relational_Write_Executor
                         [345L, 255901, "Lincoln High"],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -633,7 +634,8 @@ public class Given_Default_Relational_Write_Executor
                         ],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
@@ -757,7 +759,8 @@ public class Given_Default_Relational_Write_Executor
                             [345L, 255901, "Lincoln High"],
                         ]
                     ),
-                ]
+                ],
+                []
             )
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
@@ -1483,7 +1486,8 @@ public class Given_Default_Relational_Write_Executor
                         [345L, 255901, "Lincoln High"],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -2291,7 +2295,8 @@ public class Given_Default_Relational_Write_Executor
                                     [345L, 255901, "Lincoln High"],
                                 ]
                             ),
-                        ]
+                        ],
+                        []
                     )
             );
         }
@@ -2459,7 +2464,8 @@ public class Given_Default_Relational_Write_Executor
                         [targetContext.DocumentId, 255901, schoolName],
                     ]
                 ),
-            ]
+            ],
+            []
         );
     }
 

@@ -14,33 +14,42 @@ internal sealed record RelationalWriteCurrentStateLoadRequest
 {
     public RelationalWriteCurrentStateLoadRequest(
         ResourceReadPlan readPlan,
-        RelationalWriteTargetContext.ExistingDocument targetContext
+        RelationalWriteTargetContext.ExistingDocument targetContext,
+        bool includeDescriptorProjection = false
     )
     {
         ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
+        IncludeDescriptorProjection = includeDescriptorProjection;
     }
 
     public ResourceReadPlan ReadPlan { get; init; }
 
     public RelationalWriteTargetContext.ExistingDocument TargetContext { get; init; }
+
+    public bool IncludeDescriptorProjection { get; init; }
 }
 
 internal sealed record RelationalWriteCurrentState
 {
     public RelationalWriteCurrentState(
         DocumentMetadataRow documentMetadata,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
         DocumentMetadata = documentMetadata ?? throw new ArgumentNullException(nameof(documentMetadata));
         TableRowsInDependencyOrder =
             tableRowsInDependencyOrder ?? throw new ArgumentNullException(nameof(tableRowsInDependencyOrder));
+        DescriptorRowsInPlanOrder =
+            descriptorRowsInPlanOrder ?? throw new ArgumentNullException(nameof(descriptorRowsInPlanOrder));
     }
 
     public DocumentMetadataRow DocumentMetadata { get; init; }
 
     public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder { get; init; }
+
+    public IReadOnlyList<HydratedDescriptorRows> DescriptorRowsInPlanOrder { get; init; }
 }
 
 internal interface IRelationalWriteCurrentStateLoader
@@ -89,7 +98,9 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
                 writeSession.Transaction,
                 request.ReadPlan,
                 new PageKeysetSpec.Single(request.TargetContext.DocumentId),
-                new HydrationExecutionOptions(IncludeDescriptorProjection: false),
+                new HydrationExecutionOptions(
+                    IncludeDescriptorProjection: request.IncludeDescriptorProjection
+                ),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -117,6 +128,10 @@ internal sealed class RelationalWriteCurrentStateLoader : IRelationalWriteCurren
             );
         }
 
-        return new RelationalWriteCurrentState(documentMetadata, hydratedPage.TableRowsInDependencyOrder);
+        return new RelationalWriteCurrentState(
+            documentMetadata,
+            hydratedPage.TableRowsInDependencyOrder,
+            hydratedPage.DescriptorRowsInPlanOrder
+        );
     }
 }
