@@ -109,7 +109,11 @@ param(
 
     # Environment file for docker-compose operations
     [string]
-    $EnvironmentFile="./.env.e2e"
+    $EnvironmentFile="./.env.e2e",
+
+    # Optional test filter for dotnet test operations
+    [string]
+    $TestFilter
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -209,16 +213,301 @@ function SetAuthenticationServiceURL {
     $json | ConvertTo-Json -Depth 32 | Set-Content $appSettingsPath
 }
 
+function Resolve-E2EEnvironmentFilePath {
+    param(
+        [string]
+        $Path
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        if (-not (Test-Path $Path)) {
+            throw "Environment file not found: $Path"
+        }
+
+        return [System.IO.Path]::GetFullPath($Path)
+    }
+
+    $candidatePaths = @(
+        $Path,
+        (Join-Path (Get-Location) $Path),
+        (Join-Path $PSScriptRoot $Path),
+        (Join-Path (Join-Path $PSScriptRoot "eng/docker-compose") $Path)
+    )
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path $candidatePath) {
+            return [System.IO.Path]::GetFullPath([string](Resolve-Path $candidatePath))
+        }
+    }
+
+    throw "Environment file not found: $Path"
+}
+
+function ConvertTo-Boolean {
+    param(
+        [string]
+        $Value,
+
+        [bool]
+        $DefaultValue = $false
+    )
+
+    $parsedValue = $false
+
+    if ([bool]::TryParse($Value, [ref]$parsedValue)) {
+        return $parsedValue
+    }
+
+    return $DefaultValue
+}
+
+function Get-E2ETestResultSuffix {
+    param(
+        [bool]
+        $UseRelationalBackend,
+
+        [string]
+        $TestFilter
+    )
+
+    if ($UseRelationalBackend) {
+        return "relational"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+        return $null
+    }
+
+    if ($TestFilter -match "@relational-backend" -and $TestFilter -match "!=") {
+        return "legacy"
+    }
+
+    return "filtered"
+}
+
+function ConvertTo-NormalizedTestFilter {
+    param(
+        [string]
+        $TestFilter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+        return $TestFilter
+    }
+
+    $normalizedTestFilter = $TestFilter
+    $normalizedTestFilter = $normalizedTestFilter -replace 'TestCategory\s*!=\s*@', 'TestCategory!='
+    $normalizedTestFilter = $normalizedTestFilter -replace 'TestCategory\s*=\s*@', 'TestCategory='
+    $normalizedTestFilter = $normalizedTestFilter -replace 'TestCategory\s*!~\s*@', 'TestCategory!~'
+    $normalizedTestFilter = $normalizedTestFilter -replace 'TestCategory\s*~\s*@', 'TestCategory~'
+    $normalizedTestFilter = $normalizedTestFilter -replace 'Category\s*!=\s*@', 'Category!='
+    $normalizedTestFilter = $normalizedTestFilter -replace 'Category\s*=\s*@', 'Category='
+    $normalizedTestFilter = $normalizedTestFilter -replace 'Category\s*!~\s*@', 'Category!~'
+    $normalizedTestFilter = $normalizedTestFilter -replace 'Category\s*~\s*@', 'Category~'
+
+    return $normalizedTestFilter
+}
+
+function Test-FilterIncludesRelationalCategory {
+    param(
+        [string]
+        $NormalizedTestFilter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
+        return $false
+    }
+
+    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*relational-backend\b'
+}
+
+function Test-FilterExcludesRelationalCategory {
+    param(
+        [string]
+        $NormalizedTestFilter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
+        return $false
+    }
+
+    return $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*!=\s*relational-backend\b'
+}
+
+function Test-FilterUsesOrOperator {
+    param(
+        [string]
+        $NormalizedTestFilter
+    )
+
+    if ([string]::IsNullOrWhiteSpace($NormalizedTestFilter)) {
+        return $false
+    }
+
+    return $NormalizedTestFilter -match '\|'
+}
+
+function Assert-E2ETestLaneMatchesFilter {
+    param(
+        [string]
+        $EnvironmentFile,
+
+        [bool]
+        $UseRelationalBackend,
+
+        [string]
+        $TestFilter
+    )
+
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
+    $includesRelationalCategory = Test-FilterIncludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
+    $excludesRelationalCategory = Test-FilterExcludesRelationalCategory -NormalizedTestFilter $normalizedTestFilter
+    $usesOrOperator = Test-FilterUsesOrOperator -NormalizedTestFilter $normalizedTestFilter
+
+    if ([string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
+        if ($UseRelationalBackend) {
+            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
+        }
+
+        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
+    }
+
+    if ($usesOrOperator) {
+        throw "E2E lane test filter '$TestFilter' cannot use '|'. Use '&' to further narrow the lane while preserving relational and legacy isolation."
+    }
+
+    if ($UseRelationalBackend) {
+        if (-not $includesRelationalCategory) {
+            throw "Relational E2E environment '$EnvironmentFile' requires a test filter that selects the relational lane with 'Category=@relational-backend'."
+        }
+
+        if ($excludesRelationalCategory) {
+            throw "Relational E2E environment '$EnvironmentFile' cannot be combined with a test filter that excludes '@relational-backend'."
+        }
+
+        return
+    }
+
+    if ($includesRelationalCategory) {
+        throw "Legacy E2E environment '$EnvironmentFile' cannot be combined with a test filter that selects '@relational-backend'. Use './.env.e2e.relational' for relational lane runs."
+    }
+
+    if (-not $excludesRelationalCategory) {
+        throw "Legacy E2E environment '$EnvironmentFile' requires a test filter that excludes the relational lane with 'Category!=@relational-backend'."
+    }
+}
+
+function Get-E2ETestEnvironmentContext {
+    param(
+        [string]
+        $EnvironmentFile,
+
+        [string]
+        $TestFilter
+    )
+
+    $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    $environmentValues = ReadValuesFromEnvFile $environmentFilePath
+    $useRelationalBackend = ConvertTo-Boolean -Value ([string]$environmentValues["USE_RELATIONAL_BACKEND"])
+
+    Assert-E2ETestLaneMatchesFilter `
+        -EnvironmentFile $environmentFilePath `
+        -UseRelationalBackend:$useRelationalBackend `
+        -TestFilter $TestFilter
+
+    $dmsInstanceDatabaseName =
+        if ($useRelationalBackend) {
+            $relationalDatabaseName = [string]$environmentValues["RELATIONAL_E2E_DATABASE_NAME"]
+
+            if ([string]::IsNullOrWhiteSpace($relationalDatabaseName)) {
+                throw "Relational E2E environment '$environmentFilePath' requires RELATIONAL_E2E_DATABASE_NAME to be set."
+            }
+
+            $relationalDatabaseName
+        }
+        else {
+            "edfi_datamanagementservice"
+        }
+
+    return [pscustomobject]@{
+        EnvironmentFile = $environmentFilePath
+        UseRelationalBackend = $useRelationalBackend
+        DmsInstanceDatabaseName = $dmsInstanceDatabaseName
+        TestResultSuffix = Get-E2ETestResultSuffix -UseRelationalBackend:$useRelationalBackend -TestFilter $TestFilter
+    }
+}
+
+function Invoke-WithE2ETestProcessContext {
+    param(
+        [pscustomobject]
+        $E2ETestSettings,
+
+        [scriptblock]
+        $Action
+    )
+
+    $previousUseRelationalBackend = $env:AppSettings__UseRelationalBackend
+    $previousDmsInstanceDatabaseName = $env:AppSettings__DmsInstanceDatabaseName
+    $previousNodeOptions = $env:NODE_OPTIONS
+
+    try {
+        if ($E2ETestSettings.UseRelationalBackend) {
+            $env:AppSettings__UseRelationalBackend = $E2ETestSettings.UseRelationalBackend.ToString().ToLowerInvariant()
+            $env:AppSettings__DmsInstanceDatabaseName = $E2ETestSettings.DmsInstanceDatabaseName
+        }
+        else {
+            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
+            Remove-Item Env:AppSettings__DmsInstanceDatabaseName -ErrorAction SilentlyContinue
+        }
+
+        Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+        & $Action
+    }
+    finally {
+        if ([string]::IsNullOrWhiteSpace($previousUseRelationalBackend)) {
+            Remove-Item Env:AppSettings__UseRelationalBackend -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AppSettings__UseRelationalBackend = $previousUseRelationalBackend
+        }
+
+        if ([string]::IsNullOrWhiteSpace($previousDmsInstanceDatabaseName)) {
+            Remove-Item Env:AppSettings__DmsInstanceDatabaseName -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:AppSettings__DmsInstanceDatabaseName = $previousDmsInstanceDatabaseName
+        }
+
+        if ([string]::IsNullOrWhiteSpace($previousNodeOptions)) {
+            Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:NODE_OPTIONS = $previousNodeOptions
+        }
+    }
+}
+
 function RunTests {
     param (
         # File search filter
         [string]
-        $Filter
+        $Filter,
+
+        # Optional dotnet test filter
+        [string]
+        $TestFilter,
+
+        # Optional suffix for trx output name
+        [string]
+        $ResultNameSuffix
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse |
     Sort-Object -Property { $_.Name.Length }
+    $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
 
     if ($testAssemblies.Length -eq 0) {
         Write-Output "no test assemblies found in $testAssemblyPath"
@@ -227,6 +516,14 @@ function RunTests {
     Write-Output "Tests Assemblies List"
     Write-Output $testAssemblies
     Write-Output "End Tests Assemblies List"
+
+    if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter) -and $normalizedTestFilter -ne $TestFilter) {
+        Write-Output "Normalized test filter for VSTest: '$TestFilter' -> '$normalizedTestFilter'"
+    }
+
+    if (-not (Test-Path $testResults)) {
+        New-Item -ItemType Directory -Path $testResults -Force | Out-Null
+    }
 
     $testAssemblies | ForEach-Object {
         Write-Output "Executing: dotnet test $($_)"
@@ -242,6 +539,7 @@ function RunTests {
                 Invoke-Execute {
                     coverlet $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
                         --threshold $thresholdCoverage `
                         --threshold-type line `
                         --threshold-type branch `
@@ -256,6 +554,7 @@ function RunTests {
                 Invoke-Execute {
                     coverlet $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
                         --format json `
                         --merge-with "coverage.json"
                 }
@@ -263,7 +562,15 @@ function RunTests {
         }
         else {
             $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
-            $trx = "$testResults/$fileNameNoExt"
+            $trxFileName =
+                if ([string]::IsNullOrWhiteSpace($ResultNameSuffix)) {
+                    "$fileNameNoExt.trx"
+                }
+                else {
+                    "$fileNameNoExt.$ResultNameSuffix.trx"
+                }
+
+            $trxFilePath = Join-Path $testResults $trxFileName
 
             # Set Query Handler for E2E tests
             if ($Filter -like "*E2E*") {
@@ -271,14 +578,25 @@ function RunTests {
                 SetAuthenticationServiceURL($dirPath)
             }
 
+            $dotNetTestArguments = @(
+                $target,
+                "--no-build",
+                "--no-restore",
+                "-v",
+                "normal",
+                "--logger",
+                "trx;LogFileName=$trxFilePath",
+                "--logger",
+                "console",
+                "--nologo"
+            )
+
+            if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
+                $dotNetTestArguments += @("--filter", $normalizedTestFilter)
+            }
+
             Invoke-Execute {
-                dotnet test $target `
-                    --no-build `
-                    --no-restore `
-                     -v normal `
-                    --logger "trx;LogFileName=$trx.trx" `
-                    --logger "console" `
-                    --nologo
+                dotnet test @dotNetTestArguments
             }
         }
     }
@@ -293,10 +611,25 @@ function IntegrationTests {
 }
 
 function RunE2E {
+    param(
+        [string]
+        $TestFilter,
+
+        [pscustomobject]
+        $E2ETestSettings
+    )
+
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
-    Invoke-Execute { RunTests -Filter "EdFi.DataManagementService.Tests.E2E" }
+    Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
+        Invoke-Execute {
+            RunTests `
+                -Filter "EdFi.DataManagementService.Tests.E2E" `
+                -TestFilter $TestFilter `
+                -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+        }
+    }
 }
 
 function Start-DockerEnvironment {
@@ -311,8 +644,19 @@ function Start-DockerEnvironment {
         $LoadSeedData,
 
         [string]
-        $IdentityProvider="self-contained"
+        $IdentityProvider="self-contained",
+
+        [string]
+        $ResolvedEnvironmentFile
     )
+
+    $environmentFilePath =
+        if ([string]::IsNullOrWhiteSpace($ResolvedEnvironmentFile)) {
+            Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+        }
+        else {
+            $ResolvedEnvironmentFile
+        }
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
@@ -321,9 +665,9 @@ function Start-DockerEnvironment {
     # Clean up all the containers and volumes
     Invoke-Execute {
         try {
-            Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
         }
         finally {
             Pop-Location
@@ -331,21 +675,21 @@ function Start-DockerEnvironment {
     }
         Invoke-Execute {
             try {
-                Push-Location eng/docker-compose/
+                Push-Location "$PSScriptRoot/eng/docker-compose"
                 if ($UsePublishedImage) {
                     if ($LoadSeedData) {
-                    ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
                     }
                     else {
-                    ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                    ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
                     }
                 }
                 else {
                     if ($LoadSeedData) {
-                    ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
                     }
                     else {
-                    ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                    ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
                     }
                 }
             }
@@ -355,12 +699,66 @@ function Start-DockerEnvironment {
         }
 }
 
-function E2ETests {
-    Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
-    Invoke-Step { RunE2E }
+function Initialize-RelationalE2EDatabase {
+    param(
+        [pscustomobject]
+        $E2ETestSettings
+    )
+
+    if (-not $E2ETestSettings.UseRelationalBackend) {
+        return
+    }
+
+    Invoke-Execute {
+        try {
+            Push-Location "$PSScriptRoot/eng/docker-compose"
+            ./provision-relational-e2e-database.ps1 `
+                -EnvironmentFile $E2ETestSettings.EnvironmentFile `
+                -Configuration $Configuration
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
-function Wait-ForConfigServiceAndClients {
+function E2ETests {
+    param(
+        [switch]
+        $UsePublishedImage,
+
+        [switch]
+        $SkipDockerBuild,
+
+        [switch]
+        $LoadSeedData,
+
+        [string]
+        $IdentityProvider="self-contained",
+
+        [string]
+        $TestFilter
+    )
+
+    $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter
+
+    Invoke-Step {
+        Start-DockerEnvironment `
+            -UsePublishedImage:$UsePublishedImage `
+            -SkipDockerBuild:$SkipDockerBuild `
+            -LoadSeedData:$LoadSeedData `
+            -IdentityProvider $IdentityProvider `
+            -ResolvedEnvironmentFile $e2eTestSettings.EnvironmentFile
+    }
+
+    if ($e2eTestSettings.UseRelationalBackend) {
+        Invoke-Step { Initialize-RelationalE2EDatabase -E2ETestSettings $e2eTestSettings }
+    }
+
+    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+}
+
+function Wait-ForConfigServiceAndClientRegistration {
     Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
     $maxAttempts = 60
     $attempt = 0
@@ -524,7 +922,7 @@ function InstanceE2ETests {
     }
 
     # Wait for config service to have all clients registered
-    Invoke-Step { Wait-ForConfigServiceAndClients }
+    Invoke-Step { Wait-ForConfigServiceAndClientRegistration }
 
     # Restart DMS so it can authenticate with the registered clients
     Invoke-Step { Restart-DmsContainer }
@@ -612,10 +1010,16 @@ function Invoke-TestExecution {
         $SkipDockerBuild,
 
         [switch]
-        $LoadSeedData
+        $LoadSeedData,
+
+        [string]
+        $IdentityProvider="self-contained",
+
+        [string]
+        $TestFilter
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -701,7 +1105,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter }
         InstanceE2ETest { Invoke-Step { InstanceE2ETests -SkipDockerBuild:$SkipDockerBuild } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }

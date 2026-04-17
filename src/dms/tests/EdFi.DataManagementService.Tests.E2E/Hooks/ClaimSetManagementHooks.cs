@@ -144,7 +144,8 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
             {
                 _logger.log.Information($"Health check attempt {i + 1}/{MaxHealthCheckRetries}");
 
-                var healthResponse = await _playwrightContext.ApiRequestContext?.GetAsync("health")!;
+                var apiRequestContext = await GetApiRequestContextAsync();
+                var healthResponse = await apiRequestContext.GetAsync("health");
 
                 if (healthResponse.Status == 200)
                 {
@@ -199,10 +200,11 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
         };
 
         // Call reload-claimsets to clear the cache
-        IAPIResponse reloadResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+        var apiRequestContext = await GetApiRequestContextAsync();
+        IAPIResponse reloadResponse = await apiRequestContext.PostAsync(
             "management/reload-claimsets",
             options
-        )!;
+        );
 
         _logger.log.Information($"DMS reload-claimsets response status: {reloadResponse.Status}");
 
@@ -262,10 +264,8 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
             Timeout = 30000, // 30 seconds timeout
         };
 
-        IAPIResponse viewResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-            "management/view-claimsets",
-            options
-        )!;
+        var apiRequestContext = await GetApiRequestContextAsync();
+        IAPIResponse viewResponse = await apiRequestContext.GetAsync("management/view-claimsets", options);
 
         if (viewResponse.Status == 200)
         {
@@ -294,5 +294,30 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
             headers.Add(new("Authorization", $"Bearer {SystemAdministrator.Token}"));
         }
         return headers;
+    }
+
+    private async Task<IAPIRequestContext> GetApiRequestContextAsync()
+    {
+        IAPIRequestContext? apiRequestContext = _playwrightContext.ApiRequestContext;
+
+        if (apiRequestContext is not null)
+        {
+            return apiRequestContext;
+        }
+
+        string apiUrl = $"http://localhost:{AppSettings.DmsPort}";
+        _logger.log.Warning(
+            "Playwright API request context was not initialized. Reinitializing with ApiUrl {ApiUrl}",
+            apiUrl
+        );
+
+        _playwrightContext.ApiUrl = apiUrl;
+        await _playwrightContext.InitializeApiContext();
+        apiRequestContext = _playwrightContext.ApiRequestContext;
+
+        return apiRequestContext
+            ?? throw new InvalidOperationException(
+                "Unable to initialize the Playwright API request context."
+            );
     }
 }

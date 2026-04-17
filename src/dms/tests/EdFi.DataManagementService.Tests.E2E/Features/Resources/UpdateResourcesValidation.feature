@@ -17,7 +17,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-184 @PUT
+        @API-184 @PUT @relational-backend
         Scenario: 01 Put an existing document (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with

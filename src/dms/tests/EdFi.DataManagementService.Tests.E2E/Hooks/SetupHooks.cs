@@ -27,6 +27,11 @@ public static class SetupHooks
     [BeforeTestRun]
     public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
     {
+        if (AppSettings.UseRelationalBackend)
+        {
+            RelationalCanaryScenarioValidator.AssertExactlyOneTaggedScenario();
+        }
+
         _containerSetup = new SearchContainerSetup();
 
         await SystemAdministrator.Register(

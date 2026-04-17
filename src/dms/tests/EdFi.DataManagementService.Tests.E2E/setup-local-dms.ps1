@@ -11,11 +11,14 @@
     E2E testing configuration. It is the companion to teardown-local-dms.ps1.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile <selected env file> -r -AddExtensionSecurityMetadata
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
 [CmdletBinding()]
-param()
+param(
+    [string] $EnvironmentFile = "./.env.e2e"
+)
 
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for E2E Testing
@@ -43,7 +46,7 @@ catch {
     }
     exit 1
 }
-Write-Host "Docker is running ✓" -ForegroundColor Green
+Write-Host "Docker is running" -ForegroundColor Green
 Write-Host ""
 
 # Store current location and navigate to docker-compose directory
@@ -57,13 +60,13 @@ try {
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Search Engine UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
-    Write-Host "  - Environment File: ./.env.e2e" -ForegroundColor Gray
+    Write-Host "  - Environment File: $EnvironmentFile" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Host "  - Extension Security Metadata: Yes" -ForegroundColor Gray
     Write-Host ""
 
     # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile $EnvironmentFile -r -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"

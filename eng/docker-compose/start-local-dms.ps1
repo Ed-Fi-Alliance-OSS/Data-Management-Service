@@ -105,6 +105,11 @@ $files = @(
     "kafka.yml"
 )
 
+if ($IdentityProvider -eq "keycloak") {
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+    $files += @("-f", "keycloak.yml")
+}
+
 if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
@@ -148,7 +153,7 @@ else {
     if($IdentityProvider -eq "keycloak")
     {
         Write-Output "Starting Keycloak..."
-        docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs keycloak
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
         }
@@ -164,7 +169,7 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
     Write-Output "Starting Postgresql..."
-    docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs db
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
     }
@@ -281,7 +286,7 @@ else {
             }
         }
         catch {
-            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)  Did you add the Tenant header?"
+            throw "Failed to create DMS Instance(s): $($_.Exception.Message)"
         }
     }
 

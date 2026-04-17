@@ -50,7 +50,7 @@ public static class AuthorizationDataProvider
     /// <param name="namespacePrefixes">Comma-separated list of namespace prefixes the vendor is authorized to use</param>
     /// <param name="edOrgIds">Comma-separated list of education organization IDs the vendor has access to</param>
     /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
-    /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SIS-Vendor")</param>
+    /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SISVendor")</param>
     /// <returns>A task representing the asynchronous operation</returns>
     public static async Task CreateClientCredentials(
         string company,
@@ -59,7 +59,7 @@ public static class AuthorizationDataProvider
         string namespacePrefixes,
         string edOrgIds,
         string systemAdministratorToken,
-        string claimSetName = "SIS-Vendor"
+        string claimSetName = AuthorizationClaimSetNames.SisVendor
     )
     {
         _configurationServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
@@ -74,7 +74,7 @@ public static class AuthorizationDataProvider
                 {
                     instanceType = "Test",
                     instanceName = "E2E Test DMS Instance",
-                    connectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+                    connectionString = DmsInstanceConnectionStringProvider.Create(),
                 }
             ),
             Encoding.UTF8,
@@ -134,15 +134,11 @@ public static class AuthorizationDataProvider
         }
 
         // Create application with DmsInstance
-        var requestJson = JsonSerializer.Serialize(
-            new
-            {
-                vendorId,
-                applicationName = "E2E",
-                claimSetName,
-                educationOrganizationIds,
-                dmsInstanceIds = new[] { dmsInstanceId },
-            }
+        string requestJson = CreateApplicationRequestJson(
+            vendorId,
+            claimSetName,
+            educationOrganizationIds,
+            dmsInstanceId
         );
 
         using StringContent applicationContent = new(requestJson, Encoding.UTF8, "application/json");
@@ -176,6 +172,25 @@ public static class AuthorizationDataProvider
         _clientCredentials = new ClientCredentials(
             keyProperty.GetString() ?? "",
             secretProperty.GetString() ?? ""
+        );
+    }
+
+    internal static string CreateApplicationRequestJson(
+        int vendorId,
+        string claimSetName,
+        long[] educationOrganizationIds,
+        int dmsInstanceId
+    )
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                vendorId,
+                applicationName = "E2E",
+                claimSetName,
+                educationOrganizationIds,
+                dmsInstanceIds = new[] { dmsInstanceId },
+            }
         );
     }
 
