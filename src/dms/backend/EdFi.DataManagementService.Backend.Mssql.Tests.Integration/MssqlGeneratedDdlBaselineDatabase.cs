@@ -344,19 +344,12 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             var fileId = reader.GetInt32(0);
             var logicalName = reader.GetString(1);
             var physicalName = reader.GetString(2);
-            var directoryPath =
-                Path.GetDirectoryName(physicalName)
-                ?? throw new InvalidOperationException(
-                    $"Could not determine the data file directory for database '{databaseName}'."
-                );
+            var snapshotFileName = $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss";
 
             files.Add(
                 new(
                     LogicalName: logicalName,
-                    SnapshotPath: Path.Combine(
-                        directoryPath,
-                        $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss"
-                    )
+                    SnapshotPath: BuildSqlServerSiblingPath(physicalName, snapshotFileName)
                 )
             );
         }
@@ -424,6 +417,25 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
                 char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_'
             ),
         ]);
+    }
+
+    // SQL Server reports physical file paths using its own OS conventions. Preserve
+    // that separator style instead of using the host OS path APIs.
+    private static string BuildSqlServerSiblingPath(string physicalName, string fileName)
+    {
+        var separatorIndex = Math.Max(physicalName.LastIndexOf('/'), physicalName.LastIndexOf('\\'));
+
+        if (separatorIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"Could not determine the data file directory for SQL Server file '{physicalName}'."
+            );
+        }
+
+        var directoryPath = physicalName[..separatorIndex];
+        var separator = physicalName[separatorIndex];
+
+        return $"{directoryPath}{separator}{fileName}";
     }
 
     private sealed class SharedBaselineEntry(
