@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -123,7 +124,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict on descriptor POST for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
             );
 
             return new UpsertResult.UpsertFailureWriteConflict();
@@ -254,7 +255,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict on descriptor PUT for {Resource} - {TraceId}",
                 RelationalWriteSupport.FormatResource(request.Resource),
-                request.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
             );
 
             return new UpdateResult.UpdateFailureWriteConflict();
@@ -342,7 +343,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Transient conflict on descriptor DELETE for {DocumentUuid} - {TraceId}",
                 documentUuid.Value,
-                traceId.Value
+                LoggingSanitizer.SanitizeForLogging(traceId.Value)
             );
 
             return new DeleteResult.DeleteFailureWriteConflict();

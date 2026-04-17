@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
 
@@ -235,7 +236,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.DeleteDocumentById - {TraceId}",
-            relationalDeleteRequest.TraceId.Value
+            LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
         );
 
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
@@ -281,9 +282,11 @@ public sealed class RelationalDocumentStoreRepository(
             }
             else
             {
-                // Authorization-check statements will be prepended to this command in a future story.
-                // If-Match/ETag validation against resolved.ContentVersion is likewise deferred and must be
-                // added before this path carries production traffic.
+                // Authorization-check statements will be prepended to this command in a future story
+                // (DMS-1009). If-Match/ETag validation against resolved.ContentVersion is likewise deferred.
+                // This path is gated behind AppSettings.UseRelationalBackend (default false); production
+                // DELETE traffic continues through Old.Postgresql.DeleteDocumentById, which enforces both
+                // checks. See reference/design/backend-redesign/design-docs/auth.md.
                 var deleteCommand = mappingSet.Key.Dialect switch
                 {
                     SqlDialect.Pgsql => new RelationalCommand(
@@ -325,7 +328,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ex,
                 "FK constraint violation on relational DELETE for {DocumentUuid} - {TraceId}",
                 relationalDeleteRequest.DocumentUuid.Value,
-                relationalDeleteRequest.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
             );
 
             await writeSession.RollbackAsync().ConfigureAwait(false);
@@ -337,7 +340,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ex,
                 "Transient conflict on relational DELETE for {DocumentUuid} - {TraceId}",
                 relationalDeleteRequest.DocumentUuid.Value,
-                relationalDeleteRequest.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
             );
 
             await writeSession.RollbackAsync().ConfigureAwait(false);
@@ -349,7 +352,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ex,
                 "Database error on relational DELETE for {DocumentUuid} - {TraceId}",
                 relationalDeleteRequest.DocumentUuid.Value,
-                relationalDeleteRequest.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
             );
 
             await writeSession.RollbackAsync().ConfigureAwait(false);
@@ -370,7 +373,7 @@ public sealed class RelationalDocumentStoreRepository(
                     ex,
                     "Transient conflict committing relational DELETE for {DocumentUuid} - {TraceId}",
                     relationalDeleteRequest.DocumentUuid.Value,
-                    relationalDeleteRequest.TraceId.Value
+                    LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
                 );
 
                 // Commit-phase failures leave the transaction in an ambiguous state: do not call
@@ -385,7 +388,7 @@ public sealed class RelationalDocumentStoreRepository(
                     ex,
                     "Database error committing relational DELETE for {DocumentUuid} - {TraceId}",
                     relationalDeleteRequest.DocumentUuid.Value,
-                    relationalDeleteRequest.TraceId.Value
+                    LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
                 );
 
                 return new DeleteResult.UnknownFailure(
