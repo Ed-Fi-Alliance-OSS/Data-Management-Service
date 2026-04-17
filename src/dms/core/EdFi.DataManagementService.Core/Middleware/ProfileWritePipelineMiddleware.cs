@@ -134,7 +134,8 @@ internal class ProfileWritePipelineMiddleware(
             resourceName: resourceName,
             method: method,
             operation: operation,
-            effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+            effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers,
+            deferCreatabilityViolations: true
         );
 
         // Handle failures
@@ -223,7 +224,8 @@ internal class ProfileWritePipelineMiddleware(
                 resourceName: resourceName,
                 method: method,
                 operation: operation,
-                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers,
+                deferCreatabilityViolations: true
             );
 
             if (result.Context is not null)

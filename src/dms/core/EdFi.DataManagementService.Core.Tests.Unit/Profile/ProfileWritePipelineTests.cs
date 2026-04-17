@@ -702,6 +702,97 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
+    //  5c. Given_Create_With_Hidden_Required_Root_Member_Not_Submitted_And
+    //      Deferral_Enabled — executor can classify create-vs-update later
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Hidden_Required_Root_Member_Not_Submitted_And_Deferral_Enabled
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                deferCreatabilityViolations: true
+            );
+        }
+
+        [Test]
+        public void It_should_succeed()
+        {
+            _result.IsSuccess.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_no_immediate_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_mark_the_root_resource_as_not_creatable()
+        {
+            _result.Request!.RootResourceCreatable.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_defer_the_creatability_violation_for_executor_routing()
+        {
+            _result
+                .DeferredFailures.OfType<RootCreateRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .Should()
+                .NotBeEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  6. Given_Upsert_With_No_Stored_Document — C6 not invoked
     // -----------------------------------------------------------------------
 
