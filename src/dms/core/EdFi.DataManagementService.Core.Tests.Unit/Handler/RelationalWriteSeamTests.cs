@@ -721,6 +721,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 writeExecutor,
                 targetLookupService,
                 new DefaultDescriptorWriteHandler(),
+                A.Fake<IReferenceResolver>(),
                 A.Fake<IDocumentHydrator>(),
                 A.Fake<IRelationalReadTargetLookupService>(),
                 A.Fake<IRelationalReadMaterializer>(),

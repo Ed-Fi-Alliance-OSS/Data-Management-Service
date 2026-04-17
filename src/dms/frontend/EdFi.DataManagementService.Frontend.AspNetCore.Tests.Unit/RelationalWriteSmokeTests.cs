@@ -409,6 +409,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IRelationalReadTargetLookupService>();
                 services.RemoveAll<IRelationalReadMaterializer>();
                 services.RemoveAll<IReadableProfileProjector>();
+                services.RemoveAll<IReferenceResolver>();
 
                 services.AddSingleton(jwtValidationService);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
@@ -425,6 +426,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.AddSingleton(A.Fake<IRelationalReadTargetLookupService>());
                 services.AddSingleton(A.Fake<IRelationalReadMaterializer>());
                 services.AddSingleton(A.Fake<IReadableProfileProjector>());
+                services.AddSingleton(A.Fake<IReferenceResolver>());
                 services.AddSingleton<IDescriptorWriteHandler>(new DefaultDescriptorWriteHandler());
             });
         });

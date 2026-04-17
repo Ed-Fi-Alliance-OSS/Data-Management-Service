@@ -57,7 +57,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `rg -n 'Descriptor|empty page|TotalCount|Resolve.*Descriptor|Resolve.*Query' ./src/dms/backend/EdFi.DataManagementService.Backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Predicate and Parameter Planning",

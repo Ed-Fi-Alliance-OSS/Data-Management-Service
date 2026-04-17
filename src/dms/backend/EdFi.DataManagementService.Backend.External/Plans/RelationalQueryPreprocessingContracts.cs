@@ -69,4 +69,9 @@ public abstract record PreprocessedRelationalQueryValue
     /// Query value was parsed as a <c>dms.Document.DocumentUuid</c> filter.
     /// </summary>
     public sealed record DocumentUuid(Guid Value) : PreprocessedRelationalQueryValue;
+
+    /// <summary>
+    /// Descriptor-valued query input was resolved to a descriptor <c>DocumentId</c>.
+    /// </summary>
+    public sealed record DescriptorDocumentId(long Value) : PreprocessedRelationalQueryValue;
 }

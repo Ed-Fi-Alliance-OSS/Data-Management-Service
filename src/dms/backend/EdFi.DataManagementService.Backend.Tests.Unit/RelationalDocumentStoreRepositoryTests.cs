@@ -40,6 +40,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private RelationalDocumentStoreRepository _sut = null!;
     private IRelationalWriteExecutor _writeExecutor = null!;
     private RecordingRelationalWriteTargetLookupService _targetLookupService = null!;
+    private IReferenceResolver _referenceResolver = null!;
     private IDocumentHydrator _documentHydrator = null!;
     private IRelationalReadTargetLookupService _readTargetLookupService = null!;
     private IRelationalReadMaterializer _readMaterializer = null!;
@@ -52,6 +53,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         _writeExecutor = A.Fake<IRelationalWriteExecutor>();
         _targetLookupService = new RecordingRelationalWriteTargetLookupService();
+        _referenceResolver = A.Fake<IReferenceResolver>();
         _documentHydrator = A.Fake<IDocumentHydrator>();
         _readTargetLookupService = A.Fake<IRelationalReadTargetLookupService>();
         _readMaterializer = A.Fake<IRelationalReadMaterializer>();
@@ -78,6 +80,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             new DefaultDescriptorWriteHandler(),
+            _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
             _readMaterializer,
@@ -501,6 +504,67 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.QueryDocuments(queryRequest);
 
         result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page_without_hydration()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "string",
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        new DbColumnName("SchoolCategoryDescriptorId"),
+                        new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                    )
+                )
+            ),
+            [
+                CreateQueryElement(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://missing",
+                    "string"
+                ),
+            ],
+            totalCount: true
+        );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (ReferenceResolverRequest request, CancellationToken _) =>
+                    Task.FromResult(
+                        CreateResolvedReferenceSet(
+                            invalidDescriptorReferences:
+                            [
+                                .. request.DescriptorReferences.Select(reference =>
+                                    DescriptorReferenceFailure.From(
+                                        reference,
+                                        DescriptorReferenceFailureReason.Missing
+                                    )
+                                ),
+                            ]
+                        )
+                    )
+            );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -1204,6 +1268,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
             _readMaterializer,
@@ -1243,6 +1308,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             _writeExecutor,
             _targetLookupService,
             descriptorHandler,
+            _referenceResolver,
             _documentHydrator,
             _readTargetLookupService,
             _readMaterializer,
@@ -1946,6 +2012,28 @@ public class Given_RelationalDocumentStoreRepositoryTests
             queryFieldName,
             new RelationalQueryFieldPath(new JsonPathExpression(path, []), type),
             target
+        );
+    }
+
+    private static ResolvedReferenceSet CreateResolvedReferenceSet(
+        IReadOnlyList<ResolvedDescriptorReference>? successfulDescriptorReferences = null,
+        IReadOnlyList<DescriptorReferenceFailure>? invalidDescriptorReferences = null
+    )
+    {
+        successfulDescriptorReferences ??= [];
+        invalidDescriptorReferences ??= [];
+
+        return new ResolvedReferenceSet(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
+                static reference => reference.Reference.Path,
+                static reference => reference
+            ),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: invalidDescriptorReferences,
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
         );
     }
 

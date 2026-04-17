@@ -19,6 +19,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
     IDescriptorWriteHandler descriptorWriteHandler,
+    IReferenceResolver referenceResolver,
     IDocumentHydrator documentHydrator,
     IRelationalReadTargetLookupService readTargetLookupService,
     IRelationalReadMaterializer readMaterializer,
@@ -33,6 +34,8 @@ public sealed class RelationalDocumentStoreRepository(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
+    private readonly IReferenceResolver _referenceResolver =
+        referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
     private readonly IDocumentHydrator _documentHydrator =
         documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
     private readonly IRelationalReadTargetLookupService _readTargetLookupService =
@@ -237,7 +240,7 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    public Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+    public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
         var relationalQueryRequest = RequireRelationalRequest<IRelationalQueryRequest>(
@@ -263,31 +266,32 @@ public sealed class RelationalDocumentStoreRepository(
 
             try
             {
-                preprocessingResult = RelationalQueryRequestPreprocessor.Preprocess(
-                    relationalQueryRequest.QueryElements,
-                    queryCapability
-                );
+                preprocessingResult = await RelationalQueryRequestPreprocessor
+                    .PreprocessAsync(
+                        relationalQueryRequest.MappingSet,
+                        resource,
+                        relationalQueryRequest.QueryElements,
+                        queryCapability,
+                        _referenceResolver
+                    )
+                    .ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
-                return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+                return new QueryResult.UnknownFailure(ex.Message);
             }
 
             if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
             {
-                return Task.FromResult<QueryResult>(
-                    new QueryResult.QuerySuccess(
-                        [],
-                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                    )
+                return new QueryResult.QuerySuccess(
+                    [],
+                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
                 );
             }
         }
 
-        return Task.FromResult<QueryResult>(
-            new QueryResult.QueryFailureNotImplemented(
-                $"Relational query handling is not implemented for resource '{FormatResource(resource)}'."
-            )
+        return new QueryResult.QueryFailureNotImplemented(
+            $"Relational query handling is not implemented for resource '{FormatResource(resource)}'."
         );
     }
 
