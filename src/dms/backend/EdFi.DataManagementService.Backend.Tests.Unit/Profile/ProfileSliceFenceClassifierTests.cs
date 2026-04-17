@@ -155,7 +155,8 @@ public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_sep
         var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
             ProfileSliceFenceClassifierTestHelpers.VisibleScope("$")
         );
-        // Stored side has a hidden separate-table scope — preserve-only, no merge work
+        // Hidden stored separate-table scopes still require the separate-table slice
+        // so later slices do not accidentally relax this fence too early.
         var context = ProfileSliceFenceClassifierTestHelpers.CreateContext(
             request,
             ProfileSliceFenceClassifierTestHelpers.HiddenStoredScope("$._ext.sample")
@@ -164,9 +165,9 @@ public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_sep
     }
 
     [Test]
-    public void It_returns_RootTableOnly()
+    public void It_returns_SeparateTableNonCollection()
     {
-        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
     }
 }
 
@@ -525,9 +526,9 @@ public class Given_ProfileSliceFenceClassifier_hidden_stored_collection_aligned_
     }
 
     [Test]
-    public void It_returns_RootTableOnly()
+    public void It_returns_SeparateTableNonCollection()
     {
-        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
     }
 }
 

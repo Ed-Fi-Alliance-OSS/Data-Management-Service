@@ -71,10 +71,8 @@ internal static class ProfileSliceFenceClassifier
 
         foreach (var storedScope in context.StoredScopeStates)
         {
-            if (storedScope.Visibility == ProfileVisibilityKind.Hidden)
-            {
-                continue;
-            }
+            // Stored-side scope states always participate in family selection:
+            // even hidden stored scopes require the owning slice to preserve them correctly.
             var family = ToFamily(topologyIndex.GetTopology(storedScope.Address.JsonScope));
             if (family > max)
             {
