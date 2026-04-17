@@ -286,7 +286,7 @@ internal sealed class DescriptorWriteHandler(
         _logger.LogDebug(
             "Deleting descriptor document {DocumentUuid} - {TraceId}",
             documentUuid.Value,
-            traceId.Value
+            LoggingSanitizer.SanitizeForLogging(traceId.Value)
         );
 
         var dialect = _commandExecutor.Dialect;
@@ -332,7 +332,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "FK constraint violation on descriptor DELETE for {DocumentUuid} - {TraceId}",
                 documentUuid.Value,
-                traceId.Value
+                LoggingSanitizer.SanitizeForLogging(traceId.Value)
             );
 
             return new DeleteResult.DeleteFailureReference(["(referenced descriptor)"]);
@@ -354,7 +354,7 @@ internal sealed class DescriptorWriteHandler(
                 ex,
                 "Database error on descriptor DELETE for {DocumentUuid} - {TraceId}",
                 documentUuid.Value,
-                traceId.Value
+                LoggingSanitizer.SanitizeForLogging(traceId.Value)
             );
 
             return new DeleteResult.UnknownFailure(
