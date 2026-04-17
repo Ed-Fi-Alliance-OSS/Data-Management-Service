@@ -168,6 +168,61 @@ file static class ProfileRoutingTestSupport
             StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
         );
     }
+
+    public static BackendProfileWriteContext CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
+        ResourceWritePlan writePlan,
+        JsonNode requestBody
+    )
+    {
+        // The School fixture has "$.addresses[*]" as a top-level collection. We synthesize an
+        // inlined common-type scope beneath that collection (the profile middleware's
+        // ContentTypeScopeDiscovery would emit the same shape from a writable content type that
+        // declares, say, a `mileInfo` object under `addresses`).
+        (string JsonScope, ScopeKind Kind)[] additionalScopes =
+        [
+            ("$.addresses[*].mileInfo", ScopeKind.NonCollection),
+        ];
+
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
+
+        // Build a matching ancestor chain so the inlined scope address passes the
+        // ProfileWriteContractValidator. The "$.addresses[*]" collection's semantic identity is
+        // a single "city" part — see the fixture's relational-model manifest for SchoolAddress.
+        var addressesAncestor = new AncestorCollectionInstance(
+            JsonScope: "$.addresses[*]",
+            SemanticIdentityInOrder:
+            [
+                new SemanticIdentityPart(
+                    RelativePath: "city",
+                    Value: JsonValue.Create("Austin"),
+                    IsPresent: true
+                ),
+            ]
+        );
+
+        var rootScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$", []),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var inlinedScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$.addresses[*].mileInfo", [addressesAncestor]),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+
+        return new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody,
+                RootResourceCreatable: true,
+                RequestScopeStates: [rootScopeState, inlinedScopeState],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-profile-with-inlined-descendant",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+        );
+    }
 }
 
 /// <summary>
@@ -721,6 +776,193 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
             EdfiDoc: requestBody,
             Headers: [],
             TraceId: new TraceId("profile-put-profiled"),
+            DocumentUuid: ExistingDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileWriteContext
+        );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpdateDocumentById(updateRequest);
+    }
+}
+
+/// <summary>
+/// Verifies that a profiled PUT whose compiled scope catalog contains an inlined scope
+/// beneath a top-level collection ancestor routes to the <c>TopLevelCollection</c> fence,
+/// not the default <c>RootTableOnly</c> fence. Regression guard for the review finding
+/// that the slice-fence classifier was ignoring middleware-augmented inlined scopes.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
+{
+    private const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
+
+    private const string RequestBodyJson = """
+        {
+          "schoolId": 255901,
+          "addresses": [
+            {
+              "city": "Austin"
+            }
+          ]
+        }
+        """;
+
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+        AuthorizationSecurableInfo: []
+    );
+    private static readonly DocumentUuid ExistingDocumentUuid = new(
+        Guid.Parse("dddddddd-5555-5555-5555-555555555555")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpdateResult _profiledPutResult = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
+
+        var createResult = await ExecuteNonProfiledUpsertAsync();
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        _profiledPutResult = await ExecuteProfiledPutAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_unknown_failure_with_TopLevelCollection_family_in_slice_fence()
+    {
+        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
+        _profiledPutResult
+            .As<UpdateResult.UnknownFailure>()
+            .FailureMessage.Should()
+            .Contain("TopLevelCollection");
+    }
+
+    [Test]
+    public void It_does_not_fall_back_to_RootTableOnly()
+    {
+        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
+        _profiledPutResult
+            .As<UpdateResult.UnknownFailure>()
+            .FailureMessage.Should()
+            .NotContain("RootTableOnly");
+    }
+
+    private static DocumentInfo CreateSchoolDocumentInfo()
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+        ]);
+
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private async Task<UpsertResult> ExecuteNonProfiledUpsertAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfileRoutingPutInlinedDescendant",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var upsertRequest = new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: _mappingSet,
+            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            Headers: [],
+            TraceId: new TraceId("profile-put-inlined-descendant-seed"),
+            DocumentUuid: ExistingDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: []
+        );
+
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(upsertRequest);
+    }
+
+    private async Task<UpdateResult> ExecuteProfiledPutAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "ProfileRoutingPutInlinedDescendant",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
+        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+        var profileWriteContext =
+            ProfileRoutingTestSupport.CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
+                writePlan,
+                requestBody.DeepClone()
+            );
+
+        var updateRequest = new UpdateRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId("profile-put-inlined-descendant-profiled"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
