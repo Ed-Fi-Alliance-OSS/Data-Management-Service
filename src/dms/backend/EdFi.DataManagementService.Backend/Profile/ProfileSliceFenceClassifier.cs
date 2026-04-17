@@ -12,6 +12,14 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// <see cref="RequiredSliceFamily"/> that the executor must land
 /// before applying profile-constrained writes.
 /// </summary>
+/// <remarks>
+/// Visibility rule for scope-state streams:
+/// <see cref="ProfileVisibilityKind.Hidden"/> scope-state metadata is preserve-only
+/// and does not escalate; <see cref="ProfileVisibilityKind.VisiblePresent"/> and
+/// <see cref="ProfileVisibilityKind.VisibleAbsent"/> both escalate by topology.
+/// Row streams (<c>VisibleRequestCollectionItems</c>, <c>VisibleStoredCollectionRows</c>)
+/// are visible-only by contract and continue to escalate unconditionally.
+/// </remarks>
 internal static class ProfileSliceFenceClassifier
 {
     /// <summary>
@@ -27,6 +35,10 @@ internal static class ProfileSliceFenceClassifier
 
         foreach (var scopeState in request.RequestScopeStates)
         {
+            if (scopeState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                continue;
+            }
             var family = ToFamily(topologyIndex.GetTopology(scopeState.Address.JsonScope));
             if (family > max)
             {
@@ -59,6 +71,10 @@ internal static class ProfileSliceFenceClassifier
 
         foreach (var storedScope in context.StoredScopeStates)
         {
+            if (storedScope.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                continue;
+            }
             var family = ToFamily(topologyIndex.GetTopology(storedScope.Address.JsonScope));
             if (family > max)
             {

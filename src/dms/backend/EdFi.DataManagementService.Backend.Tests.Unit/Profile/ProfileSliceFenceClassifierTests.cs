@@ -136,7 +136,7 @@ public class Given_ProfileSliceFenceClassifier_with_nested_collection_in_request
 }
 
 [TestFixture]
-public class Given_ProfileSliceFenceClassifier_max_wins_request_root_but_stored_has_hidden_separate_table
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_stored
 {
     private RequiredSliceFamily _result;
 
@@ -155,7 +155,7 @@ public class Given_ProfileSliceFenceClassifier_max_wins_request_root_but_stored_
         var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
             ProfileSliceFenceClassifierTestHelpers.VisibleScope("$")
         );
-        // Stored side has a hidden separate-table scope that must be preserved
+        // Stored side has a hidden separate-table scope — preserve-only, no merge work
         var context = ProfileSliceFenceClassifierTestHelpers.CreateContext(
             request,
             ProfileSliceFenceClassifierTestHelpers.HiddenStoredScope("$._ext.sample")
@@ -164,9 +164,9 @@ public class Given_ProfileSliceFenceClassifier_max_wins_request_root_but_stored_
     }
 
     [Test]
-    public void It_returns_SeparateTableNonCollection()
+    public void It_returns_RootTableOnly()
     {
-        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
+        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
     }
 }
 
@@ -231,10 +231,10 @@ public class Given_ProfileSliceFenceClassifier_ClassifyForExistingDocument_uses_
             ProfileSliceFenceClassifierTestHelpers.VisibleScope("$"),
             ProfileSliceFenceClassifierTestHelpers.VisibleCollectionScope("$.addresses[*]")
         );
-        // Stored side adds a hidden nested collection → should escalate to NestedAndExtensionCollections
+        // Stored side adds a visible-absent nested collection → escalates to NestedAndExtensionCollections
         var context = ProfileSliceFenceClassifierTestHelpers.CreateContext(
             request,
-            ProfileSliceFenceClassifierTestHelpers.HiddenStoredScope("$.addresses[*].periods[*]")
+            ProfileSliceFenceClassifierTestHelpers.VisibleAbsentStoredScope("$.addresses[*].periods[*]")
         );
         _result = ProfileSliceFenceClassifier.ClassifyForExistingDocument(context, index);
     }
@@ -365,6 +365,169 @@ public class Given_ProfileSliceFenceClassifier_with_nested_extension_child_colle
     public void It_returns_NestedAndExtensionCollections()
     {
         _result.Should().Be(RequiredSliceFamily.NestedAndExtensionCollections);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_request
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(
+            ProfileSliceFenceClassifierTestHelpers.RootTablePlan(),
+            ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+                "$._ext.sample",
+                "RootExtension",
+                DbTableKind.RootExtension
+            )
+        );
+        var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$"),
+            ProfileSliceFenceClassifierTestHelpers.HiddenRequestScope("$._ext.sample")
+        );
+        _result = ProfileSliceFenceClassifier.ClassifyForCreateNew(request, index);
+    }
+
+    [Test]
+    public void It_returns_RootTableOnly()
+    {
+        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_visible_absent_separate_table_in_request
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(
+            ProfileSliceFenceClassifierTestHelpers.RootTablePlan(),
+            ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+                "$._ext.sample",
+                "RootExtension",
+                DbTableKind.RootExtension
+            )
+        );
+        var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$"),
+            ProfileSliceFenceClassifierTestHelpers.VisibleAbsentRequestScope("$._ext.sample")
+        );
+        _result = ProfileSliceFenceClassifier.ClassifyForCreateNew(request, index);
+    }
+
+    [Test]
+    public void It_returns_SeparateTableNonCollection()
+    {
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_visible_present_separate_table_in_request
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(
+            ProfileSliceFenceClassifierTestHelpers.RootTablePlan(),
+            ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+                "$._ext.sample",
+                "RootExtension",
+                DbTableKind.RootExtension
+            )
+        );
+        var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$"),
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$._ext.sample")
+        );
+        _result = ProfileSliceFenceClassifier.ClassifyForCreateNew(request, index);
+    }
+
+    [Test]
+    public void It_returns_SeparateTableNonCollection()
+    {
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_visible_absent_stored_separate_table_escalates
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(
+            ProfileSliceFenceClassifierTestHelpers.RootTablePlan(),
+            ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+                "$._ext.sample",
+                "RootExtension",
+                DbTableKind.RootExtension
+            )
+        );
+        var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$")
+        );
+        var context = ProfileSliceFenceClassifierTestHelpers.CreateContext(
+            request,
+            ProfileSliceFenceClassifierTestHelpers.VisibleAbsentStoredScope("$._ext.sample")
+        );
+        _result = ProfileSliceFenceClassifier.ClassifyForExistingDocument(context, index);
+    }
+
+    [Test]
+    public void It_returns_SeparateTableNonCollection()
+    {
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_hidden_stored_collection_aligned_extension_scope
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(
+            ProfileSliceFenceClassifierTestHelpers.RootTablePlan(),
+            ProfileSliceFenceClassifierTestHelpers.CreateCollectionTablePlan(
+                "$.addresses[*]",
+                "Addresses",
+                DbTableKind.Collection
+            ),
+            // CollectionExtensionScope: non-collection extension whose parent is a collection.
+            // ScopeTopologyIndex maps this to SeparateTableNonCollection.
+            ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+                "$.addresses[*]._ext.sample",
+                "AddressesExtSample",
+                DbTableKind.CollectionExtensionScope
+            )
+        );
+        var request = ProfileSliceFenceClassifierTestHelpers.CreateRequest(
+            ProfileSliceFenceClassifierTestHelpers.VisibleScope("$")
+        );
+        var context = ProfileSliceFenceClassifierTestHelpers.CreateContext(
+            request,
+            ProfileSliceFenceClassifierTestHelpers.HiddenStoredScope("$.addresses[*]._ext.sample")
+        );
+        _result = ProfileSliceFenceClassifier.ClassifyForExistingDocument(context, index);
+    }
+
+    [Test]
+    public void It_returns_RootTableOnly()
+    {
+        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
     }
 }
 
@@ -578,6 +741,15 @@ file static class ProfileSliceFenceClassifierTestHelpers
 
     public static StoredScopeState HiddenStoredScope(string jsonScope) =>
         new(ScopeAddress(jsonScope), ProfileVisibilityKind.Hidden, []);
+
+    public static RequestScopeState HiddenRequestScope(string jsonScope, bool creatable = false) =>
+        new(ScopeAddress(jsonScope), ProfileVisibilityKind.Hidden, creatable);
+
+    public static RequestScopeState VisibleAbsentRequestScope(string jsonScope, bool creatable = true) =>
+        new(ScopeAddress(jsonScope), ProfileVisibilityKind.VisibleAbsent, creatable);
+
+    public static StoredScopeState VisibleAbsentStoredScope(string jsonScope) =>
+        new(ScopeAddress(jsonScope), ProfileVisibilityKind.VisibleAbsent, []);
 
     public static ProfileAppliedWriteRequest CreateRequest(params object[] scopesAndItems)
     {
