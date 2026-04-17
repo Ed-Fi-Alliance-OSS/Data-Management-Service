@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -246,6 +247,274 @@ public class Given_ScopeTopologyIndex_for_unknown_scope
     }
 }
 
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_root
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root)],
+            ("$.address", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_RootInlined_for_inlined_scope_under_root()
+    {
+        _index.GetTopology("$.address").Should().Be(ScopeTopologyKind.RootInlined);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_top_level_collection
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$.addresses[*]",
+                    "Addresses",
+                    DbTableKind.Collection
+                ),
+            ],
+            ("$.addresses[*].mileInfo", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_TopLevelBaseCollection_for_inlined_scope_under_top_level_collection()
+    {
+        _index.GetTopology("$.addresses[*].mileInfo").Should().Be(ScopeTopologyKind.TopLevelBaseCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_nested_collection
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$.addresses[*]",
+                    "Addresses",
+                    DbTableKind.Collection
+                ),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$.addresses[*].periods[*]",
+                    "AddressPeriods",
+                    DbTableKind.Collection
+                ),
+            ],
+            ("$.addresses[*].periods[*].notes", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_NestedOrExtensionCollection_for_inlined_scope_under_nested_collection()
+    {
+        _index
+            .GetTopology("$.addresses[*].periods[*].notes")
+            .Should()
+            .Be(ScopeTopologyKind.NestedOrExtensionCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_root_extension
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateTablePlan(
+                    "$._ext.sample",
+                    "RootExtension",
+                    DbTableKind.RootExtension
+                ),
+            ],
+            ("$._ext.sample.locator", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_SeparateTableNonCollection_for_inlined_scope_under_root_extension()
+    {
+        _index.GetTopology("$._ext.sample.locator").Should().Be(ScopeTopologyKind.SeparateTableNonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_collection_extension
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$.addresses[*]",
+                    "Addresses",
+                    DbTableKind.Collection
+                ),
+                ScopeTopologyIndexTestHelpers.CreateTablePlan(
+                    "$.addresses[*]._ext.sample",
+                    "AddressExtension",
+                    DbTableKind.CollectionExtensionScope
+                ),
+            ],
+            ("$.addresses[*]._ext.sample.marker", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_SeparateTableNonCollection_for_inlined_scope_under_collection_extension()
+    {
+        _index
+            .GetTopology("$.addresses[*]._ext.sample.marker")
+            .Should()
+            .Be(ScopeTopologyKind.SeparateTableNonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_extension_collection
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateTablePlan(
+                    "$._ext.sample",
+                    "RootExtension",
+                    DbTableKind.RootExtension
+                ),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$._ext.sample.contacts[*]",
+                    "Contacts",
+                    DbTableKind.ExtensionCollection
+                ),
+            ],
+            ("$._ext.sample.contacts[*].phone", ScopeKind.NonCollection)
+        );
+    }
+
+    [Test]
+    public void It_returns_NestedOrExtensionCollection_for_inlined_scope_under_extension_collection()
+    {
+        _index
+            .GetTopology("$._ext.sample.contacts[*].phone")
+            .Should()
+            .Be(ScopeTopologyKind.NestedOrExtensionCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_top_level_collection_scope
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root)],
+            ("$.inlineItems[*]", ScopeKind.Collection)
+        );
+    }
+
+    [Test]
+    public void It_returns_TopLevelBaseCollection_for_inlined_top_level_collection()
+    {
+        _index.GetTopology("$.inlineItems[*]").Should().Be(ScopeTopologyKind.TopLevelBaseCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_extension_collection_scope
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateTablePlan(
+                    "$._ext.sample",
+                    "RootExtension",
+                    DbTableKind.RootExtension
+                ),
+            ],
+            ("$._ext.sample.contacts[*]", ScopeKind.Collection)
+        );
+    }
+
+    [Test]
+    public void It_returns_NestedOrExtensionCollection_for_inlined_extension_collection()
+    {
+        _index
+            .GetTopology("$._ext.sample.contacts[*]")
+            .Should()
+            .Be(ScopeTopologyKind.NestedOrExtensionCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ScopeTopologyIndex_with_inlined_nested_collection_under_table_backed_collection
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [
+                ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root),
+                ScopeTopologyIndexTestHelpers.CreateCollectionTablePlan(
+                    "$.addresses[*]",
+                    "Addresses",
+                    DbTableKind.Collection
+                ),
+            ],
+            ("$.addresses[*].nested[*]", ScopeKind.Collection)
+        );
+    }
+
+    [Test]
+    public void It_returns_NestedOrExtensionCollection_for_inlined_nested_collection_with_collection_ancestor()
+    {
+        _index
+            .GetTopology("$.addresses[*].nested[*]")
+            .Should()
+            .Be(ScopeTopologyKind.NestedOrExtensionCollection);
+    }
+}
+
 // ── Shared test helpers ────────────────────────────────────────────────────
 
 file static class ScopeTopologyIndexTestHelpers
@@ -431,4 +700,9 @@ file static class ScopeTopologyIndexTestHelpers
 
         return new ResourceWritePlan(model, tablePlans);
     }
+
+    public static ScopeTopologyIndex BuildIndexWithInlined(
+        TableWritePlan[] tablePlans,
+        params (string JsonScope, ScopeKind Kind)[] additionalScopes
+    ) => ScopeTopologyIndex.BuildFromWritePlan(CreateWritePlan(tablePlans), additionalScopes);
 }

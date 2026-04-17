@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
 
@@ -14,8 +15,18 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// describing its physical storage role.
 /// </summary>
 /// <remarks>
-/// Scopes not in the write plan (inlined non-collection scopes on the root table) return
-/// <see cref="ScopeTopologyKind.RootInlined"/> as the default.
+/// Inlined scopes (scopes defined by the profile content type tree but not given their own backing
+/// table — e.g. a common-type member under a collection row, or an object member under an extension row)
+/// are classified based on the <see cref="ScopeKind"/> supplied by the caller:
+/// <list type="bullet">
+/// <item><description><see cref="ScopeKind.Collection"/> entries are classified against the same
+/// collection rules as table-backed collections: an inlined collection under an <c>_ext</c> path or
+/// nested under another collection is <see cref="ScopeTopologyKind.NestedOrExtensionCollection"/>;
+/// otherwise it is <see cref="ScopeTopologyKind.TopLevelBaseCollection"/>.</description></item>
+/// <item><description>All other inlined scopes inherit the topology of their closest table-backed
+/// ancestor, so the fence family matches the physical row that actually stores them.</description></item>
+/// </list>
+/// Scopes with no ancestor entry at all fall back to <see cref="ScopeTopologyKind.RootInlined"/>.
 /// </remarks>
 internal sealed class ScopeTopologyIndex
 {
@@ -28,18 +39,27 @@ internal sealed class ScopeTopologyIndex
 
     /// <summary>
     /// Returns the <see cref="ScopeTopologyKind"/> for the given JSON scope canonical string.
-    /// Returns <see cref="ScopeTopologyKind.RootInlined"/> for scopes not present in the write plan
-    /// (inlined scopes have no backing table and are physically part of the root row).
+    /// Returns <see cref="ScopeTopologyKind.RootInlined"/> for scopes that are neither registered
+    /// as table-backed nor passed in as inlined via <c>additionalScopes</c>.
     /// </summary>
     public ScopeTopologyKind GetTopology(string jsonScopeCanonical) =>
         _topologyByScope.TryGetValue(jsonScopeCanonical, out var kind) ? kind : ScopeTopologyKind.RootInlined;
 
     /// <summary>
     /// Builds a <see cref="ScopeTopologyIndex"/> from the given <see cref="ResourceWritePlan"/>.
+    /// When <paramref name="additionalScopes"/> is supplied, each inlined scope is classified
+    /// according to its <see cref="ScopeKind"/>: <see cref="ScopeKind.Collection"/> entries are
+    /// classified against the collection rules (top-level vs nested/extension), while all other
+    /// inlined scopes inherit the topology of their closest table-backed ancestor so the fence
+    /// family reflects the physical row that stores them.
     /// </summary>
-    public static ScopeTopologyIndex BuildFromWritePlan(ResourceWritePlan plan)
+    public static ScopeTopologyIndex BuildFromWritePlan(
+        ResourceWritePlan plan,
+        IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes = null
+    )
     {
-        // First pass: collect all collection-kinded scopes so nested detection can reference them.
+        // First pass: collect all collection-kinded scopes (table-backed plus any inlined
+        // collections the caller passes in) so nested detection sees them all.
         var collectionScopes = plan
             .TablePlansInDependencyOrder.Where(tp =>
                 tp.TableModel.IdentityMetadata.TableKind
@@ -49,13 +69,39 @@ internal sealed class ScopeTopologyIndex
             .Select(tp => tp.TableModel.JsonScope.Canonical)
             .ToHashSet(StringComparer.Ordinal);
 
-        var topologyByScope = plan
-            .TablePlansInDependencyOrder.Select(tp => tp.TableModel)
-            .ToDictionary(
-                tm => tm.JsonScope.Canonical,
-                tm => ToTopologyKind(tm.JsonScope.Canonical, tm.IdentityMetadata.TableKind, collectionScopes),
-                StringComparer.Ordinal
+        if (additionalScopes is { Count: > 0 })
+        {
+            foreach (var (jsonScope, kind) in additionalScopes)
+            {
+                if (kind == ScopeKind.Collection)
+                {
+                    collectionScopes.Add(jsonScope);
+                }
+            }
+        }
+
+        var topologyByScope = new Dictionary<string, ScopeTopologyKind>(StringComparer.Ordinal);
+        foreach (var tableModel in plan.TablePlansInDependencyOrder.Select(tp => tp.TableModel))
+        {
+            topologyByScope[tableModel.JsonScope.Canonical] = ToTopologyKind(
+                tableModel.JsonScope.Canonical,
+                tableModel.IdentityMetadata.TableKind,
+                collectionScopes
             );
+        }
+
+        if (additionalScopes is { Count: > 0 })
+        {
+            foreach (var (jsonScope, kind) in additionalScopes)
+            {
+                // Inlined scopes must not clobber a table-backed topology. TryAdd skips if the scope is already registered.
+                var topology =
+                    kind == ScopeKind.Collection
+                        ? ClassifyInlinedCollection(jsonScope, collectionScopes)
+                        : InheritAncestorTopology(jsonScope, topologyByScope);
+                topologyByScope.TryAdd(jsonScope, topology);
+            }
+        }
 
         return new ScopeTopologyIndex(topologyByScope);
     }
@@ -109,4 +155,44 @@ internal sealed class ScopeTopologyIndex
 
         return false;
     }
+
+    /// <summary>
+    /// Walks the dot-separated ancestor prefixes of <paramref name="jsonScope"/> (excluding the
+    /// scope itself) and returns the first <see cref="ScopeTopologyKind"/> found in
+    /// <paramref name="topologyByScope"/>. Falls back to <see cref="ScopeTopologyKind.RootInlined"/>
+    /// only if no ancestor is registered.
+    /// </summary>
+    private static ScopeTopologyKind InheritAncestorTopology(
+        string jsonScope,
+        IReadOnlyDictionary<string, ScopeTopologyKind> topologyByScope
+    )
+    {
+        var segments = jsonScope.Split('.');
+        for (var len = segments.Length - 1; len >= 1; len--)
+        {
+            var ancestor = string.Join(".", segments[..len]);
+            if (topologyByScope.TryGetValue(ancestor, out var topology))
+            {
+                return topology;
+            }
+        }
+
+        return ScopeTopologyKind.RootInlined;
+    }
+
+    /// <summary>
+    /// Classifies an inlined scope whose caller-declared <see cref="ScopeKind"/> is
+    /// <see cref="ScopeKind.Collection"/>. Mirrors the table-backed collection rules:
+    /// any collection under an <c>_ext</c> path or with a collection ancestor is
+    /// <see cref="ScopeTopologyKind.NestedOrExtensionCollection"/>; otherwise it is
+    /// <see cref="ScopeTopologyKind.TopLevelBaseCollection"/>.
+    /// </summary>
+    private static ScopeTopologyKind ClassifyInlinedCollection(
+        string jsonScope,
+        IReadOnlySet<string> collectionScopes
+    ) =>
+        jsonScope.Contains("._ext.", StringComparison.Ordinal)
+        || HasCollectionAncestor(jsonScope, collectionScopes)
+            ? ScopeTopologyKind.NestedOrExtensionCollection
+            : ScopeTopologyKind.TopLevelBaseCollection;
 }
