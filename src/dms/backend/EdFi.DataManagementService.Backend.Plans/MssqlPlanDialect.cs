@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal sealed class MssqlPlanDialect : IPlanSqlDialect
 {
     private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
+    private const string BinaryStringEqualityCollation = "Latin1_General_100_BIN2";
 
     /// <summary>
     /// Appends a SQL Server <c>OFFSET</c>/<c>FETCH NEXT</c> paging clause.
@@ -64,5 +65,30 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(keyset);
 
         DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+    }
+
+    /// <inheritdoc />
+    public void AppendComparisonSql(
+        SqlWriter writer,
+        string tableAlias,
+        DbColumnName column,
+        string operatorToken,
+        string parameterName,
+        ScalarKind? scalarKind
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(tableAlias);
+        ArgumentNullException.ThrowIfNull(operatorToken);
+        ArgumentNullException.ThrowIfNull(parameterName);
+
+        writer.Append($"{tableAlias}.").AppendQuoted(column.Value);
+
+        if (scalarKind == ScalarKind.String && string.Equals(operatorToken, "=", StringComparison.Ordinal))
+        {
+            writer.Append($" COLLATE {BinaryStringEqualityCollation}");
+        }
+
+        writer.Append(" ").Append(operatorToken).Append(" ").AppendParameter(parameterName);
     }
 }

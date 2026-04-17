@@ -8,16 +8,52 @@ using EdFi.DataManagementService.Backend.External;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
+/// SQL-side predicate target for a page-<c>DocumentId</c> query.
+/// </summary>
+public abstract record QueryPredicateTarget
+{
+    private QueryPredicateTarget() { }
+
+    /// <summary>
+    /// Predicate targets a root-table column.
+    /// </summary>
+    /// <param name="Column">The root-table column.</param>
+    public sealed record RootColumn(DbColumnName Column) : QueryPredicateTarget;
+
+    /// <summary>
+    /// Predicate targets <c>dms.Document.DocumentUuid</c> and therefore requires the special-case document join.
+    /// </summary>
+    public sealed record DocumentUuid : QueryPredicateTarget;
+}
+
+/// <summary>
 /// Represents a single value predicate over a root-table column.
 /// </summary>
-/// <param name="Column">The API-bound predicate column (binding/path column).</param>
+/// <param name="Target">The SQL-side predicate target.</param>
 /// <param name="Operator">The value-comparison operator.</param>
 /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
+/// <param name="ScalarKind">
+/// Optional scalar-kind metadata for the predicate value. Used by SQL emission for provider-specific string-comparison
+/// semantics.
+/// </param>
 public sealed record QueryValuePredicate(
-    DbColumnName Column,
+    QueryPredicateTarget Target,
     QueryComparisonOperator Operator,
-    string ParameterName
-);
+    string ParameterName,
+    ScalarKind? ScalarKind = null
+)
+{
+    /// <summary>
+    /// Initializes a root-column predicate.
+    /// </summary>
+    public QueryValuePredicate(
+        DbColumnName Column,
+        QueryComparisonOperator Operator,
+        string ParameterName,
+        ScalarKind? ScalarKind = null
+    )
+        : this(new QueryPredicateTarget.RootColumn(Column), Operator, ParameterName, ScalarKind) { }
+}
 
 /// <summary>
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.

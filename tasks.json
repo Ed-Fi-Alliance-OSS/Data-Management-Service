@@ -67,7 +67,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `rg -n 'QueryElement|ParameterValues|PageDocumentIdQuerySpec|QueryValuePredicate' ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Page SQL Compilation",

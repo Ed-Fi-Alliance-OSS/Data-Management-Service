@@ -40,7 +40,8 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                 new QueryValuePredicate(
                     new DbColumnName("Student_StudentUniqueId"),
                     QueryComparisonOperator.Equal,
-                    "studentUniqueId"
+                    "studentUniqueId",
+                    ScalarKind.String
                 ),
             ],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>

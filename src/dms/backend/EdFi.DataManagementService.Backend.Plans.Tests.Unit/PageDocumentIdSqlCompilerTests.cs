@@ -531,6 +531,58 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\" doc", "doc.\"DocumentUuid\" = @id")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document] doc", "doc.[DocumentUuid] = @id")]
+    public void It_should_join_document_only_when_document_uuid_predicates_are_present(
+        SqlDialect dialect,
+        string expectedJoinFragment,
+        string expectedPredicateFragment
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new QueryPredicateTarget.DocumentUuid(),
+                        QueryComparisonOperator.Equal,
+                        "id"
+                    ),
+                ],
+                [],
+                includeTotalCountSql: true
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain($"INNER JOIN {expectedJoinFragment} ON");
+        plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
+        plan.TotalCountSql.Should().Contain($"INNER JOIN {expectedJoinFragment} ON");
+        plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+    }
+
+    [Test]
+    public void It_should_apply_explicit_bin2_collation_for_mssql_string_equality_predicates()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("NameOfInstitution"),
+                        QueryComparisonOperator.Equal,
+                        "nameOfInstitution",
+                        ScalarKind.String
+                    ),
+                ],
+                []
+            )
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain("r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 = @nameOfInstitution");
+    }
+
+    [Test]
     public void It_should_emit_pgsql_paging_clause_with_limit_offset()
     {
         var plan = _compiler.Compile(CreateSpec([], []));

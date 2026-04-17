@@ -37,6 +37,26 @@ internal interface IPlanSqlDialect
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
     void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
+
+    /// <summary>
+    /// Appends a predicate comparison against the supplied table alias and column.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="tableAlias">The already-validated SQL table alias.</param>
+    /// <param name="column">The compared column.</param>
+    /// <param name="operatorToken">The SQL operator token.</param>
+    /// <param name="parameterName">The bare SQL parameter name.</param>
+    /// <param name="scalarKind">
+    /// Optional scalar-kind metadata for the compared value, used for provider-specific text-comparison behavior.
+    /// </param>
+    void AppendComparisonSql(
+        SqlWriter writer,
+        string tableAlias,
+        DbColumnName column,
+        string operatorToken,
+        string parameterName,
+        ScalarKind? scalarKind
+    );
 }
 
 /// <summary>
