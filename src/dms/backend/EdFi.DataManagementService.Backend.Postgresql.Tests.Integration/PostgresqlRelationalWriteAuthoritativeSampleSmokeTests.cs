@@ -1838,8 +1838,10 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
     private ResourceSchema _extensionResourceSchema = null!;
     private PropagatedReferenceIdentityCascadeSeedData _seedData = null!;
     private UpsertResult _createResult = null!;
+    private GetResult _getResultAfterCreate = null!;
     private PropagatedReferenceIdentityCascadePersistedState _stateAfterCreate = null!;
     private PropagatedReferenceIdentityCascadeReferenceShape _shapeAfterCreate = null!;
+    private DateTimeOffset _lastModifiedAtAfterCreate;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -1888,6 +1890,11 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
         _shapeAfterCreate = await ReadReferenceShapeAsync(_stateAfterCreate.Document.DocumentId);
+        _lastModifiedAtAfterCreate = await ReadContentLastModifiedAtAsync(AssociationDocumentUuid.Value);
+        _getResultAfterCreate = await ExecuteGetByIdAsync(
+            AssociationDocumentUuid,
+            "pg-propagated-reference-identity-cascade-get-after-create"
+        );
     }
 
     [OneTimeTearDown]
@@ -1946,6 +1953,11 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
 
         var stateAfterCascade = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
         var shapeAfterCascade = await ReadReferenceShapeAsync(stateAfterCascade.Document.DocumentId);
+        var lastModifiedAtAfterCascade = await ReadContentLastModifiedAtAsync(AssociationDocumentUuid.Value);
+        var getResultAfterCascade = await ExecuteGetByIdAsync(
+            AssociationDocumentUuid,
+            "pg-propagated-reference-identity-cascade-get-after-cascade"
+        );
 
         stateAfterCascade
             .Association.Should()
@@ -1956,6 +1968,60 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
                 }
             );
         shapeAfterCascade.Should().Be(_shapeAfterCreate);
+        stateAfterCascade
+            .Document.ContentVersion.Should()
+            .BeGreaterThan(_stateAfterCreate.Document.ContentVersion);
+        lastModifiedAtAfterCascade.Should().BeAfter(_lastModifiedAtAfterCreate);
+
+        _getResultAfterCreate.Should().BeOfType<GetResult.GetSuccess>();
+        getResultAfterCascade.Should().BeOfType<GetResult.GetSuccess>();
+
+        var successAfterCreate = (GetResult.GetSuccess)_getResultAfterCreate;
+        var successAfterCascade = (GetResult.GetSuccess)getResultAfterCascade;
+        var expectedDocument =
+            JsonNode.Parse(CreateRequestBodyJson)?.AsObject()
+            ?? throw new InvalidOperationException("Expected create request body to parse.");
+        var expectedEducationOrganizationReference =
+            expectedDocument["educationOrganizationReference"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected create request body to contain educationOrganizationReference."
+            );
+
+        expectedEducationOrganizationReference["educationOrganizationId"] = UpdatedEducationOrganizationId;
+
+        var expectedExternalResponse = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            expectedDocument.ToJsonString(),
+            _resourceInfo,
+            _mappingSet,
+            AssociationDocumentUuid.Value,
+            lastModifiedAtAfterCascade
+        );
+
+        successAfterCascade.DocumentUuid.Should().Be(AssociationDocumentUuid);
+        successAfterCascade.LastModifiedTraceId.Should().BeNull();
+        successAfterCascade.LastModifiedDate.Should().Be(lastModifiedAtAfterCascade.UtcDateTime);
+        successAfterCascade.EdfiDoc["educationOrganizationReference"]!["educationOrganizationId"]!
+            .GetValue<long>()
+            .Should()
+            .Be(UpdatedEducationOrganizationId);
+        successAfterCascade.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedExternalResponse["_etag"]!.GetValue<string>());
+        successAfterCascade.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(successAfterCreate.EdfiDoc["_etag"]!.GetValue<string>());
+        successAfterCascade.EdfiDoc["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                RelationalGetIntegrationTestHelper.FormatExternalLastModifiedDate(lastModifiedAtAfterCascade)
+            );
+        RelationalGetIntegrationTestHelper
+            .CanonicalizeJson(successAfterCascade.EdfiDoc)
+            .Should()
+            .Be(RelationalGetIntegrationTestHelper.CanonicalizeJson(expectedExternalResponse));
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync()
@@ -1989,6 +2055,24 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpsertDocument(request);
+    }
+
+    private async Task<GetResult> ExecuteGetByIdAsync(DocumentUuid documentUuid, string traceId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: _resourceInfo,
+            MappingSet: _mappingSet,
+            ResourceAuthorizationHandler: new AuthoritativeSampleWriteAllowAllResourceAuthorizationHandler(),
+            TraceId: new TraceId(traceId)
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)
@@ -2127,6 +2211,34 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
+    }
+
+    private async Task<DateTimeOffset> ReadContentLastModifiedAtAsync(Guid documentUuid)
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "ContentLastModifiedAt"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", documentUuid)
+        );
+
+        return rows.Count == 1
+            ? rows[0]["ContentLastModifiedAt"] switch
+            {
+                DateTimeOffset value => value,
+                DateTime value => new DateTimeOffset(
+                    DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                    TimeSpan.Zero
+                ),
+                _ => throw new InvalidOperationException(
+                    "Expected ContentLastModifiedAt to be a DateTimeOffset-compatible value."
+                ),
+            }
+            : throw new InvalidOperationException(
+                $"Expected exactly one document metadata row for '{documentUuid}', but found {rows.Count}."
+            );
     }
 
     private static ReferentialId CreateReferentialId(

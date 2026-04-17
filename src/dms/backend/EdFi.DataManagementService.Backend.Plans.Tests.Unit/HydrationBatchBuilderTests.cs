@@ -83,6 +83,29 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     }
 
     [Test]
+    public void It_should_emit_document_metadata_columns_in_fixed_reader_ordinal_order()
+    {
+        AssertAppearsInOrder(
+            _pgsqlBatch,
+            "d.\"DocumentId\"",
+            "d.\"DocumentUuid\"",
+            "d.\"ContentVersion\"",
+            "d.\"IdentityVersion\"",
+            "d.\"ContentLastModifiedAt\"",
+            "d.\"IdentityLastModifiedAt\""
+        );
+        AssertAppearsInOrder(
+            _mssqlBatch,
+            "d.[DocumentId]",
+            "d.[DocumentUuid]",
+            "d.[ContentVersion]",
+            "d.[IdentityVersion]",
+            "d.[ContentLastModifiedAt]",
+            "d.[IdentityLastModifiedAt]"
+        );
+    }
+
+    [Test]
     public void It_should_emit_deterministic_order_by_on_document_metadata()
     {
         _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\"");
@@ -552,5 +575,17 @@ internal static class HydrationBatchBuilderTestHelper
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
             DescriptorProjectionPlansInOrder: descriptorProjectionPlans ?? []
         );
+    }
+
+    internal static void AssertAppearsInOrder(string text, params string[] values)
+    {
+        var previousIndex = -1;
+
+        foreach (var value in values)
+        {
+            var currentIndex = text.IndexOf(value, StringComparison.Ordinal);
+            currentIndex.Should().BeGreaterThan(previousIndex, $"expected '{value}' in ordinal order");
+            previousIndex = currentIndex;
+        }
     }
 }

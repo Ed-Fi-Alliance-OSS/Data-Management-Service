@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalDocumentStoreRepositoryTests
 {
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
+    private const string StampStyleEtagPattern = "^\"\\d+\"$";
     private static readonly BaseResourceInfo _localEducationAgencyResourceInfo = new(
         new ProjectName("Ed-Fi"),
         new ResourceName("LocalEducationAgency"),
@@ -224,7 +225,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_applies_readable_profile_projection_after_external_materialization()
+    public async Task It_recomputes_etag_after_readable_profile_projection_while_preserving_other_metadata()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         var mappingSet = CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo);
@@ -319,8 +320,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetSuccess>();
         var success = (GetResult.GetSuccess)result;
         success.EdfiDoc.Should().BeSameAs(projectedDocument);
+        success.LastModifiedDate.Should().Be(new DateTime(2026, 4, 11, 17, 30, 45, DateTimeKind.Utc));
+        success.EdfiDoc["id"]!.GetValue<string>().Should().Be(documentUuid.Value.ToString());
+        success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-11T17:30:45Z");
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(expectedProjectedEtag);
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBe("\"93\"");
+        success.EdfiDoc["ChangeVersion"].Should().BeNull();
         A.CallTo(() =>
                 _readableProfileProjector.Project(
                     materializedDocument,
@@ -476,7 +481,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        const string committedEtag = "\"91\"";
+        var committedEtag = CreateCommittedReadbackEtag("Lincoln High");
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -520,6 +525,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, committedEtag));
         ((UpsertResult.InsertSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
+        ((UpsertResult.InsertSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
@@ -556,7 +562,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_post_as_update_requests_through_the_executor_with_a_read_plan()
     {
-        const string committedEtag = "\"92\"";
+        var committedEtag = CreateCommittedReadbackEtag("Post As Update High");
         var traceId = new TraceId("post-update-trace");
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Post As Update High");
@@ -597,6 +603,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, committedEtag));
         ((UpsertResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
+        ((UpsertResult.UpdateSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
@@ -615,7 +622,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_routes_put_requests_through_the_executor_with_reference_resolution_inputs()
     {
-        const string committedEtag = "\"93\"";
+        var committedEtag = CreateCommittedReadbackEtag("Roosevelt High");
         var documentReference = CreateDocumentReference(
             _localEducationAgencyResourceInfo,
             "$.localEducationAgencyReference"
@@ -660,6 +667,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, committedEtag));
         ((UpdateResult.UpdateSuccess)result).ETag.Should().NotBe(requestBody["_etag"]!.GetValue<string>());
+        ((UpdateResult.UpdateSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
         _capturedExecutorRequest.MappingSet.Should().BeSameAs(mappingSet);
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
         _capturedExecutorRequest
@@ -1168,8 +1176,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var requestBody = CreateDescriptorRequestBody();
+        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
-            .Returns(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+            .Returns(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
 
         var upsertRequest = A.Fake<IRelationalUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_descriptorResourceInfo);
@@ -1177,11 +1187,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => upsertRequest.DocumentUuid).Returns(documentUuid);
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody());
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(requestBody);
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, "\"71\""));
+        result.Should().BeEquivalentTo(new UpsertResult.InsertSuccess(documentUuid, descriptorResponseEtag));
+        ((UpsertResult.InsertSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() => descriptorHandler.HandlePostAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
@@ -1204,8 +1215,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var requestBody = CreateDescriptorRequestBody("Updated Charter");
+        var descriptorResponseEtag = CreateDescriptorResponseEtag(requestBody);
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
-            .Returns(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+            .Returns(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
 
         var updateRequest = A.Fake<IRelationalUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_descriptorResourceInfo);
@@ -1213,11 +1226,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
-        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody());
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(requestBody);
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, "\"72\""));
+        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, descriptorResponseEtag));
+        ((UpdateResult.UpdateSuccess)result).ETag.Should().NotMatchRegex(StampStyleEtagPattern);
         _targetLookupService.ResolveForPostCallCount.Should().Be(0);
         _targetLookupService.ResolveForPutCallCount.Should().Be(0);
         A.CallTo(() => descriptorHandler.HandlePutAsync(A<DescriptorWriteRequest>._, A<CancellationToken>._))
@@ -1556,6 +1570,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static JsonNode CreateRequestBody(string name = "Lincoln High")
     {
         return JsonNode.Parse($$"""{"name":"{{name}}"}""")!;
+    }
+
+    private static JsonNode CreateDescriptorRequestBody(string description = "Charter")
+    {
+        return JsonNode.Parse(
+            $$"""
+            {
+              "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+              "codeValue": "Charter",
+              "shortDescription": "Charter",
+              "description": "{{description}}",
+              "effectiveBeginDate": "2024-01-01"
+            }
+            """
+        )!;
+    }
+
+    private static string CreateCommittedReadbackEtag(string name, int schoolId = 255901)
+    {
+        return RelationalApiMetadataFormatter.FormatEtag(
+            JsonNode.Parse($$"""{"schoolId":{{schoolId}},"name":"{{name}}"}""")!
+        );
+    }
+
+    private static string CreateDescriptorResponseEtag(JsonNode requestBody)
+    {
+        return RelationalApiMetadataFormatter.FormatEtag(
+            DescriptorWriteBodyExtractor.Extract(
+                requestBody,
+                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            )
+        );
     }
 
     private static DocumentReference CreateDocumentReference(BaseResourceInfo targetResource, string path)

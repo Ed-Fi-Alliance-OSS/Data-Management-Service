@@ -507,7 +507,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         "uri://sample.org/MembershipTypeDescriptor#Resident";
     private const string TransferMembershipTypeDescriptorUri =
         "uri://sample.org/MembershipTypeDescriptor#Transfer";
-
     private const string CreateRequestBodyJson = """
         {
           "entryDate": "2024-08-20",
@@ -634,6 +633,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterChangedUpdate = null!;
     private AuthoritativeSampleStudentSchoolAssociationPersistedState _stateAfterNoOpUpdate = null!;
     private DateTimeOffset _lastModifiedAtAfterCreate;
+    private DateTimeOffset _lastModifiedAtAfterNoOpUpdate;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -721,6 +721,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         _noOpUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         _stateAfterNoOpUpdate = await ReadPersistedStateAsync(StudentSchoolAssociationDocumentUuid.Value);
+        _lastModifiedAtAfterNoOpUpdate = await ReadContentLastModifiedAtAsync(
+            StudentSchoolAssociationDocumentUuid.Value
+        );
         _getResultAfterNoOpUpdate = await ExecuteGetByIdAsync(
             StudentSchoolAssociationDocumentUuid,
             "pg-authoritative-sample-student-school-association-get-after-no-op-update"
@@ -1075,21 +1078,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     [Test]
     public async Task It_reads_back_the_written_document_via_relational_get_by_id_with_semantic_json_equivalence_and_metadata()
     {
-        var expectedLastModifiedAt = await ReadContentLastModifiedAtAsync(
-            StudentSchoolAssociationDocumentUuid.Value
-        );
         var expectedDocument = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
             ChangedUpdateRequestBodyJson,
             _resourceInfo,
             _mappingSet,
             _stateAfterNoOpUpdate.Document.DocumentUuid,
-            expectedLastModifiedAt
+            _lastModifiedAtAfterNoOpUpdate
         );
 
         RelationalGetIntegrationTestHelper.AssertStudentSchoolAssociationExternalResponse(
             _getResultAfterNoOpUpdate,
             StudentSchoolAssociationDocumentUuid,
-            expectedLastModifiedAt,
+            _lastModifiedAtAfterNoOpUpdate,
             expectedDocument,
             [EndorsementGraduationSchoolYear, StemGraduationSchoolYear],
             [InterventionEducationPlanDescriptorUri, CareerEducationPlanDescriptorUri]

@@ -369,18 +369,86 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
     public async Task It_should_keep_runtime_written_rows_participating_in_identity_propagation_trigger_fallback()
     {
         var beforeCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
+        var metadataBeforeCascade = await ReadDocumentMetadataAsync(SurveyDocumentUuid.Value);
+        var getResultBeforeCascade = await ExecuteGetByIdAsync(
+            SurveyDocumentUuid,
+            "mssql-propagated-reference-identity-runtime-get-before-cascade"
+        );
 
         beforeCascade.Should().Be(_stateAfterChangedUpdate);
 
         await UpdateSessionNameAsync(_seedData.SpringSessionDocumentId, UpdatedSpringSessionName);
 
         var afterCascade = await ReadPersistedStateAsync(SurveyDocumentUuid.Value);
+        var metadataAfterCascade = await ReadDocumentMetadataAsync(SurveyDocumentUuid.Value);
+        var getResultAfterCascade = await ExecuteGetByIdAsync(
+            SurveyDocumentUuid,
+            "mssql-propagated-reference-identity-runtime-get-after-cascade"
+        );
 
         afterCascade
             .Should()
             .Be(_stateAfterChangedUpdate with { SessionSessionName = UpdatedSpringSessionName });
         afterCascade.SessionSessionName.Should().NotBe(beforeCascade.SessionSessionName);
         afterCascade.SessionDocumentId.Should().Be(beforeCascade.SessionDocumentId);
+        metadataAfterCascade.ContentVersion.Should().BeGreaterThan(metadataBeforeCascade.ContentVersion);
+        metadataAfterCascade
+            .ContentLastModifiedAt.Should()
+            .BeAfter(metadataBeforeCascade.ContentLastModifiedAt);
+
+        getResultBeforeCascade.Should().BeOfType<GetResult.GetSuccess>();
+        getResultAfterCascade.Should().BeOfType<GetResult.GetSuccess>();
+
+        var successBeforeCascade = (GetResult.GetSuccess)getResultBeforeCascade;
+        var successAfterCascade = (GetResult.GetSuccess)getResultAfterCascade;
+        var expectedDocument =
+            JsonNode.Parse(ChangedUpdateRequestBodyJson)?.AsObject()
+            ?? throw new InvalidOperationException("Expected changed update request body to parse.");
+        var expectedSessionReference =
+            expectedDocument["sessionReference"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected changed update request body to contain sessionReference."
+            );
+
+        expectedSessionReference["sessionName"] = UpdatedSpringSessionName;
+
+        var expectedExternalResponse = RelationalGetIntegrationTestHelper.CreateExpectedExternalResponse(
+            expectedDocument.ToJsonString(),
+            _resourceInfo,
+            _mappingSet,
+            SurveyDocumentUuid.Value,
+            metadataAfterCascade.ContentLastModifiedAt
+        );
+
+        successAfterCascade.DocumentUuid.Should().Be(SurveyDocumentUuid);
+        successAfterCascade.LastModifiedTraceId.Should().BeNull();
+        successAfterCascade
+            .LastModifiedDate.Should()
+            .Be(metadataAfterCascade.ContentLastModifiedAt.UtcDateTime);
+        successAfterCascade.EdfiDoc["sessionReference"]!["sessionName"]!
+            .GetValue<string>()
+            .Should()
+            .Be(UpdatedSpringSessionName);
+        successAfterCascade.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedExternalResponse["_etag"]!.GetValue<string>());
+        successAfterCascade.EdfiDoc["_etag"]!
+            .GetValue<string>()
+            .Should()
+            .NotBe(successBeforeCascade.EdfiDoc["_etag"]!.GetValue<string>());
+        successAfterCascade.EdfiDoc["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                RelationalGetIntegrationTestHelper.FormatExternalLastModifiedDate(
+                    metadataAfterCascade.ContentLastModifiedAt
+                )
+            );
+        RelationalGetIntegrationTestHelper
+            .CanonicalizeJson(successAfterCascade.EdfiDoc)
+            .Should()
+            .Be(RelationalGetIntegrationTestHelper.CanonicalizeJson(expectedExternalResponse));
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(
@@ -445,6 +513,24 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .UpdateDocumentById(request);
+    }
+
+    private async Task<GetResult> ExecuteGetByIdAsync(DocumentUuid documentUuid, string traceId)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new IntegrationRelationalGetRequest(
+            DocumentUuid: documentUuid,
+            ResourceInfo: _resourceInfo,
+            MappingSet: _mappingSet,
+            ResourceAuthorizationHandler: new MssqlSurveyRuntimeAllowAllResourceAuthorizationHandler(),
+            TraceId: new TraceId(traceId)
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .GetDocumentById(request);
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)
@@ -627,6 +713,27 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             Namespace: ReadRequiredString(row["Namespace"]),
             SurveyIdentifier: ReadRequiredString(row["SurveyIdentifier"]),
             SurveyTitle: ReadRequiredString(row["SurveyTitle"])
+        );
+    }
+
+    private async Task<(long ContentVersion, DateTimeOffset ContentLastModifiedAt)> ReadDocumentMetadataAsync(
+        Guid documentUuid
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                """
+                SELECT [ContentVersion], [ContentLastModifiedAt]
+                FROM [dms].[Document]
+                WHERE [DocumentUuid] = @documentUuid;
+                """,
+                new SqlParameter("@documentUuid", documentUuid)
+            )
+        ).Single();
+
+        return (
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            ReadRequiredDateTimeOffset(row["ContentLastModifiedAt"])
         );
     }
 
@@ -851,4 +958,12 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
 
     private static string ReadRequiredString(object? value) =>
         value as string ?? throw new InvalidOperationException("Expected a non-null string value.");
+
+    private static DateTimeOffset ReadRequiredDateTimeOffset(object? value) =>
+        value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc), TimeSpan.Zero),
+            _ => throw new InvalidOperationException("Expected a non-null DateTimeOffset-compatible value."),
+        };
 }

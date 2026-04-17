@@ -338,7 +338,10 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
     }
 }
 
-internal sealed record MssqlStudentSchoolAssociationSeedData(long GraduationPlanTypeDescriptorId);
+internal sealed record MssqlStudentSchoolAssociationSeedData(
+    long StudentDocumentId,
+    long GraduationPlanTypeDescriptorId
+);
 
 internal sealed record MssqlStudentSchoolAssociationDocumentMetadata(
     Guid DocumentUuid,
@@ -405,7 +408,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         "uri://ed-fi.org/EducationPlanDescriptor#Intervention";
     private const string ResidentMembershipTypeDescriptorUri =
         "uri://sample.org/MembershipTypeDescriptor#Resident";
-
     private const string CreateRequestBodyJson = """
         {
           "entryDate": "2024-08-20",
@@ -1105,7 +1107,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             graduationPlanResourceKeyId
         );
 
-        return new(graduationPlanTypeDescriptorId);
+        return new(studentDocumentId, graduationPlanTypeDescriptorId);
     }
 
     private async Task DisableStudentSchoolAssociationReferentialIdentityTriggerAsync()
