@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -204,6 +205,136 @@ public class Given_MappingSetManifestJsonEmitter
             projectionSummary.ReferenceIdentityProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans[0].SelectByKeysetSqlSha256.Should().HaveLength(64);
+        }
+    }
+
+    [Test]
+    public void It_should_emit_query_capability_diagnostics_for_supported_resources()
+    {
+        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false)
+            .Select(mappingSet =>
+                ReplaceQueryCapability(
+                    mappingSet,
+                    studentResource,
+                    CreateSupportedQueryCapability(
+                        new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+                    )
+                )
+            )
+            .ToArray();
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var summariesByDialect = ReadManifestQueryCapabilitySummariesByDialect(manifest, "Ed-Fi", "Student");
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            summariesByDialect[dialect]
+                .Should()
+                .BeEquivalentTo(
+                    new QueryCapabilityDiagnosticSummary(
+                        new QuerySupportSummary("supported", null, null),
+                        [
+                            new SupportedQueryFieldSummary(
+                                "academicSubjectDescriptor",
+                                "$.academicSubjectDescriptor",
+                                "string",
+                                new QueryFieldTargetSummary(
+                                    "descriptor_id_column",
+                                    "AcademicSubjectDescriptorId",
+                                    new QualifiedResourceNameSummary("Ed-Fi", "AcademicSubjectDescriptor")
+                                )
+                            ),
+                            new SupportedQueryFieldSummary(
+                                "id",
+                                "$.id",
+                                "string",
+                                new QueryFieldTargetSummary("document_uuid", null, null)
+                            ),
+                            new SupportedQueryFieldSummary(
+                                "schoolId",
+                                "$.schoolReference.schoolId",
+                                "integer",
+                                new QueryFieldTargetSummary("root_column", "School_SchoolId", null)
+                            ),
+                        ],
+                        []
+                    ),
+                    options => options.WithStrictOrdering()
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_emit_query_capability_omission_diagnostics_for_unsupported_resources()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAddressCollection");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false)
+            .Select(mappingSet =>
+                ReplaceQueryCapability(mappingSet, resource, CreateUnsupportedQueryCapability())
+            )
+            .ToArray();
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var summariesByDialect = ReadManifestQueryCapabilitySummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "StudentAddressCollection"
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            summariesByDialect[dialect]
+                .Should()
+                .BeEquivalentTo(
+                    new QueryCapabilityDiagnosticSummary(
+                        new QuerySupportSummary(
+                            "omitted",
+                            "unsupported_query_fields",
+                            "queryFieldMapping contains unsupported relational GET-many fields: "
+                                + "addressType: crosses an array scope and cannot compile to a root-table predicate."
+                        ),
+                        [],
+                        [
+                            new UnsupportedQueryFieldSummary(
+                                "addressType",
+                                "array_crossing",
+                                [new QueryFieldPathSummary("$.addresses[*].addressType", "string")]
+                            ),
+                        ]
+                    ),
+                    options => options.WithStrictOrdering()
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_query_capability_omission_from_compiled_mapping_sets()
+    {
+        var summariesByDialect = ReadManifestQueryCapabilitySummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "AcademicSubjectDescriptor"
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            summariesByDialect[dialect]
+                .Support.Should()
+                .Be(
+                    new QuerySupportSummary(
+                        "omitted",
+                        "descriptor_resource",
+                        "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
+                            + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                    )
+                );
+            summariesByDialect[dialect].SupportedFields.Should().BeEmpty();
+            summariesByDialect[dialect].UnsupportedFields.Should().BeEmpty();
         }
     }
 
@@ -529,9 +660,103 @@ public class Given_MappingSetManifestJsonEmitter
         };
     }
 
+    private static MappingSet ReplaceQueryCapability(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalQueryCapability queryCapability
+    )
+    {
+        var queryCapabilitiesByResource = mappingSet.QueryCapabilitiesByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+        queryCapabilitiesByResource[resource] = queryCapability;
+
+        return mappingSet with
+        {
+            QueryCapabilitiesByResource = queryCapabilitiesByResource,
+        };
+    }
+
     private static string ResourceSortKey(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static RelationalQueryCapability CreateSupportedQueryCapability(
+        QualifiedResourceName descriptorResource
+    )
+    {
+        SupportedRelationalQueryField[] supportedFields =
+        [
+            new(
+                "schoolId",
+                new RelationalQueryFieldPath(
+                    JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                    "integer"
+                ),
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("School_SchoolId"))
+            ),
+            new(
+                "id",
+                new RelationalQueryFieldPath(JsonPathExpressionCompiler.Compile("$.id"), "string"),
+                new RelationalQueryFieldTarget.DocumentUuid()
+            ),
+            new(
+                "academicSubjectDescriptor",
+                new RelationalQueryFieldPath(
+                    JsonPathExpressionCompiler.Compile("$.academicSubjectDescriptor"),
+                    "string"
+                ),
+                new RelationalQueryFieldTarget.DescriptorIdColumn(
+                    new DbColumnName("AcademicSubjectDescriptorId"),
+                    descriptorResource
+                )
+            ),
+        ];
+
+        return new RelationalQueryCapability(
+            new RelationalQuerySupport.Supported(),
+            supportedFields.ToDictionary(
+                static field => field.QueryFieldName,
+                static field => field,
+                StringComparer.Ordinal
+            ),
+            new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.Ordinal)
+        );
+    }
+
+    private static RelationalQueryCapability CreateUnsupportedQueryCapability()
+    {
+        UnsupportedRelationalQueryField[] unsupportedFields =
+        [
+            new(
+                "addressType",
+                [
+                    new RelationalQueryFieldPath(
+                        JsonPathExpressionCompiler.Compile("$.addresses[*].addressType"),
+                        "string"
+                    ),
+                ],
+                RelationalQueryFieldFailureKind.ArrayCrossing
+            ),
+        ];
+
+        return new RelationalQueryCapability(
+            new RelationalQuerySupport.Omitted(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "queryFieldMapping contains unsupported relational GET-many fields: "
+                        + "addressType: crosses an array scope and cannot compile to a root-table predicate."
+                )
+            ),
+            new Dictionary<string, SupportedRelationalQueryField>(StringComparer.Ordinal),
+            unsupportedFields.ToDictionary(
+                static field => field.QueryFieldName,
+                static field => field,
+                StringComparer.Ordinal
+            )
+        );
     }
 
     private static IReadOnlyDictionary<
@@ -884,6 +1109,56 @@ public class Given_MappingSetManifestJsonEmitter
                     .Select(planNode =>
                         ReadManifestDescriptorProjectionPlanSummary(
                             RequireObject(planNode, "descriptor_projection_plans_in_order entry")
+                        )
+                    )
+                    .ToArray()
+            );
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        QueryCapabilityDiagnosticSummary
+    > ReadManifestQueryCapabilitySummariesByDialect(string manifest, string projectName, string resourceName)
+    {
+        Dictionary<string, QueryCapabilityDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var queryCapability = RequireObject(resource["query_capability"], "query_capability");
+            var support = ReadQuerySupportSummary(RequireObject(queryCapability["support"], "support"));
+            var supportedFields = RequireArray(
+                queryCapability["supported_fields_in_query_field_order"],
+                "supported_fields_in_query_field_order"
+            );
+            var unsupportedFields = RequireArray(
+                queryCapability["unsupported_fields_in_query_field_order"],
+                "unsupported_fields_in_query_field_order"
+            );
+
+            summariesByDialect[dialect] = new QueryCapabilityDiagnosticSummary(
+                support,
+                supportedFields
+                    .Select(fieldNode =>
+                        ReadSupportedQueryFieldSummary(
+                            RequireObject(fieldNode, "supported_fields_in_query_field_order entry")
+                        )
+                    )
+                    .ToArray(),
+                unsupportedFields
+                    .Select(fieldNode =>
+                        ReadUnsupportedQueryFieldSummary(
+                            RequireObject(fieldNode, "unsupported_fields_in_query_field_order entry")
                         )
                     )
                     .ToArray()
@@ -1329,6 +1604,69 @@ public class Given_MappingSetManifestJsonEmitter
         );
     }
 
+    private static QuerySupportSummary ReadQuerySupportSummary(JsonObject support)
+    {
+        return new QuerySupportSummary(
+            RequireString(support, "kind"),
+            ReadOptionalString(support, "omission_kind"),
+            ReadOptionalString(support, "reason")
+        );
+    }
+
+    private static SupportedQueryFieldSummary ReadSupportedQueryFieldSummary(JsonObject field)
+    {
+        return new SupportedQueryFieldSummary(
+            RequireString(field, "query_field_name"),
+            RequireString(field, "json_path"),
+            RequireString(field, "api_schema_type"),
+            ReadQueryFieldTargetSummary(RequireObject(field["target"], "target"))
+        );
+    }
+
+    private static QueryFieldTargetSummary ReadQueryFieldTargetSummary(JsonObject target)
+    {
+        QualifiedResourceNameSummary? descriptorResource = null;
+
+        if (target["descriptor_resource"] is not null)
+        {
+            var descriptorResourceObject = RequireObject(
+                target["descriptor_resource"],
+                "descriptor_resource"
+            );
+            descriptorResource = new QualifiedResourceNameSummary(
+                RequireString(descriptorResourceObject, "project_name"),
+                RequireString(descriptorResourceObject, "resource_name")
+            );
+        }
+
+        return new QueryFieldTargetSummary(
+            RequireString(target, "kind"),
+            ReadOptionalString(target, "column_name"),
+            descriptorResource
+        );
+    }
+
+    private static UnsupportedQueryFieldSummary ReadUnsupportedQueryFieldSummary(JsonObject field)
+    {
+        return new UnsupportedQueryFieldSummary(
+            RequireString(field, "query_field_name"),
+            RequireString(field, "failure_kind"),
+            RequireArray(field["paths_in_order"], "paths_in_order")
+                .Select(pathNode =>
+                    ReadQueryFieldPathSummary(RequireObject(pathNode, "paths_in_order entry"))
+                )
+                .ToArray()
+        );
+    }
+
+    private static QueryFieldPathSummary ReadQueryFieldPathSummary(JsonObject path)
+    {
+        return new QueryFieldPathSummary(
+            RequireString(path, "json_path"),
+            RequireString(path, "api_schema_type")
+        );
+    }
+
     private static IReadOnlyList<MappingSet> MutateReadPlanTableSql(
         IReadOnlyList<MappingSet> mappingSets,
         QualifiedResourceName resource,
@@ -1682,6 +2020,35 @@ public class Given_MappingSetManifestJsonEmitter
         IReadOnlyList<ReferenceIdentityProjectionTablePlanSummary> ReferenceIdentityProjectionPlans,
         IReadOnlyList<DescriptorProjectionPlanSummary> DescriptorProjectionPlans
     );
+
+    private sealed record QueryCapabilityDiagnosticSummary(
+        QuerySupportSummary Support,
+        IReadOnlyList<SupportedQueryFieldSummary> SupportedFields,
+        IReadOnlyList<UnsupportedQueryFieldSummary> UnsupportedFields
+    );
+
+    private sealed record QuerySupportSummary(string Kind, string? OmissionKind, string? Reason);
+
+    private sealed record SupportedQueryFieldSummary(
+        string QueryFieldName,
+        string JsonPath,
+        string ApiSchemaType,
+        QueryFieldTargetSummary Target
+    );
+
+    private sealed record QueryFieldTargetSummary(
+        string Kind,
+        string? ColumnName,
+        QualifiedResourceNameSummary? DescriptorResource
+    );
+
+    private sealed record UnsupportedQueryFieldSummary(
+        string QueryFieldName,
+        string FailureKind,
+        IReadOnlyList<QueryFieldPathSummary> PathsInOrder
+    );
+
+    private sealed record QueryFieldPathSummary(string JsonPath, string ApiSchemaType);
 
     private sealed record QualifiedResourceNameSummary(string ProjectName, string ResourceName);
 

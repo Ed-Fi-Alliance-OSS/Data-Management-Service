@@ -37,7 +37,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'MappingSetLookupExtensionsTests|MappingSetManifestJsonEmitterTests'`",
       "Run: `rg -n 'omitted|QueryCapability|QuerySupport|descriptor-endpoints' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Id Query Preprocessing",
