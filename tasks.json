@@ -117,7 +117,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
       "Run: `rg -n 'QueryDocuments|TotalCount|paging|DocumentUuid|Descriptor' ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Backend Integration Coverage",
