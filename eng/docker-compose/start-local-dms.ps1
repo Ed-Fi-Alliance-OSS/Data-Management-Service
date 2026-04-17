@@ -105,6 +105,11 @@ $files = @(
     "kafka.yml"
 )
 
+if ($IdentityProvider -eq "keycloak") {
+    # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full environment.
+    $files += @("-f", "keycloak.yml")
+}
+
 if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
@@ -281,7 +286,7 @@ else {
             }
         }
         catch {
-            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)  Did you add the Tenant header?"
+            throw "Failed to create DMS Instance(s): $($_.Exception.Message)"
         }
     }
 

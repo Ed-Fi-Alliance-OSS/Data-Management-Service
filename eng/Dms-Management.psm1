@@ -82,6 +82,46 @@ function Invoke-Api {
     return $response
 }
 
+function Get-HttpErrorResponse {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $response = $ErrorRecord.Exception.Response
+
+    if ($response -isnot [System.Net.Http.HttpResponseMessage]) {
+        return @{
+            StatusCode = $null
+            Body = ""
+        }
+    }
+
+    $responseBody = ""
+
+    if ($response.Content) {
+        $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    }
+
+    return @{
+        StatusCode = [int]$response.StatusCode
+        Body = $responseBody
+    }
+}
+
+function Test-IsDuplicateCmsClientRegistrationError {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $errorResponse = Get-HttpErrorResponse -ErrorRecord $ErrorRecord
+
+    return $errorResponse.StatusCode -eq 400 -and $errorResponse.Body -match "Client with the same Client Id already exists"
+}
+
 <#
     .SYNOPSIS
         Converts a hashtable into a x-www-form-urlencoded string.
@@ -160,7 +200,17 @@ function Add-CmsClient {
         Body         = ConvertTo-FormBody -Data $clientData
     }
 
-    $response = Invoke-Api @invokeParams
+    try {
+        $response = Invoke-Api @invokeParams
+    }
+    catch {
+        if (Test-IsDuplicateCmsClientRegistrationError -ErrorRecord $_) {
+            Write-Warning "Client '$ClientId' already exists. Continuing with the existing registration."
+            return
+        }
+
+        throw
+    }
 
     if ($response.validationErrors) {
         Write-Warning "Client registration failed: $($response.validationErrors.clientId)"

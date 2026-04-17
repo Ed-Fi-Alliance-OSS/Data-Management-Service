@@ -666,8 +666,8 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location "$PSScriptRoot/eng/docker-compose"
-            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -d -v
         }
         finally {
             Pop-Location
