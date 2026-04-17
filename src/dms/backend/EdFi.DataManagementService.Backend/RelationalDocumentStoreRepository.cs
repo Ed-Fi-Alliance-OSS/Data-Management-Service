@@ -372,12 +372,7 @@ public sealed class RelationalDocumentStoreRepository(
             .HydrateAsync(readPlan, plannedQuery.Keyset, default)
             .ConfigureAwait(false);
 
-        return BuildQuerySuccess(
-            resource,
-            relationalQueryRequest.PaginationParameters,
-            readPlan,
-            hydratedPage
-        );
+        return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
     }
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
@@ -742,35 +737,47 @@ public sealed class RelationalDocumentStoreRepository(
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
 
     private QueryResult BuildQuerySuccess(
+        IRelationalQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
-        PaginationParameters paginationParameters,
         ResourceReadPlan readPlan,
         HydratedPage hydratedPage
     )
     {
+        ArgumentNullException.ThrowIfNull(relationalQueryRequest);
         ArgumentNullException.ThrowIfNull(readPlan);
         ArgumentNullException.ThrowIfNull(hydratedPage);
 
         JsonArray edfiDocs = [];
+        var projectionContext = relationalQueryRequest.ReadableProfileProjectionContext;
 
         foreach (var documentMetadata in hydratedPage.DocumentMetadata)
         {
-            edfiDocs.Add(
-                _readMaterializer.Materialize(
-                    new RelationalReadMaterializationRequest(
-                        readPlan,
-                        documentMetadata,
-                        hydratedPage.TableRowsInDependencyOrder,
-                        hydratedPage.DescriptorRowsInPlanOrder,
-                        RelationalGetRequestReadMode.ExternalResponse
-                    )
+            var edfiDoc = _readMaterializer.Materialize(
+                new RelationalReadMaterializationRequest(
+                    readPlan,
+                    documentMetadata,
+                    hydratedPage.TableRowsInDependencyOrder,
+                    hydratedPage.DescriptorRowsInPlanOrder,
+                    RelationalGetRequestReadMode.ExternalResponse
                 )
             );
+
+            if (projectionContext is not null)
+            {
+                edfiDoc = _readableProfileProjector.Project(
+                    edfiDoc,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+                RelationalApiMetadataFormatter.RefreshEtag(edfiDoc);
+            }
+
+            edfiDocs.Add(edfiDoc);
         }
 
         return new QueryResult.QuerySuccess(
             edfiDocs,
-            paginationParameters.TotalCount
+            relationalQueryRequest.PaginationParameters.TotalCount
                 ? ConvertTotalCountOrThrow(resource, hydratedPage.TotalCount)
                 : null
         );

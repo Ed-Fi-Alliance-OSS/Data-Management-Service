@@ -49,13 +49,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
 
         requestInfo.FrontendResponse = queryResult switch
         {
-            QuerySuccess success => new FrontendResponse(
-                StatusCode: 200,
-                Body: success.EdfiDocs,
-                Headers: requestInfo.PaginationParameters.TotalCount
-                    ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
-                    : []
-            ),
+            QuerySuccess success => CreateSuccessResponse(requestInfo, success),
             QueryFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -80,6 +74,28 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Headers: []
             ),
         };
+    }
+
+    private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, QuerySuccess success)
+    {
+        var contentType =
+            requestInfo.MappingSet is not null
+            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+                ? ProfileHeaderParser.BuildProfileContentType(
+                    requestInfo.ResourceSchema.ResourceName.Value,
+                    requestInfo.ProfileContext.ProfileName,
+                    ProfileUsageType.Readable
+                )
+                : "application/json";
+
+        return new FrontendResponse(
+            StatusCode: 200,
+            Body: success.EdfiDocs,
+            Headers: requestInfo.PaginationParameters.TotalCount
+                ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
+                : [],
+            ContentType: contentType
+        );
     }
 
     private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(

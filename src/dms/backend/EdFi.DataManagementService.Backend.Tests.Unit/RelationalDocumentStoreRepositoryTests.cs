@@ -555,6 +555,162 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_applies_readable_profile_projection_to_each_query_result_and_refreshes_etags()
+    {
+        var firstDocumentUuid = new DocumentUuid(Guid.Parse("12121212-1111-2222-3333-444444444444"));
+        var secondDocumentUuid = new DocumentUuid(Guid.Parse("34343434-1111-2222-3333-555555555555"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var projectionContext = new ReadableProfileProjectionContext(
+            new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("nameOfInstitution")],
+                [],
+                [],
+                []
+            ),
+            new HashSet<string> { "schoolId" }
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("name", "$.name", "Lincoln High", "string")],
+            totalCount: false,
+            readableProfileProjectionContext: projectionContext
+        );
+        var hydratedPage = new HydratedPage(
+            null,
+            [
+                CreateDocumentMetadataRow(firstDocumentUuid, 345L, 91L),
+                CreateDocumentMetadataRow(secondDocumentUuid, 678L, 92L),
+            ],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, "Lincoln High"],
+                        [678L, "Roosevelt High"],
+                    ]
+                ),
+            ],
+            []
+        );
+        var materializedFirst = JsonNode.Parse(
+            """
+            {
+              "id": "12121212-1111-2222-3333-444444444444",
+              "_etag": "\"91\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High",
+              "webSite": "https://example.com/lincoln"
+            }
+            """
+        )!;
+        var materializedSecond = JsonNode.Parse(
+            """
+            {
+              "id": "34343434-1111-2222-3333-555555555555",
+              "_etag": "\"92\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255902,
+              "nameOfInstitution": "Roosevelt High",
+              "webSite": "https://example.com/roosevelt"
+            }
+            """
+        )!;
+        var projectedFirst = JsonNode.Parse(
+            """
+            {
+              "id": "12121212-1111-2222-3333-444444444444",
+              "_etag": "\"91\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High"
+            }
+            """
+        )!;
+        var projectedSecond = JsonNode.Parse(
+            """
+            {
+              "id": "34343434-1111-2222-3333-555555555555",
+              "_etag": "\"92\"",
+              "_lastModifiedDate": "2026-04-11T17:30:45Z",
+              "schoolId": 255902,
+              "nameOfInstitution": "Roosevelt High"
+            }
+            """
+        )!;
+        var expectedFirstProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedFirst);
+        var expectedSecondProjectedEtag = RelationalApiMetadataFormatter.FormatEtag(projectedSecond);
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .ReturnsLazily(
+                (RelationalReadMaterializationRequest request) =>
+                    request.DocumentMetadata.DocumentId switch
+                    {
+                        345L => materializedFirst,
+                        678L => materializedSecond,
+                        _ => throw new AssertionException("Unexpected query materialization request."),
+                    }
+            );
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    A<JsonNode>._,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .ReturnsLazily(
+                (JsonNode reconstitutedDocument, ContentTypeDefinition _, IReadOnlySet<string> _) =>
+                    reconstitutedDocument["id"]!.GetValue<string>() switch
+                    {
+                        "12121212-1111-2222-3333-444444444444" => projectedFirst,
+                        "34343434-1111-2222-3333-555555555555" => projectedSecond,
+                        _ => throw new AssertionException("Unexpected readable profile projection request."),
+                    }
+            );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        var success = (QueryResult.QuerySuccess)result;
+        success.TotalCount.Should().BeNull();
+        success.EdfiDocs.Should().HaveCount(2);
+        success.EdfiDocs[0].Should().BeSameAs(projectedFirst);
+        success.EdfiDocs[1].Should().BeSameAs(projectedSecond);
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(expectedFirstProjectedEtag);
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(expectedSecondProjectedEtag);
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().NotBe("\"91\"");
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().NotBe("\"92\"");
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedFirst,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _readableProfileProjector.Project(
+                    materializedSecond,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_allows_no_further_authorization_required_queries_to_continue_through_preprocessing()
     {
         var queryRequest = CreateQueryRequest(
@@ -2189,7 +2345,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         MappingSet mappingSet,
         QueryElement[] queryElements,
         bool totalCount,
-        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        ReadableProfileProjectionContext? readableProfileProjectionContext = null
     )
     {
         authorizationStrategyEvaluators ??= [];
@@ -2206,6 +2363,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
             );
         A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
+        A.CallTo(() => queryRequest.ReadableProfileProjectionContext)
+            .Returns(readableProfileProjectionContext);
         return queryRequest;
     }
 
