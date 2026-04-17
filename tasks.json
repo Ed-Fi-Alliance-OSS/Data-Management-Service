@@ -74,10 +74,10 @@
     "description": "Extend request-scoped page-selection SQL compilation for DMS-993. Acceptance: planner-produced request predicates compile into parameterized `PageDocumentIdSqlPlan` instances ordered by `DocumentId ASC`; `id` predicates join `dms.Document` only when present; `TotalCountSql` is emitted when `totalCount=true`; SQL Server string equality uses an explicit BIN2-family collation so relational query filtering is case-sensitive and deterministic across providers, while PostgreSQL continues to use plain `=`; the compiler still fails defensively if non-equality operators are routed to it; and the compiled SQL keeps clear seams for later authorization predicates/JOINs without forcing a repository rewrite.",
     "steps-to-verify": [
       "Add/update `PageDocumentIdSqlCompiler` unit tests and plan golden fixtures for PostgreSQL and SQL Server covering id joins, unified-alias rewrite, total-count SQL, defensive rejection of non-equality operators, and SQL Server case-sensitive string comparisons.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageDocumentIdSqlCompilerTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Given_PageDocumentIdSqlCompiler`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PlanSql`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authorization and Omission Guardrails",
