@@ -57,20 +57,20 @@ public sealed class MappingSetCompiler
                 }
             }
 
+            if (
+                !queryCapabilitiesByResource.TryAdd(
+                    resourceModel.Resource,
+                    queryCapabilityCompiler.Compile(concreteResourceModel)
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile mapping set: duplicate query capability for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
+                );
+            }
+
             if (resourceStorageKind is ResourceStorageKind.RelationalTables)
             {
-                if (
-                    !queryCapabilitiesByResource.TryAdd(
-                        resourceModel.Resource,
-                        queryCapabilityCompiler.Compile(concreteResourceModel)
-                    )
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot compile mapping set: duplicate query capability for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
-                    );
-                }
-
                 var writePlan = writePlanCompiler.Compile(resourceModel);
 
                 if (!writePlansByResource.TryAdd(resourceModel.Resource, writePlan))

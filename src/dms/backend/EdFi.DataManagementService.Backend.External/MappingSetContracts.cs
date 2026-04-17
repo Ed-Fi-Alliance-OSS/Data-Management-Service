@@ -50,7 +50,7 @@ public sealed record MappingSet(
         "reference/design/backend-redesign/epics/05-mpack-generation/05-pack-loader-validation.md";
 
     /// <summary>
-    /// Compiled relational GET-many query capability metadata keyed by qualified resource name.
+    /// Compiled relational GET-many query capability or omission metadata keyed by qualified resource name.
     /// </summary>
     public IReadOnlyDictionary<
         QualifiedResourceName,

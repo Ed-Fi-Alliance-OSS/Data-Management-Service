@@ -27,7 +27,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `rg -n 'QueryCapability|QuerySupport|DocumentUuid|Descriptor|descriptor-endpoints' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.External`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Capability Diagnostics",

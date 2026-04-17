@@ -25,6 +25,7 @@ public sealed record RelationalQueryFieldPath(JsonPathExpression Path, string Ty
 /// <summary>
 /// Compiled relational GET-many query metadata for one resource.
 /// </summary>
+/// <param name="Support">Whether relational GET-many is supported for the resource or intentionally omitted.</param>
 /// <param name="SupportedFieldsByQueryField">
 /// Query fields that can compile directly to deterministic root-table predicates.
 /// </param>
@@ -32,9 +33,55 @@ public sealed record RelationalQueryFieldPath(JsonPathExpression Path, string Ty
 /// Query fields identified at compile time as unsupported for root-table relational GET-many.
 /// </param>
 public sealed record RelationalQueryCapability(
+    RelationalQuerySupport Support,
     IReadOnlyDictionary<string, SupportedRelationalQueryField> SupportedFieldsByQueryField,
     IReadOnlyDictionary<string, UnsupportedRelationalQueryField> UnsupportedFieldsByQueryField
 );
+
+/// <summary>
+/// Resource-scoped relational GET-many support state.
+/// </summary>
+public abstract record RelationalQuerySupport
+{
+    private RelationalQuerySupport() { }
+
+    /// <summary>
+    /// Relational GET-many is supported for this resource.
+    /// </summary>
+    public sealed record Supported : RelationalQuerySupport;
+
+    /// <summary>
+    /// Relational GET-many was intentionally omitted for this resource.
+    /// </summary>
+    /// <param name="Omission">The stable omission classification and actionable reason.</param>
+    public sealed record Omitted(RelationalQueryCapabilityOmission Omission) : RelationalQuerySupport;
+}
+
+/// <summary>
+/// Deterministic resource-scoped relational GET-many omission metadata.
+/// </summary>
+/// <param name="Kind">The omission classification.</param>
+/// <param name="Reason">An actionable stable omission reason.</param>
+public sealed record RelationalQueryCapabilityOmission(
+    RelationalQueryCapabilityOmissionKind Kind,
+    string Reason
+);
+
+/// <summary>
+/// Classifies why relational GET-many support was intentionally omitted for a resource.
+/// </summary>
+public enum RelationalQueryCapabilityOmissionKind
+{
+    /// <summary>
+    /// The resource is stored in the shared descriptor table and follows the descriptor-endpoint query path.
+    /// </summary>
+    DescriptorResource,
+
+    /// <summary>
+    /// The resource has one or more unsupported query-field mappings.
+    /// </summary>
+    UnsupportedQueryFields,
+}
 
 /// <summary>
 /// A query field that compiled successfully for relational GET-many.
@@ -81,16 +128,6 @@ public enum RelationalQueryFieldFailureKind
     NonRootTable,
 
     /// <summary>
-    /// The query field targets the special-case resource <c>id</c> path.
-    /// </summary>
-    SpecialCaseId,
-
-    /// <summary>
-    /// The query field targets a descriptor URI path that needs descriptor-resolution preprocessing.
-    /// </summary>
-    SpecialCaseDescriptor,
-
-    /// <summary>
     /// The query path did not resolve to a deterministic relational-table binding.
     /// </summary>
     UnmappedPath,
@@ -113,4 +150,17 @@ public abstract record RelationalQueryFieldTarget
     /// </summary>
     /// <param name="Column">The API-bound root-table column used for the predicate.</param>
     public sealed record RootColumn(DbColumnName Column) : RelationalQueryFieldTarget;
+
+    /// <summary>
+    /// A query field that targets <c>dms.Document.DocumentUuid</c> and therefore requires the special-case document join.
+    /// </summary>
+    public sealed record DocumentUuid : RelationalQueryFieldTarget;
+
+    /// <summary>
+    /// A descriptor-valued query field that resolves a URI to a descriptor <c>DocumentId</c> and then filters on one root-table FK column.
+    /// </summary>
+    /// <param name="Column">The root-table descriptor FK column.</param>
+    /// <param name="DescriptorResource">The descriptor resource type expected at the query path.</param>
+    public sealed record DescriptorIdColumn(DbColumnName Column, QualifiedResourceName DescriptorResource)
+        : RelationalQueryFieldTarget;
 }
