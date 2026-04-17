@@ -2565,41 +2565,44 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteNoProfileMergeRequest? CapturedRequest { get; private set; }
 
-        public RelationalWriteNoProfileMergeResult? ResultToReturn { get; set; }
+        public RelationalWriteMergeResult? ResultToReturn { get; set; }
 
-        public RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
+        public RelationalWriteMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
 
             return ResultToReturn
-                ?? new RelationalWriteNoProfileMergeResult([
-                    new RelationalWriteNoProfileTableState(
-                        request.WritePlan.TablePlansInDependencyOrder[0],
-                        [
-                            new RelationalWriteNoProfileTableRow(
-                                request.FlattenedWriteSet.RootRow.Values,
-                                request.FlattenedWriteSet.RootRow.Values
-                            ),
-                        ],
-                        [
-                            new RelationalWriteNoProfileTableRow(
-                                request.FlattenedWriteSet.RootRow.Values,
-                                request.FlattenedWriteSet.RootRow.Values
-                            ),
-                        ]
-                    ),
-                ]);
+                ?? new RelationalWriteMergeResult(
+                    [
+                        new RelationalWriteMergedTableState(
+                            request.WritePlan.TablePlansInDependencyOrder[0],
+                            [
+                                new RelationalWriteMergedTableRow(
+                                    request.FlattenedWriteSet.RootRow.Values,
+                                    request.FlattenedWriteSet.RootRow.Values
+                                ),
+                            ],
+                            [
+                                new RelationalWriteMergedTableRow(
+                                    request.FlattenedWriteSet.RootRow.Values,
+                                    request.FlattenedWriteSet.RootRow.Values
+                                ),
+                            ]
+                        ),
+                    ],
+                    supportsGuardedNoOp: true
+                );
         }
     }
 
-    private sealed class RecordingRelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
+    private sealed class RecordingRelationalWriteNoProfilePersister : IRelationalWritePersister
     {
         public int TryPersistCallCount { get; private set; }
 
         public RelationalWriteExecutorRequest? CapturedRequest { get; private set; }
 
-        public RelationalWriteNoProfileMergeResult? CapturedMergeResult { get; private set; }
+        public RelationalWriteMergeResult? CapturedMergeResult { get; private set; }
 
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
@@ -2609,7 +2612,7 @@ public class Given_Default_Relational_Write_Executor
 
         public Task<RelationalWritePersistResult> PersistAsync(
             RelationalWriteExecutorRequest request,
-            RelationalWriteNoProfileMergeResult mergeResult,
+            RelationalWriteMergeResult mergeResult,
             IRelationalWriteSession writeSession,
             CancellationToken cancellationToken = default
         )
@@ -2642,20 +2645,23 @@ public class Given_Default_Relational_Write_Executor
             };
     }
 
-    private static RelationalWriteNoProfileMergeResult CreateMergeResult(
+    private static RelationalWriteMergeResult CreateMergeResult(
         TableWritePlan rootTableWritePlan,
         int currentSchoolId,
         int mergedSchoolId,
         string currentName = "Lincoln High",
         string mergedName = "Lincoln High"
     ) =>
-        new([
-            new RelationalWriteNoProfileTableState(
-                rootTableWritePlan,
-                [CreateRootTableRow(345L, currentSchoolId, currentName)],
-                [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
-            ),
-        ]);
+        new(
+            [
+                new RelationalWriteMergedTableState(
+                    rootTableWritePlan,
+                    [CreateRootTableRow(345L, currentSchoolId, currentName)],
+                    [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
 
     private static RelationalWriteCurrentState CreateCurrentState(
         RelationalWriteExecutorRequest request,
@@ -2688,7 +2694,7 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationalWriteNoProfileTableRow CreateRootTableRow(
+    private static RelationalWriteMergedTableRow CreateRootTableRow(
         long documentId,
         int schoolId,
         string name

@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteGuardedNoOp
 {
-    public static bool IsNoOpCandidate(RelationalWriteNoProfileMergeResult mergeResult)
+    public static bool IsNoOpCandidate(RelationalWriteMergeResult mergeResult)
     {
         ArgumentNullException.ThrowIfNull(mergeResult);
 
