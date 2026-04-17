@@ -17,7 +17,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `rg -n 'QueryCapability|QuerySupport|queryFieldMapping|DescriptorResource|UnifiedAlias' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.External`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Special-Case Query Capability Compilation",

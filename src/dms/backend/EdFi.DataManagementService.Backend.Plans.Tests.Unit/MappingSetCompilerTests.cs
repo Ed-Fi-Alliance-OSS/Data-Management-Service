@@ -7,6 +7,7 @@ using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -123,6 +124,70 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_compile_query_capabilities_for_relational_table_resources_and_skip_descriptor_resources()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+
+        mappingSet
+            .QueryCapabilitiesByResource.Keys.Should()
+            .BeEquivalentTo(
+                fixture.RelationalResourceModels.Select(static model => model.Resource),
+                options => options.WithStrictOrdering()
+            );
+        mappingSet.QueryCapabilitiesByResource.Should().NotContainKey(fixture.DescriptorResource);
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .SupportedFieldsByQueryField["schoolYear"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolYear")));
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.KeyUnificationResource]
+            .SupportedFieldsByQueryField["schoolYear"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolYear")));
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.ProjectionMetadataResource]
+            .SupportedFieldsByQueryField["schoolId"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName("School_RefSchoolId")));
+    }
+
+    [Test]
+    public void It_should_classify_multi_path_array_crossing_and_non_root_table_query_fields_during_compilation()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .UnsupportedFieldsByQueryField["schoolYearAlias"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.MultiPath);
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.NonRootOnlyResource]
+            .UnsupportedFieldsByQueryField["streetNumberName"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.ArrayCrossing);
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.ExtensionTableResource]
+            .UnsupportedFieldsByQueryField["favoriteColor"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.NonRootTable);
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorEdgeResource]
+            .UnsupportedFieldsByQueryField["academicSubjectDescriptor"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.SpecialCaseDescriptor);
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.KeyUnificationResource]
+            .UnsupportedFieldsByQueryField["id"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.SpecialCaseId);
+    }
+
+    [Test]
     public void It_should_materialize_mapping_set_dictionaries_as_frozen_collections()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
@@ -138,6 +203,9 @@ public class Given_MappingSetCompiler
             .ResourceKeyIdByResource.Should()
             .BeAssignableTo<FrozenDictionary<QualifiedResourceName, short>>();
         mappingSet.ResourceKeyById.Should().BeAssignableTo<FrozenDictionary<short, ResourceKeyEntry>>();
+        mappingSet
+            .QueryCapabilitiesByResource.Should()
+            .BeAssignableTo<FrozenDictionary<QualifiedResourceName, RelationalQueryCapability>>();
 
         mappingSet
             .WritePlansByResource.Should()
@@ -149,12 +217,18 @@ public class Given_MappingSetCompiler
             .ResourceKeyIdByResource.Should()
             .NotBeAssignableTo<Dictionary<QualifiedResourceName, short>>();
         mappingSet.ResourceKeyById.Should().NotBeAssignableTo<Dictionary<short, ResourceKeyEntry>>();
+        mappingSet
+            .QueryCapabilitiesByResource.Should()
+            .NotBeAssignableTo<Dictionary<QualifiedResourceName, RelationalQueryCapability>>();
 
         var writePlans =
             (IDictionary<QualifiedResourceName, ResourceWritePlan>)mappingSet.WritePlansByResource;
         var readPlans = (IDictionary<QualifiedResourceName, ResourceReadPlan>)mappingSet.ReadPlansByResource;
         var resourceKeyIds = (IDictionary<QualifiedResourceName, short>)mappingSet.ResourceKeyIdByResource;
         var resourceKeys = (IDictionary<short, ResourceKeyEntry>)mappingSet.ResourceKeyById;
+        var queryCapabilities =
+            (IDictionary<QualifiedResourceName, RelationalQueryCapability>)
+                mappingSet.QueryCapabilitiesByResource;
 
         var supportedResource = fixture.SupportedResource;
         var nonRootOnlyResource = fixture.NonRootOnlyResource;
@@ -162,16 +236,20 @@ public class Given_MappingSetCompiler
         var supportedReadPlan = mappingSet.ReadPlansByResource[supportedResource];
         var supportedResourceKeyId = mappingSet.ResourceKeyIdByResource[supportedResource];
         var supportedResourceKey = mappingSet.ResourceKeyById[supportedResourceKeyId];
+        var supportedQueryCapability = mappingSet.QueryCapabilitiesByResource[supportedResource];
 
         var actAddWritePlan = () => writePlans.Add(nonRootOnlyResource, supportedWritePlan);
         var actAddReadPlan = () => readPlans.Add(nonRootOnlyResource, supportedReadPlan);
         var actAddResourceKeyId = () => resourceKeyIds.Add(nonRootOnlyResource, supportedResourceKeyId);
         var actAddResourceKey = () => resourceKeys.Add(short.MaxValue, supportedResourceKey);
+        var actAddQueryCapability = () =>
+            queryCapabilities.Add(nonRootOnlyResource, supportedQueryCapability);
 
         actAddWritePlan.Should().Throw<NotSupportedException>();
         actAddReadPlan.Should().Throw<NotSupportedException>();
         actAddResourceKeyId.Should().Throw<NotSupportedException>();
         actAddResourceKey.Should().Throw<NotSupportedException>();
+        actAddQueryCapability.Should().Throw<NotSupportedException>();
     }
 
     private static MappingSetCompilerFixture CreateMixedResourceFixture(SqlDialect dialect)
@@ -268,32 +346,64 @@ public class Given_MappingSetCompiler
                     resourceKeysInIdOrder[1],
                     ResourceStorageKind.RelationalTables,
                     keyUnificationModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("schoolYear", [("$.schoolYear", "number")]),
+                        ("id", [("$.id", "string")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[2],
                     ResourceStorageKind.RelationalTables,
                     supportedModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("schoolYear", [("$.schoolYear", "number")]),
+                        ("schoolYearAlias", [("$.schoolYear", "number"), ("$.localSchoolYear", "number")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[3],
                     ResourceStorageKind.RelationalTables,
                     projectionMetadataModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("schoolId", [("$.schoolReference.schoolId", "number")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[4],
                     ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("streetNumberName", [("$.addresses[*].streetNumberName", "string")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[5],
                     ResourceStorageKind.RelationalTables,
                     extensionTableModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("favoriteColor", [("$._ext.sample.favoriteColor", "string")])
+                    ),
+                },
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[6],
                     ResourceStorageKind.RelationalTables,
                     descriptorEdgeModel
-                ),
+                )
+                {
+                    QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                        ("academicSubjectDescriptor", [("$.academicSubjectDescriptor", "string")])
+                    ),
+                },
             ],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
@@ -682,6 +792,21 @@ public class Given_MappingSetCompiler
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("StreetNumberName"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.addresses[*].streetNumberName",
+                        [
+                            new JsonPathSegment.Property("addresses"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("streetNumberName"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
             ],
             Constraints: []
         );
@@ -726,6 +851,25 @@ public class Given_MappingSetCompiler
                 ),
             ],
             Constraints: []
+        );
+    }
+
+    private static IReadOnlyDictionary<string, RelationalQueryFieldMapping> CreateQueryFieldMappings(
+        params (string QueryFieldName, (string Path, string Type)[] Paths)[] queryFields
+    )
+    {
+        return queryFields.ToFrozenDictionary(
+            queryField => queryField.QueryFieldName,
+            queryField => new RelationalQueryFieldMapping(
+                queryField.QueryFieldName,
+                queryField
+                    .Paths.Select(path => new RelationalQueryFieldPath(
+                        JsonPathExpressionCompiler.Compile(path.Path),
+                        path.Type
+                    ))
+                    .ToArray()
+            ),
+            StringComparer.Ordinal
         );
     }
 

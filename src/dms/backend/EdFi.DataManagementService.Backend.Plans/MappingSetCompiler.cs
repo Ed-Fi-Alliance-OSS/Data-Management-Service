@@ -29,9 +29,11 @@ public sealed class MappingSetCompiler
 
         var readPlanCompiler = new ReadPlanCompiler(modelSet.Dialect);
         var writePlanCompiler = new WritePlanCompiler(modelSet.Dialect);
+        var queryCapabilityCompiler = new RelationalQueryCapabilityCompiler();
 
         var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
         var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();
+        var queryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>();
 
         foreach (var concreteResourceModel in modelSet.ConcreteResourcesInNameOrder)
         {
@@ -57,6 +59,18 @@ public sealed class MappingSetCompiler
 
             if (resourceStorageKind is ResourceStorageKind.RelationalTables)
             {
+                if (
+                    !queryCapabilitiesByResource.TryAdd(
+                        resourceModel.Resource,
+                        queryCapabilityCompiler.Compile(concreteResourceModel)
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile mapping set: duplicate query capability for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}'."
+                    );
+                }
+
                 var writePlan = writePlanCompiler.Compile(resourceModel);
 
                 if (!writePlansByResource.TryAdd(resourceModel.Resource, writePlan))
@@ -114,6 +128,9 @@ public sealed class MappingSetCompiler
             ResourceKeyIdByResource: resourceKeyIdByResource.ToFrozenDictionary(),
             ResourceKeyById: resourceKeyById.ToFrozenDictionary(),
             SecurableElementColumnPathsByResource: securableElementPathsByResource.ToFrozenDictionary()
-        );
+        )
+        {
+            QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
+        };
     }
 }
