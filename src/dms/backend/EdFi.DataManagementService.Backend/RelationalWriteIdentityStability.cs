@@ -13,18 +13,18 @@ internal static class RelationalWriteIdentityStability
 {
     public static RelationalWriteExecutorResult? TryBuildFailureResult(
         RelationalWriteExecutorRequest request,
-        RelationalWriteNoProfileMergeResult noProfileMergeResult
+        RelationalWriteMergeResult mergeResult
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(noProfileMergeResult);
+        ArgumentNullException.ThrowIfNull(mergeResult);
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
         {
             return null;
         }
 
-        var rootTableState = noProfileMergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
+        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
             tableState.TableWritePlan.TableModel.Table.Equals(request.WritePlan.Model.Root.Table)
         );
 

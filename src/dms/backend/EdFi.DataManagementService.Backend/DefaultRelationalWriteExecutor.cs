@@ -25,7 +25,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
-    IRelationalWriteNoProfilePersister noProfilePersister,
+    IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer
@@ -57,8 +57,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
 
-    private readonly IRelationalWriteNoProfilePersister _noProfilePersister =
-        noProfilePersister ?? throw new ArgumentNullException(nameof(noProfilePersister));
+    private readonly IRelationalWritePersister _persister =
+        persister ?? throw new ArgumentNullException(nameof(persister));
 
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
@@ -262,13 +262,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
             );
 
-            var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
+            var mergeResult = _noProfileMergeSynthesizer.Synthesize(
                 new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
             );
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
                 executionRequest,
-                noProfileMergeResult
+                mergeResult
             );
 
             if (identityStabilityFailure is not null)
@@ -279,7 +279,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (
                 targetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
-                && RelationalWriteGuardedNoOp.IsNoOpCandidate(noProfileMergeResult)
+                && mergeResult.SupportsGuardedNoOp
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
             )
             {
                 var isCurrent = await _writeFreshnessChecker
@@ -312,8 +313,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            var persistedTarget = await _noProfilePersister
-                .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
+            var persistedTarget = await _persister
+                .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
             ValidatePersistedTargetIdentity(executionRequest.TargetContext, persistedTarget);
