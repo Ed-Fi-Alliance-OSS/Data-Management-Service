@@ -163,8 +163,7 @@ internal static class RelationalCanaryScenarioValidator
         DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
 
         while (
-            currentDirectory is not null
-            && !File.Exists(Path.Combine(currentDirectory.FullName, "tasks.json"))
+            currentDirectory is not null && !File.Exists(Path.Combine(currentDirectory.FullName, "LICENSE"))
         )
         {
             currentDirectory = currentDirectory.Parent;

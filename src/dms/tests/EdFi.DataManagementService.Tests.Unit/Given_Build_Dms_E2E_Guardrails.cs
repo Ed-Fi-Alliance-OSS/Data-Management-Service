@@ -192,8 +192,7 @@ public class Given_Build_Dms_E2E_Guardrails
         var currentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (
-            currentDirectory is not null
-            && !File.Exists(Path.Combine(currentDirectory.FullName, "tasks.json"))
+            currentDirectory is not null && !File.Exists(Path.Combine(currentDirectory.FullName, "LICENSE"))
         )
         {
             currentDirectory = currentDirectory.Parent;

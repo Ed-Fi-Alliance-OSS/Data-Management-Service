@@ -152,8 +152,7 @@ public partial class Given_Relational_Provisioning_Helper
         var currentDirectory = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (
-            currentDirectory is not null
-            && !File.Exists(Path.Combine(currentDirectory.FullName, "tasks.json"))
+            currentDirectory is not null && !File.Exists(Path.Combine(currentDirectory.FullName, "LICENSE"))
         )
         {
             currentDirectory = currentDirectory.Parent;
