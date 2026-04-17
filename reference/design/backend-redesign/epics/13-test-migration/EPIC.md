@@ -25,3 +25,4 @@ Authorization testing remains out of scope.
 - `DMS-1023` — `02-parity-and-fixtures.md` — Shared fixtures and parity assertions across engines, including profile scenarios
 - `DMS-1024` — `03-developer-docs.md` — Update docs/runbooks for the new workflow
 - `DMS-1025` — `04-descriptor-tests.md` — Descriptor-specific integration coverage (writes, queries, seeding)
+- `DMS-1135` — `05-parallel-e2e-lanes-and-harness-hardening.md` — Parallelize legacy/relational E2E lanes and harden PowerShell-backed test assertions
