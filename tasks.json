@@ -127,6 +127,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`",
       "Run: `rg -n 'QueryDocuments|TotalCount|paging|case-sensitive|BIN2|DocumentUuid|Descriptor' ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
