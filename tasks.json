@@ -7,7 +7,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter QueryRequestHandlerTests`",
       "Run: `rg -n 'IRelationalQueryRequest|RelationalQueryRequest|ReadableProfileProjectionContext' ./src/dms/core ./src/dms/backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Root Query Capability Compilation",

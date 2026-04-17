@@ -1,0 +1,6 @@
+2026-04-17
+Task complete: Core Query Seam. Story: reference/design/backend-redesign/epics/08-relational-read-path/04-query-execution.md
+Decisions: kept public IQueryRequest unchanged; added backend-local IRelationalQueryRequest/RelationalQueryRequest; QueryRequestHandler branches on requestInfo.MappingSet; reused readable-profile projection context shape from relational GET.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalQueryRequestContracts.cs, src/dms/core/EdFi.DataManagementService.Core/Backend/QueryRequest.cs, src/dms/core/EdFi.DataManagementService.Core/Handler/QueryRequestHandler.cs, src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/QueryRequestHandlerTests.cs
+Feedback loops: dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter QueryRequestHandlerTests; rg -n 'IRelationalQueryRequest|RelationalQueryRequest|ReadableProfileProjectionContext' ./src/dms/core ./src/dms/backend
+Notes next: backend/runtime tasks can now detect relational query intent by casting IQueryRequest to IRelationalQueryRequest; profile response content-type handling still belongs to later readable-profile task.
