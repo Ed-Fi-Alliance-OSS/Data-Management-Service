@@ -3,16 +3,19 @@
 ## Status
 
 Draft. This document is the normative design for:
+
 - serving `_etag` / `_lastModifiedDate` as representation-sensitive metadata, and
 - enabling future Ed-Fi Change Query APIs (`ChangeVersion`).
 
 ## Motivation
 
 The backend redesign needs representation-sensitive metadata:
+
 - `_etag` and `_lastModifiedDate` MUST change when the returned resource representation changes, including when referenced identity values change (descriptors are treated as immutable in this redesign).
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
+
 - persisting referenced identity values as local columns alongside every `..._DocumentId` reference, and
 - using `ON UPDATE CASCADE` (or trigger-based propagation where required) only when the referenced target allows identity updates (`allowIdentityUpdates=true`); otherwise `ON UPDATE NO ACTION`.
 
@@ -38,12 +41,14 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 ### Representation stamps (served metadata)
 
 Each persisted document maintains a **representation stamp** on `dms.Document`:
+
 - `ContentVersion` (`bigint`, globally monotonic)
 - `ContentLastModifiedAt` (UTC timestamp)
 
 Note: `dms.Document` also carries non-stamp metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Stamping rules defined in this document are unchanged by those additional columns.
 
 These are the source of truth for:
+
 - API `_etag`
 - API `_lastModifiedDate`
 - per-item `ChangeVersion` (for Change Queries)
@@ -51,6 +56,7 @@ These are the source of truth for:
 ### Identity stamps (supporting internal semantics)
 
 Each persisted document also maintains an **identity projection stamp**:
+
 - `IdentityVersion`
 - `IdentityLastModifiedAt`
 
@@ -59,6 +65,7 @@ These are updated only when the document’s own identity/URI projection changes
 ### Global sequence
 
 All stamps are allocated from a single global sequence:
+
 - PostgreSQL: `nextval('dms.ChangeVersionSequence')`
 - SQL Server: `NEXT VALUE FOR dms.ChangeVersionSequence`
 
@@ -69,6 +76,7 @@ See [data-model.md](data-model.md) for the sequence DDL.
 ### What counts as a representation change?
 
 A document’s served representation changes when any of the following occur:
+
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
@@ -78,16 +86,19 @@ case, `ContentVersion`, `ContentLastModifiedAt`, and `dms.DocumentChangeEvent` M
 ### What counts as an identity projection change?
 
 A document’s identity/URI projection changes when any identity component changes, including:
+
 - scalar identity columns on the root table, and
 - reference identity values stored alongside identity-component references (because those values participate in the document’s identity projection; canonical under key unification; see [key-unification.md](key-unification.md)).
 
 ### Stamp updates
 
 When a document’s **representation changes**, in the same transaction:
+
 - set `dms.Document.ContentVersion = next ChangeVersionSequence value`
 - set `dms.Document.ContentLastModifiedAt = now (UTC)`
 
 When a document’s **identity projection changes**, in the same transaction:
+
 - set `dms.Document.IdentityVersion = next ChangeVersionSequence value`
 - set `dms.Document.IdentityLastModifiedAt = now (UTC)`
 - and also treat it as a representation change (update `ContentVersion`/`ContentLastModifiedAt`)
@@ -101,6 +112,7 @@ Inserting a new document is a representation change (and also an identity projec
 - `ContentLastModifiedAt` and `IdentityLastModifiedAt` set to the insert time (UTC).
 
 Implementation options:
+
 - **Column defaults** on `dms.Document` that use the sequence (recommended for cross-engine multi-row inserts), plus update-time triggers for later changes.
 - Triggers that stamp inserted rows (ensure they allocate one sequence value per inserted `DocumentId` and do not assign a single statement-level value).
 - Explicit values provided by the write path.
@@ -108,6 +120,7 @@ Implementation options:
 A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/monotonicity requirements for `ChangeVersion` and MUST NOT be treated as correct initialization.
 
 Notes:
+
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
 - FK-cascade updates to reference identity storage columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE; under key unification, per-site binding aliases recompute automatically).
 - A successful no-op update path (request accepted, but no stored/writable row values changed) MUST NOT allocate new content or identity stamps.
@@ -118,19 +131,24 @@ Notes:
 ## Serving API metadata (normative)
 
 For a document `P`:
+
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
 - `_etag(P)` is a deterministic hash of the canonical JSON form of the served response document:
   - recommended: remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object properties using ordinal string ordering while preserving array order, serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode the hash as base64.
   - readable-profile responses recompute `_etag` from the projected document using the same rule.
+  - responses whose `link.href` values require request-scoped routed-prefix assembly recompute `_etag` after that assembly, because the routed href is part of the final served document.
 
 This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the final response semantics rather than exact transport serializer bytes.
+
+Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile / pre-prefix-assembly document and its `_etag`/`_lastModifiedDate` for that intermediate shape (see [data-model.md](data-model.md) §`dms.DocumentCache`). On a profile-scoped read the serving path retrieves the cached JSON, applies readable-profile projection, performs any request-scoped href-prefix assembly, and recomputes `_etag` from the final served document before returning the response — the cache is not keyed by profile or routed prefix. For the cache-validity inputs that *do* participate in cache keys (including `ResourceLinksFlag`) see [link-injection.md](link-injection.md) §Cache and Etag Interaction.
 
 ## Journaling for Change Queries
 
 Change Queries need an efficient way to find “documents of resource R whose current `ChangeVersion` is in `[min,max]`” without scanning all documents.
 
 This redesign uses one journal:
+
 - `dms.DocumentChangeEvent` — append-only, representation changes only
 
 See [data-model.md](data-model.md) for the table DDL and recommended indexes.
@@ -138,6 +156,7 @@ See [data-model.md](data-model.md) for the table DDL and recommended indexes.
 ### Journal emission (normative)
 
 Whenever `dms.Document.ContentVersion` changes (including insert), emit one journal row:
+
 - `ChangeVersion = dms.Document.ContentVersion`
 - `DocumentId`
 - `ResourceKeyId`
@@ -206,6 +225,7 @@ ORDER BY c.ChangeVersion, c.DocumentId;
 ## Optimistic concurrency (`If-Match`)
 
 With stored representation stamps:
+
 - GET returns `_etag` as the deterministic `SHA-256` hash of the current canonical JSON representation.
 - PUT/DELETE validates `If-Match` by comparing the client’s `_etag` to the current deterministic hash for that `DocumentId`.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
@@ -215,6 +235,7 @@ With stored representation stamps:
 Journals require retention planning once Change Queries are used in production.
 
 Guidance:
+
 - Retention policy should be defined per instance (time-based and/or size-based).
 - Expose `oldestChangeVersion` as the minimum retained `ChangeVersion` across the tracking tables that the Change Query API depends on (for v1: `dms.DocumentChangeEvent`).
 - When a client requests a window older than `oldestChangeVersion`, return a clear error instructing the client to resync.

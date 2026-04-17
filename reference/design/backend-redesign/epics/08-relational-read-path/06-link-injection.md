@@ -10,8 +10,9 @@ jira_url: https://edfi.atlassian.net/browse/DMS-622
 Implement ODS-aligned link injection for document-reference properties in relational-backend GET
 responses. For every fully-defined document reference in a GET-by-id or GET-many response, the
 reconstitution engine emits a `link: { rel, href }` object alongside the reference identity fields,
-following the contract in `design-docs/link-injection.md`, including the prefix-free href shape, the
-suppress-on-unresolvable-discriminator safety rule, and the source-resource-only authorization gate.
+following the contract in `design-docs/link-injection.md`, including the caller-agnostic cached href
+suffix plus routed-prefix assembly at response time, the suppress-on-unresolvable-discriminator safety
+rule, and the source-resource-only authorization gate.
 Descriptor-reference links are intentionally out of scope for this story; V1 keeps descriptor
 references on their current canonical-URI surface and defers ODS descriptor-link parity to follow-on work.
 
@@ -43,10 +44,12 @@ Builds on:
 - `rel` equals the concrete target resource name (e.g., `"School"`); for abstract references, `rel` is
   the concrete subclass name derived from the `Discriminator` on `{schema}.{AbstractResource}Identity`
   when discriminator resolution succeeds.
-- `href` is a prefix-free relative path of the form
-  `/{projectEndpointName}/{endpointName}/{documentUuid:N}`. It does **not** embed `PathBase`, tenant
-  segments, or route-qualifier segments; callers prepend their deployment-visible routed prefix when
-  dereferencing. This matches ODS-generated links and keeps `dms.DocumentCache` caller-agnostic.
+- `href` is served as a DMS-routable relative path of the form
+  `{PathBase}{tenant/qualifier prefix}/data/{projectEndpointName}/{endpointName}/{documentUuid:N}`.
+  The cached intermediate document stores only the caller-agnostic suffix
+  `/{projectEndpointName}/{endpointName}/{documentUuid:N}`, and the serving boundary prepends the
+  current request's routed prefix before returning the response. This keeps `dms.DocumentCache`
+  caller-agnostic while making the final href dereferenceable on DMS.
 - `endpointName` is resolved from the target project's `resourceNameMapping`
   (`ProjectSchema.GetEndpointNameFromResourceName(...)`) and cached into `LinkEndpointTemplate`; the
   story must not assume a `ResourceSchema.endpointName` property exists.
@@ -73,18 +76,18 @@ Builds on:
   process's startup snapshot. Explicit invalidation remains fallback-only if the column cannot land with
   the story.
 - The materialized document cache remains caller-agnostic: callers who can read the same source document
-  may share the same cached JSON even if one caller would fail a direct GET against the target resource,
-  because target-side authorization is not consulted for link emission.
+  may share the same cached intermediate JSON even if one caller would fail a direct GET against the
+  target resource, because target-side authorization is not consulted for link emission and routed-prefix
+  assembly happens after cache retrieval.
 - Unit tests cover: concrete reference (link emitted), partial reference (no link), typed-default
   identity value (no link), unresolved `DocumentUuid` (no link), abstract reference (concrete `rel` and
   endpoint slugs), unresolvable discriminator (no link), feature flag off (no link), SQL Server threshold
   partitioning, and GUID formatting (`N`-format).
 - Integration tests validate GET-by-id and GET-many response shape against fixtures that include at
   least one concrete reference, one abstract reference, and one reference inside a nested collection.
-- Integration tests cover prefix-free href emission under `PathBase` / tenant / qualifier deployments
-  (hrefs MUST NOT embed those segments), cache-hit with mismatched `ResourceLinksFlag`
-  rematerialization, and the mixed V1 contract where document references emit `link` but descriptor
-  references do not.
+- Integration tests cover DMS-routable href emission under `PathBase` / tenant / qualifier deployments,
+  cache-hit with mismatched `ResourceLinksFlag` rematerialization, and the mixed V1 contract where
+  document references emit `link` but descriptor references do not.
 - Contract tests compare link shape and values against a matched ODS baseline fixture for at least one
   representative resource, treating the suppress-on-unresolvable-discriminator behavior as an
   intentional DMS divergence.
@@ -116,17 +119,32 @@ Builds on:
   suppressing `link` for typed-default identities, unresolved `DocumentUuid` values, and null /
   malformed / unmapped abstract discriminators.
 5. Introduce the config plumbing described in the design doc: bind `DataManagement:ResourceLinks` to a
-  dedicated startup-scoped options type and thread it through into the reconstitution engine. No
-  request-scoped prefix plumbing is required — hrefs are prefix-free.
-6. Update the Core-owned readable profile projector to preserve `link` subtrees on references within the
+  dedicated startup-scoped options type and thread it through into the reconstitution engine.
+6. Add the serving-boundary href finalization step described in the design doc so cached suffixes are
+  converted into DMS-routable relative hrefs using the current request's visible routed prefix.
+7. Update the Core-owned readable profile projector to preserve `link` subtrees on references within the
   readable view. Separately, assert that link emission is not suppressed by the target resource's
   profile readability or by target-side authorization — fully-defined references to profile-hidden or
   target-denied resources still emit `rel` and `href`, per the accepted disclosure envelope.
-7. Update `dms.DocumentCache` materialization/freshness handling so cache validity incorporates
+8. Update `dms.DocumentCache` materialization/freshness handling so cache validity incorporates
   `ResourceLinksFlag`. Option 1 is the required V1 implementation: a mismatch is a cache miss that
   forces rematerialization under the serving process's startup snapshot. The documented explicit-
   invalidation path is fallback-only if the column cannot land with the story.
-8. Add unit, fixture, integration, and contract tests per the acceptance criteria; include a
+9. Add unit, fixture, integration, and contract tests per the acceptance criteria; include a
    feature-flag-off regression test, frontend prefix-capture coverage, SQL Server threshold coverage,
    cache-flag mismatch coverage, source-readable/target-denied authorization coverage, and the temporary
    document-reference-versus-descriptor-reference heterogeneity check.
+
+## Deferred Follow-On Work
+
+These items are intentionally not required for DMS-622 acceptance. They are recorded here so the
+approved story and design contain enough context to create follow-on Jira tickets without reopening the
+core link-injection design.
+
+| Deferred item | Why deferred from DMS-622 | Follow-on ticket seed |
+|---------------|---------------------------|-----------------------|
+| Descriptor-reference links | V1 stays scoped to document-reference hydration and keeps descriptor references on canonical descriptor URIs only, even though ODS emits `{ rel, href }` for descriptor references | Extend descriptor-reference emission to produce ODS-like `link` objects, define coexistence or migration from canonical descriptor URIs, and add parity tests plus OpenAPI / Discovery contract updates |
+| `Location`-header GUID alignment (`D` → `N`) | Link hrefs intentionally ship with `Guid.ToString("N")`, but `Location` continues to use the current `"D"` formatting to avoid expanding the initial blast radius | Align frontend `Location` header generation with link href GUID formatting, assess POST/PUT client impact, and update contract tests that assert `Location` values |
+| OpenAPI / Discovery updates | Runtime link emission can ship before schema/discovery documentation changes, and V1 still has mixed behavior between document and descriptor references | Update OpenAPI and Discovery surfaces to advertise reference `link` behavior accurately, including the V1 document-versus-descriptor split or its eventual removal once descriptor parity lands |
+| Resource-scoped write-time `DocumentUuid` stamping optimization | V1 uses the per-page auxiliary `dms.Document` lookup and intentionally avoids new per-reference `..._DocumentUuid` columns, write-path stamping, and backfill work | For profiled hot resources, add optional `{ReferenceBaseName}_DocumentUuid` storage, extend write-time referential resolution to stamp `DocumentUuid`, define resource-scoped opt-in, and provide backfill/runbook guidance |
+| Readable-profile projector alignment for `link` if split from DMS-622 | The story intends to keep `link` during readable-profile projection, but the current runtime still drops nested `link` unless the projector is updated | If Task 7 does not land in DMS-622, update `ReadableProfileProjector` to treat nested `link` as server-generated, then add profile-scoped regression coverage to close the schema/runtime parity gap |

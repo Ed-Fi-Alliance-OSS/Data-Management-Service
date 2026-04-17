@@ -496,7 +496,10 @@ Conformance tests (required):
 
 ##### 5) `dms.DocumentCache` (optional, eventually consistent projection)
 
-Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
+Optional materialized JSON representation of the **fully reconstituted caller-agnostic intermediate document**,
+stored as a convenience **projection**.
+
+The cached `DocumentJson` is the shape the reconstitution engine emits *before* Core applies any readable-profile projection and before the serving boundary prepends request-scoped routed prefixes to `link.href` values. This keeps the cache caller-agnostic: every caller who can read the document shares the same cached JSON, regardless of which readable profile is in effect or which routed prefix was used to reach DMS. Readable-profile projection, href-prefix assembly, and any resulting `_etag` recomputation run *after* cache retrieval (see [profiles.md](profiles.md) "Read Path Under Profiles", [update-tracking.md](update-tracking.md) §Serving API metadata, and [link-injection.md](link-injection.md) §Cache and Etag Interaction).
 
 This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
 - it is not purely a “cache-aside” optimization
@@ -504,7 +507,7 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the materialized `_etag/_lastModifiedDate` alongside the tracked representation stamp, and cache reads should validate freshness by comparing that stamp against all three conditions:
+Update tracking note: `dms.DocumentCache` stores the materialized `_etag`/`_lastModifiedDate` for the pre-profile-projection document alongside the tracked representation stamp, and cache reads validate freshness by comparing that stamp against all three conditions:
 
 ```
 ContentVersion == cached
@@ -512,7 +515,7 @@ AND ContentLastModifiedAt == cached
 AND ResourceLinksFlag == cached
 ```
 
-`ContentVersion` and `ContentLastModifiedAt` detect document mutations. `ResourceLinksFlag` records the value of the `DataManagement:ResourceLinks:Enabled` feature flag at the time the row was materialized; a flip of the serving flag renders any cached row with a mismatched `ResourceLinksFlag` stale, causing the serving path to re-materialize the document with the correct shape. For the full flag-flip invalidation design and operational tradeoffs see `reference/design/backend-redesign/design-docs/link-injection.md` §Cache and Etag Interaction.
+`ContentVersion` and `ContentLastModifiedAt` detect document mutations. `ResourceLinksFlag` records the value of the `DataManagement:ResourceLinks:Enabled` feature flag at the time the row was materialized; a flip of the serving flag renders any cached row with a mismatched `ResourceLinksFlag` stale, causing the serving path to re-materialize the document with the correct shape. No readable-profile input participates in cache validity because the cache stores pre-projection JSON; profile-scoped responses are produced post-cache and recompute `_etag` from the projected document. For the full flag-flip invalidation design and operational tradeoffs see `reference/design/backend-redesign/design-docs/link-injection.md` §Cache and Etag Interaction.
 
 Denormalized resource naming:
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.

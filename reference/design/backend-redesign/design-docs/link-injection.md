@@ -83,12 +83,11 @@ to the Ed-Fi ODS contract (see [ODS Parity Reference](#ods-parity-reference)) wi
 
 - Document-store backend support — relational backend only.
 - OpenAPI / Discovery API updates (deferred to dedicated follow-on work; see [Out of Scope](#out-of-scope)).
-- Emission of absolute URLs; hrefs are relative. DMS body hrefs are **prefix-free**, matching ODS:
-  they begin at the project/endpoint segment (e.g., `/ed-fi/schools/{uuid:N}`) and do **not** embed
-  `PathBase`, tenant, or route-qualifier segments. Clients prepend their deployment-visible prefix
-  (the same prefix they used to route the request) when dereferencing. Keeping links caller-agnostic
-  preserves the per-document `dms.DocumentCache` materialization model; see
-  [Href Construction](#href-construction).
+- Emission of absolute URLs; hrefs are relative. DMS body hrefs are **DMS-routable** on the wire:
+  the served response prepends the current request's deployment-visible routed prefix (including
+  `PathBase`, tenant / qualifier segments, and `/data`) to a caller-agnostic cached route suffix.
+  The cached materialization therefore stays caller-agnostic even though the final emitted href is
+  request-routable; see [Href Construction](#href-construction).
 - Changes to the `Location` header GUID format (tracked separately; see
   [Risks and Open Questions](#risks-and-open-questions)).
 - Propagation of discriminator or identity metadata beyond what is already defined in
@@ -103,8 +102,9 @@ to the Ed-Fi ODS contract (see [ODS Parity Reference](#ods-parity-reference)) wi
   not an unverified parity assumption. V1 keeps descriptor references on their current DMS surface: canonical
   descriptor URI values only. Clients MUST therefore treat `link` as optional on a per-reference basis until
   descriptor-link parity lands. OpenAPI and Discovery follow-on work MUST document that heterogeneous behavior
-  explicitly. This repository does not yet link a standalone follow-up Jira for descriptor-link parity; one
-  must be created and linked from this section before DMS-622 implementation closes.
+  explicitly. The follow-on Jira for descriptor-link parity can be created after this design is approved;
+  until then, this section records the gap so V1 cannot be read as claiming broad ODS parity while
+  descriptor links remain deferred.
 
 ---
 
@@ -151,12 +151,18 @@ checkout line numbers because `Resources.generated.cs` is generated and shifts b
 - **Rel**: the concrete target resource name (e.g., `"School"`, `"LocalEducationAgency"`). For abstract
   references, ODS splits the in-memory `Discriminator` on `.` (verified in
   `AcademicWeek.SchoolReference.CreateLink()` in `Resources.generated.cs` at v7.3) producing a
-  `(ProjectName, ResourceName)` pair from a string like `"edfi.School"`. DMS stores the discriminator as
-  `"ProjectName:ResourceName"` with business-cased project name (e.g., `"Ed-Fi:School"`; see
-  [data-model.md](data-model.md) “Abstract identity tables for polymorphic references”). The separator and
-  casing differences are intentional DMS divergences for readability. The DMS parser MUST accept the native
-  `:` form and SHOULD also accept legacy/ODS-style `.` form defensively so migrated or cached discriminator
-  strings still resolve to the same `(ProjectName, ResourceName)` pair and produce the same `rel` value.
+  `(ProjectName, ResourceName)` pair from a string like `"edfi.School"`. DMS stores the discriminator
+  in its **native** format only — `"ProjectName:ResourceName"` with business-cased project name
+  (e.g., `"Ed-Fi:School"`; see [data-model.md](data-model.md) "Abstract identity tables for
+  polymorphic references"). The separator and casing differences are intentional DMS divergences for
+  readability. The DMS parser accepts **only** the native `:` form and **only** the business-cased
+  project name that the DMS write path emits; no ODS `.` normalization and no lowercase-project-name
+  alias is attempted. DMS abstract identity tables are populated exclusively by the DMS write-path
+  triggers, so a legacy ODS-format value cannot appear in a healthy deployment — if one is observed
+  at read time, it is treated as an *unparseable* discriminator and the link is suppressed per
+  [Failure Modes: Unresolvable Discriminator](#failure-modes-unresolvable-discriminator). Defining a
+  stable normalization between ODS project tokens and DMS `ProjectName` values is out of scope for
+  V1; if ever needed, it becomes a dedicated follow-up with its own design.
 - **Presence gate**: a link is emitted only when the reference is "fully defined" (all identity components
   present and non-default). ODS uses `default(T)` logic for this gate: an identity field that equals the
   declared type's default value — zero for numerics, empty string for strings, `default(DateTime)` /
@@ -170,17 +176,18 @@ checkout line numbers because `Resources.generated.cs` is generated and shifts b
   partials. Not middleware, not serialization filters.
 
 The DMS relational implementation matches the main observable shape of this contract while realizing it
-against a schema-driven, compiled-plan architecture instead of code generation. Two deliberate
-divergences are called out explicitly:
+against a schema-driven, compiled-plan architecture instead of code generation. One deliberate
+behavioral divergence is called out explicitly:
 
-- DMS body hrefs include the current request's routed path prefix up to and including `/data` (for
-  example, `/data/ed-fi/schools/{uuid}` in a simple deployment or
-  `/api/{tenant}/data/ed-fi/schools/{uuid}` when `PathBase` and multitenancy are in play), absent from
-  ODS hrefs (`/ed-fi/schools/{uuid}`), because DMS routes all resource requests under `/data/`. See
-  [Href Construction](#href-construction) for the full rationale.
 - For abstract references whose discriminator cannot be resolved, DMS suppresses `link` entirely rather
   than returning ODS's default abstract fallback link, because DMS has no abstract resource endpoint to
   target safely. See [Failure Modes: Unresolvable Discriminator](#failure-modes-unresolvable-discriminator).
+
+DMS body hrefs share the same ODS-like path tail (`/{projectEndpointName}/{endpointName}/{uuid:N}`), but
+the **served** href is DMS-routable rather than prefix-free: DMS prepends the current request's routed
+prefix so the final body value matches the deployment's actual `.../data/...` route shape. The cached
+materialization retains only the caller-agnostic suffix; see [Href Construction](#href-construction) for
+the two-stage assembly rule.
 
 ---
 
@@ -188,16 +195,16 @@ divergences are called out explicitly:
 
 ### Link Shape
 
-Structurally identical to ODS — two properties, `rel` and `href` — and shape-identical on the wire:
-hrefs are prefix-free relative paths rooted at the project segment (see
-[Href Construction](#href-construction)):
+Structurally identical to ODS — two properties, `rel` and `href` — but with a DMS-routable relative href
+on the wire. The cached intermediate shape holds only the stable route suffix; the served response
+prepends the current request's routed prefix (see [Href Construction](#href-construction)):
 
 ```json
 "schoolReference": {
   "schoolId": 255901,
   "link": {
     "rel": "School",
-    "href": "/ed-fi/schools/550e8400e29b41d4a716446655440000"
+    "href": "/data/ed-fi/schools/550e8400e29b41d4a716446655440000"
   }
 }
 ```
@@ -245,7 +252,9 @@ compiled model. No camel-case transformation.
 
 ### Href Construction
 
-The href is a **prefix-free relative path** of the form:
+The href is assembled in **two stages**.
+
+The caller-agnostic cached **route suffix** is:
 
 ```
 /{projectEndpointName}/{endpointName}/{documentUuid:N}
@@ -263,28 +272,57 @@ The href is a **prefix-free relative path** of the form:
 
 For abstract references, the `projectEndpointName` and `endpointName` are those of the **concrete** subclass
 identified by the discriminator, not of the abstract type. There is no `/ed-fi/educationOrganizations/{id}`
-endpoint in DMS; the href always points at a concrete endpoint.
+endpoint in DMS; the suffix always points at a concrete endpoint.
 
-**No request-scoped inputs.** The href is fully derivable from the target document's identity and the
-compiled read plan. It does **not** embed `PathBase`, tenant segments, route qualifiers, or any
-request-visible routed prefix. This matches ODS-generated links such as
+**Cached stage: no request-scoped inputs.** The route suffix is fully derivable from the target document's
+identity and the compiled read plan. It omits `PathBase`, tenant segments, route qualifiers, and `/data`,
+which keeps the cached document caller-agnostic and ODS-like at the path-tail level. This still matches
+ODS-generated links such as
 `/ed-fi/educationOrganizations/{id:n}` (see
 [Resources.generated.cs @ v7.3](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3/Application/EdFi.Ods.Standard/Standard/5.2.0/Resources/Resources.generated.cs)),
-and — critically — keeps `dms.DocumentCache` caller-agnostic: the materialized JSON is identical for
+and — critically — keeps `dms.DocumentCache` caller-agnostic: the cached materialization is identical for
 every caller who can read the document, regardless of ingress path. See
 [Cache and Etag Interaction](#cache-and-etag-interaction).
 
-**Dereferencing the href.** Callers prepend their deployment-visible routed prefix — the same prefix
-they used to reach the response — when following the link. DMS does not emit that prefix in the body.
-A reverse-proxy or gateway whose externally visible path differs from DMS's routed path is unaffected
-by this design, since prefix assembly is client-side.
+**Served stage: prepend the routed prefix.** After cache retrieval (and after readable-profile projection,
+if any), DMS prepends the current request's deployment-visible routed prefix to the cached suffix before
+serializing the response body. The routed prefix consists of:
+
+```
+{PathBase}{tenant/qualifier segments}/data
+```
+
+where any optional components that are not in use are omitted. The final served href is therefore:
+
+```
+{PathBase}{tenant/qualifier prefix}/data/{projectEndpointName}/{endpointName}/{documentUuid:N}
+```
+
+Examples:
+
+- no `PathBase`, no tenant, no qualifiers:
+  `/data/ed-fi/schools/550e8400e29b41d4a716446655440000`
+- multitenant + qualifiers:
+  `/district-a/2026/data/ed-fi/schools/550e8400e29b41d4a716446655440000`
+- `PathBase` + tenant:
+  `/dms/tenant-a/data/ed-fi/schools/550e8400e29b41d4a716446655440000`
+
+This keeps generic clients correct on DMS deployments without forcing request-scoped data into the cache.
+V1 therefore chooses **DMS-correct dereferenceability** over byte-for-byte mimicry of ODS's
+prefix-free body-path contract: ODS parity is retained for the cached path tail and the `{ rel, href }`
+shape, but the served body href follows DMS's actual routed `/data/...` surface so generic DMS clients
+can follow it directly.
 
 **Relationship to the `Location` header.** The `Location` header continues to be assembled at the
 frontend boundary by prepending the current request's visible prefix (scheme + host + `PathBase` +
 tenant/qualifier segments + `/data`) to the path-only fragment produced by
-`PathComponents.ToResourcePath()`. Link hrefs share the path-tail shape but omit the prefix entirely;
-they also use the `"N"` GUID format while `Location` continues to use `"D"`. See
+`PathComponents.ToResourcePath()`. Link hrefs now follow that same routed-path assembly pattern, but
+remain relative and continue to use the `"N"` GUID format while `Location` continues to use `"D"`. See
 [GUID Format](#guid-format).
+
+V1 keeps this request-visible prefix assembly entirely at the ASP.NET frontend response boundary,
+where the current `HttpContext.Request` is already available. It does **not** assume a new
+request-visible data-root field on `FrontendRequest` or `PathComponents`.
 
 ### GUID Format
 
@@ -298,8 +336,10 @@ to avoid coupling an API-visible identifier-format change to the link-injection 
 
 ### Schema-Driven Metadata
 
-All link-generation inputs come from `ApiSchema.json` via existing typed accessors — no new schema
-fields, and no request-scoped inputs, are required:
+All **schema-derived inputs for cached href-suffix generation** come from `ApiSchema.json` via existing
+typed accessors — no new schema fields are required. Final **served** href assembly additionally uses
+existing request-scoped routing inputs at the frontend boundary (`PathBase`, tenant / qualifier
+segments, and `/data`), but those are serving inputs rather than new schema metadata:
 
 - **Reference property locations**: `DocumentPath.IsReference` / `ProjectName` / `ResourceName` /
   `ReferenceJsonPathsElements` on `ResourceSchema.DocumentPaths`
@@ -316,6 +356,10 @@ fields, and no request-scoped inputs, are required:
   value type. `ResourceSchema` does not currently expose an `endpointName` property, so link injection
   caches the resolved endpoint slug in `LinkEndpointTemplate` at plan compile time rather than expecting it
   on `ResourceSchema`.
+- **Serving prefix inputs**: the final DMS-routable prefix comes from the request's existing frontend
+  routing context (`PathBase`, tenant / qualifier segments, and the fixed `/data` segment). Link
+  injection does not require new schema fields to model that prefix; it reuses the same deployment-
+  visible routing inputs that already drive `Location` header assembly.
 
 ### Abstract Reference Resolution
 
@@ -332,12 +376,27 @@ design:
   the per-instance schema validation step described in
   [new-startup-flow.md](new-startup-flow.md) §Per-instance schema validation, alongside the existing
   DB fingerprint checks. For every abstract reference site reachable from the compiled mapping set,
-  that validation step checks that the target `{schema}.{AbstractResource}Identity` table exists in
-  each attached database. A missing identity table fails startup *for that instance* with a clear
-  error naming the abstract resource, the referencing concrete resource, and the affected database —
-  without failing the shared mapping-set compile, and without preventing other healthy instances from
-  serving. Plan compilation itself remains schema-driven and database-agnostic, so a single compiled
-  mapping set can be reused across instances with compatible fingerprints.
+  that validation step MUST verify, in each attached database:
+  1. The target `{schema}.{AbstractResource}Identity` table exists.
+  2. The `Discriminator` column exists on that table with the declared type and a `NOT NULL`
+     constraint (no runtime recovery is defined for a nullable or missing `Discriminator` column —
+     those are deployment-drift states, not data anomalies, and must fail fast).
+  3. The trigger that maintains `Discriminator` on each concrete member root table is present
+     (identified by the well-known trigger name emitted by [ddl-generation.md](ddl-generation.md) §3;
+     the check asserts the trigger's existence by name, not its body).
+
+  A failure of any of the three sub-checks fails **per-instance startup validation** for that
+  instance, with a clear error naming the abstract resource, the referencing concrete resource, the
+  specific missing object (table / column / trigger), and the affected database. The failure is then
+  cached as a deterministic per-instance startup error and that instance serves `503` at request
+  time, without failing the shared mapping-set compile and without preventing other healthy
+  instances from serving. Plan compilation itself remains schema-driven and database-agnostic, so a
+  single compiled mapping set can be reused across instances with compatible fingerprints. Runtime
+  warn-and-suppress (see
+  [Failure Modes: Unresolvable Discriminator](#failure-modes-unresolvable-discriminator)) is reserved
+  for true data anomalies — an individual row whose `Discriminator` is null or corrupted after a
+  write-path incident — **not** for deployment drift where the column, trigger, or identity table is
+  missing outright.
 
 Abstract references (e.g., `educationOrganizationReference`) require a runtime lookup of the concrete
 resource type to produce correct `rel` and `href` values. Two properties of the existing
@@ -388,10 +447,12 @@ at read time:
 1. **`Discriminator` is null.** A row may have been migrated into the abstract identity table before the
    discriminator-maintaining trigger was deployed, or a schema-refresh race may have left the column
    unpopulated. In either case the discriminator column produces a SQL `NULL` in the hydration result set.
-2. **`Discriminator` is non-null but unparseable.** The value does not match the expected
-   `"ProjectName:ResourceName"` format (e.g., it was written by an external migration tool with a
-   different convention, or the column was corrupted). Parsing produces no valid
-   `(ProjectName, ResourceName)` pair.
+2. **`Discriminator` is non-null but unparseable.** The value does not match the expected native
+   DMS `"ProjectName:ResourceName"` format — for example, a legacy ODS-style `edfi.School` value
+   from a migration tool, a lowercase-project-name variant, a value written by an external tool with
+   a different convention, or an outright corrupted column. No normalization from alternate formats
+   is attempted in V1 (see [Rel](#ods-parity-reference) for the rationale); parsing produces no
+   valid `(ProjectName, ResourceName)` pair.
 3. **`Discriminator` parses cleanly but the resulting `(ProjectName, ResourceName)` pair is absent from
    the precomputed `LinkEndpointTemplate` map.** The concrete subclass may have been removed in a schema
    refresh that has not yet propagated to the running instance, or metadata was regenerated without that
@@ -696,16 +757,17 @@ from binding columns inside a `Utf8JsonWriter` loop. The engine's reference-writ
       returned no matching row (e.g., a dangling reference), a null FK column, or an unresolvable
       reference after a future schema change. Under the optional write-time-stamping optimization,
       also covers an unstamped `..._DocumentUuid` column in a partial-backfill state.
-   d. Format the `href` string as
-      `/{projectEndpointName}/{endpointName}/{documentUuid:N}`. The href is prefix-free — no
-      request-scoped inputs are involved. See [Href Construction](#href-construction).
+   d. Format the caller-agnostic cached href **suffix** as
+      `/{projectEndpointName}/{endpointName}/{documentUuid:N}`. No request-scoped inputs are involved in
+      this step. See [Href Construction](#href-construction).
    e. Write a `"link": { "rel": ..., "href": ... }` object property immediately after the last identity
-      field of the reference.
+      field of the reference, storing the suffix form in the cached / intermediate document.
 3. Otherwise, write no `link` property (matches ODS behavior for partially-populated references and for
-   feature-flag-off state).
+    feature-flag-off state).
 
 This keeps all reference-handling logic co-located, preserves deterministic output order, and reuses the
-existing streaming writer — no intermediate `JsonNode` materialization.
+existing streaming writer — no intermediate `JsonNode` materialization. A later serving step prepends the
+current request's routed prefix to each emitted `link.href` before the response is serialized.
 
 Response-behavior matrix:
 
@@ -735,8 +797,10 @@ not in profile-scoped reads.
 
 The rule: the readable projector treats `link` on any reference object as a server-generated field and
 copies it unconditionally into the projected output, analogous to how `id` is handled at the document
-root. **The projector change is in scope for this story** — delivered alongside the reconstitution-
-engine changes, not deferred to a separately-tracked follow-up.
+root. This is the normative target behavior. This document update does not itself implement that runtime
+behavior; until the projector adopts the exemption, profile-scoped GET responses remain non-conformant to
+this design. If projector alignment does not ship as part of the initial implementation, it becomes
+explicit deferred follow-on work and must be tracked as such from [Out of Scope](#out-of-scope).
 
 See [Profile-Hidden Target Resources](#profile-hidden-target-resources) for the authorization stance
 when a profile hides the target resource type; `link` is still emitted in that case because the
@@ -790,6 +854,35 @@ flag.
 
 ### Cache and Etag Interaction
 
+**Cache layer contract (normative).** `dms.DocumentCache` stores the **fully reconstituted caller-agnostic
+intermediate document** — the same JSON the reconstitution engine produces before any readable-profile
+filtering is applied and before request-scoped href-prefix assembly. The read pipeline is:
+
+1. Reconstitute the document from relational storage (with `link` subtrees already emitted under the
+   current `ResourceLinks:Enabled` flag, but with `link.href` carrying the caller-agnostic suffix form —
+   link emission is a concern of the reconstitution engine, see
+   [Integration Point: JSON Reconstitution](#integration-point-json-reconstitution)).
+2. Write the reconstituted JSON to `dms.DocumentCache` (if projection is enabled), keyed by
+   `DocumentId`. The stored JSON is identical for every caller who can read the document.
+3. On subsequent reads, a cache-validity check determines whether to reuse the cached JSON or re-
+   reconstitute (see flag-flip rule below).
+4. **After** cache read, Core runs readable-profile projection (per
+   [profiles.md](profiles.md) "Read Path Under Profiles") and recomputes `_etag` from the projected
+   document (per [update-tracking.md](update-tracking.md) §Serving API metadata — "readable-profile
+   responses recompute `_etag` from the projected document"). `link` subtrees are preserved by the
+   projector as server-generated fields; see [Profile Compatibility](#profile-compatibility).
+5. The frontend serving boundary prepends the current request's routed prefix to every emitted
+   `link.href`, turning the cached suffix into the final DMS-routable relative path. Because this step
+   changes the served response shape when prefixes differ, `_etag` for the final response is recomputed
+   after prefix assembly rather than reused from the cached intermediate shape.
+
+Because projection and prefix assembly run after cache retrieval, the cache is keyed only by `DocumentId`
+— **not** by readable profile, caller claims, authorization context, `PathBase`, tenant, or route
+qualifiers. `ResourceLinksFlag` is the only serving-shape input that must participate in cache validity,
+because it is the only serving-shape input baked into the cached intermediate JSON itself; profile
+projection and routed-prefix assembly reshape cache output downstream and therefore need no cache-key
+participation.
+
 `ResourceLinks:Enabled` changes the **served document shape** — reference objects gain or lose the `link`
 subtree — without changing `dms.Document.ContentVersion` or `dms.Document.ContentLastModifiedAt`. This
 creates a correctness gap for two dependent subsystems:
@@ -801,8 +894,9 @@ creates a correctness gap for two dependent subsystems:
 - **`_etag` derivation** (`update-tracking.md`, §Serving API metadata around line 123): `_etag` is a
   deterministic hash of the **served response document**. After a flag flip, etag values computed under
   the previous flag state become invalid against responses produced under the new state: the served shapes
-  differ, so hashes differ. Clients holding a pre-flip conditional-read etag will see an etag mismatch on
-  their next `If-None-Match` request, which is correct behavior — they should re-fetch.
+  differ, so hashes differ. The same serving rule applies after request-scoped href-prefix assembly: if a
+  different routed prefix produces a different served href, the response etag is recomputed from that
+  final routed form rather than reused from the cached intermediate document.
 
 **Normative rule.** The design MUST handle this in one of the following two documented ways.
 **Option 1 is normative for V1.** Option 2 remains an acceptable fallback only if the
@@ -831,10 +925,12 @@ each process treats a `ResourceLinksFlag` mismatch as a cache miss, not a cache 
 the JSON under its own startup snapshot before serving a response.
 Operators should minimize the mixed-value rollout window to avoid unnecessary cache churn.
 
-`dms.DocumentCache` remains caller-agnostic, and that is safe for link injection. The materialized `link`
-shape depends on source-document content, request-shape inputs, and `ResourceLinksFlag`; it does **not**
-depend on target-side authorization. Two callers who can read the same source document can therefore share
-the same cached materialized JSON even when one caller would fail a direct GET against the target resource.
+Per the [cache layer contract above](#cache-and-etag-interaction), `dms.DocumentCache` stores the
+pre-profile-projection document keyed only by `DocumentId`, and is caller-agnostic. The materialized
+`link` shape depends only on source-document content and `ResourceLinksFlag`; it does **not** depend
+on target-side authorization, readable profile, or caller claims. Two callers who can read the same
+source document therefore share the same cached materialized JSON even when one caller would fail a
+direct GET against the target resource or has a different readable profile.
 
 **Cache-miss storm on flip.** Self-healing is not free. A flag flip invalidates every cached row
 simultaneously; the first wave of reads after the flip pays the full materialization cost — re-hydrate
@@ -921,10 +1017,11 @@ each reference), link injection expands the observable surface in three ways:
    This residual observability is accepted as within the disclosure envelope because the triggering
    state is not reachable through the supported DMS write path.
 
-All three disclosures are deliberate and part of the ODS-parity contract. They do **not** expose
-document content beyond what the caller already sees in the reference's identity fields; they expose an
-identifier, a concrete type, and a lifecycle signal. Callers with no target-read access cannot
-dereference the `href`.
+All three disclosures are deliberate and part of the V1 document-reference link contract (ODS
+behavioral parity for *document* references only; descriptor-reference links remain deferred — see
+[Non-Goals](#non-goals)). They do **not** expose document content beyond what the caller already
+sees in the reference's identity fields; they expose an identifier, a concrete type, and a lifecycle
+signal. Callers with no target-read access cannot dereference the `href`.
 
 ### Profile-Hidden Target Resources
 
@@ -978,20 +1075,25 @@ is required for parameter-count limits — not one lookup per reference or per i
 - OpenAPI specification updates and Discovery API responses.
 - Absolute-URL emission server-side.
 - `Location`-header GUID format migration (D → N).
-- Tenant-aware or qualifier-aware href rewriting.
+- Caller-specific cache keying or materialization by tenant / qualifier routed prefix. The cached
+  document remains caller-agnostic; request-visible prefix assembly happens only at the serving
+  boundary.
 - Propagation of reference-target Discriminator as a local binding column on the referencing row (the
   rejected abstract-resolution alternative).
 - Target-resource authorization at link-emission time.
 - Discovery-API `link` elements (e.g., on the API root document) — follows a different contract.
 
 Deferred follow-on work. This design intentionally does not invent Jira ids for work that has not yet been
-split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS-622 implementation closes.
+split from DMS-622. Once this design is approved, each item below should be split into a dedicated follow-on
+Jira and linked from this section.
 
 | Deferred item | Why deferred in V1 | Tracking requirement |
 |---------------|--------------------|----------------------|
-| Descriptor-reference links | ODS parity exists, but V1 stays scoped to document-reference hydration and continues to use canonical descriptor URIs only | Create and link a dedicated follow-up Jira from this section |
-| `Location`-header GUID alignment (`D` → `N`) | API-visible identifier-format change kept out of the initial rollout | Create and link a dedicated follow-up Jira from this section |
-| OpenAPI / Discovery updates | Requires schema, documentation, and discovery-surface changes beyond runtime link emission | Create and link a dedicated follow-up Jira from this section |
+| Descriptor-reference links | ODS parity exists, but V1 stays scoped to document-reference hydration and continues to use canonical descriptor URIs only | After design approval, create and link a dedicated follow-up Jira from this section. Ticket seed: extend descriptor-reference emission to produce ODS-like `{ rel, href }`, define coexistence or migration from canonical descriptor URIs, and add parity/OpenAPI/Discovery coverage |
+| `Location`-header GUID alignment (`D` → `N`) | API-visible identifier-format change kept out of the initial rollout | After design approval, create and link a dedicated follow-up Jira from this section. Ticket seed: align frontend `Location` header generation with link-href GUID formatting and update contract coverage for POST/PUT response headers |
+| OpenAPI / Discovery updates | Requires schema, documentation, and discovery-surface changes beyond runtime link emission | After design approval, create and link a dedicated follow-up Jira from this section. Ticket seed: document and advertise reference `link` behavior accurately across OpenAPI and Discovery, including the V1 document-versus-descriptor split or its eventual removal |
+| Resource-scoped write-time `DocumentUuid` stamping optimization | V1 uses the per-page auxiliary `dms.Document` lookup and intentionally avoids new per-reference `..._DocumentUuid` columns, write-time stamping, and backfill work | After design approval, create and link a dedicated follow-up Jira from this section if profiling justifies it. Ticket seed: add optional `{ReferenceBaseName}_DocumentUuid` storage, extend write-time referential resolution to stamp `DocumentUuid`, define resource-scoped opt-in, and provide backfill/runbook guidance |
+| Readable-profile projector alignment for `link` | The current runtime `ReadableProfileProjector` still drops nested `link` fields unless it is updated to treat them as server-generated, so profile-scoped reads remain non-conformant until this lands | After design approval, create and link a dedicated follow-up Jira from this section unless it is delivered in the initial implementation. Ticket seed: update `ReadableProfileProjector` to preserve nested `link` as a server-generated field and add profile-scoped regression coverage |
 
 ---
 
@@ -1019,10 +1121,12 @@ split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS
      readability under the caller's profile. This is deliberate; see
      [Profile-Hidden Target Resources](#profile-hidden-target-resources) for the accepted disclosure
      envelope and operator guidance when a profile must hide target-type existence from a caller.
-4. **Reverse-proxy path fidelity.** Not a concern under the prefix-free href design. Hrefs carry only
-   the project/endpoint path tail; callers prepend whichever deployment-visible prefix they used to
-   route the request. Reverse proxies and gateways therefore require no response-body rewriting for
-   link hrefs.
+4. **Reverse-proxy path fidelity.** The served response now carries a DMS-routable href, so the serving
+   boundary must assemble the routed prefix from the same deployment-visible path contract used to route
+   the request. This is straightforward because `Location` header assembly already depends on the same
+   inputs (`PathBase`, tenant / qualifiers, `/data`). The risk is therefore not conceptual mismatch but
+   implementation drift between `Location` assembly and body-link assembly; tests should assert they stay
+   aligned.
 5. **Feature flag default.** Default-on matches ODS expectations but changes the response shape for any
    existing DMS client that parses relational-backend GET responses. Ensure downstream clients tolerate
    an additional `link` property on reference objects (additive, JSON-safe).
@@ -1054,8 +1158,9 @@ split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS
   - **Unresolvable discriminator → no `link` emitted** (three sub-cases covering each failure mode in
     [Failure Modes: Unresolvable Discriminator](#failure-modes-unresolvable-discriminator)):
     - `Discriminator` column is null → `link` suppressed; identity fields still emitted.
-    - `Discriminator` is non-null but does not match the `"ProjectName:ResourceName"` format →
-      `link` suppressed; no exception propagates.
+    - `Discriminator` is non-null but does not match the native DMS `"ProjectName:ResourceName"`
+      format (including legacy ODS-style `edfi.School`, lowercase-project-name variants, and other
+      non-native values — no normalization is attempted) → `link` suppressed; no exception propagates.
     - `Discriminator` parses cleanly but `(ProjectName, ResourceName)` is absent from the
       `LinkEndpointTemplate` map → `link` suppressed; no exception propagates.
   - Feature flag off → no `link` emitted even for fully-defined references.
@@ -1069,13 +1174,14 @@ split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS
   - Resource with an abstract reference (e.g., any `educationOrganizationReference` site).
   - Resource with a nested-collection reference (link appears inside collection elements).
 - **Contract tests** comparing link shape and values against an ODS baseline fixture on the same
-  semantic input (goal: byte-for-byte `link` parity where feasible).
+  semantic input, scoped to **document references only** (goal: byte-for-byte `link` parity where
+  feasible for document references; descriptor-reference link parity is out of scope in V1).
 - **GET-many** integration tests verifying link emission at page boundaries.
-- **Prefix-free href regression.** Emitted hrefs MUST NOT embed `PathBase`, tenant, or route-qualifier
-  segments regardless of deployment shape. Test matrix:
-  - deployment without `PathBase`, tenant, or qualifiers → `/{project}/{endpoint}/{uuid:N}`
-  - multitenant / qualifier deployment → identical href (no tenant/qualifier segments injected)
-  - `PathBase` deployment → identical href (no `PathBase` injected)
+- **Routable href regression.** Emitted hrefs MUST follow the current request's actual DMS route shape.
+  Test matrix:
+  - deployment without `PathBase`, tenant, or qualifiers → `/data/{project}/{endpoint}/{uuid:N}`
+  - multitenant / qualifier deployment → `/{tenant?}/{qualifiers...}/data/{project}/{endpoint}/{uuid:N}`
+  - `PathBase` deployment → `{PathBase}/.../data/{project}/{endpoint}/{uuid:N}`
 - **Feature-flag-off regression** ensuring legacy clients continue to see link-free responses when
   operators opt out.
 - **Cache-flag mismatch regression.** A cached row materialized with the old `ResourceLinksFlag` value is
@@ -1104,8 +1210,11 @@ Qualitative; refined during the story tasks.
   small.
 - Hydration SQL change (left-join `{AbstractResource}Identity` for abstract references): small,
   additive to existing multi-result hydration structure.
-- **DDL emission changes for V1: none.** No new `{ReferenceBaseName}_DocumentUuid` columns are
-  emitted in V1; the auxiliary `dms.Document` lookup reuses the existing `..._DocumentId` FK.
+- **Per-reference resource-table DDL changes for V1: none.** No new
+  `{ReferenceBaseName}_DocumentUuid` columns are emitted in V1; the auxiliary `dms.Document` lookup
+  reuses the existing `..._DocumentId` FK. The only schema-surface change in scope is the companion
+  `dms.DocumentCache.ResourceLinksFlag` column described in [Cache and Etag Interaction](#cache-and-etag-interaction)
+  and owned by [data-model.md](data-model.md).
 - **Write-path changes for V1: none.** No stamping at insert/update/upsert. The write path is
   unchanged relative to the pre-link-injection baseline.
 - Read-path auxiliary result set (per-page `dms.Document` lookup): small. One logical `SELECT
@@ -1116,8 +1225,9 @@ Qualitative; refined during the story tasks.
 - Reconstitution-engine reference-writing extension (auxiliary result set zip + null gate): small,
   additive.
 - Feature-flag plumbing: trivial.
-- Tests (unit + fixture + contract + integration): medium — the bulk of the effort, especially ODS
-  parity contract tests.
+- Tests (unit + fixture + contract + integration): medium — the bulk of the effort, especially
+  document-reference parity contract tests against ODS baselines (descriptor-reference parity is
+  out of scope; see [Non-Goals](#non-goals)).
 
 **Future optimization (write-time stamping, if later adopted for specific resources):**
 
@@ -1143,11 +1253,13 @@ distinct implementation surfaces:
    to [data-model.md](data-model.md)).
 7. Feature-flag plumbing — `DataManagement:ResourceLinks:Enabled` wired into the reconstitution engine as a startup-scoped deployment setting.
 
-Plus ODS-parity contract tests that assert link-shape and presence-gate equivalence against the legacy
-ODS response bodies for representative concrete and abstract reference sites.
+Plus document-reference parity contract tests that assert link-shape and presence-gate equivalence
+against the legacy ODS response bodies for representative concrete and abstract reference sites
+(descriptor-reference parity is deferred; see [Non-Goals](#non-goals)).
 
 Each surface is small-to-medium individually; the integration cost across the seven surfaces — and
-the contract-test authoring for ODS parity — is the dominant factor in the overall medium sizing.
+the contract-test authoring for document-reference parity — is the dominant factor in the overall
+medium sizing.
 
 ---
 
