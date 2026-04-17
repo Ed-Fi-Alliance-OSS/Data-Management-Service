@@ -1093,3 +1093,224 @@ public class Given_StoredScopeState_targeting_collection_scope_When_ValidatingWr
         failure.JsonScope.Should().Be("$.classPeriods[*]");
     }
 }
+
+[TestFixture]
+public class Given_VisibleRequestCollectionItem_targeting_noncollection_scope_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var rowAddress = new CollectionRowAddress("$._ext.sample", rootAddress, []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    rowAddress,
+                    Creatable: false,
+                    RequestJsonPath: "$._ext.sample"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_ScopeKindMismatch_with_emitted_kind_Collection()
+    {
+        _result.Should().ContainSingle(f => f is ScopeKindMismatchCoreBackendContractMismatchFailure);
+        var failure = (ScopeKindMismatchCoreBackendContractMismatchFailure)
+            _result.Single(f => f is ScopeKindMismatchCoreBackendContractMismatchFailure);
+        failure.EmittedAddressKind.Should().Be(ScopeKind.Collection);
+        failure.CompiledScopeKind.Should().Be(ScopeKind.NonCollection);
+    }
+}
+
+[TestFixture]
+public class Given_VisibleStoredCollectionRow_targeting_noncollection_scope_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var rowAddress = new CollectionRowAddress("$._ext.sample", rootAddress, []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [],
+            VisibleStoredCollectionRows: [new VisibleStoredCollectionRow(rowAddress, [])]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_ScopeKindMismatch_from_stored_row_stream()
+    {
+        _result.Should().ContainSingle(f => f is ScopeKindMismatchCoreBackendContractMismatchFailure);
+    }
+}
+
+[TestFixture]
+public class Given_CollectionRow_with_wrong_immediate_parent_jsonscope_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog: root, a non-collection extension at "$._ext.sample",
+        // and a collection "$.classPeriods[*]" whose immediate parent is "$" (not "$._ext.sample").
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+        };
+
+        // Collection row claims its parent is "$._ext.sample" — but the compiled scope's
+        // ImmediateParentJsonScope is "$". Parent is catalog-valid but wrong.
+        var wrongParentAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var rowAddress = new CollectionRowAddress(
+            "$.classPeriods[*]",
+            wrongParentAddress,
+            [new SemanticIdentityPart("classPeriodName", JsonValue.Create("period1"), IsPresent: true)]
+        );
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates: [],
+            VisibleRequestCollectionItems:
+            [
+                new VisibleRequestCollectionItem(
+                    rowAddress,
+                    Creatable: false,
+                    RequestJsonPath: "$.classPeriods[0]"
+                ),
+            ]
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_ParentScopeMismatch_failure()
+    {
+        _result.Should().ContainSingle(f => f is ParentScopeMismatchCoreBackendContractMismatchFailure);
+    }
+
+    [Test]
+    public void It_reports_the_emitted_and_expected_parent_jsonscope()
+    {
+        var failure = (ParentScopeMismatchCoreBackendContractMismatchFailure)
+            _result.Single(f => f is ParentScopeMismatchCoreBackendContractMismatchFailure);
+        failure.EmittedParentJsonScope.Should().Be("$._ext.sample");
+        failure.ExpectedParentJsonScope.Should().Be("$");
+    }
+}

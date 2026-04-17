@@ -291,6 +291,7 @@ internal static class ProfileWriteContractValidator
         List<ProfileFailure> failures
     )
     {
+        // 1. Catalog lookup
         if (!catalogByJsonScope.TryGetValue(address.JsonScope, out var compiledScope))
         {
             failures.Add(
@@ -306,7 +307,24 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
-        // Validate ParentAddress.JsonScope is a known scope
+        // 2. Kind check
+        if (compiledScope.ScopeKind != ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.ScopeKindMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    emittedAddressKind: ScopeKind.Collection,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
+        // 3. Parent-in-catalog
         if (!catalogByJsonScope.ContainsKey(address.ParentAddress.JsonScope))
         {
             failures.Add(
@@ -322,6 +340,24 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
+        // 4. Immediate-parent equality
+        if (address.ParentAddress.JsonScope != compiledScope.ImmediateParentJsonScope)
+        {
+            failures.Add(
+                ProfileFailures.ParentScopeMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    compiledScope,
+                    address,
+                    expectedParentJsonScope: compiledScope.ImmediateParentJsonScope
+                )
+            );
+            return;
+        }
+
+        // 5. Ancestor chain
         if (!AncestorChainMatches(address.ParentAddress.AncestorCollectionInstances, compiledScope))
         {
             failures.Add(
@@ -337,7 +373,7 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
-        // Validate semantic identity part count and paths for this collection row
+        // 6. Semantic identity
         ValidateSemanticIdentity(
             address.SemanticIdentityInOrder,
             compiledScope,
@@ -349,7 +385,7 @@ internal static class ProfileWriteContractValidator
             failures
         );
 
-        // Validate semantic identity on each ancestor collection instance
+        // 7. Ancestor semantic identity
         ValidateAncestorSemanticIdentity(
             address.ParentAddress.AncestorCollectionInstances,
             catalogByJsonScope,

@@ -669,7 +669,15 @@ public sealed record ParentScopeMismatchCoreBackendContractMismatchFailure(
         "Core emitted a collection row address whose parent scope is not a known compiled scope.",
         Context,
         Diagnostics
-    );
+    )
+{
+    /// <summary>
+    /// The compiled scope's <c>ImmediateParentJsonScope</c>, populated when the failure
+    /// represents an immediate-parent mismatch (parent is catalog-known but not the expected
+    /// parent). Null when the parent is not in the catalog.
+    /// </summary>
+    public string? ExpectedParentJsonScope { get; init; }
+}
 
 /// <summary>
 /// Category-5 failure for an address whose shape (scope-instance or collection-row)
@@ -1323,6 +1331,7 @@ public static class ProfileFailures
         string operation,
         CompiledScopeDescriptor compiledScope,
         CollectionRowAddress emittedAddress,
+        string? expectedParentJsonScope = null,
         params ProfileFailureDiagnostic[] diagnostics
     )
     {
@@ -1331,7 +1340,7 @@ public static class ProfileFailures
         ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
         ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
 
-        return new(
+        return new ParentScopeMismatchCoreBackendContractMismatchFailure(
             context,
             emittedAddress.JsonScope,
             compiledScope.ScopeKind,
@@ -1341,7 +1350,10 @@ public static class ProfileFailures
                 new ProfileFailureDiagnostic.CompiledScope(compiledScope),
                 new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
             )
-        );
+        )
+        {
+            ExpectedParentJsonScope = expectedParentJsonScope,
+        };
     }
 
     public static ScopeKindMismatchCoreBackendContractMismatchFailure ScopeKindMismatch(
