@@ -151,6 +151,15 @@ Backend mapping initialization is responsible for ensuring that, before serving 
    - from runtime compilation.
 2. Every configured database instance is provisioned for the same effective schema (fingerprint validation).
 3. The database’s `dms.ResourceKey` mapping is valid for the mapping set, and bidirectional maps are cached.
+4. Per-instance schema-object validation. After fingerprint validation succeeds for an instance, each
+   configured database is checked for schema objects that the compiled mapping set assumes exist but
+   that are not represented in the fingerprint surface — notably every
+   `{schema}.{AbstractResource}Identity` table reachable from the compiled mapping set (see
+   [link-injection.md](link-injection.md) §Abstract Reference Resolution for why link emission requires
+   these tables). A missing object fails startup *for that instance only*, with a clear error naming
+   the missing object, the referencing resource, and the affected database. The shared mapping-set
+   compile step MUST NOT perform database-scoped existence checks; it remains schema-driven so a single
+   compiled mapping set is reusable across instances with compatible fingerprints.
 
 ### Inputs and dependencies
 

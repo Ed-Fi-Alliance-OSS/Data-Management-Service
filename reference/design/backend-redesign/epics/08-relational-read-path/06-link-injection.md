@@ -10,9 +10,9 @@ jira_url: https://edfi.atlassian.net/browse/DMS-622
 Implement ODS-aligned link injection for document-reference properties in relational-backend GET
 responses. For every fully-defined document reference in a GET-by-id or GET-many response, the
 reconstitution engine emits a `link: { rel, href }` object alongside the reference identity fields,
-following the contract in `design-docs/link-injection.md`, including the DMS-specific routed-prefix href
-shape, the suppress-on-unresolvable-discriminator safety rule, and the source-resource-only authorization
-gate. Descriptor-reference links are intentionally out of scope for this story; V1 keeps descriptor
+following the contract in `design-docs/link-injection.md`, including the prefix-free href shape, the
+suppress-on-unresolvable-discriminator safety rule, and the source-resource-only authorization gate.
+Descriptor-reference links are intentionally out of scope for this story; V1 keeps descriptor
 references on their current canonical-URI surface and defers ODS descriptor-link parity to follow-on work.
 
 Align with:
@@ -43,13 +43,10 @@ Builds on:
 - `rel` equals the concrete target resource name (e.g., `"School"`); for abstract references, `rel` is
   the concrete subclass name derived from the `Discriminator` on `{schema}.{AbstractResource}Identity`
   when discriminator resolution succeeds.
-- `href` has the form
-  `{requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{documentUuid:N}`, where
-  `requestVisibleDataRootPath` preserves the current request's visible routed prefix up to and including
-  `/data`.
-- The frontend boundary captures the routed prefix once per request and passes it through the read path as
-  `FrontendRequest.RequestVisibleDataRootPath`; the reconstitution engine consumes that captured value
-  rather than re-deriving the prefix downstream.
+- `href` is a prefix-free relative path of the form
+  `/{projectEndpointName}/{endpointName}/{documentUuid:N}`. It does **not** embed `PathBase`, tenant
+  segments, or route-qualifier segments; callers prepend their deployment-visible routed prefix when
+  dereferencing. This matches ODS-generated links and keeps `dms.DocumentCache` caller-agnostic.
 - `endpointName` is resolved from the target project's `resourceNameMapping`
   (`ProjectSchema.GetEndpointNameFromResourceName(...)`) and cached into `LinkEndpointTemplate`; the
   story must not assume a `ResourceSchema.endpointName` property exists.
@@ -84,12 +81,13 @@ Builds on:
   partitioning, and GUID formatting (`N`-format).
 - Integration tests validate GET-by-id and GET-many response shape against fixtures that include at
   least one concrete reference, one abstract reference, and one reference inside a nested collection.
-- Integration tests cover the frontend-capture seam for `RequestVisibleDataRootPath`, cache-hit with
-  mismatched `ResourceLinksFlag` rematerialization, and the mixed V1 contract where document references
-  emit `link` but descriptor references do not.
+- Integration tests cover prefix-free href emission under `PathBase` / tenant / qualifier deployments
+  (hrefs MUST NOT embed those segments), cache-hit with mismatched `ResourceLinksFlag`
+  rematerialization, and the mixed V1 contract where document references emit `link` but descriptor
+  references do not.
 - Contract tests compare link shape and values against a matched ODS baseline fixture for at least one
-  representative resource, treating the DMS-specific routed `/data` prefix and suppress-on-unresolvable-
-  discriminator behavior as intentional divergences.
+  representative resource, treating the suppress-on-unresolvable-discriminator behavior as an
+  intentional DMS divergence.
 - The Core-owned readable profile projector preserves `link` subtrees on references within the readable
   view.
 - Link emission is gated only on source-resource readability: fully-defined references to targets whose
@@ -117,10 +115,9 @@ Builds on:
   identity field of each fully-defined reference, per the design doc's integration point, while
   suppressing `link` for typed-default identities, unresolved `DocumentUuid` values, and null /
   malformed / unmapped abstract discriminators.
-5. Introduce the request/config plumbing described in the design doc: add
-  `FrontendRequest.RequestVisibleDataRootPath`, bind `DataManagement:ResourceLinks` to a dedicated
-  startup-scoped options type, and thread both through the frontend/read handler into the reconstitution
-  engine so hrefs preserve the request-visible routed prefix up to and including `/data`.
+5. Introduce the config plumbing described in the design doc: bind `DataManagement:ResourceLinks` to a
+  dedicated startup-scoped options type and thread it through into the reconstitution engine. No
+  request-scoped prefix plumbing is required — hrefs are prefix-free.
 6. Update the Core-owned readable profile projector to preserve `link` subtrees on references within the
   readable view. Separately, assert that link emission is not suppressed by the target resource's
   profile readability or by target-side authorization — fully-defined references to profile-hidden or

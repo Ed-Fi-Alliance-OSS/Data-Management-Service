@@ -32,9 +32,7 @@ to the Ed-Fi ODS contract (see [ODS Parity Reference](#ods-parity-reference)) wi
     - [Link Shape](#link-shape)
     - [Rel Resolution](#rel-resolution)
     - [Href Construction](#href-construction)
-      - [Request-Visible Data Root Resolution](#request-visible-data-root-resolution)
     - [GUID Format](#guid-format)
-    - [Tenant, Qualifiers, and PathBase](#tenant-qualifiers-and-pathbase)
     - [Schema-Driven Metadata](#schema-driven-metadata)
     - [Abstract Reference Resolution](#abstract-reference-resolution)
     - [Failure Modes: Unresolvable Discriminator](#failure-modes-unresolvable-discriminator)
@@ -61,10 +59,12 @@ to the Ed-Fi ODS contract (see [ODS Parity Reference](#ods-parity-reference)) wi
 
 ### Goals
 
-1. **ODS behavioral parity.** Emit `{ rel, href }` on every fully-defined document reference property in GET
-  responses (FKs into `dms.Document`) with shape and values closely aligned to the Ed-Fi ODS resource-link
-  contract, subject to the deliberate DMS divergences called out in this document. Descriptor-reference links
-  are intentionally deferred to follow-on work; see Non-Goals.
+1. **ODS document-reference parity (V1 scope).** Emit `{ rel, href }` on every fully-defined **document**
+  reference property in GET responses (FKs into `dms.Document`) with shape and values closely aligned
+  to the Ed-Fi ODS resource-link contract for document references, subject to the deliberate DMS
+  divergences called out in this document. V1 deliberately does **not** target full ODS link parity:
+  descriptor-reference links are out of scope and deferred to follow-on work. "Parity" in this design
+  always means document-reference parity unless stated otherwise; see Non-Goals.
 2. **Schema-driven.** Derive reference locations, target resource types, and abstract/concrete relationships
    from `ApiSchema.json` and the compiled read plan — no per-resource hand-coded link logic.
 3. **Single-pass reads.** Link emission adds no per-reference or per-item round-trips; it consumes
@@ -83,10 +83,12 @@ to the Ed-Fi ODS contract (see [ODS Parity Reference](#ods-parity-reference)) wi
 
 - Document-store backend support — relational backend only.
 - OpenAPI / Discovery API updates (deferred to dedicated follow-on work; see [Out of Scope](#out-of-scope)).
-- Emission of absolute URLs; hrefs are relative. DMS body hrefs include the request-visible routed
-  path prefix up to and including `/data` (including `PathBase` and any tenant/qualifier segments
-  present on the current request; see [Href Construction](#href-construction)), which differs from ODS
-  but aligns with DMS's routing structure and makes the href directly dereferenceable on the same host.
+- Emission of absolute URLs; hrefs are relative. DMS body hrefs are **prefix-free**, matching ODS:
+  they begin at the project/endpoint segment (e.g., `/ed-fi/schools/{uuid:N}`) and do **not** embed
+  `PathBase`, tenant, or route-qualifier segments. Clients prepend their deployment-visible prefix
+  (the same prefix they used to route the request) when dereferencing. Keeping links caller-agnostic
+  preserves the per-document `dms.DocumentCache` materialization model; see
+  [Href Construction](#href-construction).
 - Changes to the `Location` header GUID format (tracked separately; see
   [Risks and Open Questions](#risks-and-open-questions)).
 - Propagation of discriminator or identity metadata beyond what is already defined in
@@ -186,8 +188,8 @@ divergences are called out explicitly:
 
 ### Link Shape
 
-Structurally identical to ODS — two properties, `rel` and `href` — with one difference: the DMS
-`href` includes the request-visible routed path prefix up to and including `/data` (see
+Structurally identical to ODS — two properties, `rel` and `href` — and shape-identical on the wire:
+hrefs are prefix-free relative paths rooted at the project segment (see
 [Href Construction](#href-construction)):
 
 ```json
@@ -195,7 +197,7 @@ Structurally identical to ODS — two properties, `rel` and `href` — with one 
   "schoolId": 255901,
   "link": {
     "rel": "School",
-    "href": "/data/ed-fi/schools/550e8400e29b41d4a716446655440000"
+    "href": "/ed-fi/schools/550e8400e29b41d4a716446655440000"
   }
 }
 ```
@@ -216,7 +218,7 @@ Structurally identical to ODS — two properties, `rel` and `href` — with one 
      `dms.Document` lookup, an unresolvable reference after a future schema change, or — under the
      optional write-time-stamping optimization — an unstamped `..._DocumentUuid` column in a
      partial-backfill state), the `link` property is suppressed entirely. This gate prevents malformed
-     hrefs (e.g., `/data/ed-fi/schools/00000000000000000000000000000000`) from appearing in responses.
+     hrefs (e.g., `/ed-fi/schools/00000000000000000000000000000000`) from appearing in responses.
      **Missing lookup results are safe without operator coordination** — when the batched lookup finds
      no row for a referenced document (e.g., a dangling reference), `link` is simply suppressed on
      that reference rather than emitting a broken href. (For **abstract references**, an additional
@@ -243,16 +245,12 @@ compiled model. No camel-case transformation.
 
 ### Href Construction
 
-The href is a **relative path** of the form:
+The href is a **prefix-free relative path** of the form:
 
 ```
-{requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{documentUuid:N}
+/{projectEndpointName}/{endpointName}/{documentUuid:N}
 ```
 
-- `requestVisibleDataRootPath`: the current request's visible path prefix up to and including `/data`,
-  excluding only scheme and host. This prefix includes `PathBase` plus any tenant and route-qualifier
-  segments that were part of the routed request. Examples: `/data`, `/tenant-a/data`,
-  `/api/tenant-a/2025/data`.
 - `projectEndpointName`: the kebab-cased project segment (`ed-fi`, `tpdm`, `sample`, etc.), looked up from
   the target resource's `projectSchema.projectEndpointName`.
 - `endpointName`: the camel-cased plural endpoint slug for the target resource
@@ -267,91 +265,26 @@ For abstract references, the `projectEndpointName` and `endpointName` are those 
 identified by the discriminator, not of the abstract type. There is no `/ed-fi/educationOrganizations/{id}`
 endpoint in DMS; the href always points at a concrete endpoint.
 
-#### Request-Visible Data Root Resolution
+**No request-scoped inputs.** The href is fully derivable from the target document's identity and the
+compiled read plan. It does **not** embed `PathBase`, tenant segments, route qualifiers, or any
+request-visible routed prefix. This matches ODS-generated links such as
+`/ed-fi/educationOrganizations/{id:n}` (see
+[Resources.generated.cs @ v7.3](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3/Application/EdFi.Ods.Standard/Standard/5.2.0/Resources/Resources.generated.cs)),
+and — critically — keeps `dms.DocumentCache` caller-agnostic: the materialized JSON is identical for
+every caller who can read the document, regardless of ingress path. See
+[Cache and Etag Interaction](#cache-and-etag-interaction).
 
-DMS routes all resource requests under a `/data` path segment
-(`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/CoreEndpointModule.cs`,
-`BuildRoutePattern`, approximately lines 37–49). The route patterns take the form
-`/{tenant?}/{qualifiers...}/data/{**dmsPath}`, so the literal `/data` segment is always present between
-any tenant/qualifier prefixes and the resource path. If DMS is deployed under ASP.NET `PathBase`, that
-segment also appears ahead of `/data` in the externally visible request path. The frontend builds the
-`Location` header by prepending `urlBeforeDmsPath` — the full request URL up to and including `/data` —
-to a path of the form `/{projectEndpointName}/{endpointName}/{uuid}`:
+**Dereferencing the href.** Callers prepend their deployment-visible routed prefix — the same prefix
+they used to reach the response — when following the link. DMS does not emit that prefix in the body.
+A reverse-proxy or gateway whose externally visible path differs from DMS's routed path is unaffected
+by this design, since prefix assembly is client-side.
 
-```csharp
-// AspNetCoreFrontend.cs ~line 188-194
-string urlBeforeDmsPath = httpContext
-    .Request.UrlWithPathSegment()[..^dmsPath.Length]
-    .TrimEnd('/');
-httpContext.Response.Headers.Append(
-    "Location",
-    $"{urlBeforeDmsPath}{frontendResponse.LocationHeaderPath}"
-);
-```
-
-`PathComponents.ToResourcePath()` (`Model/PathComponents.cs`, lines 35–38) produces the raw
-`/{projectEndpointName}/{endpointName}/{uuid}` fragment that becomes `LocationHeaderPath`. Link injection
-uses the same routing root, but emits only the **path component** of that root, named here
-`requestVisibleDataRootPath`. In other words, the frontend/handler captures the current request's visible
-path prefix up to and including `/data` and passes that request-scoped value into read materialization so
-the reconstitution engine can assemble dereferenceable hrefs without a response-body rewrite pass.
-
-Normative request contract (new in V1):
-
-```csharp
-public record FrontendRequest(
-  string Path,
-  string? Body,
-  Dictionary<string, string>? Form,
-  Dictionary<string, string> Headers,
-  Dictionary<string, string> QueryParameters,
-  TraceId TraceId,
-  Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers,
-  string? Tenant = null,
-  string? RequestVisibleDataRootPath = null
-);
-```
-
-`RequestVisibleDataRootPath` is not present on `FrontendRequest` today. This story adds it at the frontend
-boundary after route parsing so the read handler and reconstitution engine consume an immutable,
-caller-visible routed prefix rather than re-deriving it downstream.
-
-**Decision: option (a) — include the request-visible `/data` prefix in the body href.**
-
-The body href produced by link injection is:
-
-```
-{requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{documentUuid:N}
-```
-
-Three options were considered:
-
-| Option | Description | Verdict |
-|--------|-------------|---------|
-| **(a) Include the request-visible `/data` prefix in body hrefs** | Emit `/{PathBase?}/{tenant?}/{qualifiers...}/data/ed-fi/schools/{uuid}` from the reconstitution engine using a request-scoped prefix passed in by the frontend/handler. Canonical relative path as seen by the caller; directly dereferenceable on the same host. | **Chosen** |
-| **(b) Frontend/proxy rewrites body hrefs** | Reconstitution emits `/ed-fi/schools/{uuid}`; a response-body filter or proxy strips and re-adds the visible `/{PathBase?}/{tenant?}/{qualifiers...}/data` prefix. | Rejected — adds middleware complexity and a per-response rewrite pass with no compensating benefit. |
-| **(c) Client-side resolution against DMS root** | Document that body hrefs require the client to prepend the routed prefix up to `/data` itself. | Rejected — implicit conventions break clients that follow the href literally; the contract should be explicit. |
-
-Option (a) is the simplest: the reconstitution engine emits the canonical form once, using the same
-request-scoped routed prefix that the frontend already uses to assemble `Location`. No response-body
-rewrite is required, and no client-side prefix reconstruction is needed. The only additional integration
-surface is threading `requestVisibleDataRootPath` into the read materialization request. See
-[Tenant, Qualifiers, and PathBase](#tenant-qualifiers-and-pathbase).
-
-**Relationship to the `Location` header.** The body href shape is the `Location`-header fragment
-produced by `PathComponents.ToResourcePath()` with the current request's visible data-root prefix
-prepended. In other words:
-
-```
-Location header = {scheme}://{host}{requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{uuid:D today}
-Body href       =                {requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{uuid:N}
-```
-
-The body href is the `Location` header's path component minus scheme and host, with one remaining
-format difference in V1: body href GUIDs use `N`, while `Location` headers continue to use the current
-default `Guid.ToString()` output (`D`) until the follow-up alignment lands. `requestVisibleDataRootPath`
-already includes any `PathBase`, tenant, or route-qualifier segments that were part of the routed request,
-so those segments remain directly dereferenceable for the caller that received the response.
+**Relationship to the `Location` header.** The `Location` header continues to be assembled at the
+frontend boundary by prepending the current request's visible prefix (scheme + host + `PathBase` +
+tenant/qualifier segments + `/data`) to the path-only fragment produced by
+`PathComponents.ToResourcePath()`. Link hrefs share the path-tail shape but omit the prefix entirely;
+they also use the `"N"` GUID format while `Location` continues to use `"D"`. See
+[GUID Format](#guid-format).
 
 ### GUID Format
 
@@ -363,28 +296,10 @@ This is a deliberate divergence from DMS's current `Location` header, which reli
 follow-up in [Risks and Open Questions](#risks-and-open-questions); it is **out of scope** for this story
 to avoid coupling an API-visible identifier-format change to the link-injection rollout.
 
-### Tenant, Qualifiers, and PathBase
-
-Link hrefs include the current request's visible path prefix up to and including `/data`. That prefix
-therefore carries any ASP.NET `PathBase`, tenant segment, or route-qualifier segments (for example,
-`/{tenant}/` or `/{schoolYear}/`) that were required to route the request.
-
-These segments are request-context inputs, not schema-derived metadata, and are not persisted on the
-document. The frontend/handler captures the routed prefix once per request and passes it into read
-materialization as `requestVisibleDataRootPath`, which the reconstitution engine uses when formatting the
-href. This mirrors the current `Location`-header convention while keeping link assembly inside the
-reference-writing path rather than introducing a response-body rewrite pass.
-
-A reverse-proxy or API gateway whose externally visible path differs from the routed path observed by DMS
-must still preserve that external prefix in forwarded request metadata or rewrite response bodies on the
-way out. This design assumes DMS can observe the caller-visible path prefix when constructing
-`requestVisibleDataRootPath`.
-
 ### Schema-Driven Metadata
 
-All schema-derived link-generation inputs come from `ApiSchema.json` via existing typed accessors — no new
-schema fields are required. The only non-schema input is the request-scoped
-`requestVisibleDataRootPath` described in [Tenant, Qualifiers, and PathBase](#tenant-qualifiers-and-pathbase):
+All link-generation inputs come from `ApiSchema.json` via existing typed accessors — no new schema
+fields, and no request-scoped inputs, are required:
 
 - **Reference property locations**: `DocumentPath.IsReference` / `ProjectName` / `ResourceName` /
   `ReferenceJsonPathsElements` on `ResourceSchema.DocumentPaths`
@@ -413,12 +328,16 @@ design:
   `Discriminator` column. If DDL generation skips the abstract identity table for a referenced abstract
   type (for example, because the abstract resource's schema entry is malformed or its subclasses are
   not marked), link injection cannot produce a `rel` or `href` for references to that abstract type.
-- **Plan compilation validates the invariant at startup.** The compiled read-plan builder checks, for
-  every abstract reference site it emits into a plan, that the target abstract identity table exists in
-  the connected database schema. A missing identity table fails plan compilation at startup with a
-  clear error naming the abstract resource and the referencing concrete resource. Failing at startup
-  (rather than at read time) prevents serving undefined behavior when the condition is ultimately
-  caused by an incomplete DDL deployment.
+- **Per-instance schema validation enforces the invariant at startup.** The existence check belongs to
+  the per-instance schema validation step described in
+  [new-startup-flow.md](new-startup-flow.md) §Per-instance schema validation, alongside the existing
+  DB fingerprint checks. For every abstract reference site reachable from the compiled mapping set,
+  that validation step checks that the target `{schema}.{AbstractResource}Identity` table exists in
+  each attached database. A missing identity table fails startup *for that instance* with a clear
+  error naming the abstract resource, the referencing concrete resource, and the affected database —
+  without failing the shared mapping-set compile, and without preventing other healthy instances from
+  serving. Plan compilation itself remains schema-driven and database-agnostic, so a single compiled
+  mapping set can be reused across instances with compatible fingerprints.
 
 Abstract references (e.g., `educationOrganizationReference`) require a runtime lookup of the concrete
 resource type to produce correct `rel` and `href` values. Two properties of the existing
@@ -556,8 +475,14 @@ Rationale for V1:
 - **No backfill required.** Pre-existing rows are handled transparently: the auxiliary lookup resolves
   `DocumentUuid` for any row whose `DocumentId` FK is populated, regardless of when the row was
   written.
-- **Matches legacy ODS behavior.** The ODS resolves reference identifiers at read time rather than
-  denormalizing them onto referencing rows. V1 follows the same pattern.
+- **Same read-time resolution goal as ODS, different mechanism.** Both systems resolve reference
+  identifiers at read time rather than denormalizing them onto referencing rows. The mechanism
+  differs, however: ODS left-join-fetches `...ReferenceData` associations in the per-aggregate
+  hydration HQL (see `EdFi.Ods.Common/Infrastructure/Repositories/GetEntitiesBase.cs`) and reads
+  hydrated `ResourceId`/`Discriminator` from the resulting reference object in generated
+  `CreateLink()` code. DMS V1 keeps the primary hydration free of per-reference joins and instead
+  issues one batched `DocumentId → DocumentUuid` auxiliary lookup per page, matching the existing
+  multi-result hydration pattern rather than the ODS join-fetch pattern.
 - **Fits the established multi-result hydration model.** The descriptor URI projection in
   [compiled-mapping-set.md](compiled-mapping-set.md) already validates this approach end to end.
 - **Bounded overhead.** The auxiliary lookup is one logical query phase per page, keyed by a primary-key
@@ -772,8 +697,8 @@ from binding columns inside a `Utf8JsonWriter` loop. The engine's reference-writ
       reference after a future schema change. Under the optional write-time-stamping optimization,
       also covers an unstamped `..._DocumentUuid` column in a partial-backfill state.
    d. Format the `href` string as
-      `{requestVisibleDataRootPath}/{projectEndpointName}/{endpointName}/{documentUuid:N}`, where
-      `requestVisibleDataRootPath` is the request-scoped routed prefix captured for the current response.
+      `/{projectEndpointName}/{endpointName}/{documentUuid:N}`. The href is prefix-free — no
+      request-scoped inputs are involved. See [Href Construction](#href-construction).
    e. Write a `"link": { "rel": ..., "href": ... }` object property immediately after the last identity
       field of the reference.
 3. Otherwise, write no `link` property (matches ODS behavior for partially-populated references and for
@@ -984,21 +909,22 @@ each reference), link injection expands the observable surface in three ways:
 2. **Referenced `DocumentUuid`.** The `href` embeds the referenced document's stable `DocumentUuid`,
    a server-assigned identifier that was not previously visible through the source resource's GET
    response.
+3. **Defensive-path lifecycle observability (not a normal state).** The relational design does not
+   produce dangling references under normal operation: abstract references are protected by the
+   composite FKs described in [data-model.md](data-model.md), and deletes of a still-referenced
+   document fail per [transactions-and-concurrency.md](transactions-and-concurrency.md). A
+   reference row whose `DocumentId` FK is populated therefore always has a matching `dms.Document`
+   row in a healthy system. The null gate in [Link Shape](#link-shape) is a defensive safety net
+   only; it fires under anomalies such as partial DDL/backfill states, manual database modification,
+   or future corruption. In those defensive-path situations, a caller with repeated source-read
+   access but no target-read access could in principle infer the anomaly from `link` disappearance.
+   This residual observability is accepted as within the disclosure envelope because the triggering
+   state is not reachable through the supported DMS write path.
 
 All three disclosures are deliberate and part of the ODS-parity contract. They do **not** expose
 document content beyond what the caller already sees in the reference's identity fields; they expose an
 identifier, a concrete type, and a lifecycle signal. Callers with no target-read access cannot
 dereference the `href`.
-
-1. **Target-document lifecycle observability.** The presence or absence of `link` across repeated
-   reads of the same source resource reveals the lifecycle of the referenced document. When the target
-   is deleted, the page-batched `dms.Document` lookup returns no row for that `DocumentId` and the
-   `link` is suppressed (see [Link Shape](#link-shape)), while the reference's identity fields remain
-   emitted. A caller with repeated source-read access but no target-read access can therefore infer the
-   approximate timing of target deletion (and, by symmetry, target re-creation or reference rebinding)
-   without ever reading the target. This is an unavoidable consequence of the V1 page-batched lookup
-   design (see [Referenced DocumentUuid Availability](#referenced-documentuuid-availability)) and is
-   accepted as within the disclosure envelope.
 
 ### Profile-Hidden Target Resources
 
@@ -1093,10 +1019,10 @@ split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS
      readability under the caller's profile. This is deliberate; see
      [Profile-Hidden Target Resources](#profile-hidden-target-resources) for the accepted disclosure
      envelope and operator guidance when a profile must hide target-type existence from a caller.
-4. **Reverse-proxy path fidelity.** Deployments whose externally visible path differs from the routed
-  path observed by DMS must either preserve that external prefix in forwarded request metadata or
-  rewrite link hrefs on the response. The design assumes DMS can observe the caller-visible path
-  prefix when constructing `requestVisibleDataRootPath`; document that operator expectation clearly.
+4. **Reverse-proxy path fidelity.** Not a concern under the prefix-free href design. Hrefs carry only
+   the project/endpoint path tail; callers prepend whichever deployment-visible prefix they used to
+   route the request. Reverse proxies and gateways therefore require no response-body rewriting for
+   link hrefs.
 5. **Feature flag default.** Default-on matches ODS expectations but changes the response shape for any
    existing DMS client that parses relational-backend GET responses. Ensure downstream clients tolerate
    an additional `link` property on reference objects (additive, JSON-safe).
@@ -1145,13 +1071,11 @@ split from DMS-622. Each item below MUST have a dedicated linked Jira before DMS
 - **Contract tests** comparing link shape and values against an ODS baseline fixture on the same
   semantic input (goal: byte-for-byte `link` parity where feasible).
 - **GET-many** integration tests verifying link emission at page boundaries.
-- **Request-prefix integration tests** verifying that emitted hrefs include the caller-visible routed
-  prefix up to and including `/data`:
-  - deployment without `PathBase`, tenant, or qualifiers → `/data/...`
-  - multitenant / qualifier deployment → `/{tenant}/{qualifiers...}/data/...`
-  - `PathBase` deployment → `/{PathBase}/.../data/...`
-  - frontend-capture seam → `HttpContext.Request.PathBase` plus tenant/qualifier route segments populate
-    `FrontendRequest.RequestVisibleDataRootPath` exactly once before the read handler runs.
+- **Prefix-free href regression.** Emitted hrefs MUST NOT embed `PathBase`, tenant, or route-qualifier
+  segments regardless of deployment shape. Test matrix:
+  - deployment without `PathBase`, tenant, or qualifiers → `/{project}/{endpoint}/{uuid:N}`
+  - multitenant / qualifier deployment → identical href (no tenant/qualifier segments injected)
+  - `PathBase` deployment → identical href (no `PathBase` injected)
 - **Feature-flag-off regression** ensuring legacy clients continue to see link-free responses when
   operators opt out.
 - **Cache-flag mismatch regression.** A cached row materialized with the old `ResourceLinksFlag` value is
@@ -1189,8 +1113,8 @@ Qualitative; refined during the story tasks.
   result set in the common case, partitioned only when parameter-count limits require it — keyed by a
   primary-key index. Analogous in scope and complexity to the descriptor URI projection auxiliary
   result set already implemented in [compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6.
-- Reconstitution-engine reference-writing extension (auxiliary result set zip + null gate +
-  request-visible path-prefix assembly): small, additive.
+- Reconstitution-engine reference-writing extension (auxiliary result set zip + null gate): small,
+  additive.
 - Feature-flag plumbing: trivial.
 - Tests (unit + fixture + contract + integration): medium — the bulk of the effort, especially ODS
   parity contract tests.
@@ -1203,27 +1127,26 @@ Qualitative; refined during the story tasks.
   persist it at insert): small-to-medium.
 - Per-resource backfill tooling/runbook: small.
 
-Overall sizing (V1): **medium** — a single story in the read-path epic, but one that touches eight
+Overall sizing (V1): **medium** — a single story in the read-path epic, but one that touches seven
 distinct implementation surfaces:
 
-1. Plan compiler — new `DocumentReferenceBinding` fields, `LinkEndpointTemplate` precomputation,
-   abstract-identity-table existence check.
+1. Plan compiler — new `DocumentReferenceBinding` fields and `LinkEndpointTemplate` precomputation.
 2. Hydration SQL builder — abstract-identity LEFT JOIN, auxiliary `dms.Document` result set with
    empty-set skip and large-set partitioning.
 3. Auxiliary reader — collect page FKs, issue the auxiliary query, build the page-level
    `DocumentId → DocumentUuid` map.
-4. Reconstitution writer — consume the map, the discriminator projection, and the request-visible data-root prefix, then emit `{rel, href}` via the null gate.
+4. Reconstitution writer — consume the map and the discriminator projection, then emit `{rel, href}`
+   via the null gate.
 5. Readable profile projector (`ReadableProfileProjector.cs`) — treat `link` as server-generated on
    nested reference objects.
 6. Cache freshness check plus `dms.DocumentCache.ResourceLinksFlag` DDL column (via a companion edit
    to [data-model.md](data-model.md)).
 7. Feature-flag plumbing — `DataManagement:ResourceLinks:Enabled` wired into the reconstitution engine as a startup-scoped deployment setting.
-8. Frontend/handler path-prefix plumbing — capture `requestVisibleDataRootPath` from the routed request and pass it into read materialization.
 
 Plus ODS-parity contract tests that assert link-shape and presence-gate equivalence against the legacy
 ODS response bodies for representative concrete and abstract reference sites.
 
-Each surface is small-to-medium individually; the integration cost across the eight surfaces — and
+Each surface is small-to-medium individually; the integration cost across the seven surfaces — and
 the contract-test authoring for ODS parity — is the dominant factor in the overall medium sizing.
 
 ---
