@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -15,26 +16,15 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Old.Postgresql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file sealed class ProfileRoutingNoOpHostApplicationLifetime : IHostApplicationLifetime
-{
-    public CancellationToken ApplicationStarted => CancellationToken.None;
-    public CancellationToken ApplicationStopping => CancellationToken.None;
-    public CancellationToken ApplicationStopped => CancellationToken.None;
-
-    public void StopApplication() { }
-}
-
-file sealed class ProfileRoutingAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
+file sealed class MssqlProfileRoutingAllowAllResourceAuthorizationHandler : IResourceAuthorizationHandler
 {
     public Task<ResourceAuthorizationResult> Authorize(
         DocumentSecurityElements documentSecurityElements,
@@ -43,7 +33,7 @@ file sealed class ProfileRoutingAllowAllResourceAuthorizationHandler : IResource
     ) => Task.FromResult<ResourceAuthorizationResult>(new ResourceAuthorizationResult.Authorized());
 }
 
-file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
+file sealed class MssqlProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 {
     public UpdateCascadeResult Cascade(
         System.Text.Json.JsonElement originalEdFiDoc,
@@ -73,7 +63,7 @@ file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 /// Concrete <see cref="IStoredStateProjectionInvoker"/> that returns a root-only
 /// <see cref="ProfileAppliedWriteContext"/>, sufficient for Slice 1 integration tests.
 /// </summary>
-file sealed class RootOnlyStoredStateProjectionInvoker : IStoredStateProjectionInvoker
+file sealed class MssqlRootOnlyStoredStateProjectionInvoker : IStoredStateProjectionInvoker
 {
     public ProfileAppliedWriteContext ProjectStoredState(
         JsonNode storedDocument,
@@ -98,21 +88,18 @@ file sealed class RootOnlyStoredStateProjectionInvoker : IStoredStateProjectionI
     }
 }
 
-file static class ProfileRoutingTestSupport
+file static class MssqlProfileRoutingTestSupport
 {
     public static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
 
-        services.AddSingleton<IHostApplicationLifetime, ProfileRoutingNoOpHostApplicationLifetime>();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddSingleton<NpgsqlDataSourceCache>();
         services.AddScoped<IDmsInstanceSelection, DmsInstanceSelection>();
-        services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
-        services.AddPostgresqlReferenceResolver();
+        services.AddMssqlReferenceResolver();
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -140,7 +127,7 @@ file static class ProfileRoutingTestSupport
             ),
             ProfileName: "test-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
         );
     }
 
@@ -165,7 +152,7 @@ file static class ProfileRoutingTestSupport
             ),
             ProfileName: "test-non-creatable-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
         );
     }
 
@@ -174,10 +161,6 @@ file static class ProfileRoutingTestSupport
         JsonNode requestBody
     )
     {
-        // The School fixture has "$.addresses[*]" as a top-level collection. We synthesize an
-        // inlined common-type scope beneath that collection (the profile middleware's
-        // ContentTypeScopeDiscovery would emit the same shape from a writable content type that
-        // declares, say, a `mileInfo` object under `addresses`).
         (string JsonScope, ScopeKind Kind)[] additionalScopes =
         [
             ("$.addresses[*].mileInfo", ScopeKind.NonCollection),
@@ -185,9 +168,6 @@ file static class ProfileRoutingTestSupport
 
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
 
-        // Build a matching ancestor chain so the inlined scope address passes the
-        // ProfileWriteContractValidator. The "$.addresses[*]" collection's semantic identity is
-        // a single "city" part — see the fixture's relational-model manifest for SchoolAddress.
         var addressesAncestor = new AncestorCollectionInstance(
             JsonScope: "$.addresses[*]",
             SemanticIdentityInOrder:
@@ -220,7 +200,7 @@ file static class ProfileRoutingTestSupport
             ),
             ProfileName: "test-profile-with-inlined-descendant",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
         );
     }
 }
@@ -232,17 +212,11 @@ file static class ProfileRoutingTestSupport
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
-
-    private const string RequestBodyJson = """
-        {
-          "schoolId": 255901
-        }
-        """;
 
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly ResourceInfo SchoolResourceInfo = new(
@@ -258,19 +232,26 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
         Guid.Parse("aaaaaaaa-1111-1111-1111-111111111111")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpsertResult _result = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
 
         _result = await ExecuteProfiledPostAsync();
     }
@@ -315,15 +296,15 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingNonCreatablePost",
+                    InstanceName: "MssqlProfileRoutingNonCreatablePost",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
             );
 
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
-        var requestBody = JsonNode.Parse(RequestBodyJson)!;
-        var profileWriteContext = ProfileRoutingTestSupport.CreateNonCreatableProfileWriteContext(
+        var requestBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var profileWriteContext = MssqlProfileRoutingTestSupport.CreateNonCreatableProfileWriteContext(
             writePlan,
             requestBody.DeepClone()
         );
@@ -345,11 +326,11 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-non-creatable-post"),
+            TraceId: new TraceId("mssql-profile-non-creatable-post"),
             DocumentUuid: SchoolDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -366,8 +347,8 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Profiled_Post_As_Update_Reaching_Slice_Fence
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -429,25 +410,30 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
         Guid.Parse("bbbbbbbb-3333-3333-3333-333333333333")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpsertResult _profiledPostAsUpdateResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
 
-        // Step 1: Create the document without a profile so it exists in the database
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
+
         var createResult = await ExecuteNonProfiledUpsertAsync();
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-        // Step 2: POST again with a profile context — this resolves to post-as-update
         _profiledPostAsUpdateResult = await ExecuteProfiledPostAsUpdateAsync();
     }
 
@@ -511,7 +497,7 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPostAsUpdate",
+                    InstanceName: "MssqlProfileRoutingPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -523,11 +509,11 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("profile-post-as-update-seed"),
+            TraceId: new TraceId("mssql-profile-post-as-update-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -545,7 +531,7 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPostAsUpdate",
+                    InstanceName: "MssqlProfileRoutingPostAsUpdate",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -553,7 +539,7 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
 
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
         var requestBody = JsonNode.Parse(RequestBodyJson)!;
-        var profileWriteContext = ProfileRoutingTestSupport.CreateCreatableProfileWriteContext(
+        var profileWriteContext = MssqlProfileRoutingTestSupport.CreateCreatableProfileWriteContext(
             writePlan,
             requestBody.DeepClone()
         );
@@ -564,11 +550,11 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-post-as-update-profiled"),
+            TraceId: new TraceId("mssql-profile-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -585,8 +571,8 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_Reaching_Slice_Fence
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Profiled_Put_Reaching_Slice_Fence
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -645,25 +631,30 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
         Guid.Parse("cccccccc-4444-4444-4444-444444444444")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _profiledPutResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
-        _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
 
-        // Step 1: Create the document without a profile so it exists in the database
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
+
         var createResult = await ExecuteNonProfiledUpsertAsync();
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-        // Step 2: PUT with a profile context — this targets an existing document
         _profiledPutResult = await ExecuteProfiledPutAsync();
     }
 
@@ -724,7 +715,7 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPut",
+                    InstanceName: "MssqlProfileRoutingPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -736,11 +727,11 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("profile-put-seed"),
+            TraceId: new TraceId("mssql-profile-put-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -758,7 +749,7 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPut",
+                    InstanceName: "MssqlProfileRoutingPut",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -766,7 +757,7 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
 
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
         var requestBody = JsonNode.Parse(RequestBodyJson)!;
-        var profileWriteContext = ProfileRoutingTestSupport.CreateCreatableProfileWriteContext(
+        var profileWriteContext = MssqlProfileRoutingTestSupport.CreateCreatableProfileWriteContext(
             writePlan,
             requestBody.DeepClone()
         );
@@ -777,11 +768,11 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-put-profiled"),
+            TraceId: new TraceId("mssql-profile-put-profiled"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
@@ -794,13 +785,12 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
 /// <summary>
 /// Verifies that a profiled PUT whose compiled scope catalog contains an inlined scope
 /// beneath a top-level collection ancestor routes to the <c>TopLevelCollection</c> fence,
-/// not the default <c>RootTableOnly</c> fence. Regression guard for the review finding
-/// that the slice-fence classifier was ignoring middleware-augmented inlined scopes.
+/// not the default <c>RootTableOnly</c> fence.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Profiled_Put_With_Inlined_Collection_Descendant_Scope
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -830,19 +820,26 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
         Guid.Parse("dddddddd-5555-5555-5555-555555555555")
     );
 
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private UpdateResult _profiledPutResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = ProfileRoutingTestSupport.CreateServiceProvider();
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRoutingTestSupport.CreateServiceProvider();
 
         var createResult = await ExecuteNonProfiledUpsertAsync();
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
@@ -910,7 +907,7 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPutInlinedDescendant",
+                    InstanceName: "MssqlProfileRoutingPutInlinedDescendant",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -922,11 +919,11 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("profile-put-inlined-descendant-seed"),
+            TraceId: new TraceId("mssql-profile-put-inlined-descendant-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: []
         );
 
@@ -944,7 +941,7 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "ProfileRoutingPutInlinedDescendant",
+                    InstanceName: "MssqlProfileRoutingPutInlinedDescendant",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -953,7 +950,7 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
         var requestBody = JsonNode.Parse(RequestBodyJson)!;
         var profileWriteContext =
-            ProfileRoutingTestSupport.CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
+            MssqlProfileRoutingTestSupport.CreateCreatableProfileWriteContextWithInlinedCollectionDescendant(
                 writePlan,
                 requestBody.DeepClone()
             );
@@ -964,11 +961,11 @@ public class Given_A_Profiled_Put_With_Inlined_Collection_Descendant_Scope
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-put-inlined-descendant-profiled"),
+            TraceId: new TraceId("mssql-profile-put-inlined-descendant-profiled"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
-            UpdateCascadeHandler: new ProfileRoutingNoOpUpdateCascadeHandler(),
-            ResourceAuthorizationHandler: new ProfileRoutingAllowAllResourceAuthorizationHandler(),
+            UpdateCascadeHandler: new MssqlProfileRoutingNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRoutingAllowAllResourceAuthorizationHandler(),
             ResourceAuthorizationPathways: [],
             BackendProfileWriteContext: profileWriteContext
         );
