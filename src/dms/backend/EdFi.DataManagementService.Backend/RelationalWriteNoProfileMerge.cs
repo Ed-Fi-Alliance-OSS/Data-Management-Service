@@ -229,7 +229,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         IReadOnlyList<FlattenedWriteValue> values
     )
     {
-        var comparableValues = ProjectComparableValues(tableWritePlan, values);
+        var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(tableWritePlan, values);
 
         return new MergedRow(tableWritePlan, new RelationalWriteMergedTableRow(values, comparableValues));
     }
@@ -294,41 +294,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         )
         {
             var columnName = tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns[index];
-            physicalRowIdentityValues[index] = values[FindBindingIndex(tableWritePlan, columnName)];
+            physicalRowIdentityValues[index] = values[
+                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
+            ];
         }
 
         return physicalRowIdentityValues.ToImmutableArray();
-    }
-
-    private static ImmutableArray<FlattenedWriteValue> ProjectComparableValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var bindingIndexes = tableWritePlan.CollectionMergePlan is null
-            ? Enumerable.Range(0, tableWritePlan.ColumnBindings.Length)
-            : tableWritePlan.CollectionMergePlan.CompareBindingIndexesInOrder;
-
-        FlattenedWriteValue[] comparableValues = bindingIndexes
-            .Select(bindingIndex => values[bindingIndex])
-            .ToArray();
-
-        return comparableValues.ToImmutableArray();
-    }
-
-    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
-    {
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            if (tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Equals(columnName))
-            {
-                return bindingIndex;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
-        );
     }
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
@@ -388,7 +359,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             var parentBindingIndexes = tableWritePlan
                 .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
-                    FindBindingIndex(tableWritePlan, columnName)
+                    RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
                 )
                 .Append(mergePlan.OrdinalBindingIndex)
                 .ToArray();
@@ -403,7 +374,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         {
             var parentBindingIndexes = tableWritePlan
                 .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
-                    FindBindingIndex(tableWritePlan, columnName)
+                    RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
                 )
                 .ToArray();
 
@@ -476,7 +447,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     tableWritePlan.TableModel.Table,
                     out var hydratedTableRows
                 )
-                    ? ProjectCurrentRows(tableWritePlan, hydratedTableRows.Rows)
+                    ? RelationalWriteMergeSupport.ProjectCurrentRows(tableWritePlan, hydratedTableRows.Rows)
                     : ImmutableArray<RelationalWriteMergedTableRow>.Empty;
 
                 currentRowsByTable.Add(tableWritePlan.TableModel.Table, projectedRows);
@@ -521,97 +492,6 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 semanticIdentityValues
             );
         }
-
-        private static ImmutableArray<RelationalWriteMergedTableRow> ProjectCurrentRows(
-            TableWritePlan tableWritePlan,
-            IReadOnlyList<object?[]> hydratedRows
-        )
-        {
-            List<RelationalWriteMergedTableRow> projectedRows = [];
-
-            foreach (var hydratedRow in hydratedRows)
-            {
-                FlattenedWriteValue[] bindingValues = new FlattenedWriteValue[
-                    tableWritePlan.ColumnBindings.Length
-                ];
-
-                for (
-                    var bindingIndex = 0;
-                    bindingIndex < tableWritePlan.ColumnBindings.Length;
-                    bindingIndex++
-                )
-                {
-                    var binding = tableWritePlan.ColumnBindings[bindingIndex];
-                    var columnOrdinal = FindColumnOrdinal(
-                        tableWritePlan.TableModel,
-                        binding.Column.ColumnName
-                    );
-                    bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(
-                        NormalizeHydratedValue(binding.Column, hydratedRow[columnOrdinal])
-                    );
-                }
-
-                projectedRows.Add(
-                    new RelationalWriteMergedTableRow(
-                        bindingValues,
-                        ProjectComparableValues(tableWritePlan, bindingValues)
-                    )
-                );
-            }
-
-            return projectedRows.ToImmutableArray();
-        }
-
-        private static int FindColumnOrdinal(DbTableModel tableModel, DbColumnName columnName)
-        {
-            for (var columnOrdinal = 0; columnOrdinal < tableModel.Columns.Count; columnOrdinal++)
-            {
-                if (tableModel.Columns[columnOrdinal].ColumnName.Equals(columnName))
-                {
-                    return columnOrdinal;
-                }
-            }
-
-            throw new InvalidOperationException(
-                $"Hydrated table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}' does not contain column '{columnName.Value}'."
-            );
-        }
-
-        private static object? NormalizeHydratedValue(DbColumnModel column, object? value)
-        {
-            ArgumentNullException.ThrowIfNull(column);
-
-            if (value is null || column.ScalarType is null)
-            {
-                return value;
-            }
-
-            return column.ScalarType.Kind switch
-            {
-                ScalarKind.Date => NormalizeDateValue(value),
-                ScalarKind.Time => NormalizeTimeValue(value),
-                _ => value,
-            };
-        }
-
-        private static object NormalizeDateValue(object value) =>
-            value switch
-            {
-                DateOnly => value,
-                DateTime dateTime => DateOnly.FromDateTime(dateTime),
-                DateTimeOffset dateTimeOffset => DateOnly.FromDateTime(dateTimeOffset.DateTime),
-                _ => value,
-            };
-
-        private static object NormalizeTimeValue(object value) =>
-            value switch
-            {
-                TimeOnly => value,
-                TimeSpan timeSpan => TimeOnly.FromTimeSpan(timeSpan),
-                DateTime dateTime => TimeOnly.FromDateTime(dateTime),
-                DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.DateTime),
-                _ => value,
-            };
     }
 
     private sealed class ProjectedCollectionTableState
@@ -694,7 +574,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             {
                 parentScopeKey[index] = ExtractLiteralValue(
                     tableWritePlan,
-                    values[FindBindingIndex(tableWritePlan, immediateParentScopeColumns[index])],
+                    values[
+                        RelationalWriteMergeSupport.FindBindingIndex(
+                            tableWritePlan,
+                            immediateParentScopeColumns[index]
+                        )
+                    ],
                     immediateParentScopeColumns[index]
                 );
             }
