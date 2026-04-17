@@ -240,15 +240,53 @@ public sealed class RelationalDocumentStoreRepository(
     public Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
+        var relationalQueryRequest = RequireRelationalRequest<IRelationalQueryRequest>(
+            queryRequest,
+            nameof(queryRequest)
+        );
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalQueryRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.QueryDocuments - {TraceId}",
-            queryRequest.TraceId.Value
+            relationalQueryRequest.TraceId.Value
         );
+
+        if (
+            relationalQueryRequest.MappingSet.QueryCapabilitiesByResource.TryGetValue(
+                resource,
+                out var queryCapability
+            )
+            && queryCapability.Support is RelationalQuerySupport.Supported
+        )
+        {
+            RelationalQueryPreprocessingResult preprocessingResult;
+
+            try
+            {
+                preprocessingResult = RelationalQueryRequestPreprocessor.Preprocess(
+                    relationalQueryRequest.QueryElements,
+                    queryCapability
+                );
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ex.Message));
+            }
+
+            if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QuerySuccess(
+                        [],
+                        relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                    )
+                );
+            }
+        }
 
         return Task.FromResult<QueryResult>(
             new QueryResult.QueryFailureNotImplemented(
-                $"Relational query handling is not implemented for resource '{FormatResource(RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo))}'."
+                $"Relational query handling is not implemented for resource '{FormatResource(resource)}'."
             )
         );
     }

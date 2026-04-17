@@ -464,8 +464,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
     {
-        var queryRequest = A.Fake<IQueryRequest>();
-        A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false
+        );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
@@ -476,6 +479,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Relational query handling is not implemented for resource 'Ed-Fi.School'."
                 )
             );
+    }
+
+    [Test]
+    public async Task It_short_circuits_invalid_id_queries_to_an_empty_page_without_hydration()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "id",
+                    "$.id",
+                    "string",
+                    new RelationalQueryFieldTarget.DocumentUuid()
+                )
+            ),
+            [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
+            totalCount: true
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -1747,6 +1782,33 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
     }
 
+    private static MappingSet CreateQuerySupportedMappingSet(
+        ResourceInfo resourceInfo,
+        params SupportedRelationalQueryField[] supportedFields
+    )
+    {
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
+        );
+
+        return CreateSupportedMappingSet(resourceInfo) with
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    supportedFields.ToDictionary(
+                        static supportedField => supportedField.QueryFieldName,
+                        static supportedField => supportedField,
+                        StringComparer.Ordinal
+                    ),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.Ordinal)
+                ),
+            },
+        };
+    }
+
     private static MappingSet CreateDescriptorOnlyMappingSet(ResourceInfo resourceInfo)
     {
         var resourceKey = CreateResourceKeyEntry(resourceInfo);
@@ -1838,6 +1900,52 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
+        );
+    }
+
+    private static IRelationalQueryRequest CreateQueryRequest(
+        MappingSet mappingSet,
+        QueryElement[] queryElements,
+        bool totalCount
+    )
+    {
+        var queryRequest = A.Fake<IRelationalQueryRequest>();
+        A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo)
+            .Returns(Array.Empty<AuthorizationSecurableInfo>());
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators)
+            .Returns(Array.Empty<AuthorizationStrategyEvaluator>());
+        A.CallTo(() => queryRequest.PaginationParameters)
+            .Returns(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
+            );
+        A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
+        return queryRequest;
+    }
+
+    private static QueryElement CreateQueryElement(
+        string queryFieldName,
+        string documentPath,
+        string value,
+        string type
+    )
+    {
+        return new QueryElement(queryFieldName, [new JsonPath(documentPath)], value, type);
+    }
+
+    private static SupportedRelationalQueryField CreateSupportedQueryField(
+        string queryFieldName,
+        string path,
+        string type,
+        RelationalQueryFieldTarget target
+    )
+    {
+        return new SupportedRelationalQueryField(
+            queryFieldName,
+            new RelationalQueryFieldPath(new JsonPathExpression(path, []), type),
+            target
         );
     }
 

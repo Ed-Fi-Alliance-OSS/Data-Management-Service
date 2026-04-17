@@ -47,7 +47,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `rg -n 'DocumentUuid|empty page|TotalCount|Resolve.*Query|PageKeysetSpec\\.Query' ./src/dms/backend/EdFi.DataManagementService.Backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Query Preprocessing",
