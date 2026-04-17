@@ -273,7 +273,7 @@ public class Given_AncestorChainMismatch_When_Validating
     [SetUp]
     public void Setup()
     {
-        // Catalog: nested collection requiring one ancestor
+        // Catalog: a NonCollection scope nested inside a collection — requires one ancestor instance
         var scopeCatalog = new List<CompiledScopeDescriptor>
         {
             new(
@@ -293,16 +293,17 @@ public class Given_AncestorChainMismatch_When_Validating
                 CanonicalScopeRelativeMemberPaths: ["addressType"]
             ),
             new(
-                JsonScope: "$.addresses[*].periods[*]",
-                ScopeKind: ScopeKind.Collection,
+                JsonScope: "$.addresses[*].city",
+                ScopeKind: ScopeKind.NonCollection,
                 ImmediateParentJsonScope: "$.addresses[*]",
                 CollectionAncestorsInOrder: ["$.addresses[*]"],
-                SemanticIdentityRelativePathsInOrder: ["periodType"],
-                CanonicalScopeRelativeMemberPaths: ["periodType"]
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["city", "state"]
             ),
         };
 
-        // Address references the nested collection but provides wrong ancestor chain (empty instead of one ancestor)
+        // Address targets the NonCollection scope but provides wrong ancestor chain
+        // (empty instead of one ancestor "$.addresses[*]")
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
@@ -314,11 +315,10 @@ public class Given_AncestorChainMismatch_When_Validating
                     ProfileVisibilityKind.VisiblePresent,
                     Creatable: true
                 ),
-                // addresses[*] as a NonCollection scope (addresses[*] is a collection scope but testing via RequestScopeState)
-                // Use root which is valid but add a scope with wrong ancestor for the nested collection
+                // NonCollection scope with wrong ancestor chain (empty instead of one ancestor)
                 new RequestScopeState(
                     new ScopeInstanceAddress(
-                        "$.addresses[*].periods[*]",
+                        "$.addresses[*].city",
                         AncestorCollectionInstances: [] // wrong: expects 1 ancestor "$.addresses[*]"
                     ),
                     ProfileVisibilityKind.VisiblePresent,
@@ -949,5 +949,147 @@ public class Given_nested_CollectionRowAddress_with_wrong_ancestor_chain_When_Va
     public void It_emits_an_AncestorChainMismatchCoreBackendContractMismatchFailure()
     {
         _result[0].Should().BeOfType<AncestorChainMismatchCoreBackendContractMismatchFailure>();
+    }
+}
+
+[TestFixture]
+public class Given_RequestScopeState_targeting_collection_scope_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Catalog: a collection scope at "$.classPeriods[*]"
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+        };
+
+        // RequestScopeState targets a collection scope — should be rejected as kind mismatch
+        var collectionAddress = new ScopeInstanceAddress("$.classPeriods[*]", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    collectionAddress,
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_ScopeKindMismatch_failure()
+    {
+        _result.Should().HaveCount(1);
+        _result[0].Should().BeOfType<ScopeKindMismatchCoreBackendContractMismatchFailure>();
+    }
+
+    [Test]
+    public void It_reports_the_emitted_address_kind_as_NonCollection()
+    {
+        var failure = (ScopeKindMismatchCoreBackendContractMismatchFailure)_result[0];
+        failure.EmittedAddressKind.Should().Be(ScopeKind.NonCollection);
+        failure.CompiledScopeKind.Should().Be(ScopeKind.Collection);
+        failure.JsonScope.Should().Be("$.classPeriods[*]");
+    }
+}
+
+[TestFixture]
+public class Given_StoredScopeState_targeting_collection_scope_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: []
+            ),
+            new(
+                JsonScope: "$.classPeriods[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["classPeriodName"],
+                CanonicalScopeRelativeMemberPaths: ["classPeriodName"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        // StoredScopeState points at the collection scope — should be rejected
+        var collectionAddress = new ScopeInstanceAddress("$.classPeriods[*]", []);
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [new StoredScopeState(collectionAddress, ProfileVisibilityKind.Hidden, [])],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_ScopeKindMismatch_from_stored_stream()
+    {
+        _result.Should().ContainSingle(f => f is ScopeKindMismatchCoreBackendContractMismatchFailure);
+        var failure = (ScopeKindMismatchCoreBackendContractMismatchFailure)
+            _result.Single(f => f is ScopeKindMismatchCoreBackendContractMismatchFailure);
+        failure.EmittedAddressKind.Should().Be(ScopeKind.NonCollection);
+        failure.CompiledScopeKind.Should().Be(ScopeKind.Collection);
+        failure.JsonScope.Should().Be("$.classPeriods[*]");
     }
 }

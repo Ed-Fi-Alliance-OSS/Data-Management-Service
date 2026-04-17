@@ -236,6 +236,23 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
+        // Kind check: a ScopeInstanceAddress must target Root or NonCollection.
+        if (compiledScope.ScopeKind == ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.ScopeKindMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    emittedAddressKind: address.JsonScope == "$" ? ScopeKind.Root : ScopeKind.NonCollection,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
         if (!AncestorChainMatches(address.AncestorCollectionInstances, compiledScope))
         {
             failures.Add(

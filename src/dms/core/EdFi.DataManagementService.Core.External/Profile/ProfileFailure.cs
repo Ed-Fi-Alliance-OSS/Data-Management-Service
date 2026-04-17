@@ -672,6 +672,25 @@ public sealed record ParentScopeMismatchCoreBackendContractMismatchFailure(
     );
 
 /// <summary>
+/// Category-5 failure for an address whose shape (scope-instance or collection-row)
+/// does not match the <see cref="CompiledScopeDescriptor.ScopeKind"/> of the compiled
+/// scope the address references.
+/// </summary>
+public sealed record ScopeKindMismatchCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind EmittedAddressKind,
+    ScopeKind CompiledScopeKind,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted an address whose shape does not match the compiled scope's kind.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
 /// Base category-6 typed failure emitted when backend/API binding accounting
 /// cannot classify a profiled binding into exactly one deterministic outcome.
 /// </summary>
@@ -1317,6 +1336,64 @@ public static class ProfileFailures
             emittedAddress.JsonScope,
             compiledScope.ScopeKind,
             emittedAddress.ParentAddress.JsonScope,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
+            )
+        );
+    }
+
+    public static ScopeKindMismatchCoreBackendContractMismatchFailure ScopeKindMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        ScopeKind emittedAddressKind,
+        CompiledScopeDescriptor compiledScope,
+        ScopeInstanceAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            emittedAddressKind,
+            compiledScope.ScopeKind,
+            MergeDiagnostics(
+                diagnostics,
+                new ProfileFailureDiagnostic.CompiledScope(compiledScope),
+                new ProfileFailureDiagnostic.ScopeAddress(emittedAddress)
+            )
+        );
+    }
+
+    public static ScopeKindMismatchCoreBackendContractMismatchFailure ScopeKindMismatch(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        ScopeKind emittedAddressKind,
+        CompiledScopeDescriptor compiledScope,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+        ValidateCompiledScopeMatch(compiledScope, emittedAddress.JsonScope, nameof(compiledScope));
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            emittedAddressKind,
+            compiledScope.ScopeKind,
             MergeDiagnostics(
                 diagnostics,
                 new ProfileFailureDiagnostic.CompiledScope(compiledScope),
