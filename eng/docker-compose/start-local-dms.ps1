@@ -153,7 +153,7 @@ else {
     if($IdentityProvider -eq "keycloak")
     {
         Write-Output "Starting Keycloak..."
-        docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+        docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs keycloak
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
         }
@@ -169,7 +169,7 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
     Write-Output "Starting Postgresql..."
-    docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs db
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
     }

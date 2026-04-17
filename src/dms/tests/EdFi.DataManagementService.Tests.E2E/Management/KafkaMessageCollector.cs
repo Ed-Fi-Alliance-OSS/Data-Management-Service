@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 public sealed class KafkaMessageCollector : IDisposable
 {
     private const string DOCUMENTS_TOPIC = "edfi.dms.document";
+    private static readonly TimeSpan DefaultConsumerReadyTimeout = TimeSpan.FromSeconds(10);
 
     private readonly ConcurrentBag<KafkaTestMessage> _messages = [];
     private readonly IConsumer<string, string> _consumer;
@@ -45,6 +46,7 @@ public sealed class KafkaMessageCollector : IDisposable
             GroupId = $"dms-e2e-kafka-test-{Guid.NewGuid().ToString("N")[..8]}",
             AutoOffsetReset = AutoOffsetReset.Latest, // Only collect messages after we start
             EnableAutoCommit = false,
+            EnablePartitionEof = true,
             SessionTimeoutMs = 6000,
             HeartbeatIntervalMs = 2000,
             // Add resolver for Docker container hostnames
@@ -65,7 +67,7 @@ public sealed class KafkaMessageCollector : IDisposable
         _consumeTask = Task.Run(ConsumeMessages, _cancellationTokenSource.Token);
 
         // Wait briefly to ensure the consumer is ready and positioned at the latest offset
-        var isReady = WaitForConsumerReadyAsync().Result;
+        var isReady = WaitForConsumerReadyAsync(DefaultConsumerReadyTimeout).Result;
         if (!isReady)
         {
             _logger.log.Warning("Consumer not fully ready but proceeding with collection");
@@ -108,11 +110,11 @@ public sealed class KafkaMessageCollector : IDisposable
     /// Waits asynchronously for the consumer to be assigned partitions and positioned at the latest offset.
     /// This ensures we don't miss messages that are published immediately after collector creation.
     /// </summary>
-    /// <param name="timeout">Optional timeout for waiting (defaults to 3 seconds)</param>
+    /// <param name="timeout">Optional timeout for waiting (defaults to 10 seconds)</param>
     /// <returns>True if consumer is ready, false if timeout occurred</returns>
     private async Task<bool> WaitForConsumerReadyAsync(TimeSpan? timeout = null)
     {
-        var timeoutValue = timeout ?? TimeSpan.FromSeconds(3);
+        var timeoutValue = timeout ?? DefaultConsumerReadyTimeout;
         var start = DateTime.UtcNow;
         var lastLogTime = start;
 
@@ -140,6 +142,16 @@ public sealed class KafkaMessageCollector : IDisposable
                     try
                     {
                         Offset position = _consumer.Position(partition);
+
+                        if (position == Offset.Unset)
+                        {
+                            _logger.log.Debug(
+                                $"Partition {partition.Topic}[{partition.Partition}] assigned but still waiting for a concrete offset"
+                            );
+                            allPartitionsReady = false;
+                            break;
+                        }
+
                         _logger.log.Debug(
                             $"Partition {partition.Topic}[{partition.Partition}] ready at position {position}"
                         );

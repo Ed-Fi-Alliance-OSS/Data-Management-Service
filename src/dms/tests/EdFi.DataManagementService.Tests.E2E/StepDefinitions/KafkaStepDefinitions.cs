@@ -14,6 +14,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 [Binding]
 public class KafkaStepDefinitions(TestLogger logger) : IDisposable
 {
+    private static readonly TimeSpan ConsumerReadyTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DeletedMessageTimeout = TimeSpan.FromSeconds(30);
+
     private KafkaMessageCollector? _kafkaMessageCollector;
 
     [Given("I start collecting Kafka messages")]
@@ -36,7 +39,7 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
 
         // Ensure consumer is fully subscribed before returning
         logger.log.Debug("Waiting for Kafka consumer to be fully ready...");
-        if (!_kafkaMessageCollector.WaitForConsumerReady(TimeSpan.FromSeconds(5)))
+        if (!_kafkaMessageCollector.WaitForConsumerReady(ConsumerReadyTimeout))
         {
             logger.log.Warning("Kafka consumer readiness timeout - proceeding anyway");
         }
@@ -176,8 +179,8 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         List<KafkaTestMessage> messages = [];
         bool foundMatchingMessage = false;
 
-        // Use retry logic: 10-second timeout with 200ms poll intervals
-        var timeout = TimeSpan.FromSeconds(10);
+        // Allow extra time in CI for the delete event to reach the test consumer.
+        var timeout = DeletedMessageTimeout;
         var pollInterval = TimeSpan.FromMilliseconds(200);
         var start = DateTime.UtcNow;
 
