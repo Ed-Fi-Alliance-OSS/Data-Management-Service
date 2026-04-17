@@ -97,7 +97,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`",
       "Run: `rg -n 'PageKeysetSpec\\.Query|QueryDocuments\\(|QuerySuccess\\(|TotalCount' ./src/dms/backend/EdFi.DataManagementService.Backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Readable Profile Query Projection",

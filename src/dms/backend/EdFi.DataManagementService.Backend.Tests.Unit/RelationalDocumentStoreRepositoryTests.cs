@@ -466,23 +466,92 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_a_precise_not_implemented_failure_for_query_requests()
+    public async Task It_executes_supported_queries_through_page_keyset_hydration_and_preserves_page_order()
     {
-        var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSet(_schoolResourceInfo),
-            [],
-            totalCount: false
+        var firstDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
+        var secondDocumentUuid = new DocumentUuid(Guid.Parse("eeeeeeee-1111-2222-3333-ffffffffffff"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
         );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("name", "$.name", "Lincoln High", "string")],
+            totalCount: true
+        );
+        var hydratedPage = new HydratedPage(
+            7,
+            [
+                CreateDocumentMetadataRow(firstDocumentUuid, 345L, 91L),
+                CreateDocumentMetadataRow(secondDocumentUuid, 678L, 92L),
+            ],
+            [
+                new HydratedTableRows(
+                    readPlan.Model.Root,
+                    [
+                        [345L, "Lincoln High"],
+                        [678L, "Roosevelt High"],
+                    ]
+                ),
+            ],
+            []
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+        List<RelationalReadMaterializationRequest> capturedReadRequests = [];
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Relational query execution should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                capturedReadRequests.Add(call.GetArgument<RelationalReadMaterializationRequest>(0)!)
+            )
+            .ReturnsLazily(call =>
+            {
+                var request = call.GetArgument<RelationalReadMaterializationRequest>(0)!;
+                return JsonNode.Parse($$"""{"id":"{{request.DocumentMetadata.DocumentUuid}}"}""")!;
+            });
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+
+        var success = (QueryResult.QuerySuccess)result;
+
+        success.TotalCount.Should().Be(7);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
             .Should()
-            .BeEquivalentTo(
-                new QueryResult.QueryFailureNotImplemented(
-                    "Relational query handling is not implemented for resource 'Ed-Fi.School'."
-                )
-            );
+            .Equal(firstDocumentUuid.Value.ToString(), secondDocumentUuid.Value.ToString());
+        capturedKeyset.ParameterValues["name"].Should().Be("Lincoln High");
+        capturedKeyset.ParameterValues["offset"].Should().Be(0L);
+        capturedKeyset.ParameterValues["limit"].Should().Be(25L);
+        capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
+        capturedReadRequests
+            .Select(request => request.DocumentMetadata.DocumentId)
+            .Should()
+            .Equal(345L, 678L);
+        capturedReadRequests
+            .Select(request => request.ReadMode)
+            .Should()
+            .OnlyContain(static mode => mode == RelationalGetRequestReadMode.ExternalResponse);
+        capturedReadRequests
+            .Select(request => request.TableRowsInDependencyOrder)
+            .Should()
+            .OnlyContain(tableRows => ReferenceEquals(tableRows, hydratedPage.TableRowsInDependencyOrder));
     }
 
     [Test]
