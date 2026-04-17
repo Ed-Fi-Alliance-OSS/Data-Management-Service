@@ -88,10 +88,13 @@ internal class ProfileWritePipelineMiddleware(
             LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
         );
 
-        // Resolve the write plan from the mapping set
+        // Resolve the write plan from the mapping set.
+        // Derive the qualified resource name from ProjectSchema/ResourceSchema — both are populated
+        // by ProvideApiSchemaMiddleware / ValidateEndpointMiddleware earlier in the pipeline, whereas
+        // requestInfo.ResourceInfo is not populated until BuildResourceInfoMiddleware runs after this one.
         var qualifiedResourceName = new QualifiedResourceName(
-            requestInfo.ResourceInfo.ProjectName.Value,
-            requestInfo.ResourceInfo.ResourceName.Value
+            requestInfo.ProjectSchema.ProjectName.Value,
+            requestInfo.ResourceSchema.ResourceName.Value
         );
 
         ResourceWritePlan writePlan;
