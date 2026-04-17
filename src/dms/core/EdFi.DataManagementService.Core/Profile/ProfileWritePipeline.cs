@@ -276,6 +276,17 @@ internal static class ProfileWritePipeline
             || (!deferCreatabilityViolations && !creatabilityResult.Failures.IsEmpty)
         )
         {
+            // When creatability is deferred, duplicate-visible-item failures remain the only
+            // immediate blockers. Keeping deferred category-4 failures out of the returned
+            // failure set preserves the validation-classified response path for duplicates.
+            if (deferCreatabilityViolations && !duplicateFailures.IsEmpty)
+            {
+                IEnumerable<ProfileFailure> immediateFailures = duplicateFailures.Select(static failure =>
+                    (ProfileFailure)failure
+                );
+                return ProfileWritePipelineResult.Failure(immediateFailures);
+            }
+
             ImmutableArray<ProfileFailure>.Builder failureBuilder =
                 ImmutableArray.CreateBuilder<ProfileFailure>();
             failureBuilder.AddRange(creatabilityResult.Failures);

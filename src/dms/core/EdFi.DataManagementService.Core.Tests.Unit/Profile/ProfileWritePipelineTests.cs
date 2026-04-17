@@ -793,6 +793,95 @@ public abstract class ProfileWritePipelineTests
     }
 
     // -----------------------------------------------------------------------
+    //  5d. Given_Create_With_Duplicate_Collection_Items_And_Deferred_Root
+    //      Creatability — duplicate validation remains the only immediate failure
+    // -----------------------------------------------------------------------
+
+    [TestFixture]
+    public class Given_Create_With_Duplicate_Collection_Items_And_Deferred_Root_Creatability
+        : ProfileWritePipelineTests
+    {
+        private ProfileWritePipelineResult _result = null!;
+
+        private static ContentTypeDefinition BuildProfileHidingEntryDate() =>
+            new(
+                MemberSelection: MemberSelection.IncludeOnly,
+                Properties: [new PropertyRule("studentReference"), new PropertyRule("schoolReference")],
+                Objects: [],
+                Collections:
+                [
+                    new CollectionRule(
+                        Name: "classPeriods",
+                        MemberSelection: MemberSelection.IncludeOnly,
+                        LogicalSchema: null,
+                        Properties: [new PropertyRule("classPeriodName")],
+                        NestedObjects: null,
+                        NestedCollections: null,
+                        Extensions: null,
+                        ItemFilter: null
+                    ),
+                ],
+                Extensions: []
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode requestBody = JsonNode.Parse(
+                """
+                {
+                    "studentReference": { "studentUniqueId": "S001" },
+                    "schoolReference": { "schoolId": 100 },
+                    "classPeriods": [
+                        { "classPeriodName": "Period1" },
+                        { "classPeriodName": "Period1" }
+                    ]
+                }
+                """
+            )!;
+
+            _result = ProfileWritePipeline.Execute(
+                canonicalizedRequestBody: requestBody,
+                writeContentType: BuildProfileHidingEntryDate(),
+                resolvedContentType: ProfileContentType.Write,
+                scopeCatalog: SharedFixtureScopes,
+                storedDocument: null,
+                isCreate: true,
+                profileName: ProfileName,
+                resourceName: ResourceName,
+                method: Method,
+                operation: Operation,
+                effectiveSchemaRequiredMembersByScope: StandardRequiredMembers,
+                deferCreatabilityViolations: true
+            );
+        }
+
+        [Test]
+        public void It_should_not_succeed()
+        {
+            _result.IsSuccess.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_report_only_duplicate_validation_failures_immediately()
+        {
+            _result
+                .Failures.OfType<DuplicateVisibleCollectionItemCollisionWritableProfileValidationFailure>()
+                .Should()
+                .ContainSingle();
+            _result
+                .Failures.Should()
+                .OnlyContain(f => f.Category == ProfileFailureCategory.WritableProfileValidationFailure);
+        }
+
+        [Test]
+        public void It_should_not_include_creatability_failures_in_the_immediate_failure_set()
+        {
+            _result.Failures.Should().NotContain(f => f is CreatabilityViolationFailure);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  6. Given_Upsert_With_No_Stored_Document — C6 not invoked
     // -----------------------------------------------------------------------
 
