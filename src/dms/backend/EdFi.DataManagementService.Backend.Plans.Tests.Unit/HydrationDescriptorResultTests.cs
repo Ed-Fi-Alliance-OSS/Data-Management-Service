@@ -118,6 +118,79 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
     }
 
     [Test]
+    public async Task It_executes_descriptor_projection_as_part_of_the_single_hydration_batch()
+    {
+        var descriptorPlans = new[]
+        {
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM root_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: "SELECT descriptor rows FROM child_descriptor;",
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: []
+            ),
+        };
+
+        var command = new RecordingDbCommand(
+            HydrationDescriptorResultTestHelper.CreateReader(
+                CreateDocumentMetadataTable(
+                    (
+                        42L,
+                        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                        44L,
+                        45L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                    )
+                ),
+                CreateRootTableRows((42L, 255901)),
+                CreateChildTableRows((100L, 42L, 0, "Springfield")),
+                CreateDescriptorRowsTableWithDescriptorIdFirst(
+                    (301L, "uri://ed-fi.org/SchoolTypeDescriptor#Charter")
+                ),
+                CreateDescriptorRowsTableWithDescriptorIdFirst(
+                    (401L, "uri://ed-fi.org/AddressTypeDescriptor#Home")
+                )
+            )
+        );
+
+        var connection = new RecordingDbConnection(command);
+
+        await HydrationExecutor.ExecuteAsync(
+            connection,
+            BuildTestReadPlan(SqlDialect.Pgsql, descriptorPlans),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+
+        command.ExecuteReaderCount.Should().Be(1);
+
+        var commandText = command.CommandText;
+        var rootTableIndex = commandText.IndexOf("SELECT root columns FROM root;", StringComparison.Ordinal);
+        var childTableIndex = commandText.IndexOf(
+            "SELECT child columns FROM child;",
+            StringComparison.Ordinal
+        );
+        var rootDescriptorIndex = commandText.IndexOf(
+            "SELECT descriptor rows FROM root_descriptor;",
+            StringComparison.Ordinal
+        );
+        var childDescriptorIndex = commandText.IndexOf(
+            "SELECT descriptor rows FROM child_descriptor;",
+            StringComparison.Ordinal
+        );
+
+        rootTableIndex.Should().BePositive();
+        childTableIndex.Should().BeGreaterThan(rootTableIndex);
+        rootDescriptorIndex.Should().BeGreaterThan(childTableIndex);
+        childDescriptorIndex.Should().BeGreaterThan(rootDescriptorIndex);
+    }
+
+    [Test]
     public async Task It_can_skip_descriptor_result_sets_when_projection_is_disabled()
     {
         var descriptorPlans = new[]
@@ -289,6 +362,8 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
     private readonly DbDataReader _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     private readonly RecordingDbParameterCollection _parameters = [];
 
+    public int ExecuteReaderCount { get; private set; }
+
     [AllowNull]
     public override string CommandText { get; set; } = string.Empty;
 
@@ -322,7 +397,11 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
 
     protected override DbParameter CreateDbParameter() => new RecordingDbParameter();
 
-    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => _reader;
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+    {
+        ExecuteReaderCount++;
+        return _reader;
+    }
 
     protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
         CommandBehavior behavior,
@@ -330,6 +409,7 @@ internal sealed class RecordingDbCommand(DbDataReader reader) : DbCommand
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ExecuteReaderCount++;
         return Task.FromResult(_reader);
     }
 }

@@ -3937,6 +3937,214 @@ public class Given_DocumentReconstituter_With_Empty_Collection_Extension_Scope
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_Descriptor_On_Collection_Item
+{
+    private JsonNode _result = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _rootTableName = new(_schema, "School");
+    private static readonly DbTableName _addressTableName = new(_schema, "SchoolAddress");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _addressesScope = new(
+        "$.addresses[*]",
+        [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
+    );
+
+    private static readonly JsonPathExpression _schoolIdPath = new(
+        "$.schoolId",
+        [new JsonPathSegment.Property("schoolId")]
+    );
+
+    private static readonly JsonPathExpression _cityPath = new(
+        "$.addresses[*].city",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("city"),
+        ]
+    );
+
+    private static readonly JsonPathExpression _addressTypeDescriptorPath = new(
+        "$.addresses[*].addressTypeDescriptor",
+        [
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("addressTypeDescriptor"),
+        ]
+    );
+
+    private static readonly QualifiedResourceName _addressTypeDescriptorResource = new(
+        "Ed-Fi",
+        "AddressTypeDescriptor"
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: _rootTableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    _schoolIdPath,
+                    null
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+
+        var addressTableModel = new DbTableModel(
+            Table: _addressTableName,
+            JsonScope: _addressesScope,
+            Key: new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Ordinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("City"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    false,
+                    _cityPath,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AddressType_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    true,
+                    null,
+                    _addressTypeDescriptorResource
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
+
+        var descriptorSource = new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: _addressTypeDescriptorPath,
+            Table: _addressTableName,
+            FkColumn: new DbColumnName("AddressType_DescriptorId"),
+            DescriptorResource: _addressTypeDescriptorResource
+        );
+
+        object?[] rootRow = [1L, 255901];
+        object?[] addressRow = [10L, 1L, 0, "Grand Bend", 100L];
+
+        _result = DocumentReconstituter.Reconstitute(
+            documentId: 1L,
+            tableRowsInDependencyOrder:
+            [
+                new HydratedTableRows(rootTableModel, [rootRow]),
+                new HydratedTableRows(addressTableModel, [addressRow]),
+            ],
+            referenceProjectionPlans: [],
+            descriptorProjectionSources: [descriptorSource],
+            descriptorUriLookup: new Dictionary<long, string>
+            {
+                [100L] = "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+            }
+        );
+    }
+
+    [Test]
+    public void It_should_return_a_json_object()
+    {
+        _result.Should().BeOfType<JsonObject>();
+    }
+
+    [Test]
+    public void It_should_emit_addresses_array_with_one_item()
+    {
+        _result["addresses"]!.AsArray().Should().HaveCount(1);
+    }
+
+    [Test]
+    public void It_should_emit_city_on_the_address_item()
+    {
+        _result["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Grand Bend");
+    }
+
+    [Test]
+    public void It_should_emit_addressTypeDescriptor_uri_on_the_collection_item()
+    {
+        _result["addresses"]![0]!["addressTypeDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be("uri://ed-fi.org/AddressTypeDescriptor#Physical");
+    }
+
+    [Test]
+    public void It_should_not_emit_the_descriptor_fk_column_on_the_collection_item()
+    {
+        _result["addresses"]![0]!["AddressType_DescriptorId"].Should().BeNull();
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_PropertyOrderNode_Empty_Sentinel
 {
     private Exception _exception = null!;
