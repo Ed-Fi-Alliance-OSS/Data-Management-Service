@@ -1736,9 +1736,9 @@ public class Given_Default_Relational_Write_Executor
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         upsertResult
             .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Contain("not creatable");
+            .BeOfType<UpsertResult.UpsertFailureProfileDataPolicy>()
+            .Which.ProfileName.Should()
+            .Be("test-write-profile");
     }
 
     [Test]

@@ -161,7 +161,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                 )
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildProfileCreatabilityRejectionResult(request.OperationKind);
+                    return BuildProfileCreatabilityRejectionResult(
+                        request.OperationKind,
+                        profileWriteContext.ProfileName
+                    );
                 }
 
                 // Step 2: Stored-state projection (existing-document only)
@@ -530,22 +533,19 @@ internal sealed class DefaultRelationalWriteExecutor(
     }
 
     private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(
-        RelationalWriteOperationKind operationKind
-    )
-    {
-        const string message =
-            "Profile-constrained create rejected: root resource is not creatable under the writable profile.";
-        return operationKind switch
+        RelationalWriteOperationKind operationKind,
+        string profileName
+    ) =>
+        operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(message)
+                new UpsertResult.UpsertFailureProfileDataPolicy(profileName)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(message)
+                new UpdateResult.UpdateFailureProfileDataPolicy(profileName)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
-    }
 
     private static RelationalWriteExecutorResult BuildProfileContractMismatchResult(
         RelationalWriteOperationKind operationKind,
