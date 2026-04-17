@@ -3378,6 +3378,8 @@ public class Given_Default_Relational_Write_Executor
 
             public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
 
+            public IRelationalCommandExecutor CommandExecutor => throw new NotSupportedException();
+
             public Task CommitAsync(CancellationToken cancellationToken = default) =>
                 throw new NotSupportedException();
 
@@ -3730,6 +3732,8 @@ public class Given_Default_Relational_Write_Executor
             Commands.Add(command);
             return new RecordingDbCommand(ScalarResultToReturn);
         }
+
+        public IRelationalCommandExecutor CommandExecutor => throw new NotSupportedException();
 
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {

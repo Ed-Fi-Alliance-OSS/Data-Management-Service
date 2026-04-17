@@ -2136,6 +2136,8 @@ public class Given_Relational_Write_No_Profile_Persister
             return new RecordingDbCommand(response);
         }
 
+        public IRelationalCommandExecutor CommandExecutor => throw new NotSupportedException();
+
         public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

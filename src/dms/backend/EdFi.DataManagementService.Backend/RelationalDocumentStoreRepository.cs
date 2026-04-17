@@ -358,12 +358,40 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        // Commit runs outside the catch ladder: a commit failure must not re-enter Rollback
-        // against a transaction whose commit already began (the session would throw
-        // InvalidOperationException). Any DbException here escapes to the caller.
         if (outcome is DeleteResult.DeleteSuccess)
         {
-            await writeSession.CommitAsync().ConfigureAwait(false);
+            try
+            {
+                await writeSession.CommitAsync().ConfigureAwait(false);
+            }
+            catch (DbException ex) when (_writeExceptionClassifier.IsTransientFailure(ex))
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Transient conflict committing relational DELETE for {DocumentUuid} - {TraceId}",
+                    relationalDeleteRequest.DocumentUuid.Value,
+                    relationalDeleteRequest.TraceId.Value
+                );
+
+                // Commit-phase failures leave the transaction in an ambiguous state: do not call
+                // RollbackAsync (the session would throw InvalidOperationException if the commit
+                // already began). The `await using writeSession` disposes the DbTransaction, which
+                // rolls back any still-pending state.
+                return new DeleteResult.DeleteFailureWriteConflict();
+            }
+            catch (DbException ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Database error committing relational DELETE for {DocumentUuid} - {TraceId}",
+                    relationalDeleteRequest.DocumentUuid.Value,
+                    relationalDeleteRequest.TraceId.Value
+                );
+
+                return new DeleteResult.UnknownFailure(
+                    "An unexpected error occurred while processing the delete request."
+                );
+            }
         }
         else
         {

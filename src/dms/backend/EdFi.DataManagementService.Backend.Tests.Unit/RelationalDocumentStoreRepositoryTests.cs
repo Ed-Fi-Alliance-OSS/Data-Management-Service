@@ -2085,6 +2085,42 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_delete_failure_write_conflict_when_commit_throws_a_transient_failure()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteOutcome(deleted: true);
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException("deadlock on commit");
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_unknown_failure_when_commit_throws_a_non_transient_database_error()
+    {
+        ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
+        ConfigureDeleteOutcome(deleted: true);
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException("boom on commit");
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(CreateSupportedMappingSet(_schoolResourceInfo));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.UnknownFailure>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_rolls_back_the_write_session_when_the_document_uuid_is_not_resolvable()
     {
         // Default fake command executor returns null for the UUID lookup.
@@ -2501,6 +2537,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public int DisposeCallCount { get; private set; }
 
+        public Exception? CommitExceptionToThrow { get; set; }
+
         public DbCommand CreateCommand(RelationalCommand command) =>
             throw new InvalidOperationException(
                 "RecordingWriteSession does not expose DbCommand; callers should use CommandExecutor."
@@ -2509,6 +2547,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
             CommitCallCount++;
+
+            if (CommitExceptionToThrow is not null)
+            {
+                throw CommitExceptionToThrow;
+            }
+
             return Task.CompletedTask;
         }
 

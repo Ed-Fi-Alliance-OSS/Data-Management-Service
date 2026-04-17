@@ -20,8 +20,7 @@ public interface IRelationalWriteSession : IAsyncDisposable
 
     DbCommand CreateCommand(RelationalCommand command);
 
-    IRelationalCommandExecutor CommandExecutor =>
-        new SessionRelationalCommandExecutor(Connection, Transaction);
+    IRelationalCommandExecutor CommandExecutor { get; }
 
     Task CommitAsync(CancellationToken cancellationToken = default);
 

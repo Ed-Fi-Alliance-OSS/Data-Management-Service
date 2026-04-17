@@ -362,6 +362,8 @@ ODS requires 4 roundtrips for the same operation, and more if the resource has c
 
 ODS requires 3 roundtrips for the same operation.
 
+> **Interim behavior:** DMS-1010 ships only Roundtrip #2's delete statement against `dms.Document`. The authorization check (Roundtrip #2) and the `If-Match` / ETag validation step in Roundtrip #1 are staged for follow-up work under epic DMS-1009 and are gated behind the `UseRelationalBackend` feature flag until then. Production DELETE traffic continues through the `Old.Postgresql` path, which still enforces both checks.
+
 #### GET-by-id
 
 - Roundtrip #1

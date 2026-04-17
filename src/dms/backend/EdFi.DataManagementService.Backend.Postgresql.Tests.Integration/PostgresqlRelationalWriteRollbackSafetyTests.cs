@@ -151,6 +151,8 @@ file sealed class FailOnSchoolAddressInsertRelationalWriteSession(
         return _innerSession.CreateCommand(command);
     }
 
+    public IRelationalCommandExecutor CommandExecutor => _innerSession.CommandExecutor;
+
     public Task CommitAsync(CancellationToken cancellationToken = default) =>
         _innerSession.CommitAsync(cancellationToken);
 
