@@ -84,6 +84,7 @@ function Invoke-Api {
 
 function Get-HttpErrorResponse {
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param (
         [Parameter(Mandatory = $true)]
         [System.Management.Automation.ErrorRecord]$ErrorRecord
@@ -112,6 +113,7 @@ function Get-HttpErrorResponse {
 
 function Test-IsDuplicateCmsClientRegistrationError {
     [CmdletBinding()]
+    [OutputType([bool])]
     param (
         [Parameter(Mandatory = $true)]
         [System.Management.Automation.ErrorRecord]$ErrorRecord
