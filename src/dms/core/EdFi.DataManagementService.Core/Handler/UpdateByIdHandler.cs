@@ -178,6 +178,14 @@ internal class UpdateByIdHandler(
                 ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
                 requestInfo.FrontendRequest.TraceId
             ),
+            UpdateFailureProfileDataPolicy failure => new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForDataPolicyEnforced(
+                    failure.ProfileName,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

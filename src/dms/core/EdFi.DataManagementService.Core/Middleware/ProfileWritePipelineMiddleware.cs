@@ -29,7 +29,9 @@ internal class ProfileWritePipelineMiddleware(
     ILogger<ProfileWritePipelineMiddleware> logger
 ) : IPipelineStep
 {
-    // Empty schema-required members for now (will be populated in future work)
+    // Used when isCreate is false (the update branch and the stored-state invoker, which always
+    // runs with isCreate: false). CreatabilityAnalyzer short-circuits on !isCreatingNewInstance
+    // before consulting this map, so an empty dictionary is safe for non-create paths.
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptySchemaRequiredMembers =
         new Dictionary<string, IReadOnlyList<string>>();
 
@@ -88,10 +90,13 @@ internal class ProfileWritePipelineMiddleware(
             LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
         );
 
-        // Resolve the write plan from the mapping set
+        // Resolve the write plan from the mapping set.
+        // Derive the qualified resource name from ProjectSchema/ResourceSchema — both are populated
+        // by ProvideApiSchemaMiddleware / ValidateEndpointMiddleware earlier in the pipeline, whereas
+        // requestInfo.ResourceInfo is not populated until BuildResourceInfoMiddleware runs after this one.
         var qualifiedResourceName = new QualifiedResourceName(
-            requestInfo.ResourceInfo.ProjectName.Value,
-            requestInfo.ResourceInfo.ResourceName.Value
+            requestInfo.ProjectSchema.ProjectName.Value,
+            requestInfo.ResourceSchema.ResourceName.Value
         );
 
         ResourceWritePlan writePlan;
@@ -120,6 +125,16 @@ internal class ProfileWritePipelineMiddleware(
         var inlinedScopes = ContentTypeScopeDiscovery.DiscoverInlinedScopes(writeContentType, tableScopeSet);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, inlinedScopes);
 
+        // Slice 1 only enforces root-level creatability, so only the "$" entry is required.
+        // RequiredFieldsForInsert comes from ResourceSchema.jsonSchemaForInsert.required and is
+        // populated by ProvideApiSchemaMiddleware earlier in the pipeline.
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope = isCreate
+            ? new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = requestInfo.ResourceSchema.RequiredFieldsForInsert,
+            }
+            : EmptySchemaRequiredMembers;
+
         // Execute the profile write pipeline (request-side only, no stored document yet).
         // This middleware only runs for POST/PUT with a writable profile (guarded above),
         // so the resolved content type is always Write.
@@ -134,7 +149,8 @@ internal class ProfileWritePipelineMiddleware(
             resourceName: resourceName,
             method: method,
             operation: operation,
-            effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+            effectiveSchemaRequiredMembersByScope: effectiveSchemaRequiredMembersByScope,
+            deferCreatabilityViolations: true
         );
 
         // Handle failures
@@ -223,7 +239,8 @@ internal class ProfileWritePipelineMiddleware(
                 resourceName: resourceName,
                 method: method,
                 operation: operation,
-                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers
+                effectiveSchemaRequiredMembersByScope: EmptySchemaRequiredMembers,
+                deferCreatabilityViolations: true
             );
 
             if (result.Context is not null)

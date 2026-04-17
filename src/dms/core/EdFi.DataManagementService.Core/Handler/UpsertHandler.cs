@@ -174,6 +174,11 @@ internal class UpsertHandler(
                 ),
                 Headers: []
             ),
+            UpsertFailureProfileDataPolicy failure => new(
+                StatusCode: 400,
+                Body: ForDataPolicyEnforced(failure.ProfileName, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             UnknownFailure failure => new(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

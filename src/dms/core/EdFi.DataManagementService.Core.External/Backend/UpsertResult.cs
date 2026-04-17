@@ -78,6 +78,12 @@ public record UpsertResult
     public record UpsertFailureImmutableIdentity(string FailureMessage) : UpsertResult();
 
     /// <summary>
+    /// A failure because a writable profile's data policy rejected the request
+    /// </summary>
+    /// <param name="ProfileName">The profile enforcing the rejection</param>
+    public record UpsertFailureProfileDataPolicy(string ProfileName) : UpsertResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

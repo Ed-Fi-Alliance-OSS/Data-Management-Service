@@ -34,6 +34,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
     private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+    private RecordingRelationalReadMaterializer _readMaterializer = null!;
     private DefaultRelationalWriteExecutor _sut = null!;
 
     [SetUp]
@@ -50,6 +51,7 @@ public class Given_Default_Relational_Write_Executor
         _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
         _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
         _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+        _readMaterializer = new RecordingRelationalReadMaterializer();
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
             _referenceResolverAdapterFactory,
@@ -61,7 +63,8 @@ public class Given_Default_Relational_Write_Executor
             _noProfileMergeSynthesizer,
             _noProfilePersister,
             _writeExceptionClassifier,
-            _writeConstraintResolver
+            _writeConstraintResolver,
+            _readMaterializer
         );
     }
 
@@ -231,7 +234,8 @@ public class Given_Default_Relational_Write_Executor
                         [345L, 255901, "Lincoln High"],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -633,7 +637,8 @@ public class Given_Default_Relational_Write_Executor
                         ],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _sut = new DefaultRelationalWriteExecutor(
             _writeSessionFactory,
@@ -646,7 +651,8 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteNoProfileMergeSynthesizer(),
             _noProfilePersister,
             _writeExceptionClassifier,
-            _writeConstraintResolver
+            _writeConstraintResolver,
+            _readMaterializer
         );
 
         var result = await _sut.ExecuteAsync(request);
@@ -757,7 +763,8 @@ public class Given_Default_Relational_Write_Executor
                             [345L, 255901, "Lincoln High"],
                         ]
                     ),
-                ]
+                ],
+                []
             )
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
@@ -1483,7 +1490,8 @@ public class Given_Default_Relational_Write_Executor
                         [345L, 255901, "Lincoln High"],
                     ]
                 ),
-            ]
+            ],
+            []
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -1625,7 +1633,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_fences_profiled_writes_after_flattening_before_merge_persist()
+    public async Task It_fences_profiled_create_new_with_slice_fence_before_flatten()
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
@@ -1658,13 +1666,18 @@ public class Given_Default_Relational_Write_Executor
 
         var result = await _sut.ExecuteAsync(request);
 
-        _writeFlattener.FlattenCallCount.Should().Be(1, "flattener must be called for profiled writes");
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "flattener must not be called — profile decision runs before flatten");
         _noProfileMergeSynthesizer
             .SynthesizeCallCount.Should()
             .Be(0, "no-profile merge must not run when profile context is present");
         _noProfilePersister
             .TryPersistCallCount.Should()
             .Be(0, "no-profile persister must not run when profile context is present");
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(0, "materializer must not be called for create-new");
         _writeSessionFactory
             .Session.RollbackCallCount.Should()
             .Be(1, "session must be rolled back when profile persist is fenced");
@@ -1677,7 +1690,217 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpsertResult.UnknownFailure>()
             .Which.FailureMessage.Should()
-            .Contain("DMS-1124");
+            .Contain("RootTableOnly");
+    }
+
+    [Test]
+    public async Task It_rejects_profiled_create_new_when_root_is_not_creatable()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: false,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: false
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        {
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener.FlattenCallCount.Should().Be(0, "flattener must not be called");
+        _readMaterializer.MaterializeCallCount.Should().Be(0, "materializer must not be called");
+        _currentStateLoader.LoadCallCount.Should().Be(0, "current-state must not be loaded for create-new");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureProfileDataPolicy>()
+            .Which.ProfileName.Should()
+            .Be("test-write-profile");
+    }
+
+    [Test]
+    public async Task It_fences_profiled_put_existing_document_with_stored_state_projection()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+
+        var storedStateProjectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
+        var expectedAppliedWriteContext = new ProfileAppliedWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            VisibleStoredBody: JsonNode.Parse("""{"schoolId":255901}""")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        A.CallTo(() =>
+                storedStateProjectionInvoker.ProjectStoredState(
+                    A<JsonNode>._,
+                    A<ProfileAppliedWriteRequest>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .Returns(expectedAppliedWriteContext);
+
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: storedStateProjectionInvoker
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody) with
+        {
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(1, "materializer must be called for existing-document reconstitution");
+        A.CallTo(() =>
+                storedStateProjectionInvoker.ProjectStoredState(
+                    A<JsonNode>._,
+                    A<ProfileAppliedWriteRequest>._,
+                    A<IReadOnlyList<CompiledScopeDescriptor>>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "flattener must not be called — profile decision runs before flatten");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _currentStateLoader.CapturedRequest!.IncludeDescriptorProjection.Should().BeTrue();
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+        updateResult
+            .Result.Should()
+            .BeOfType<UpdateResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("RootTableOnly");
+    }
+
+    [Test]
+    public async Task It_rejects_profiled_create_new_with_contract_mismatch()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$.unknownScope", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        {
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var failureMessage = upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Subject.FailureMessage;
+        failureMessage.Should().Contain("contract mismatch");
+        failureMessage.Should().NotContain("not yet supported");
+    }
+
+    [Test]
+    public async Task It_does_not_invoke_materializer_for_no_profile_writes()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>();
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(0, "materializer must not be called when no profile context is present");
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
@@ -2291,7 +2514,8 @@ public class Given_Default_Relational_Write_Executor
                                     [345L, 255901, "Lincoln High"],
                                 ]
                             ),
-                        ]
+                        ],
+                        []
                     )
             );
         }
@@ -2459,7 +2683,8 @@ public class Given_Default_Relational_Write_Executor
                         [targetContext.DocumentId, 255901, schoolName],
                     ]
                 ),
-            ]
+            ],
+            []
         );
     }
 
@@ -2752,6 +2977,20 @@ public class Given_Default_Relational_Write_Executor
             }
 
             return ResolutionToReturn;
+        }
+    }
+
+    private sealed class RecordingRelationalReadMaterializer : IRelationalReadMaterializer
+    {
+        public int MaterializeCallCount { get; private set; }
+        public RelationalReadMaterializationRequest? CapturedRequest { get; private set; }
+        public JsonNode ResultToReturn { get; set; } = JsonNode.Parse("""{"reconstituted":true}""")!;
+
+        public JsonNode Materialize(RelationalReadMaterializationRequest request)
+        {
+            MaterializeCallCount++;
+            CapturedRequest = request;
+            return ResultToReturn;
         }
     }
 

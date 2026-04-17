@@ -28,6 +28,34 @@ internal static class ProfileWriteContractValidator
     )
     {
         var failures = new List<ProfileFailure>();
+
+        // Phase 1: structural duplicate detection across request streams.
+        // If any duplicates are found, emit one cluster failure per duplicate
+        // and short-circuit — skip phase 2 entirely.
+        DetectDuplicateScopeAddresses(
+            request.RequestScopeStates.Select(s => s.Address),
+            streamName: "RequestScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        DetectDuplicateCollectionRowAddresses(
+            request.VisibleRequestCollectionItems.Select(i => i.Address),
+            streamName: "VisibleRequestCollectionItems",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        if (failures.Count > 0)
+        {
+            return [.. failures];
+        }
+
+        // Phase 2: per-entry validation.
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
         ValidateRequestContractCore(
             request,
@@ -92,9 +120,52 @@ internal static class ProfileWriteContractValidator
     )
     {
         var failures = new List<ProfileFailure>();
+
+        // Phase 1: structural duplicate detection across all four streams.
+        DetectDuplicateScopeAddresses(
+            context.Request.RequestScopeStates.Select(s => s.Address),
+            streamName: "RequestScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        DetectDuplicateCollectionRowAddresses(
+            context.Request.VisibleRequestCollectionItems.Select(i => i.Address),
+            streamName: "VisibleRequestCollectionItems",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        DetectDuplicateScopeAddresses(
+            context.StoredScopeStates.Select(s => s.Address),
+            streamName: "StoredScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        DetectDuplicateCollectionRowAddresses(
+            context.VisibleStoredCollectionRows.Select(r => r.Address),
+            streamName: "VisibleStoredCollectionRows",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        if (failures.Count > 0)
+        {
+            return [.. failures];
+        }
+
+        // Phase 2: per-entry validation (existing behavior).
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
 
-        // Validate request side (reuse the already-built catalog lookup)
         ValidateRequestContractCore(
             context.Request,
             catalogByJsonScope,
@@ -105,7 +176,6 @@ internal static class ProfileWriteContractValidator
             failures
         );
 
-        // Validate stored scope states
         foreach (var storedScopeState in context.StoredScopeStates)
         {
             ValidateScopeInstanceAddress(
@@ -141,7 +211,6 @@ internal static class ProfileWriteContractValidator
             }
         }
 
-        // Validate visible stored collection rows
         foreach (var collectionRow in context.VisibleStoredCollectionRows)
         {
             ValidateCollectionRowAddress(
@@ -236,6 +305,23 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
+        // Kind check: a ScopeInstanceAddress must target Root or NonCollection.
+        if (compiledScope.ScopeKind == ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.ScopeKindMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    emittedAddressKind: address.JsonScope == "$" ? ScopeKind.Root : ScopeKind.NonCollection,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
         if (!AncestorChainMatches(address.AncestorCollectionInstances, compiledScope))
         {
             failures.Add(
@@ -274,6 +360,7 @@ internal static class ProfileWriteContractValidator
         List<ProfileFailure> failures
     )
     {
+        // 1. Catalog lookup
         if (!catalogByJsonScope.TryGetValue(address.JsonScope, out var compiledScope))
         {
             failures.Add(
@@ -289,7 +376,24 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
-        // Validate ParentAddress.JsonScope is a known scope
+        // 2. Kind check
+        if (compiledScope.ScopeKind != ScopeKind.Collection)
+        {
+            failures.Add(
+                ProfileFailures.ScopeKindMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    emittedAddressKind: ScopeKind.Collection,
+                    compiledScope,
+                    address
+                )
+            );
+            return;
+        }
+
+        // 3. Parent-in-catalog
         if (!catalogByJsonScope.ContainsKey(address.ParentAddress.JsonScope))
         {
             failures.Add(
@@ -305,6 +409,24 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
+        // 4. Immediate-parent equality
+        if (address.ParentAddress.JsonScope != compiledScope.ImmediateParentJsonScope)
+        {
+            failures.Add(
+                ProfileFailures.ParentScopeMismatch(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    compiledScope,
+                    address,
+                    expectedParentJsonScope: compiledScope.ImmediateParentJsonScope
+                )
+            );
+            return;
+        }
+
+        // 5. Ancestor chain
         if (!AncestorChainMatches(address.ParentAddress.AncestorCollectionInstances, compiledScope))
         {
             failures.Add(
@@ -320,7 +442,7 @@ internal static class ProfileWriteContractValidator
             return;
         }
 
-        // Validate semantic identity part count and paths for this collection row
+        // 6. Semantic identity
         ValidateSemanticIdentity(
             address.SemanticIdentityInOrder,
             compiledScope,
@@ -332,7 +454,7 @@ internal static class ProfileWriteContractValidator
             failures
         );
 
-        // Validate semantic identity on each ancestor collection instance
+        // 7. Ancestor semantic identity
         ValidateAncestorSemanticIdentity(
             address.ParentAddress.AncestorCollectionInstances,
             catalogByJsonScope,
@@ -485,5 +607,112 @@ internal static class ProfileWriteContractValidator
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Emits one <see cref="DuplicateScopeAddressCoreBackendContractMismatchFailure"/>
+    /// per duplicate cluster in a <see cref="ScopeInstanceAddress"/> stream. Determinism:
+    /// failures are emitted in the order duplicates are first detected.
+    /// </summary>
+    private static void DetectDuplicateScopeAddresses(
+        IEnumerable<ScopeInstanceAddress> addresses,
+        string streamName,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var counts = new Dictionary<ScopeInstanceAddress, int>(ScopeInstanceAddressComparer.Instance);
+        var firstSeen = new Dictionary<ScopeInstanceAddress, ScopeInstanceAddress>(
+            ScopeInstanceAddressComparer.Instance
+        );
+        var emitOrder = new List<ScopeInstanceAddress>();
+
+        foreach (var address in addresses)
+        {
+            if (counts.TryGetValue(address, out var existing))
+            {
+                counts[address] = existing + 1;
+                if (existing == 1)
+                {
+                    emitOrder.Add(firstSeen[address]);
+                }
+            }
+            else
+            {
+                counts[address] = 1;
+                firstSeen[address] = address;
+            }
+        }
+
+        foreach (var duplicateAddress in emitOrder)
+        {
+            failures.Add(
+                ProfileFailures.DuplicateScopeAddress(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    streamName,
+                    counts[duplicateAddress],
+                    duplicateAddress
+                )
+            );
+        }
+    }
+
+    /// <summary>
+    /// Emits one <see cref="DuplicateScopeAddressCoreBackendContractMismatchFailure"/>
+    /// per duplicate cluster in a <see cref="CollectionRowAddress"/> stream.
+    /// </summary>
+    private static void DetectDuplicateCollectionRowAddresses(
+        IEnumerable<CollectionRowAddress> addresses,
+        string streamName,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var counts = new Dictionary<CollectionRowAddress, int>(CollectionRowAddressComparer.Instance);
+        var firstSeen = new Dictionary<CollectionRowAddress, CollectionRowAddress>(
+            CollectionRowAddressComparer.Instance
+        );
+        var emitOrder = new List<CollectionRowAddress>();
+
+        foreach (var address in addresses)
+        {
+            if (counts.TryGetValue(address, out var existing))
+            {
+                counts[address] = existing + 1;
+                if (existing == 1)
+                {
+                    emitOrder.Add(firstSeen[address]);
+                }
+            }
+            else
+            {
+                counts[address] = 1;
+                firstSeen[address] = address;
+            }
+        }
+
+        foreach (var duplicateAddress in emitOrder)
+        {
+            failures.Add(
+                ProfileFailures.DuplicateScopeAddress(
+                    profileName,
+                    resourceName,
+                    method,
+                    operation,
+                    streamName,
+                    counts[duplicateAddress],
+                    duplicateAddress
+                )
+            );
+        }
     }
 }
