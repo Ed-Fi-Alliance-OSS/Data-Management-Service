@@ -504,7 +504,15 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the materialized `_etag/_lastModifiedDate` alongside the tracked representation stamp, and cache reads should validate freshness by comparing that stamp to the current `dms.Document.ContentVersion`/`ContentLastModifiedAt` (see `reference/design/backend-redesign/design-docs/update-tracking.md`).
+Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the materialized `_etag/_lastModifiedDate` alongside the tracked representation stamp, and cache reads should validate freshness by comparing that stamp against all three conditions:
+
+```
+ContentVersion == cached
+AND ContentLastModifiedAt == cached
+AND ResourceLinksFlag == cached
+```
+
+`ContentVersion` and `ContentLastModifiedAt` detect document mutations. `ResourceLinksFlag` records the value of the `DataManagement:ResourceLinks:Enabled` feature flag at the time the row was materialized; a flip of the serving flag renders any cached row with a mismatched `ResourceLinksFlag` stale, causing the serving path to re-materialize the document with the correct shape. For the full flag-flip invalidation design and operational tradeoffs see `reference/design/backend-redesign/design-docs/link-injection.md` §Cache and Etag Interaction.
 
 Denormalized resource naming:
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
@@ -523,6 +531,7 @@ CREATE TABLE dms.DocumentCache (
     Etag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
+    ResourceLinksFlag boolean NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
@@ -544,6 +553,7 @@ CREATE TABLE dms.DocumentCache (
     Etag nvarchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
+    ResourceLinksFlag bit NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)

@@ -219,6 +219,19 @@ The DDL generator must emit document-reference columns and constraints that enab
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
   - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
 
+**Link injection and DDL (V1 note)**
+
+V1 link injection adds no DDL. The per-page `dms.Document` auxiliary lookup that resolves `DocumentUuid`
+at read time reuses the existing `..._DocumentId` FK columns defined above; no new columns are required.
+The `Discriminator` used for abstract reference resolution is already present in the
+`{schema}.{AbstractResource}Identity` tables defined in this document; it adds no new DDL either. See
+[link-injection.md §Abstract Reference Resolution](link-injection.md#abstract-reference-resolution) for
+the normative description of how `Discriminator` is read at query time. The opt-in future optimization
+described in
+[link-injection.md §Future Optimization: Write-Time Stamping](link-injection.md#future-optimization-write-time-stamping)
+would add a `..._DocumentUuid uuid NULL` column per reference site, but this column is **not emitted by
+default** and is out of scope for V1 DDL generation.
+
 **Descriptor foreign keys (required)**
 
 Descriptor endpoints are stored as `DescriptorFk` columns (`..._DescriptorId`) referencing `dms.Descriptor(DocumentId)`.

@@ -1349,6 +1349,18 @@ Notes:
 - Repeated `ReferenceIdentityBinding.ReferenceJsonPath` values are allowed only within one
   `DocumentReferenceBinding` and represent one flattened reference field mapped to multiple local columns.
 
+Link injection extensions: `DocumentReferenceBinding` as defined above covers the `..._DocumentId` FK and
+identity-field bindings only. Link injection adds four further plan-time fields to this record
+(`IsAbstractTarget`, `DiscriminatorBinding`, `DocumentUuidBinding`, `LinkEndpointTemplate`). For abstract
+references, a `Discriminator` projection is sourced via a left-join against
+`{schema}.{AbstractResource}Identity` alongside the `..._DocumentId` FK at read time; this is the
+normative V1 mechanism for resolving `rel` and `href` on abstract references. See
+[link-injection.md §Compiled Read-Plan Extensions](link-injection.md#compiled-read-plan-extensions) and
+[link-injection.md §Abstract Reference Resolution](link-injection.md#abstract-reference-resolution) for
+the authoritative definitions. An opt-in `..._DocumentUuid` stamped-column extension (not emitted by
+default in V1) is documented in
+[link-injection.md §Future Optimization: Write-Time Stamping](link-injection.md#future-optimization-write-time-stamping).
+
 ### 7.4 Write and read plans (plan layer)
 
 The plan layer is compiled from the shape model + SQL dialect + runtime conventions.
