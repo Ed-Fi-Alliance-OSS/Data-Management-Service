@@ -7,8 +7,10 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
 using JsonValue = System.Text.Json.Nodes.JsonValue;
 
@@ -25,7 +27,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
     IRelationalWriteNoProfilePersister noProfilePersister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
-    IRelationalWriteConstraintResolver writeConstraintResolver
+    IRelationalWriteConstraintResolver writeConstraintResolver,
+    IRelationalReadMaterializer readMaterializer
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -62,6 +65,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteConstraintResolver _writeConstraintResolver =
         writeConstraintResolver ?? throw new ArgumentNullException(nameof(writeConstraintResolver));
+
+    private readonly IRelationalReadMaterializer _readMaterializer =
+        readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
         RelationalWriteExecutorRequest request,
@@ -143,6 +149,109 @@ internal sealed class DefaultRelationalWriteExecutor(
                 currentState = inSessionTargetResolution.CurrentState;
             }
 
+            // Profile decision sequence — runs before flattening
+            if (request.ProfileWriteContext is not null)
+            {
+                var profileWriteContext = request.ProfileWriteContext;
+
+                // Step 1: Root creatability rejection (create-new only)
+                if (
+                    targetContext is RelationalWriteTargetContext.CreateNew
+                    && !profileWriteContext.Request.RootResourceCreatable
+                )
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileCreatabilityRejectionResult(
+                        request.OperationKind,
+                        profileWriteContext.ProfileName
+                    );
+                }
+
+                // Step 2: Stored-state projection (existing-document only)
+                ProfileAppliedWriteContext? profileAppliedWriteContext = null;
+                if (
+                    targetContext is RelationalWriteTargetContext.ExistingDocument
+                    && currentState is not null
+                )
+                {
+                    var reconstitutedDocument = _readMaterializer.Materialize(
+                        new RelationalReadMaterializationRequest(
+                            request.ExistingDocumentReadPlan!,
+                            currentState.DocumentMetadata,
+                            currentState.TableRowsInDependencyOrder,
+                            currentState.DescriptorRowsInPlanOrder,
+                            RelationalGetRequestReadMode.StoredDocument
+                        )
+                    );
+
+                    profileAppliedWriteContext =
+                        profileWriteContext.StoredStateProjectionInvoker.ProjectStoredState(
+                            reconstitutedDocument,
+                            profileWriteContext.Request,
+                            profileWriteContext.CompiledScopeCatalog
+                        );
+                }
+
+                // Step 3: Contract validation
+                var httpMethod = request.OperationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT";
+                var contractValidationFailures = profileAppliedWriteContext is not null
+                    ? ProfileWriteContractValidator.ValidateWriteContext(
+                        profileAppliedWriteContext,
+                        profileWriteContext.CompiledScopeCatalog,
+                        profileWriteContext.ProfileName,
+                        request.WritePlan.Model.Resource.ResourceName,
+                        httpMethod,
+                        "write"
+                    )
+                    : ProfileWriteContractValidator.ValidateRequestContract(
+                        profileWriteContext.Request,
+                        profileWriteContext.CompiledScopeCatalog,
+                        profileWriteContext.ProfileName,
+                        request.WritePlan.Model.Resource.ResourceName,
+                        httpMethod,
+                        "write"
+                    );
+
+                if (contractValidationFailures.Length > 0)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildProfileContractMismatchResult(
+                        request.OperationKind,
+                        contractValidationFailures
+                    );
+                }
+
+                // Step 4: Slice-fence classification
+                // CompiledScopeCatalog includes any inlined (non-table-backed) scopes the profile
+                // middleware discovered via ContentTypeScopeDiscovery. Extract them by difference
+                // so the topology index inherits the correct ancestor topology for each one.
+                var tableBackedScopes = new HashSet<string>(
+                    request.WritePlan.TablePlansInDependencyOrder.Select(tp =>
+                        tp.TableModel.JsonScope.Canonical
+                    ),
+                    StringComparer.Ordinal
+                );
+                var inlinedScopes = profileWriteContext
+                    .CompiledScopeCatalog.Where(d => !tableBackedScopes.Contains(d.JsonScope))
+                    .Select(d => (d.JsonScope, d.ScopeKind))
+                    .ToArray();
+                var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan, inlinedScopes);
+                var requiredFamily = profileAppliedWriteContext is not null
+                    ? ProfileSliceFenceClassifier.ClassifyForExistingDocument(
+                        profileAppliedWriteContext,
+                        topologyIndex
+                    )
+                    : ProfileSliceFenceClassifier.ClassifyForCreateNew(
+                        profileWriteContext.Request,
+                        topologyIndex
+                    );
+
+                // After Slice 1 lands, no families are landed.
+                // Later slices remove families from this fence.
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return BuildSliceFenceResult(request.OperationKind, requiredFamily);
+            }
+
             var flattenedWriteSet = _writeFlattener.Flatten(
                 new FlatteningInput(
                     executionRequest.OperationKind,
@@ -152,12 +261,6 @@ internal sealed class DefaultRelationalWriteExecutor(
                     resolvedReferences
                 )
             );
-
-            if (request.ProfileWriteContext is not null)
-            {
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return BuildProfilePersistPendingResult(request.OperationKind);
-            }
 
             var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
                 new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
@@ -429,20 +532,52 @@ internal sealed class DefaultRelationalWriteExecutor(
         };
     }
 
-    private const string ProfilePersistPendingMessage =
-        "Profile-aware relational merge/persist pending DMS-1124.";
+    private static RelationalWriteExecutorResult BuildProfileCreatabilityRejectionResult(
+        RelationalWriteOperationKind operationKind,
+        string profileName
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureProfileDataPolicy(profileName)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureProfileDataPolicy(profileName)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
 
-    private static RelationalWriteExecutorResult BuildProfilePersistPendingResult(
-        RelationalWriteOperationKind operationKind
+    private static RelationalWriteExecutorResult BuildProfileContractMismatchResult(
+        RelationalWriteOperationKind operationKind,
+        ProfileFailure[] failures
     )
     {
+        var message = $"Profile write contract mismatch: {failures[0].Message}";
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(ProfilePersistPendingMessage)
+                new UpsertResult.UnknownFailure(message)
             ),
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(ProfilePersistPendingMessage)
+                new UpdateResult.UnknownFailure(message)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildSliceFenceResult(
+        RelationalWriteOperationKind operationKind,
+        RequiredSliceFamily requiredFamily
+    )
+    {
+        var message = $"Profile-aware persist for {requiredFamily} shapes is not yet supported (DMS-1124).";
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure(message)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UnknownFailure(message)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
@@ -510,7 +645,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
         var currentState = await _currentStateLoader
             .LoadAsync(
-                new RelationalWriteCurrentStateLoadRequest(request.ExistingDocumentReadPlan!, targetContext),
+                new RelationalWriteCurrentStateLoadRequest(
+                    request.ExistingDocumentReadPlan!,
+                    targetContext,
+                    includeDescriptorProjection: request.ProfileWriteContext is not null
+                ),
                 writeSession,
                 cancellationToken
             )
@@ -602,7 +741,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             .LoadAsync(
                 new RelationalWriteCurrentStateLoadRequest(
                     request.ExistingDocumentReadPlan!,
-                    existingTargetContext
+                    existingTargetContext,
+                    includeDescriptorProjection: request.ProfileWriteContext is not null
                 ),
                 writeSession,
                 cancellationToken

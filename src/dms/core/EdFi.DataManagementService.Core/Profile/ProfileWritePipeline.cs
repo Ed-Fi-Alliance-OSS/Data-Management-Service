@@ -38,7 +38,13 @@ public sealed record ProfileWritePipelineResult
     public ImmutableArray<ProfileFailure> Failures { get; init; }
 
     /// <summary>
-    /// True when a profile applies and no failures were emitted.
+    /// Creatability violations intentionally deferred to the relational executor.
+    /// Empty when deferral is disabled or no creatability violations were emitted.
+    /// </summary>
+    public ImmutableArray<ProfileFailure> DeferredFailures { get; init; } = [];
+
+    /// <summary>
+    /// True when a profile applies and no immediate failures were emitted.
     /// </summary>
     public bool IsSuccess => HasProfile && Failures.IsEmpty;
 
@@ -48,11 +54,13 @@ public sealed record ProfileWritePipelineResult
     public static ProfileWritePipelineResult NoProfile() => new() { HasProfile = false, Failures = [] };
 
     /// <summary>
-    /// Successful pipeline result with the request contract and optional stored context.
+    /// Successful pipeline result with the request contract, optional stored
+    /// context, and any executor-deferred creatability metadata.
     /// </summary>
     public static ProfileWritePipelineResult Success(
         ProfileAppliedWriteRequest request,
-        ProfileAppliedWriteContext? context = null
+        ProfileAppliedWriteContext? context = null,
+        IEnumerable<ProfileFailure>? deferredFailures = null
     ) =>
         new()
         {
@@ -60,6 +68,7 @@ public sealed record ProfileWritePipelineResult
             Request = request,
             Context = context,
             Failures = [],
+            DeferredFailures = deferredFailures is null ? [] : [.. deferredFailures],
         };
 
     /// <summary>
@@ -133,6 +142,10 @@ internal static class ProfileWritePipeline
     /// <param name="effectiveSchemaRequiredMembersByScope">
     /// Schema-required members by scope for creatability analysis.
     /// </param>
+    /// <param name="deferCreatabilityViolations">
+    /// When true, category-4 creatability violations are returned as deferred
+    /// metadata while duplicate validation failures still short-circuit.
+    /// </param>
     /// <returns>
     /// A <see cref="ProfileWritePipelineResult"/> containing the request contract,
     /// optional stored context, or typed failures.
@@ -148,7 +161,8 @@ internal static class ProfileWritePipeline
         string resourceName,
         string method,
         string operation,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope
+        IReadOnlyDictionary<string, IReadOnlyList<string>> effectiveSchemaRequiredMembersByScope,
+        bool deferCreatabilityViolations = false
     )
     {
         // ------------------------------------------------------------------
@@ -255,15 +269,34 @@ internal static class ProfileWritePipeline
                 operation
             );
 
-        // Bail out if creatability or duplicate failures accumulated
-        if (!creatabilityResult.Failures.IsEmpty || !duplicateFailures.IsEmpty)
+        // Duplicate-visible-item validation still blocks the request immediately.
+        // Creatability violations can be deferred for the relational executor path.
+        if (
+            !duplicateFailures.IsEmpty
+            || (!deferCreatabilityViolations && !creatabilityResult.Failures.IsEmpty)
+        )
         {
+            // When creatability is deferred, duplicate-visible-item failures remain the only
+            // immediate blockers. Keeping deferred category-4 failures out of the returned
+            // failure set preserves the validation-classified response path for duplicates.
+            if (deferCreatabilityViolations && !duplicateFailures.IsEmpty)
+            {
+                IEnumerable<ProfileFailure> immediateFailures = duplicateFailures.Select(static failure =>
+                    (ProfileFailure)failure
+                );
+                return ProfileWritePipelineResult.Failure(immediateFailures);
+            }
+
             ImmutableArray<ProfileFailure>.Builder failureBuilder =
                 ImmutableArray.CreateBuilder<ProfileFailure>();
             failureBuilder.AddRange(creatabilityResult.Failures);
             failureBuilder.AddRange(duplicateFailures);
             return ProfileWritePipelineResult.Failure(failureBuilder.ToImmutable());
         }
+
+        ImmutableArray<ProfileFailure> deferredFailures = deferCreatabilityViolations
+            ? [.. creatabilityResult.Failures]
+            : [];
 
         // ------------------------------------------------------------------
         // Step 7: Assemble ProfileAppliedWriteRequest
@@ -286,6 +319,6 @@ internal static class ProfileWritePipeline
             context = projector.ProjectStoredState(request, existenceLookupResult);
         }
 
-        return ProfileWritePipelineResult.Success(request, context);
+        return ProfileWritePipelineResult.Success(request, context, deferredFailures);
     }
 }

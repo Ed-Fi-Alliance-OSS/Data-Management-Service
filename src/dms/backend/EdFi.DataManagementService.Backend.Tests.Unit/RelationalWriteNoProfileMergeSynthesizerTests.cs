@@ -399,7 +399,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 new HydratedTableRows(fixture.RootExtensionPlan.TableModel, rootExtensionRows ?? []),
                 new HydratedTableRows(fixture.AddressPlan.TableModel, addressRows ?? []),
                 new HydratedTableRows(fixture.PeriodPlan.TableModel, periodRows ?? []),
-            ]
+            ],
+            []
         );
     }
 
@@ -421,7 +422,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
             [
                 new HydratedTableRows(fixture.RootPlan.TableModel, rootRows ?? []),
                 new HydratedTableRows(fixture.SchedulePlan.TableModel, scheduleRows ?? []),
-            ]
+            ],
+            []
         );
     }
 

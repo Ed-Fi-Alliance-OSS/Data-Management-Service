@@ -80,6 +80,12 @@ public record UpdateResult
     public record UpdateFailureValidation(WriteValidationFailure[] ValidationFailures) : UpdateResult();
 
     /// <summary>
+    /// A failure because a writable profile's data policy rejected the request
+    /// </summary>
+    /// <param name="ProfileName">The profile enforcing the rejection</param>
+    public record UpdateFailureProfileDataPolicy(string ProfileName) : UpdateResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

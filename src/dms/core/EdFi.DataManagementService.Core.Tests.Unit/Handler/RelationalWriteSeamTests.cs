@@ -181,6 +181,36 @@ public class Given_Relational_Write_Seam
     }
 
     [Test]
+    public async Task It_maps_profiled_post_root_creatability_rejections_to_data_policy_enforced_response()
+    {
+        const string profileName = "test-write-profile";
+
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureProfileDataPolicy(profileName)
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpsertAsync(
+            RelationalWriteSeamFixture.CreateComplexBody(),
+            _fixture.CreateSupportedMappingSet(SqlDialect.Pgsql),
+            _fixture.CreateDocumentInfo(),
+            backendProfileWriteContext: CreateBackendProfileWriteContext(
+                RelationalWriteSeamFixture.CreateComplexBody()
+            )
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:data-policy-enforced");
+        requestInfo.FrontendResponse.Body!["errors"]![0]!.GetValue<string>().Should().Contain(profileName);
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [Test]
     public async Task It_maps_profiled_put_requests_to_the_executor_level_fenced_500_response()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));

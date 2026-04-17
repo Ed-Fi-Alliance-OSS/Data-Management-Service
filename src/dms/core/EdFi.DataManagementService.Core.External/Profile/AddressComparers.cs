@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// <see cref="ImmutableArray{T}"/> fields by comparing elements, including
 /// nested <see cref="SemanticIdentityPart"/> values via serialized form.
 /// </summary>
-internal sealed class ScopeInstanceAddressComparer : IEqualityComparer<ScopeInstanceAddress>
+public sealed class ScopeInstanceAddressComparer : IEqualityComparer<ScopeInstanceAddress>
 {
     public static readonly ScopeInstanceAddressComparer Instance = new();
 
@@ -48,7 +48,13 @@ internal sealed class ScopeInstanceAddressComparer : IEqualityComparer<ScopeInst
         return hash.ToHashCode();
     }
 
-    internal static bool ScopeInstanceAddressEquals(ScopeInstanceAddress a, ScopeInstanceAddress b)
+    /// <summary>
+    /// Structural equality for two <see cref="ScopeInstanceAddress"/> values,
+    /// comparing <see cref="ScopeInstanceAddress.JsonScope"/> and the full
+    /// <see cref="ScopeInstanceAddress.AncestorCollectionInstances"/> chain
+    /// (including ordered semantic identity parts on each ancestor).
+    /// </summary>
+    public static bool ScopeInstanceAddressEquals(ScopeInstanceAddress a, ScopeInstanceAddress b)
     {
         if (a.JsonScope != b.JsonScope)
         {
@@ -79,7 +85,13 @@ internal sealed class ScopeInstanceAddressComparer : IEqualityComparer<ScopeInst
         return true;
     }
 
-    internal static bool SemanticIdentityEquals(
+    /// <summary>
+    /// Structural equality for two ordered <see cref="SemanticIdentityPart"/>
+    /// arrays. Each part is compared by <see cref="SemanticIdentityPart.RelativePath"/>,
+    /// <see cref="SemanticIdentityPart.IsPresent"/>, and the JSON text of
+    /// <see cref="SemanticIdentityPart.Value"/>.
+    /// </summary>
+    public static bool SemanticIdentityEquals(
         ImmutableArray<SemanticIdentityPart> a,
         ImmutableArray<SemanticIdentityPart> b
     )
@@ -115,7 +127,7 @@ internal sealed class ScopeInstanceAddressComparer : IEqualityComparer<ScopeInst
 /// Structural equality comparer for <see cref="CollectionRowAddress"/> that handles
 /// <see cref="ImmutableArray{T}"/> fields by comparing elements.
 /// </summary>
-internal sealed class CollectionRowAddressComparer : IEqualityComparer<CollectionRowAddress>
+public sealed class CollectionRowAddressComparer : IEqualityComparer<CollectionRowAddress>
 {
     public static readonly CollectionRowAddressComparer Instance = new();
 

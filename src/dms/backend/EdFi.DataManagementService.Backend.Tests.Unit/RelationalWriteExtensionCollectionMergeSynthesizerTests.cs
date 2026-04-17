@@ -351,7 +351,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
                     fixture.CollectionAlignedExtensionChildPlan.TableModel,
                     collectionAlignedExtensionChildRows ?? []
                 ),
-            ]
+            ],
+            []
         );
     }
 

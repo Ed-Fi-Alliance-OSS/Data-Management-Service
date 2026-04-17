@@ -571,6 +571,43 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Profile_Data_Policy_Failure : UpdateByIdHandlerTests
+    {
+        private const string ProfileName = "TestWriteProfile";
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(new UpdateFailureProfileDataPolicy(ProfileName));
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-policy-enforced");
+            body["title"]!.GetValue<string>().Should().Be("Data Policy Enforced");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["errors"]![0]!.GetValue<string>().Should().Contain(ProfileName);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
