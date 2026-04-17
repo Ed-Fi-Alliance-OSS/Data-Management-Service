@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -254,40 +255,64 @@ public sealed class RelationalDocumentStoreRepository(
             relationalQueryRequest.TraceId.Value
         );
 
-        if (
-            relationalQueryRequest.MappingSet.QueryCapabilitiesByResource.TryGetValue(
-                resource,
-                out var queryCapability
-            )
-            && queryCapability.Support is RelationalQuerySupport.Supported
-        )
+        RelationalQueryCapability queryCapability;
+
+        try
         {
-            RelationalQueryPreprocessingResult preprocessingResult;
+            queryCapability = relationalQueryRequest.MappingSet.GetQueryCapabilityOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new QueryResult.QueryFailureNotImplemented(ex.Message);
+        }
+        catch (MissingQueryCapabilityLookupGuardRailException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
 
-            try
-            {
-                preprocessingResult = await RelationalQueryRequestPreprocessor
-                    .PreprocessAsync(
-                        relationalQueryRequest.MappingSet,
-                        resource,
-                        relationalQueryRequest.QueryElements,
-                        queryCapability,
-                        _referenceResolver
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return new QueryResult.UnknownFailure(ex.Message);
-            }
+        if (!HasNoOpGetManyAuthorization(relationalQueryRequest.AuthorizationStrategyEvaluators))
+        {
+            return new QueryResult.QueryFailureNotImplemented(
+                BuildQueryAuthorizationNotImplementedMessage(
+                    resource,
+                    relationalQueryRequest.AuthorizationStrategyEvaluators
+                )
+            );
+        }
 
-            if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
-            {
-                return new QueryResult.QuerySuccess(
-                    [],
-                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-                );
-            }
+        RelationalQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = await RelationalQueryRequestPreprocessor
+                .PreprocessAsync(
+                    relationalQueryRequest.MappingSet,
+                    resource,
+                    relationalQueryRequest.QueryElements,
+                    queryCapability,
+                    _referenceResolver
+                )
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            return new QueryResult.QuerySuccess(
+                [],
+                relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+            );
         }
 
         return new QueryResult.QueryFailureNotImplemented(
@@ -616,6 +641,40 @@ public sealed class RelationalDocumentStoreRepository(
         return new GetResult.GetFailureNotImplemented(
             $"Relational descriptor GET by id is not implemented for resource '{FormatResource(resource)}'."
         );
+    }
+
+    private static bool HasNoOpGetManyAuthorization(
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        return authorizationStrategyEvaluators.All(static evaluator =>
+            string.Equals(
+                evaluator.AuthorizationStrategyName,
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                StringComparison.Ordinal
+            )
+        );
+    }
+
+    private static string BuildQueryAuthorizationNotImplementedMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        var strategyNames = authorizationStrategyEvaluators
+            .Select(static evaluator => evaluator.AuthorizationStrategyName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .Select(static name => $"'{name}'");
+
+        return $"Relational query authorization is not implemented for resource '{FormatResource(resource)}' "
+            + "when effective GET-many authorization requires filtering. Effective strategies: "
+            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
     }
 
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>

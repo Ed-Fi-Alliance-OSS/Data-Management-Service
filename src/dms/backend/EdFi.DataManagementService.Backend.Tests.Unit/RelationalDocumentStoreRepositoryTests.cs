@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -482,6 +483,129 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     "Relational query handling is not implemented for resource 'Ed-Fi.School'."
                 )
             );
+    }
+
+    [Test]
+    public async Task It_allows_no_further_authorization_required_queries_to_continue_through_preprocessing()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "id",
+                    "$.id",
+                    "string",
+                    new RelationalQueryFieldTarget.DocumentUuid()
+                )
+            ),
+            [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_when_query_authorization_requires_filtering()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QueryFailureNotImplemented(
+                    "Relational query authorization is not implemented for resource 'Ed-Fi.School' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or only 'NoFurtherAuthorizationRequired' are currently supported."
+                )
+            );
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_the_compiled_omission_reason_for_omitted_query_resources()
+    {
+        var omissionReason =
+            "storage kind 'SharedDescriptorTable' uses the descriptor query path instead of relational GET-many support.";
+        var queryRequest = CreateQueryRequest(
+            CreateOmittedQueryCapabilityMappingSet(
+                _schoolResourceInfo,
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.DescriptorResource,
+                    omissionReason
+                )
+            ),
+            [],
+            totalCount: false
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QueryFailureNotImplemented(
+                    "Relational query capability for resource 'Ed-Fi.School' was intentionally omitted: "
+                        + omissionReason
+                )
+            );
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_query_capability_guard_rail_for_query_requests()
+    {
+        const string expectedFailureMessage =
+            "Relational query capability lookup failed for resource 'Ed-Fi.School' in mapping set "
+            + "'schema-hash/Pgsql/v1': resource storage kind 'RelationalTables' should always have compiled relational GET-many capability metadata, "
+            + "including intentional omission state when applicable, but no entry was found. This indicates an internal compilation/selection bug.";
+        var queryRequest = CreateQueryRequest(
+            CreateSupportedMappingSet(_schoolResourceInfo),
+            [],
+            totalCount: false
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.UnknownFailure(expectedFailureMessage));
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -1875,6 +1999,29 @@ public class Given_RelationalDocumentStoreRepositoryTests
         };
     }
 
+    private static MappingSet CreateOmittedQueryCapabilityMappingSet(
+        ResourceInfo resourceInfo,
+        RelationalQueryCapabilityOmission omission
+    )
+    {
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
+        );
+
+        return CreateSupportedMappingSet(resourceInfo) with
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Omitted(omission),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.Ordinal),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.Ordinal)
+                ),
+            },
+        };
+    }
+
     private static MappingSet CreateDescriptorOnlyMappingSet(ResourceInfo resourceInfo)
     {
         var resourceKey = CreateResourceKeyEntry(resourceInfo);
@@ -1972,23 +2119,32 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private static IRelationalQueryRequest CreateQueryRequest(
         MappingSet mappingSet,
         QueryElement[] queryElements,
-        bool totalCount
+        bool totalCount,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
     )
     {
+        authorizationStrategyEvaluators ??= [];
+
         var queryRequest = A.Fake<IRelationalQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(_schoolResourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
         A.CallTo(() => queryRequest.AuthorizationSecurableInfo)
             .Returns(Array.Empty<AuthorizationSecurableInfo>());
-        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators)
-            .Returns(Array.Empty<AuthorizationStrategyEvaluator>());
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
         A.CallTo(() => queryRequest.PaginationParameters)
             .Returns(
                 new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
             );
         A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
         return queryRequest;
+    }
+
+    private static AuthorizationStrategyEvaluator CreateAuthorizationStrategyEvaluator(
+        string authorizationStrategyName
+    )
+    {
+        return new AuthorizationStrategyEvaluator(authorizationStrategyName, [], FilterOperator.And);
     }
 
     private static QueryElement CreateQueryElement(
