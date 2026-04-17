@@ -699,6 +699,25 @@ public sealed record ScopeKindMismatchCoreBackendContractMismatchFailure(
     );
 
 /// <summary>
+/// Category-5 failure emitted when a single scope/row stream contains multiple
+/// structurally-identical addresses.
+/// </summary>
+public sealed record DuplicateScopeAddressCoreBackendContractMismatchFailure(
+    ProfileFailureContext Context,
+    string JsonScope,
+    ScopeKind AffectedScopeKind,
+    string StreamName,
+    int OccurrenceCount,
+    ImmutableArray<ProfileFailureDiagnostic> Diagnostics
+)
+    : CoreBackendContractMismatchFailure(
+        ProfileFailureEmitter.BackendProfileWriteContext,
+        "Core emitted multiple entries with the same address in a single stream.",
+        Context,
+        Diagnostics
+    );
+
+/// <summary>
 /// Base category-6 typed failure emitted when backend/API binding accounting
 /// cannot classify a profiled binding into exactly one deterministic outcome.
 /// </summary>
@@ -1411,6 +1430,58 @@ public static class ProfileFailures
                 new ProfileFailureDiagnostic.CompiledScope(compiledScope),
                 new ProfileFailureDiagnostic.CollectionRow(emittedAddress)
             )
+        );
+    }
+
+    public static DuplicateScopeAddressCoreBackendContractMismatchFailure DuplicateScopeAddress(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        string streamName,
+        int occurrenceCount,
+        ScopeInstanceAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            AffectedScopeKind: emittedAddress.JsonScope == "$" ? ScopeKind.Root : ScopeKind.NonCollection,
+            streamName,
+            occurrenceCount,
+            MergeDiagnostics(diagnostics, new ProfileFailureDiagnostic.ScopeAddress(emittedAddress))
+        );
+    }
+
+    public static DuplicateScopeAddressCoreBackendContractMismatchFailure DuplicateScopeAddress(
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        string streamName,
+        int occurrenceCount,
+        CollectionRowAddress emittedAddress,
+        params ProfileFailureDiagnostic[] diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(emittedAddress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(streamName);
+
+        ProfileFailureContext context = CreateRequiredContext(profileName, resourceName, method, operation);
+
+        return new(
+            context,
+            emittedAddress.JsonScope,
+            AffectedScopeKind: ScopeKind.Collection,
+            streamName,
+            occurrenceCount,
+            MergeDiagnostics(diagnostics, new ProfileFailureDiagnostic.CollectionRow(emittedAddress))
         );
     }
 
