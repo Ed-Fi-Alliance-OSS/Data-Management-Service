@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Profile;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -74,6 +75,18 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<
                 IRelationalWriteNoProfileMergeSynthesizer,
                 RelationalWriteNoProfileMergeSynthesizer
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IProfileRootTableBindingClassifier, ProfileRootTableBindingClassifier>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IProfileRootKeyUnificationResolver, ProfileRootKeyUnificationResolver>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                IRelationalWriteProfileMergeSynthesizer,
+                RelationalWriteProfileMergeSynthesizer
             >()
         );
         services.TryAdd(
