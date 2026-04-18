@@ -476,19 +476,22 @@ internal static class ProfileTestDoubles
         JsonNode? writableBody = null,
         RelationalWriteCurrentState? currentState = null,
         IReadOnlyDictionary<DbColumnName, object?>? currentRootRowByColumnName = null,
-        ResolvedReferenceSet? resolvedReferences = null,
+        FlatteningResolvedReferenceLookupSet? resolvedReferenceLookups = null,
         ProfileAppliedWriteRequest? profileRequest = null,
         ProfileAppliedWriteContext? profileAppliedContext = null
     ) =>
         new(
-            WritePlan: writePlan,
             WritableRequestBody: writableBody ?? new JsonObject(),
             CurrentState: currentState,
             CurrentRootRowByColumnName: currentRootRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
-            ResolvedReferences: resolvedReferences ?? EmptyResolvedReferenceSet(),
+            ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(writePlan),
             ProfileRequest: profileRequest ?? CreateRequest(),
             ProfileAppliedContext: profileAppliedContext
         );
+
+    internal static FlatteningResolvedReferenceLookupSet EmptyResolvedReferenceLookups(
+        ResourceWritePlan writePlan
+    ) => FlatteningResolvedReferenceLookupSet.Create(writePlan, EmptyResolvedReferenceSet());
 
     internal static ResolvedReferenceSet EmptyResolvedReferenceSet() =>
         new(
@@ -500,6 +503,91 @@ internal static class ProfileTestDoubles
             DocumentReferenceOccurrences: [],
             DescriptorReferenceOccurrences: []
         );
+
+    // ── Synthesizer builders and stubs ─────────────────────────────────────
+
+    /// <summary>
+    /// Build a <see cref="RelationalWriteProfileMergeSynthesizer"/> composed with real
+    /// classifier and resolver instances. This is the end-to-end entry point for tests
+    /// that verify the synthesizer's composition behavior.
+    /// </summary>
+    internal static RelationalWriteProfileMergeSynthesizer BuildProfileSynthesizer() =>
+        new(new ProfileRootTableBindingClassifier(), new ProfileRootKeyUnificationResolver());
+
+    /// <summary>
+    /// Build a minimal <see cref="FlattenedWriteSet"/> whose root row has literal values
+    /// in binding-index order, one per supplied value. Bindings not covered are <c>null</c>
+    /// literals.
+    /// </summary>
+    internal static FlattenedWriteSet BuildFlattenedWriteSetFrom(
+        ResourceWritePlan writePlan,
+        params object?[] literalValuesByBindingIndex
+    )
+    {
+        var rootPlan = writePlan.TablePlansInDependencyOrder[0];
+        var bindings = rootPlan.ColumnBindings;
+        var values = new FlattenedWriteValue[bindings.Length];
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            values[i] = new FlattenedWriteValue.Literal(
+                i < literalValuesByBindingIndex.Length ? literalValuesByBindingIndex[i] : null
+            );
+        }
+        return new FlattenedWriteSet(new RootWriteRowBuffer(rootPlan, values));
+    }
+
+    /// <summary>
+    /// Build a <see cref="RelationalWriteCurrentState"/> with a single root-table row
+    /// (and no other tables). Column-ordinal order is the root table's
+    /// <see cref="DbTableModel.Columns"/> order.
+    /// </summary>
+    internal static RelationalWriteCurrentState BuildCurrentStateWithSingleRootRow(
+        ResourceWritePlan writePlan,
+        params object?[] columnValues
+    ) =>
+        new(
+            new DocumentMetadataRow(
+                DocumentId: 345L,
+                DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+                ContentVersion: 1L,
+                IdentityVersion: 1L,
+                ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+            ),
+            [new HydratedTableRows(writePlan.TablePlansInDependencyOrder[0].TableModel, [columnValues])],
+            []
+        );
+
+    /// <summary>
+    /// Pre-canned classifier used by invariant tests that need to force a specific
+    /// binding disposition without going through real scope matching.
+    /// </summary>
+    internal sealed class StubClassifier(ProfileRootTableBindingClassification classification)
+        : IProfileRootTableBindingClassifier
+    {
+        public ProfileRootTableBindingClassification Classify(
+            ResourceWritePlan writePlan,
+            ProfileAppliedWriteRequest profileRequest,
+            ProfileAppliedWriteContext? profileAppliedContext
+        ) => classification;
+    }
+
+    /// <summary>
+    /// No-op resolver used alongside <see cref="StubClassifier"/> when a test wants to
+    /// isolate the synthesizer's overlay behavior.
+    /// </summary>
+    internal sealed class NoOpResolver : IProfileRootKeyUnificationResolver
+    {
+        public void Resolve(
+            TableWritePlan rootTableWritePlan,
+            ProfileRootKeyUnificationContext context,
+            FlattenedWriteValue[] mergedRowValuesMutable,
+            ImmutableHashSet<int> resolverOwnedBindingIndices
+        )
+        {
+            // Intentionally does nothing; tests that use this stub verify overlay-only paths.
+        }
+    }
 
     // ── Helpers ────────────────────────────────────────────────────────────
 

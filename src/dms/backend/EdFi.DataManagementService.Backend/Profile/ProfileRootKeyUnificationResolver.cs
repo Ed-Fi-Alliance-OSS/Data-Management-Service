@@ -22,17 +22,18 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// members are treated as absent.
 /// </summary>
 /// <remarks>
-/// <see cref="WritePlan"/> is required because the flattener's
-/// <see cref="FlatteningResolvedReferenceLookupSet"/> factory needs descriptor-edge
-/// and document-reference metadata from the full <see cref="ResourceWritePlan"/>
-/// to compile its lookup maps. The synthesizer already has this plan in hand.
+/// <see cref="ResolvedReferenceLookups"/> is supplied pre-built by the caller
+/// (the profile merge synthesizer). It is the flattener's
+/// <see cref="FlatteningResolvedReferenceLookupSet"/>, compiled once per
+/// synthesis from the full <see cref="ResourceWritePlan"/> and
+/// <see cref="ResolvedReferenceSet"/>, and reused across every key-unification
+/// plan the resolver evaluates for the root table.
 /// </remarks>
 internal sealed record ProfileRootKeyUnificationContext(
-    ResourceWritePlan WritePlan,
     JsonNode WritableRequestBody,
     RelationalWriteCurrentState? CurrentState,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRootRowByColumnName,
-    ResolvedReferenceSet ResolvedReferences,
+    FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups,
     ProfileAppliedWriteRequest ProfileRequest,
     ProfileAppliedWriteContext? ProfileAppliedContext
 );
@@ -101,10 +102,6 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
         }
 
         var candidateScopes = BuildCandidateScopeSet(context.ProfileRequest, context.ProfileAppliedContext);
-        var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
-            context.WritePlan,
-            context.ResolvedReferences
-        );
 
         foreach (var keyUnificationPlan in rootTableWritePlan.KeyUnificationPlans)
         {
@@ -113,7 +110,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
                 keyUnificationPlan,
                 context,
                 candidateScopes,
-                resolvedReferenceLookups,
+                context.ResolvedReferenceLookups,
                 mergedRowValuesMutable,
                 valueAssigned,
                 resolverOwnedBindingIndices
