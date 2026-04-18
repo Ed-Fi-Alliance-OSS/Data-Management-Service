@@ -258,13 +258,11 @@ internal sealed class DefaultRelationalWriteExecutor(
                     return BuildSliceFenceResult(request.OperationKind, requiredFamily);
                 }
 
-                if (request.WritePlan.TablePlansInDependencyOrder.Length > 1)
-                {
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return BuildSliceTwoShapeGateResult(request.OperationKind);
-                }
-
-                // Slice-2 gate passed: flatten + profile synthesize.
+                // Slice-2 classification passed: flatten + profile synthesize. The profile merge
+                // synthesizer itself is root-only; non-root tables absent from its merge result are
+                // left untouched by the persister, which is the correct behavior for Slice 2 shapes
+                // whose runtime semantics are confined to the root table (e.g. hidden separate-table
+                // scopes on an existing document).
                 var profileFlattenedWriteSet = _writeFlattener.Flatten(
                     new FlatteningInput(
                         executionRequest.OperationKind,
@@ -614,24 +612,6 @@ internal sealed class DefaultRelationalWriteExecutor(
     )
     {
         var message = $"Profile-aware persist for {requiredFamily} shapes is not yet supported (DMS-1124).";
-        return operationKind switch
-        {
-            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
-                new UpsertResult.UnknownFailure(message)
-            ),
-            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
-                new UpdateResult.UnknownFailure(message)
-            ),
-            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
-        };
-    }
-
-    private static RelationalWriteExecutorResult BuildSliceTwoShapeGateResult(
-        RelationalWriteOperationKind operationKind
-    )
-    {
-        const string message =
-            "Slice 2 only supports profiled single-table root-only write plans (DMS-1124).";
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(

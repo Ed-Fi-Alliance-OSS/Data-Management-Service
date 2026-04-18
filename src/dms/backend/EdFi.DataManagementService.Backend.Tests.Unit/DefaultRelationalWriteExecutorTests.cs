@@ -1936,8 +1936,12 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_gates_profiled_root_table_only_request_when_write_plan_has_multiple_tables()
+    public async Task It_synthesizes_profile_merge_for_multi_table_plan_when_runtime_shape_is_root_only()
     {
+        // A multi-table compiled plan (root + separate-table extension) whose profile metadata
+        // leaves non-root scopes out of the request surface still classifies as RootTableOnly.
+        // The profile merge synthesizer handles the root table; the persister leaves the
+        // extension table untouched because it is absent from the produced merge result.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
@@ -1979,30 +1983,68 @@ public class Given_Default_Relational_Write_Executor
             ProfileWriteContext = profileContext,
         };
 
+        // Pre-configure the flattener: for multi-table plans the default fallback uses .Single()
+        // on the plan's table list. The profile merge synthesizer only uses the root row, so a
+        // root-only FlattenedWriteSet is the correct handoff shape for Slice 2 regardless of
+        // how many tables the compiled plan carries.
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [
+                        new RelationalWriteMergedTableRow(
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ],
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: false
+        );
+
         var result = await _sut.ExecuteAsync(request);
 
-        _profileMergeSynthesizer
-            .SynthesizeCallCount.Should()
-            .Be(0, "profile synthesizer must not run when the Slice 2 shape gate fires");
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(0, "flattener must not run when the Slice 2 shape gate fires");
+            .Be(1, "the profile path must flatten once classification passes");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "the profile synthesizer must run for root-only runtime shapes even on multi-table plans");
+        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _profileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(resourceWritePlan);
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "the no-profile synthesizer must not run for profiled writes");
         _noProfilePersister
             .TryPersistCallCount.Should()
-            .Be(0, "persister must not run when the Slice 2 shape gate fires");
-        _writeSessionFactory
-            .Session.RollbackCallCount.Should()
-            .Be(1, "session must be rolled back when the Slice 2 shape gate fires");
-        _writeSessionFactory
-            .Session.CommitCallCount.Should()
-            .Be(0, "session must not be committed when the Slice 2 shape gate fires");
+            .Be(1, "the persister must receive the profile merge result");
+        _noProfilePersister.CapturedMergeResult.Should().BeSameAs(_profileMergeSynthesizer.ResultToReturn);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult
-            .Result.Should()
-            .BeOfType<UpsertResult.UnknownFailure>()
-            .Which.FailureMessage.Should()
-            .Be("Slice 2 only supports profiled single-table root-only write plans (DMS-1124).");
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
     [Test]
