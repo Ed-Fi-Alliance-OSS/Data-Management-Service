@@ -9,7 +9,9 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1005
 
 Implement optimistic concurrency checks using stored representation stamps:
 
-- For update operations that support `If-Match`, compare the client-provided `_etag` to the current `_etag` served from `dms.Document.ContentVersion`.
+- For update operations that support `If-Match`, compare the client-provided `_etag` to the current `_etag`
+  computed from the canonical JSON form of the current served representation, as defined by
+  `reference/design/backend-redesign/design-docs/update-tracking.md`.
 - No dependency locking is required because indirect impacts are materialized as local updates that bump the same stamp.
 - `DMS-984` introduces the internal `ContentVersion` freshness recheck for the shared guarded no-op fast path, and `DMS-1124` reuses that result for profiled no-op outcomes; this story owns HTTP `If-Match` comparison and `412` mapping for both changed-write and stale-no-op outcomes.
 
@@ -22,7 +24,7 @@ Implement optimistic concurrency checks using stored representation stamps:
 
 ## Tasks
 
-1. Implement a “read current stored `_etag`” path usable by update handlers prior to write.
+1. Implement a "read current document and compute `_etag` from its served representation" path usable by update handlers prior to write.
 2. Implement `If-Match` comparison and stale-no-op handling paths usable by both changed writes and guarded no-op handlers, consuming the internal freshness result produced by the shared `DMS-984` executor path and reused by `DMS-1124`.
 3. Add tests for:
    1. match success,

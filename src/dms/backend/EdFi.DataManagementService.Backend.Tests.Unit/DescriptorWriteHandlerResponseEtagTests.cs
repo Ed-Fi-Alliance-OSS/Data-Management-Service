@@ -19,9 +19,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Descriptor_Write_Response_Etags
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
+    private const string StampStyleEtagPattern = "^\"\\d+\"$";
 
     [Test]
-    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_post_creates()
+    public async Task It_returns_the_canonical_hash_etag_for_descriptor_post_creates()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -40,7 +41,14 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedCanonicalHashEtag(request))
+            );
+        result
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
@@ -74,11 +82,13 @@ public class Given_Descriptor_Write_Response_Etags
 
         result
             .Should()
-            .BeEquivalentTo(new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedEtag(request)));
+            .BeEquivalentTo(
+                new UpsertResult.InsertSuccess(request.DocumentUuid, ExpectedCanonicalHashEtag(request))
+            );
     }
 
     [Test]
-    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_post_as_update()
+    public async Task It_returns_the_canonical_hash_etag_for_descriptor_post_as_update()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -91,7 +101,14 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePostAsync(request);
 
-        result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
+        result
+            .Should()
+            .BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         commandExecutor.Commands.Should().ContainSingle();
@@ -99,7 +116,7 @@ public class Given_Descriptor_Write_Response_Etags
     }
 
     [Test]
-    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_put_no_ops_without_an_update_command()
+    public async Task It_returns_the_canonical_hash_etag_for_descriptor_put_no_ops_without_an_update_command()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -124,13 +141,20 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
+        result
+            .Should()
+            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().ContainSingle();
     }
 
     [Test]
-    public async Task It_returns_the_legacy_opaque_etag_for_descriptor_put_updates()
+    public async Task It_returns_the_canonical_hash_etag_for_descriptor_put_updates()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -159,13 +183,20 @@ public class Given_Descriptor_Write_Response_Etags
 
         var result = await sut.HandlePutAsync(request);
 
-        result.Should().BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedEtag(request)));
+        result
+            .Should()
+            .BeEquivalentTo(new UpdateResult.UpdateSuccess(documentUuid, ExpectedCanonicalHashEtag(request)));
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Which.ETag.Should()
+            .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPutCallCount.Should().Be(1);
         commandExecutor.Commands.Should().HaveCount(2);
         commandExecutor.Commands[1].CommandText.Should().NotContain("SELECT document.\"ContentVersion\"");
     }
 
-    private static string ExpectedEtag(DescriptorWriteRequest request) =>
+    private static string ExpectedCanonicalHashEtag(DescriptorWriteRequest request) =>
         RelationalApiMetadataFormatter.FormatEtag(
             DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource)
         );

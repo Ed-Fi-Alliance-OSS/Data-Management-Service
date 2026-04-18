@@ -344,21 +344,15 @@ internal sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
             var fileId = reader.GetInt32(0);
             var logicalName = reader.GetString(1);
             var physicalName = reader.GetString(2);
+            var snapshotFileName = $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss";
             var directoryPath =
                 Path.GetDirectoryName(physicalName)
                 ?? throw new InvalidOperationException(
                     $"Could not determine the data file directory for database '{databaseName}'."
                 );
+            var snapshotPath = Path.Combine(directoryPath, snapshotFileName);
 
-            files.Add(
-                new(
-                    LogicalName: logicalName,
-                    SnapshotPath: Path.Combine(
-                        directoryPath,
-                        $"{databaseName}_baseline_{fileId}_{SanitizeFileName(logicalName)}.ss"
-                    )
-                )
-            );
+            files.Add(new(LogicalName: logicalName, SnapshotPath: snapshotPath));
         }
 
         return files.Count != 0

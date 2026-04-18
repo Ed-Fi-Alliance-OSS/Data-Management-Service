@@ -77,4 +77,27 @@ public class Given_RelationalApiMetadataFormatter
         RelationalApiMetadataFormatter.FormatEtag(document).Should().Be(expectedHash);
         RelationalApiMetadataFormatter.FormatEtag(document).Should().NotBe(legacySerializerHash);
     }
+
+    [Test]
+    public void It_refreshes_etag_from_the_projected_document_shape_without_mutating_other_metadata()
+    {
+        var projectedDocument = JsonNode.Parse(
+            """
+            {
+              "id": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "_etag": "stale",
+              "_lastModifiedDate": "2026-04-13T12:00:00Z",
+              "schoolId": 255901,
+              "nameOfInstitution": "Lincoln High"
+            }
+            """
+        )!;
+        var expectedHash = RelationalApiMetadataFormatter.FormatEtag(projectedDocument);
+
+        RelationalApiMetadataFormatter.RefreshEtag(projectedDocument);
+
+        projectedDocument["id"]!.GetValue<string>().Should().Be("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
+        projectedDocument["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-13T12:00:00Z");
+        projectedDocument["_etag"]!.GetValue<string>().Should().Be(expectedHash);
+    }
 }

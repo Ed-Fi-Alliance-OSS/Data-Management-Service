@@ -18,7 +18,7 @@ public class Given_RelationalReadMaterializer
     private static readonly Guid _documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
 
     [Test]
-    public void It_injects_api_metadata_for_external_response_reads()
+    public void It_injects_a_canonical_etag_and_stored_last_modified_date_for_external_response_reads()
     {
         var sut = new RelationalReadMaterializer();
         var readPlan = CreateReadPlan();
@@ -44,6 +44,42 @@ public class Given_RelationalReadMaterializer
             .Should()
             .Be(RelationalApiMetadataFormatter.FormatEtag(JsonNode.Parse("""{"name":"Lincoln High"}""")!));
         result["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
+    }
+
+    [Test]
+    public void It_does_not_derive_the_external_etag_or_a_public_change_version_from_content_version()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = CreateReadPlan();
+
+        var firstResult = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 91L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                ),
+                CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
+                [],
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+        var secondResult = sut.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                CreateDocumentMetadataRow(
+                    contentVersion: 907L,
+                    contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+                ),
+                CreateHydratedTableRows(readPlan, (345L, "Lincoln High")),
+                [],
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+
+        firstResult["_etag"]!.GetValue<string>().Should().Be(secondResult["_etag"]!.GetValue<string>());
+        firstResult["ChangeVersion"].Should().BeNull();
+        secondResult["ChangeVersion"].Should().BeNull();
     }
 
     [Test]
