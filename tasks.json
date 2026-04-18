@@ -1,0 +1,132 @@
+[
+  {
+    "category": "Core Query Seam",
+    "description": "Introduce a backend-local relational GET-many request seam instead of widening public `IQueryRequest`. Acceptance: add `IRelationalQueryRequest`/`RelationalQueryRequest` carrying `MappingSet`, qualified `ResourceInfo`, query elements, authorization inputs, pagination, trace id, and optional readable-profile projection context; `src/dms/core/EdFi.DataManagementService.Core/Handler/QueryRequestHandler.cs` constructs that relational request whenever `requestInfo.MappingSet` is present; and legacy non-relational query handling remains unchanged.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` covering relational query-request creation in `QueryRequestHandler`.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter QueryRequestHandlerTests`",
+      "Run: `rg -n 'IRelationalQueryRequest|RelationalQueryRequest|ReadableProfileProjectionContext' ./src/dms/core ./src/dms/backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Root Query Capability Compilation",
+    "description": "Compile the root-only portion of per-resource relational query capability metadata into `MappingSet` from `ApiSchema.queryFieldMapping`. Acceptance: `MappingSet` stores query capability metadata keyed by qualified resource for non-descriptor relational-table resources; each supported non-special query field resolves deterministically to exactly one root-table predicate target; root-table reference-identity fields compile against local propagated/binding columns including `UnifiedAlias` columns; and array-crossing, non-root-table, or multi-path mappings are identified during compilation instead of leaking into request-time SQL generation.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` for supported root-scope mappings, reference-identity/unified-alias mappings, and deterministic detection of array-crossing, non-root-table, and multi-path mappings.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `rg -n 'QueryCapability|QuerySupport|queryFieldMapping|DescriptorResource|UnifiedAlias' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.External`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Special-Case Query Capability Compilation",
+    "description": "Compile relational GET-many special-case query support and resource-scoped omission decisions into `MappingSet`. Acceptance: `id` query fields compile as a special-case target that later joins `dms.Document` only when requested; descriptor-valued query fields compile with descriptor-resolution metadata against root-table `..._DescriptorId` columns; resources with any unsupported query mappings are intentionally omitted from relational GET-many support at compile time with stable omission reasons; and descriptor resources remain omitted from relational GET-many support in favor of `E08-S05 (05-descriptor-endpoints.md)`.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` for `id` metadata, descriptor filter metadata, resource-scoped omission classification, and descriptor-resource omission behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `rg -n 'QueryCapability|QuerySupport|DocumentUuid|Descriptor|descriptor-endpoints' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.External`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Capability Diagnostics",
+    "description": "Surface relational GET-many support and omission reasons through deterministic diagnostics. Acceptance: intentionally omitted resources retain an actionable omission reason in compiled query capability metadata; descriptor resources are omitted with an `E08-S05 (05-descriptor-endpoints.md)` pointer; mapping-set lookup helpers distinguish intentional omission from missing-required-artifact internal bugs; and mapping-set manifest/fixture diagnostics expose query capability summaries or omission reasons so fixture output and runtime troubleshooting are actionable.",
+    "steps-to-verify": [
+      "Add/update unit and manifest tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` covering intentional omission messages, internal-bug messages, and emitted query capability fixture diagnostics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'MappingSetLookupExtensionsTests|MappingSetManifestJsonEmitterTests'`",
+      "Run: `rg -n 'omitted|QueryCapability|QuerySupport|descriptor-endpoints' ./src/dms/backend/EdFi.DataManagementService.Backend.Plans ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Id Query Preprocessing",
+    "description": "Implement request-scoped preprocessing for the special relational `?id=` query field before predicate planning and page SQL compilation. Acceptance: invalid `?id=` values parse locally and short-circuit to an empty page instead of a 400; valid `id` filters are represented so page-selection SQL joins `dms.Document` only when an id predicate is present; and when preprocessing proves the query has no matches, the later repository path returns an empty success with `TotalCount = 0` when `totalCount=true` without invoking hydration.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` covering invalid-id empty-page behavior, successful id preprocessing, and empty-page total-count short-circuit behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `rg -n 'DocumentUuid|empty page|TotalCount|Resolve.*Query|PageKeysetSpec\\.Query' ./src/dms/backend/EdFi.DataManagementService.Backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Query Preprocessing",
+    "description": "Implement request-scoped preprocessing for descriptor-valued relational query fields before predicate planning and page SQL compilation. Acceptance: descriptor-valued filters resolve URI strings to descriptor `DocumentId` values in one batched pre-step using compiled query metadata; unresolved descriptor URIs short-circuit to an empty page; when preprocessing proves the query has no matches, the later repository path returns an empty success with `TotalCount = 0` when `totalCount=true` without invoking hydration; and non-descriptor resource queries never perform per-row descriptor lookups.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` covering batched descriptor resolution, unresolved-descriptor empty-page behavior, and empty-page total-count short-circuit behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `rg -n 'Descriptor|empty page|TotalCount|Resolve.*Descriptor|Resolve.*Query' ./src/dms/backend/EdFi.DataManagementService.Backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Predicate and Parameter Planning",
+    "description": "Translate validated `QueryElement[]` plus compiled query capability metadata into deterministic request-scoped relational predicates and typed SQL parameter values. Acceptance: exact-match equality is the only operator shape accepted by the planner for DMS-993; each accepted query field produces one deterministic physical predicate target; validated query values are converted into the CLR/ADO parameter values expected by the page-SQL layer for booleans, dates, date-times, numbers, times, strings, and special-case identifiers; parameter naming is deterministic and collision-free; and unsupported multi-path or non-equality cases are rejected deterministically in planning before SQL compilation and repository execution.",
+    "steps-to-verify": [
+      "Add/update unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` for deterministic predicate ordering, typed parameter conversion, parameter-name stability, non-equality operator rejection during planning, and empty-page short-circuit inputs from preprocessing.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `rg -n 'QueryElement|ParameterValues|PageDocumentIdQuerySpec|QueryValuePredicate' ./src/dms/backend/EdFi.DataManagementService.Backend ./src/dms/backend/EdFi.DataManagementService.Backend.Plans`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page SQL Compilation",
+    "description": "Extend request-scoped page-selection SQL compilation for DMS-993. Acceptance: planner-produced request predicates compile into parameterized `PageDocumentIdSqlPlan` instances ordered by `DocumentId ASC`; `id` predicates join `dms.Document` only when present; `TotalCountSql` is emitted when `totalCount=true`; SQL Server string equality uses an explicit BIN2-family collation so relational query filtering is case-sensitive and deterministic across providers, while PostgreSQL continues to use plain `=`; the compiler still fails defensively if non-equality operators are routed to it; and the compiled SQL keeps clear seams for later authorization predicates/JOINs without forcing a repository rewrite.",
+    "steps-to-verify": [
+      "Add/update `PageDocumentIdSqlCompiler` unit tests and plan golden fixtures for PostgreSQL and SQL Server covering id joins, unified-alias rewrite, total-count SQL, defensive rejection of non-equality operators, and SQL Server case-sensitive string comparisons.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageDocumentIdSqlCompilerTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PlanSql`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authorization and Omission Guardrails",
+    "description": "Add deterministic runtime guardrails for relational GET-many rollout. Acceptance: `RelationalDocumentStoreRepository.QueryDocuments` allows relational GET-many only when effective GET-many authorization is a true no-op (no strategies or only `NoFurtherAuthorizationRequired`); requests that would require namespace, ownership, relationship, or view-based filtering return `QueryFailureNotImplemented` with an actionable message; resources whose relational query capability was intentionally omitted at compile time also return 501 with the omission reason; and missing query metadata for a resource that should support relational GET-many still fails as an internal bug rather than collapsing into the same 501 path.",
+    "steps-to-verify": [
+      "Add/update repository and handler unit tests covering no-op authorization success, non-no-op authorization 501 behavior, intentionally omitted-resource 501 behavior, and internal-bug diagnostics for missing required metadata.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter QueryRequestHandlerTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Repository Query Execution",
+    "description": "Implement `RelationalDocumentStoreRepository.QueryDocuments` on top of the existing hydration/materialization pipeline. Acceptance: the repository uses compiled query capability metadata plus request-time predicate/parameter planning to build `PageKeysetSpec.Query`; executes query keysets through `IDocumentHydrator`; reuses `RelationalReadMaterializer` to materialize external-response documents in bulk instead of looping over `GetDocumentById`; preserves `DocumentId` page order in the returned `JsonArray`; propagates `TotalCount` when requested; and short-circuits to an empty successful result with `TotalCount = 0` when requested, without hydration, when preprocessing proves the query has no matches.",
+    "steps-to-verify": [
+      "Add/update repository unit tests verifying that query execution uses `PageKeysetSpec.Query`, preserves page order, propagates total count, returns `TotalCount = 0` for preprocessed empty pages when requested, and skips hydration when preprocessing determines the page is empty.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`",
+      "Run: `rg -n 'PageKeysetSpec\\.Query|QueryDocuments\\(|QuerySuccess\\(|TotalCount' ./src/dms/backend/EdFi.DataManagementService.Backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Readable Profile Query Projection",
+    "description": "Make relational GET-many own readable-profile projection end-to-end. Acceptance: when a readable profile is active, each query result item is projected through `IReadableProfileProjector` after full reconstitution, each projected item refreshes `_etag`, queryability still follows the full resource `queryFieldMapping` rather than profile-visible members only, successful relational query responses emit the readable profile content type, and `ProfileFilteringMiddleware` continues to skip relational reads.",
+    "steps-to-verify": [
+      "Add/update unit tests in backend/core test projects covering per-item readable projection, `_etag` refresh after projection, unchanged query validation scope, and response content type for relational query success.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter 'QueryRequestHandlerTests|ProfileFilteringMiddlewareTests'`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Backend Integration Coverage",
+    "description": "Add PostgreSQL backend integration coverage for the new relational GET-many path. Acceptance: PostgreSQL has at least one scalar-filter scenario and one multi-page paging scenario against a non-descriptor resource; the scenarios assert deterministic `DocumentId`-ordered paging, page-sized bulk hydration/materialization, and `TotalCount` behavior when requested; and the coverage includes one explicit in-scope special-case filter scenario (`?id=` or a descriptor-valued query field) so UUID/descriptor-resolution behavior is exercised end to end.",
+    "steps-to-verify": [
+      "Add/update targeted tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration` for scalar filtering, deterministic paging, and one special-case filter scenario (`?id=` or descriptor URI resolution).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `rg -n 'QueryDocuments|TotalCount|paging|DocumentUuid|Descriptor' ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Backend Integration Coverage",
+    "description": "Add SQL Server backend integration coverage for the new relational GET-many path. Acceptance: SQL Server has at least one scalar-filter scenario and one multi-page paging scenario against a non-descriptor resource; the scenarios assert deterministic `DocumentId`-ordered paging, page-sized bulk hydration/materialization, and `TotalCount` behavior when requested; the coverage includes one explicit in-scope special-case filter scenario (`?id=` or a descriptor-valued query field); and coverage locks in the intended case-sensitive string matching behavior.",
+    "steps-to-verify": [
+      "Add/update targeted tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration` for scalar filtering, deterministic paging, one special-case filter scenario (`?id=` or descriptor URI resolution), and case-sensitive string matching.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`",
+      "Run: `rg -n 'QueryDocuments|TotalCount|paging|case-sensitive|BIN2|DocumentUuid|Descriptor' ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`"
+    ],
+    "completed": false
+  }
+]
