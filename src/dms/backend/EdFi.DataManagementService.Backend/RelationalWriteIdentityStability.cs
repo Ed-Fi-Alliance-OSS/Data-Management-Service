@@ -31,7 +31,7 @@ internal static class RelationalWriteIdentityStability
         if (rootTableState is null)
         {
             throw new InvalidOperationException(
-                $"No-profile merge synthesis for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
+                $"Existing-document write identity guard for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
                     + $"did not include root table '{request.WritePlan.Model.Root.Table}'. This indicates an internal merge-synthesis bug."
             );
         }
