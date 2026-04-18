@@ -68,6 +68,13 @@ public class Given_FixtureRunner_With_ReferentialIdentity_Fixture : DdlGoldenFix
 }
 
 [TestFixture]
+public class Given_FixtureRunner_With_ProfileRootOnlyMerge_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "profile-root-only-merge");
+}
+
+[TestFixture]
 public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>

@@ -50,6 +50,19 @@ internal static class ProfileMemberGovernanceRules
             ),
         };
 
+    internal static HiddenPathMatchKind MatchKindFor(KeyUnificationMemberWritePlan member) =>
+        member switch
+        {
+            KeyUnificationMemberWritePlan.ScalarMember => HiddenPathMatchKind.Exact,
+            KeyUnificationMemberWritePlan.DescriptorMember => HiddenPathMatchKind.Exact,
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember => HiddenPathMatchKind.AncestorOrExact,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(member),
+                member.GetType().Name,
+                $"ProfileMemberGovernanceRules.MatchKindFor does not handle KeyUnificationMemberWritePlan subtype '{member.GetType().Name}'."
+            ),
+        };
+
     internal static RequestScopeState? LookupRequestScope(
         ProfileAppliedWriteRequest profileRequest,
         string scopeCanonical

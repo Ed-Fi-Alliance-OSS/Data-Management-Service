@@ -8,11 +8,13 @@
 //   small/naming-stress fixture). It is single-table, non-descriptor, has an integer
 //   identity plus multiple nullable scalar columns (Order, ShortName), and has no
 //   document references, descriptor references, or key-unification plans. That lets
-//   us exercise hidden-inlined preservation, visible-absent clearing, and create-new
-//   without extra fixtures. Fixtures 4/5/6/7/8 from the design spec are deferred
-//   because NamingStressItem does not carry the shapes they target (nested scope,
-//   document references, descriptors, key unification). See the pgsql sibling file
-//   for detailed rationale.
+//   us exercise hidden-inlined preservation on a flat scalar and create-new without
+//   extra fixtures. Fixtures 4/5/6/7/8 from the design spec are deferred because
+//   NamingStressItem does not carry the shapes they target (nested scope, document
+//   references, descriptors, key unification). Spec scenarios 4 and 5 are covered
+//   by the sibling MssqlProfileRootTableOnlyMergeFixtureTests against the synthetic
+//   profile-root-only-merge fixture. See the pgsql sibling file for detailed
+//   rationale.
 //
 // Fixture 9 (shape-gate) uses the School resource from the focused
 // stable-key-extension-child-collections fixture, which has a multi-table write plan.

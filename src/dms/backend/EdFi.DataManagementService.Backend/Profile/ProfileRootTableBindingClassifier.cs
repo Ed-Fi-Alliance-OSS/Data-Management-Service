@@ -100,6 +100,34 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             );
         }
 
+        // Register key-unification member paths into the drift-check inventory.
+        // K-u members are not ordinary bindings (their canonical + presence bindings are
+        // resolver-owned), but they are legitimate targets for profile-hidden paths — the
+        // resolver evaluates them in ProfileRootKeyUnificationResolver.EvaluateMember.
+        // Without this registration, ValidateStoredScopeMetadata would reject hidden
+        // paths targeting k-u members as upstream contract drift, which is wrong.
+        foreach (var keyUnificationPlan in rootTable.KeyUnificationPlans)
+        {
+            foreach (var member in keyUnificationPlan.MembersInOrder)
+            {
+                var memberPath = member.RelativePath.Canonical;
+                var containingScope = TryMatchLongestScope(memberPath, candidateScopes);
+                if (containingScope is null)
+                {
+                    continue;
+                }
+                var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
+                var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
+
+                if (!bindingsByContainingScope.TryGetValue(containingScope, out var bindingsUnderScope))
+                {
+                    bindingsUnderScope = [];
+                    bindingsByContainingScope[containingScope] = bindingsUnderScope;
+                }
+                bindingsUnderScope.Add((strippedMemberPath, matchKind));
+            }
+        }
+
         // Fail-closed metadata-drift check: every stored scope and every hidden member path
         // must resolve to at least one root-table binding. Anything that doesn't is upstream
         // Core / write-plan contract drift, not silent under-preservation.

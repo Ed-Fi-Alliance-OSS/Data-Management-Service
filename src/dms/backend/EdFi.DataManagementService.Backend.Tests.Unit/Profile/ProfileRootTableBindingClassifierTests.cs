@@ -377,6 +377,85 @@ public class Given_Classifier_for_ExistingDocument_with_hidden_member_path_unres
 }
 
 [TestFixture]
+public class Given_Classifier_for_ExistingDocument_with_hidden_key_unification_member_path
+{
+    private ProfileRootTableBindingClassification _result = null!;
+    private int _canonicalIndex;
+    private int _syntheticPresenceIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Single-scalar k-u plan from the shared double: canonical at [0], synthetic presence
+        // at [1], member-path scalar at [2]; member relative path is "$.localSchoolId". The
+        // stored scope is "$" with "localSchoolId" listed as a hidden member — a legitimate
+        // Slice 2 shape that the resolver handles in EvaluateMember. Pre-fix, the classifier's
+        // drift-check would reject the hidden path as unresolvable because k-u member paths
+        // were never registered in bindingsByContainingScope.
+        var (plan, canonicalIdx, presenceIdx) = ProfileTestDoubles.BuildRootPlanWithKeyUnificationPlan();
+        _canonicalIndex = canonicalIdx;
+        _syntheticPresenceIndex = presenceIdx;
+        var request = ProfileTestDoubles.CreateRequest(
+            scopeStates: ProfileTestDoubles.RequestVisiblePresentScope("$")
+        );
+        var context = ProfileTestDoubles.CreateContext(
+            request,
+            storedScopeStates: ProfileTestDoubles.StoredVisiblePresentScope("$", "localSchoolId")
+        );
+        _result = new ProfileRootTableBindingClassifier().Classify(plan, request, context);
+    }
+
+    [Test]
+    public void It_does_not_throw_for_hidden_key_unification_member_path() => _result.Should().NotBeNull();
+
+    [Test]
+    public void It_still_marks_canonical_binding_as_StorageManaged() =>
+        _result.BindingsByIndex[_canonicalIndex].Should().Be(RootBindingDisposition.StorageManaged);
+
+    [Test]
+    public void It_still_marks_synthetic_presence_binding_as_StorageManaged() =>
+        _result.BindingsByIndex[_syntheticPresenceIndex].Should().Be(RootBindingDisposition.StorageManaged);
+
+    [Test]
+    public void It_still_lists_canonical_and_presence_as_resolver_owned()
+    {
+        _result.ResolverOwnedBindingIndices.Should().Contain(_canonicalIndex);
+        _result.ResolverOwnedBindingIndices.Should().Contain(_syntheticPresenceIndex);
+    }
+}
+
+[TestFixture]
+public class Given_Classifier_for_ExistingDocument_with_hidden_path_resolving_to_neither_binding_nor_key_unification_member
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Same k-u plan (member path "$.localSchoolId"), but the stored scope hides a path
+        // ("nonExistentMember") that matches neither an ordinary binding nor a k-u member —
+        // so the drift-check must still fail. This guards against the fix over-loosening.
+        var (plan, _, _) = ProfileTestDoubles.BuildRootPlanWithKeyUnificationPlan();
+        var request = ProfileTestDoubles.CreateRequest(
+            scopeStates: ProfileTestDoubles.RequestVisiblePresentScope("$")
+        );
+        var context = ProfileTestDoubles.CreateContext(
+            request,
+            storedScopeStates: ProfileTestDoubles.StoredVisiblePresentScope("$", "nonExistentMember")
+        );
+        _act = () => new ProfileRootTableBindingClassifier().Classify(plan, request, context);
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException_for_unresolvable_hidden_member_path()
+    {
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Hidden member path*does not resolve to any root-table binding under that scope*");
+    }
+}
+
+[TestFixture]
 public class Given_Classifier_with_Precomputed_and_DocumentId_sources
 {
     private ProfileRootTableBindingClassification _result = null!;
