@@ -7,6 +7,8 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
@@ -286,6 +288,219 @@ internal static class ProfileTestDoubles
         return WrapPlan(rootModel, [rootPlan], documentReferenceBindings: []);
     }
 
+    // ── Resolver-context builders ─────────────────────────────────────────
+
+    /// <summary>
+    /// Compositional per-member spec for <see cref="BuildRootPlanWithKeyUnificationMembers"/>.
+    /// </summary>
+    internal sealed record KeyUnificationMemberSpec(
+        string RelativePath,
+        KeyUnificationMemberSourceKind SourceKind,
+        bool PresenceSynthetic,
+        string? MemberColumnName = null,
+        string? PresenceColumnName = null
+    );
+
+    internal enum KeyUnificationMemberSourceKind
+    {
+        Scalar,
+        Descriptor,
+    }
+
+    /// <summary>
+    /// Predictable naming helpers so tests can populate <c>CurrentRootRowByColumnName</c>
+    /// with the same column names the multi-member builder uses.
+    /// </summary>
+    internal static DbColumnName MemberPathColumnFor(string relativePath) =>
+        new("Member_" + SanitizePath(relativePath));
+
+    internal static DbColumnName PresenceColumnFor(string relativePath) =>
+        new("Presence_" + SanitizePath(relativePath));
+
+    internal static DbColumnName CanonicalColumnFor() => new("KU_Canonical");
+
+    private static string SanitizePath(string relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return "root";
+        }
+        return new string(relativePath.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
+    }
+
+    /// <summary>
+    /// Build a root plan with a key-unification plan composed of one-or-more members.
+    /// Bindings are: [0] = canonical (Precomputed), [1..N] = synthetic presence bindings
+    /// (Precomputed) for each member that has <c>PresenceSynthetic</c> true, followed by
+    /// per-member value bindings (Scalar for ScalarMember, DescriptorReference for
+    /// DescriptorMember). Returns the plan along with the canonical binding index and a
+    /// map from member relative path → synthetic-presence binding index (only for members
+    /// that have a synthetic presence column).
+    /// </summary>
+    internal static (
+        ResourceWritePlan Plan,
+        int CanonicalBindingIndex,
+        IReadOnlyDictionary<string, int> PresenceBindingIndicesByRelativePath
+    ) BuildRootPlanWithKeyUnificationMembers(
+        IReadOnlyList<KeyUnificationMemberSpec> members,
+        bool canonicalIsNullable = true
+    )
+    {
+        if (members is null || members.Count == 0)
+        {
+            throw new ArgumentException("At least one member spec is required.", nameof(members));
+        }
+
+        var canonicalColumn = Column(
+            CanonicalColumnFor().Value,
+            ColumnKind.Scalar,
+            Int32Type(),
+            isNullable: canonicalIsNullable
+        );
+        var columns = new List<DbColumnModel> { canonicalColumn };
+        var bindings = new List<WriteColumnBinding>
+        {
+            new(canonicalColumn, new WriteValueSource.Precomputed(), canonicalColumn.ColumnName.Value),
+        };
+        var canonicalBindingIndex = 0;
+
+        var presenceBindingIndicesByRelativePath = new Dictionary<string, int>(StringComparer.Ordinal);
+        var memberBindingIndicesByRelativePath = new Dictionary<string, int>(StringComparer.Ordinal);
+        var memberColumnsByRelativePath = new Dictionary<string, DbColumnModel>(StringComparer.Ordinal);
+        var presenceColumnsByRelativePath = new Dictionary<string, DbColumnModel>(StringComparer.Ordinal);
+
+        foreach (var spec in members)
+        {
+            var memberColumn = Column(
+                spec.MemberColumnName ?? MemberPathColumnFor(spec.RelativePath).Value,
+                ColumnKind.Scalar,
+                spec.SourceKind == KeyUnificationMemberSourceKind.Scalar ? Int32Type() : Int64Type(),
+                sourceJsonPath: Path(spec.RelativePath)
+            );
+            memberColumnsByRelativePath[spec.RelativePath] = memberColumn;
+            columns.Add(memberColumn);
+
+            if (spec.PresenceSynthetic)
+            {
+                var presenceColumn = Column(
+                    spec.PresenceColumnName ?? PresenceColumnFor(spec.RelativePath).Value,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean)
+                );
+                presenceColumnsByRelativePath[spec.RelativePath] = presenceColumn;
+                columns.Add(presenceColumn);
+
+                var presenceBinding = new WriteColumnBinding(
+                    presenceColumn,
+                    new WriteValueSource.Precomputed(),
+                    presenceColumn.ColumnName.Value
+                );
+                bindings.Add(presenceBinding);
+                presenceBindingIndicesByRelativePath[spec.RelativePath] = bindings.Count - 1;
+            }
+
+            WriteValueSource memberSource = spec.SourceKind switch
+            {
+                KeyUnificationMemberSourceKind.Scalar => new WriteValueSource.Scalar(
+                    Path(spec.RelativePath),
+                    Int32Type()
+                ),
+                KeyUnificationMemberSourceKind.Descriptor => new WriteValueSource.DescriptorReference(
+                    new QualifiedResourceName("Ed-Fi", "SampleDescriptor"),
+                    Path(spec.RelativePath),
+                    DescriptorValuePath: null
+                ),
+                _ => throw new InvalidOperationException($"Unsupported source kind '{spec.SourceKind}'."),
+            };
+            var memberBinding = new WriteColumnBinding(
+                memberColumn,
+                memberSource,
+                memberColumn.ColumnName.Value
+            );
+            bindings.Add(memberBinding);
+            memberBindingIndicesByRelativePath[spec.RelativePath] = bindings.Count - 1;
+        }
+
+        var rootModel = RootTable("Thing", columns);
+
+        var memberWritePlans = members
+            .Select<KeyUnificationMemberSpec, KeyUnificationMemberWritePlan>(spec =>
+            {
+                var memberColumn = memberColumnsByRelativePath[spec.RelativePath];
+                presenceColumnsByRelativePath.TryGetValue(spec.RelativePath, out var presenceColumn);
+                presenceBindingIndicesByRelativePath.TryGetValue(
+                    spec.RelativePath,
+                    out var presenceBindingIndex
+                );
+                int? presenceBindingIndexOrNull = spec.PresenceSynthetic ? presenceBindingIndex : null;
+
+                return spec.SourceKind switch
+                {
+                    KeyUnificationMemberSourceKind.Scalar => new KeyUnificationMemberWritePlan.ScalarMember(
+                        MemberPathColumn: memberColumn.ColumnName,
+                        RelativePath: Path(spec.RelativePath),
+                        ScalarType: Int32Type(),
+                        PresenceColumn: presenceColumn?.ColumnName,
+                        PresenceBindingIndex: presenceBindingIndexOrNull,
+                        PresenceIsSynthetic: spec.PresenceSynthetic
+                    ),
+                    KeyUnificationMemberSourceKind.Descriptor =>
+                        new KeyUnificationMemberWritePlan.DescriptorMember(
+                            MemberPathColumn: memberColumn.ColumnName,
+                            RelativePath: Path(spec.RelativePath),
+                            DescriptorResource: new QualifiedResourceName("Ed-Fi", "SampleDescriptor"),
+                            PresenceColumn: presenceColumn?.ColumnName,
+                            PresenceBindingIndex: presenceBindingIndexOrNull,
+                            PresenceIsSynthetic: spec.PresenceSynthetic
+                        ),
+                    _ => throw new InvalidOperationException($"Unsupported source kind '{spec.SourceKind}'."),
+                };
+            })
+            .ToList();
+
+        var keyUnificationPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: canonicalBindingIndex,
+            MembersInOrder: memberWritePlans
+        );
+        var rootPlan = RootPlan(rootModel, bindings, keyUnificationPlans: [keyUnificationPlan]);
+        return (
+            WrapPlan(rootModel, [rootPlan], documentReferenceBindings: []),
+            canonicalBindingIndex,
+            presenceBindingIndicesByRelativePath
+        );
+    }
+
+    internal static ProfileRootKeyUnificationContext BuildResolverContext(
+        ResourceWritePlan writePlan,
+        JsonNode? writableBody = null,
+        RelationalWriteCurrentState? currentState = null,
+        IReadOnlyDictionary<DbColumnName, object?>? currentRootRowByColumnName = null,
+        ResolvedReferenceSet? resolvedReferences = null,
+        ProfileAppliedWriteRequest? profileRequest = null,
+        ProfileAppliedWriteContext? profileAppliedContext = null
+    ) =>
+        new(
+            WritePlan: writePlan,
+            WritableRequestBody: writableBody ?? new JsonObject(),
+            CurrentState: currentState,
+            CurrentRootRowByColumnName: currentRootRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
+            ResolvedReferences: resolvedReferences ?? EmptyResolvedReferenceSet(),
+            ProfileRequest: profileRequest ?? CreateRequest(),
+            ProfileAppliedContext: profileAppliedContext
+        );
+
+    internal static ResolvedReferenceSet EmptyResolvedReferenceSet() =>
+        new(
+            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
+            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
+            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            InvalidDocumentReferences: [],
+            InvalidDescriptorReferences: [],
+            DocumentReferenceOccurrences: [],
+            DescriptorReferenceOccurrences: []
+        );
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private static RelationalScalarType StringType() => new(ScalarKind.String, MaxLength: 50);
@@ -300,13 +515,14 @@ internal static class ProfileTestDoubles
         string columnName,
         ColumnKind kind,
         RelationalScalarType? scalarType,
-        JsonPathExpression? sourceJsonPath = null
+        JsonPathExpression? sourceJsonPath = null,
+        bool isNullable = true
     ) =>
         new(
             ColumnName: new DbColumnName(columnName),
             Kind: kind,
             ScalarType: scalarType,
-            IsNullable: true,
+            IsNullable: isNullable,
             SourceJsonPath: sourceJsonPath,
             TargetResource: null,
             Storage: new ColumnStorage.Stored()
