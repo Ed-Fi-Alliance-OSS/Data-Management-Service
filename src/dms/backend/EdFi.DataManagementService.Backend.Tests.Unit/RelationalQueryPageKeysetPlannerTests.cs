@@ -107,8 +107,7 @@ public class Given_RelationalQueryPageKeysetPlanner
             new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
         );
 
-        var plannedResult = queryResult.Should().BeOfType<RelationalQueryPlanningResult.Planned>().Which;
-        var keyset = plannedResult.Keyset;
+        var keyset = queryResult;
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("INNER JOIN \"dms\".\"Document\" doc");
         keyset.Plan.PageDocumentIdSql.Should().Contain("doc.\"DocumentUuid\" = @id");
@@ -203,18 +202,13 @@ public class Given_RelationalQueryPageKeysetPlanner
             new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
         );
 
-        var firstPlanned = first.Should().BeOfType<RelationalQueryPlanningResult.Planned>().Which;
-        var secondPlanned = second.Should().BeOfType<RelationalQueryPlanningResult.Planned>().Which;
-
-        secondPlanned.Keyset.Plan.PageDocumentIdSql.Should().Be(firstPlanned.Keyset.Plan.PageDocumentIdSql);
-        secondPlanned.Keyset.Plan.TotalCountSql.Should().Be(firstPlanned.Keyset.Plan.TotalCountSql);
-        secondPlanned
-            .Keyset.Plan.PageParametersInOrder.Should()
-            .Equal(firstPlanned.Keyset.Plan.PageParametersInOrder);
-        secondPlanned
-            .Keyset.Plan.TotalCountParametersInOrder.Should()
-            .BeEquivalentTo(firstPlanned.Keyset.Plan.TotalCountParametersInOrder);
-        secondPlanned.Keyset.ParameterValues.Should().BeEquivalentTo(firstPlanned.Keyset.ParameterValues);
+        second.Plan.PageDocumentIdSql.Should().Be(first.Plan.PageDocumentIdSql);
+        second.Plan.TotalCountSql.Should().Be(first.Plan.TotalCountSql);
+        second.Plan.PageParametersInOrder.Should().Equal(first.Plan.PageParametersInOrder);
+        second
+            .Plan.TotalCountParametersInOrder.Should()
+            .BeEquivalentTo(first.Plan.TotalCountParametersInOrder);
+        second.ParameterValues.Should().BeEquivalentTo(first.ParameterValues);
     }
 
     [Test]
@@ -263,35 +257,38 @@ public class Given_RelationalQueryPageKeysetPlanner
             new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
         );
 
-        var plannedResult = result.Should().BeOfType<RelationalQueryPlanningResult.Planned>().Which;
-
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("offset");
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("limit");
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("offset_2");
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("limit_2");
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("school_id");
-        plannedResult.Keyset.ParameterValues.Keys.Should().Contain("school_id_2");
-        plannedResult.Keyset.Plan.PageDocumentIdSql.Should().Contain("@offset_2");
-        plannedResult.Keyset.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
-        plannedResult.Keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id");
-        plannedResult.Keyset.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
+        result.ParameterValues.Keys.Should().Contain("offset");
+        result.ParameterValues.Keys.Should().Contain("limit");
+        result.ParameterValues.Keys.Should().Contain("offset_2");
+        result.ParameterValues.Keys.Should().Contain("limit_2");
+        result.ParameterValues.Keys.Should().Contain("school_id");
+        result.ParameterValues.Keys.Should().Contain("school_id_2");
+        result.Plan.PageDocumentIdSql.Should().Contain("@offset_2");
+        result.Plan.PageDocumentIdSql.Should().Contain("@limit_2");
+        result.Plan.PageDocumentIdSql.Should().Contain("@school_id");
+        result.Plan.PageDocumentIdSql.Should().Contain("@school_id_2");
     }
 
     [Test]
-    public void It_should_short_circuit_empty_page_inputs_from_preprocessing()
+    public void It_should_reject_empty_page_inputs_already_short_circuited_by_the_repository()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
 
-        var result = planner.Plan(
-            CreateRootTable(),
-            new RelationalQueryPreprocessingResult(
-                new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
-                []
-            ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
-        );
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
+                    []
+                ),
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            );
 
-        result.Should().BeEquivalentTo(new RelationalQueryPlanningResult.EmptyPage("no matches"));
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Relational query planning requires preprocessing results in the continue state. (Parameter 'preprocessingResult')"
+            );
     }
 
     [Test]

@@ -336,11 +336,11 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        RelationalQueryPlanningResult planningResult;
+        PageKeysetSpec.Query plannedQuery;
 
         try
         {
-            planningResult = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect).Plan(
+            plannedQuery = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect).Plan(
                 readPlan.Model.Root,
                 preprocessingResult,
                 relationalQueryRequest.PaginationParameters
@@ -359,17 +359,8 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        if (planningResult is RelationalQueryPlanningResult.EmptyPage)
-        {
-            return new QueryResult.QuerySuccess(
-                [],
-                relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
-            );
-        }
-
-        var plannedQuery = (RelationalQueryPlanningResult.Planned)planningResult;
         var hydratedPage = await _documentHydrator
-            .HydrateAsync(readPlan, plannedQuery.Keyset, default)
+            .HydrateAsync(readPlan, plannedQuery, default)
             .ConfigureAwait(false);
 
         return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);

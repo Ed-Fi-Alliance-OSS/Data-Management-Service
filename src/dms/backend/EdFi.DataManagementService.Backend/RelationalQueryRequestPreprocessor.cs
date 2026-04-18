@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -13,8 +12,6 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalQueryRequestPreprocessor
 {
-    private static readonly Guid _edFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
     public static async Task<RelationalQueryPreprocessingResult> PreprocessAsync(
         MappingSet mappingSet,
         QualifiedResourceName requestResource,
@@ -230,28 +227,8 @@ internal static class RelationalQueryRequestPreprocessor
         return new DescriptorReference(
             descriptorResourceInfo,
             documentIdentity,
-            CreateReferentialId(descriptorResourceInfo, documentIdentity),
+            ReferentialIdFactory.Create(descriptorResourceInfo, documentIdentity),
             new JsonPath($"$.query[{index}]")
-        );
-    }
-
-    private static ReferentialId CreateReferentialId(
-        BaseResourceInfo resourceInfo,
-        DocumentIdentity documentIdentity
-    )
-    {
-        var identityString = string.Join(
-            "#",
-            documentIdentity.DocumentIdentityElements.Select(static element =>
-                $"{element.IdentityJsonPath.Value}={element.IdentityValue}"
-            )
-        );
-
-        return new ReferentialId(
-            Deterministic.Create(
-                _edFiUuidv5Namespace,
-                $"{resourceInfo.ProjectName.Value}{resourceInfo.ResourceName.Value}{identityString}"
-            )
         );
     }
 

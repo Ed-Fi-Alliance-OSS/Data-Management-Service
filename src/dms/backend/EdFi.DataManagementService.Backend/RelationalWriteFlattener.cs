@@ -19,10 +19,6 @@ public interface IRelationalWriteFlattener
 
 internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 {
-    private const string UtcDateTimeFormat = "yyyy-MM-dd'T'HH:mm:ss";
-    private const string OffsetDateTimeFormat = "yyyy-MM-dd'T'HH:mm:sszzz";
-    private const string TimeOnlyFormat = "HH:mm:ss";
-
     public FlattenedWriteSet Flatten(FlatteningInput flatteningInput)
     {
         ArgumentNullException.ThrowIfNull(flatteningInput);
@@ -1483,55 +1479,16 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         ArgumentNullException.ThrowIfNull(conversionContext);
         ArgumentNullException.ThrowIfNull(createInvalidLiteralReason);
 
-        return scalarType.Kind switch
+        if (RelationalScalarLiteralParser.TryParse(scalarLiteral, scalarType, out var convertedValue))
         {
-            ScalarKind.String => scalarLiteral,
-            ScalarKind.Int32
-                when int.TryParse(
-                    scalarLiteral,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var int32Value
-                ) => int32Value,
-            ScalarKind.Int64
-                when long.TryParse(
-                    scalarLiteral,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var int64Value
-                ) => int64Value,
-            ScalarKind.Decimal
-                when decimal.TryParse(
-                    scalarLiteral,
-                    NumberStyles.Number,
-                    CultureInfo.InvariantCulture,
-                    out var decimalValue
-                ) => decimalValue,
-            ScalarKind.Boolean when bool.TryParse(scalarLiteral, out var boolValue) => boolValue,
-            ScalarKind.Date
-                when DateOnly.TryParseExact(
-                    scalarLiteral,
-                    "yyyy-MM-dd",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var dateOnlyValue
-                ) => dateOnlyValue,
-            ScalarKind.DateTime when TryReadDateTimeValue(scalarLiteral, out var dateTimeValue) =>
-                dateTimeValue,
-            ScalarKind.Time
-                when TimeOnly.TryParseExact(
-                    scalarLiteral,
-                    TimeOnlyFormat,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var timeOnlyValue
-                ) => timeOnlyValue,
-            _ => throw CreateInvalidRequestDerivedScalarException(
-                conversionContext,
-                scalarType,
-                createInvalidLiteralReason(scalarLiteral)
-            ),
-        };
+            return convertedValue!;
+        }
+
+        throw CreateInvalidRequestDerivedScalarException(
+            conversionContext,
+            scalarType,
+            createInvalidLiteralReason(scalarLiteral)
+        );
     }
 
     private static T ReadRequiredJsonValue<T>(
@@ -1551,41 +1508,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             scalarType,
             $"encountered JSON value kind '{jsonValue.GetValueKind()}' with raw value {jsonValue.ToJsonString()}"
         );
-    }
-
-    private static bool TryReadDateTimeValue(string rawValue, out DateTime dateTimeValue)
-    {
-        if (
-            rawValue.EndsWith('Z')
-            && DateTime.TryParseExact(
-                rawValue[..^1],
-                UtcDateTimeFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var utcDateTimeValue
-            )
-        )
-        {
-            dateTimeValue = DateTime.SpecifyKind(utcDateTimeValue, DateTimeKind.Utc);
-            return true;
-        }
-
-        if (
-            DateTimeOffset.TryParseExact(
-                rawValue,
-                OffsetDateTimeFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var offsetDateTimeValue
-            )
-        )
-        {
-            dateTimeValue = offsetDateTimeValue.UtcDateTime;
-            return true;
-        }
-
-        dateTimeValue = default;
-        return false;
     }
 
     private static FlattenedWriteValue ResolveRootDocumentIdValue(RelationalWriteTargetContext targetContext)

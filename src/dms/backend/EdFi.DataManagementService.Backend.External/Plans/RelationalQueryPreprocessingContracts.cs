@@ -13,17 +13,7 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 public sealed record RelationalQueryPreprocessingResult(
     RelationalQueryPreprocessingOutcome Outcome,
     IReadOnlyList<PreprocessedRelationalQueryElement> QueryElementsInOrder
-)
-{
-    /// <summary>
-    /// True when later page-selection SQL must join <c>dms.Document</c> to apply at least one parsed
-    /// <see cref="RelationalQueryFieldTarget.DocumentUuid" /> filter.
-    /// </summary>
-    public bool RequiresDocumentUuidJoin =>
-        QueryElementsInOrder.Any(static element =>
-            element.Value is PreprocessedRelationalQueryValue.DocumentUuid
-        );
-}
+);
 
 /// <summary>
 /// Classifies whether preprocessing should continue into predicate planning or short-circuit to an empty page.

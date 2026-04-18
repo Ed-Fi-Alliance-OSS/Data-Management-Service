@@ -33,7 +33,6 @@ public class Given_RelationalQueryRequestPreprocessor
 
         result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.EmptyPage>();
         result.QueryElementsInOrder.Should().BeEmpty();
-        result.RequiresDocumentUuidJoin.Should().BeFalse();
         A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
@@ -63,7 +62,6 @@ public class Given_RelationalQueryRequestPreprocessor
         );
 
         result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
-        result.RequiresDocumentUuidJoin.Should().BeTrue();
         result.QueryElementsInOrder.Should().HaveCount(2);
         result
             .QueryElementsInOrder[0]
@@ -136,7 +134,6 @@ public class Given_RelationalQueryRequestPreprocessor
         );
 
         result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
-        result.RequiresDocumentUuidJoin.Should().BeFalse();
         result.QueryElementsInOrder.Should().HaveCount(2);
         result
             .QueryElementsInOrder[0]

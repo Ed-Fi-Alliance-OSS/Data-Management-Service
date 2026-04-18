@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -11,27 +10,14 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal abstract record RelationalQueryPlanningResult
-{
-    private RelationalQueryPlanningResult() { }
-
-    internal sealed record Planned(PageKeysetSpec.Query Keyset) : RelationalQueryPlanningResult;
-
-    internal sealed record EmptyPage(string Reason) : RelationalQueryPlanningResult;
-}
-
 internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 {
     private const string OffsetParameterName = "offset";
     private const string LimitParameterName = "limit";
-    private const string DateOnlyFormat = "yyyy-MM-dd";
-    private const string UtcDateTimeFormat = "yyyy-MM-dd'T'HH:mm:ss";
-    private const string OffsetDateTimeFormat = "yyyy-MM-dd'T'HH:mm:sszzz";
-    private const string TimeOnlyFormat = "HH:mm:ss";
 
     private readonly PageDocumentIdSqlCompiler _sqlCompiler = new(dialect);
 
-    public RelationalQueryPlanningResult Plan(
+    public PageKeysetSpec.Query Plan(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
         PaginationParameters paginationParameters,
@@ -41,9 +27,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         ArgumentNullException.ThrowIfNull(rootTable);
         ArgumentNullException.ThrowIfNull(preprocessingResult);
 
-        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage(var reason))
+        if (preprocessingResult.Outcome is not RelationalQueryPreprocessingOutcome.Continue)
         {
-            return new RelationalQueryPlanningResult.EmptyPage(reason);
+            throw new ArgumentException(
+                "Relational query planning requires preprocessing results in the continue state.",
+                nameof(preprocessingResult)
+            );
         }
 
         comparisonOperatorResolver ??= static _ => QueryComparisonOperator.Equal;
@@ -92,7 +81,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
-        return new RelationalQueryPlanningResult.Planned(new PageKeysetSpec.Query(sqlPlan, parameterValues));
+        return new PageKeysetSpec.Query(sqlPlan, parameterValues);
     }
 
     private static (QueryValuePredicate Predicate, object ParameterValue) PlanPredicate(
@@ -400,88 +389,15 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         RelationalScalarType scalarType
     )
     {
-        return scalarType.Kind switch
+        if (RelationalScalarLiteralParser.TryParse(rawValue, scalarType, out var convertedValue))
         {
-            ScalarKind.String => rawValue,
-            ScalarKind.Int32
-                when int.TryParse(
-                    rawValue,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var int32Value
-                ) => int32Value,
-            ScalarKind.Int64
-                when long.TryParse(
-                    rawValue,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var int64Value
-                ) => int64Value,
-            ScalarKind.Decimal
-                when decimal.TryParse(
-                    rawValue,
-                    NumberStyles.Number,
-                    CultureInfo.InvariantCulture,
-                    out var decimalValue
-                ) => decimalValue,
-            ScalarKind.Boolean when bool.TryParse(rawValue, out var boolValue) => boolValue,
-            ScalarKind.Date
-                when DateOnly.TryParseExact(
-                    rawValue,
-                    DateOnlyFormat,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var dateOnlyValue
-                ) => dateOnlyValue,
-            ScalarKind.DateTime when TryReadDateTimeValue(rawValue, out var dateTimeValue) => dateTimeValue,
-            ScalarKind.Time
-                when TimeOnly.TryParseExact(
-                    rawValue,
-                    TimeOnlyFormat,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var timeOnlyValue
-                ) => timeOnlyValue,
-            _ => throw new InvalidOperationException(
-                $"Relational query planning could not convert validated query field '{queryFieldName}' value "
-                    + $"'{rawValue}' to relational scalar kind '{scalarType.Kind}'."
-            ),
-        };
-    }
-
-    private static bool TryReadDateTimeValue(string rawValue, out DateTime dateTimeValue)
-    {
-        if (
-            rawValue.EndsWith('Z')
-            && DateTime.TryParseExact(
-                rawValue[..^1],
-                UtcDateTimeFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var utcDateTimeValue
-            )
-        )
-        {
-            dateTimeValue = DateTime.SpecifyKind(utcDateTimeValue, DateTimeKind.Utc);
-            return true;
+            return convertedValue!;
         }
 
-        if (
-            DateTimeOffset.TryParseExact(
-                rawValue,
-                OffsetDateTimeFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var offsetDateTimeValue
-            )
-        )
-        {
-            dateTimeValue = offsetDateTimeValue.UtcDateTime;
-            return true;
-        }
-
-        dateTimeValue = default;
-        return false;
+        throw new InvalidOperationException(
+            $"Relational query planning could not convert validated query field '{queryFieldName}' value "
+                + $"'{rawValue}' to relational scalar kind '{scalarType.Kind}'."
+        );
     }
 
     private sealed record ParameterNameSeed(int Index, string BaseName, string QueryFieldName, string Path);
