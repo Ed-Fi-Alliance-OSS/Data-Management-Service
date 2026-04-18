@@ -124,9 +124,19 @@ file static class ProfileRoutingTestSupport
         JsonNode requestBody
     )
     {
+        // Include the $._ext.sample extension scope so the slice-fence classifier returns
+        // SeparateTableNonCollection. Task 6 landed Slice 2 for RootTableOnly shapes, so a
+        // RootTableOnly classification with a multi-table plan now triggers the Slice 2 shape
+        // gate rather than the slice fence; these integration fixtures target the fence for
+        // non-RootTableOnly families, so include the extension scope to guarantee that.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var extensionScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$._ext.sample", []),
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
         );
@@ -135,7 +145,7 @@ file static class ProfileRoutingTestSupport
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState],
+                RequestScopeStates: [rootScopeState, extensionScopeState],
                 VisibleRequestCollectionItems: []
             ),
             ProfileName: "test-profile",
@@ -361,7 +371,7 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 
 /// <summary>
 /// Verifies that a profiled POST that resolves to post-as-update (existing document)
-/// reaches the slice fence and returns a family name like "RootTableOnly",
+/// reaches the slice fence and returns a family name like "SeparateTableNonCollection",
 /// instead of the old broad "DMS-1124 pending" message.
 /// </summary>
 [TestFixture]
@@ -472,7 +482,7 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
         _profiledPostAsUpdateResult
             .As<UpsertResult.UnknownFailure>()
             .FailureMessage.Should()
-            .Contain("RootTableOnly");
+            .Contain("SeparateTableNonCollection");
     }
 
     [Test]
@@ -580,7 +590,7 @@ public class Given_A_Profiled_Post_As_Update_Reaching_Slice_Fence
 
 /// <summary>
 /// Verifies that a profiled PUT targeting an existing document reaches the slice fence
-/// and returns a family name like "RootTableOnly", instead of the old broad
+/// and returns a family name like "SeparateTableNonCollection", instead of the old broad
 /// "DMS-1124 pending" message.
 /// </summary>
 [TestFixture]
@@ -685,7 +695,10 @@ public class Given_A_Profiled_Put_Reaching_Slice_Fence
     public void It_returns_unknown_failure_with_family_name_in_slice_fence()
     {
         _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult.As<UpdateResult.UnknownFailure>().FailureMessage.Should().Contain("RootTableOnly");
+        _profiledPutResult
+            .As<UpdateResult.UnknownFailure>()
+            .FailureMessage.Should()
+            .Contain("SeparateTableNonCollection");
     }
 
     [Test]

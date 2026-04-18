@@ -25,6 +25,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
+    IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
     IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
@@ -56,6 +57,9 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
+
+    private readonly IRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer =
+        profileMergeSynthesizer ?? throw new ArgumentNullException(nameof(profileMergeSynthesizer));
 
     private readonly IRelationalWritePersister _persister =
         persister ?? throw new ArgumentNullException(nameof(persister));
@@ -149,7 +153,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                 currentState = inSessionTargetResolution.CurrentState;
             }
 
-            // Profile decision sequence — runs before flattening
+            RelationalWriteMergeResult mergeResult;
+
+            // Profile decision sequence — runs before flattening for profile-aware dispatch
             if (request.ProfileWriteContext is not null)
             {
                 var profileWriteContext = request.ProfileWriteContext;
@@ -246,25 +252,61 @@ internal sealed class DefaultRelationalWriteExecutor(
                         topologyIndex
                     );
 
-                // After Slice 1 lands, no families are landed.
-                // Later slices remove families from this fence.
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return BuildSliceFenceResult(request.OperationKind, requiredFamily);
+                if (requiredFamily != RequiredSliceFamily.RootTableOnly)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildSliceFenceResult(request.OperationKind, requiredFamily);
+                }
+
+                if (request.WritePlan.TablePlansInDependencyOrder.Length > 1)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildSliceTwoShapeGateResult(request.OperationKind);
+                }
+
+                // Slice-2 gate passed: flatten + profile synthesize.
+                var profileFlattenedWriteSet = _writeFlattener.Flatten(
+                    new FlatteningInput(
+                        executionRequest.OperationKind,
+                        executionRequest.TargetContext,
+                        executionRequest.WritePlan,
+                        executionRequest.SelectedBody,
+                        resolvedReferences
+                    )
+                );
+
+                mergeResult = _profileMergeSynthesizer.Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        executionRequest.WritePlan,
+                        profileFlattenedWriteSet,
+                        executionRequest.SelectedBody,
+                        currentState,
+                        profileWriteContext.Request,
+                        profileAppliedWriteContext,
+                        resolvedReferences
+                    )
+                );
             }
+            else
+            {
+                var flattenedWriteSet = _writeFlattener.Flatten(
+                    new FlatteningInput(
+                        executionRequest.OperationKind,
+                        executionRequest.TargetContext,
+                        executionRequest.WritePlan,
+                        executionRequest.SelectedBody,
+                        resolvedReferences
+                    )
+                );
 
-            var flattenedWriteSet = _writeFlattener.Flatten(
-                new FlatteningInput(
-                    executionRequest.OperationKind,
-                    executionRequest.TargetContext,
-                    executionRequest.WritePlan,
-                    executionRequest.SelectedBody,
-                    resolvedReferences
-                )
-            );
-
-            var mergeResult = _noProfileMergeSynthesizer.Synthesize(
-                new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
-            );
+                mergeResult = _noProfileMergeSynthesizer.Synthesize(
+                    new RelationalWriteNoProfileMergeRequest(
+                        request.WritePlan,
+                        flattenedWriteSet,
+                        currentState
+                    )
+                );
+            }
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
                 executionRequest,
@@ -572,6 +614,24 @@ internal sealed class DefaultRelationalWriteExecutor(
     )
     {
         var message = $"Profile-aware persist for {requiredFamily} shapes is not yet supported (DMS-1124).";
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UnknownFailure(message)
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UnknownFailure(message)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
+    private static RelationalWriteExecutorResult BuildSliceTwoShapeGateResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        const string message =
+            "Slice 2 only supports profiled single-table root-only write plans (DMS-1124).";
         return operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
