@@ -59,35 +59,6 @@ file sealed class MssqlProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHa
         );
 }
 
-/// <summary>
-/// Concrete <see cref="IStoredStateProjectionInvoker"/> that returns a root-only
-/// <see cref="ProfileAppliedWriteContext"/>, sufficient for Slice 1 integration tests.
-/// </summary>
-file sealed class MssqlRootOnlyStoredStateProjectionInvoker : IStoredStateProjectionInvoker
-{
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        var rootAddress = new ScopeInstanceAddress("$", []);
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: []
-                ),
-            ],
-            VisibleStoredCollectionRows: []
-        );
-    }
-}
-
 file static class MssqlProfileRoutingTestSupport
 {
     public static ServiceProvider CreateServiceProvider()
@@ -137,7 +108,7 @@ file static class MssqlProfileRoutingTestSupport
             ),
             ProfileName: "test-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
         );
     }
 
@@ -162,7 +133,7 @@ file static class MssqlProfileRoutingTestSupport
             ),
             ProfileName: "test-non-creatable-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
         );
     }
 
@@ -210,7 +181,7 @@ file static class MssqlProfileRoutingTestSupport
             ),
             ProfileName: "test-profile-with-inlined-descendant",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlRootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
         );
     }
 }

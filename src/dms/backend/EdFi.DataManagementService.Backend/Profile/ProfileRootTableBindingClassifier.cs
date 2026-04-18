@@ -72,7 +72,10 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         var resolverOwned = CollectResolverOwnedIndices(rootTable);
 
         // Sort scope canonicals longest-first so longest-prefix wins.
-        var candidateScopes = BuildCandidateScopeSet(profileRequest, profileAppliedContext);
+        var candidateScopes = ProfileScopeMatching.BuildCandidateScopeSet(
+            profileRequest,
+            profileAppliedContext
+        );
 
         // Records the (memberPath, matchKind) of every ordinary binding that resolved to a
         // profile-governed containing scope. Drives the post-pass drift check below.
@@ -111,12 +114,12 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             foreach (var member in keyUnificationPlan.MembersInOrder)
             {
                 var memberPath = member.RelativePath.Canonical;
-                var containingScope = TryMatchLongestScope(memberPath, candidateScopes);
+                var containingScope = ProfileScopeMatching.TryMatchLongestScope(memberPath, candidateScopes);
                 if (containingScope is null)
                 {
                     continue;
                 }
-                var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
+                var strippedMemberPath = ProfileScopeMatching.StripScopePrefix(memberPath, containingScope);
                 var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
 
                 if (!bindingsByContainingScope.TryGetValue(containingScope, out var bindingsUnderScope))
@@ -156,30 +159,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         return builder.ToImmutable();
     }
 
-    /// <summary>
-    /// Builds the candidate scope canonical set by union of request and stored scope addresses,
-    /// sorted longest-first so longest-prefix matching is straightforward.
-    /// </summary>
-    private static ImmutableArray<string> BuildCandidateScopeSet(
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
-    )
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var state in profileRequest.RequestScopeStates)
-        {
-            set.Add(state.Address.JsonScope);
-        }
-        if (profileAppliedContext is not null)
-        {
-            foreach (var state in profileAppliedContext.StoredScopeStates)
-            {
-                set.Add(state.Address.JsonScope);
-            }
-        }
-        return [.. set.OrderByDescending(s => s.Length).ThenBy(s => s, StringComparer.Ordinal)];
-    }
-
     private static RootBindingDisposition ClassifyOrdinary(
         ResourceWritePlan writePlan,
         TableWritePlan rootTable,
@@ -212,13 +191,13 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         var bindingPath = ResolveBindingRootRelativePath(writePlan, binding, bindingIndex, rootTable);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
-        var containingScope = TryMatchLongestScope(bindingPath, candidateScopes);
+        var containingScope = ProfileScopeMatching.TryMatchLongestScope(bindingPath, candidateScopes);
         if (containingScope is null)
         {
             return RootBindingDisposition.VisibleWritable;
         }
 
-        var memberPath = StripScopePrefix(bindingPath, containingScope);
+        var memberPath = ProfileScopeMatching.StripScopePrefix(bindingPath, containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
         // Record this binding under its containing scope so the post-pass drift check can
@@ -350,39 +329,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                     + "does not know how to resolve. Storage-managed and plan-shape kinds must be filtered upstream."
             ),
         };
-
-    private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
-    {
-        // candidateScopes is pre-sorted longest-first.
-        foreach (var scope in candidateScopes)
-        {
-            if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-            {
-                return scope;
-            }
-            if (
-                bindingPath.StartsWith(scope, StringComparison.Ordinal)
-                && bindingPath.Length > scope.Length
-                && bindingPath[scope.Length] == '.'
-            )
-            {
-                return scope;
-            }
-        }
-        return null;
-    }
-
-    private static string StripScopePrefix(string bindingPath, string scope)
-    {
-        if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-        {
-            // Binding path equals the scope itself — member path is empty (rare; an exact-path
-            // hidden match would also have to be empty-string for it to govern).
-            return string.Empty;
-        }
-        // bindingPath = scope + '.' + memberPath
-        return bindingPath[(scope.Length + 1)..];
-    }
 
     private static string FormatTable(TableWritePlan rootTable) =>
         $"{rootTable.TableModel.Table.Schema.Value}.{rootTable.TableModel.Table.Name}";

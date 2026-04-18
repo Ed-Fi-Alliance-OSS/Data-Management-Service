@@ -101,7 +101,10 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             valueAssigned[i] = mergedRowValuesMutable[i] is not null;
         }
 
-        var candidateScopes = BuildCandidateScopeSet(context.ProfileRequest, context.ProfileAppliedContext);
+        var candidateScopes = ProfileScopeMatching.BuildCandidateScopeSet(
+            context.ProfileRequest,
+            context.ProfileAppliedContext
+        );
 
         foreach (var keyUnificationPlan in rootTableWritePlan.KeyUnificationPlans)
         {
@@ -215,7 +218,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
     )
     {
         var memberPath = member.RelativePath.Canonical;
-        var containingScope = TryMatchLongestScope(memberPath, candidateScopes);
+        var containingScope = ProfileScopeMatching.TryMatchLongestScope(memberPath, candidateScopes);
 
         if (containingScope is null)
         {
@@ -227,7 +230,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             ? ProfileMemberGovernanceRules.LookupStoredScope(context.ProfileAppliedContext, containingScope)
             : null;
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
-        var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
+        var strippedMemberPath = ProfileScopeMatching.StripScopePrefix(memberPath, containingScope);
 
         if (storedScope is not null)
         {
@@ -323,55 +326,6 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
         return isPresent
             ? KeyUnificationMemberEvaluation.Present(storedValue!)
             : KeyUnificationMemberEvaluation.Absent;
-    }
-
-    private static ImmutableArray<string> BuildCandidateScopeSet(
-        ProfileAppliedWriteRequest profileRequest,
-        ProfileAppliedWriteContext? profileAppliedContext
-    )
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var state in profileRequest.RequestScopeStates)
-        {
-            set.Add(state.Address.JsonScope);
-        }
-        if (profileAppliedContext is not null)
-        {
-            foreach (var state in profileAppliedContext.StoredScopeStates)
-            {
-                set.Add(state.Address.JsonScope);
-            }
-        }
-        return [.. set.OrderByDescending(s => s.Length).ThenBy(s => s, StringComparer.Ordinal)];
-    }
-
-    private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
-    {
-        foreach (var scope in candidateScopes)
-        {
-            if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-            {
-                return scope;
-            }
-            if (
-                bindingPath.StartsWith(scope, StringComparison.Ordinal)
-                && bindingPath.Length > scope.Length
-                && bindingPath[scope.Length] == '.'
-            )
-            {
-                return scope;
-            }
-        }
-        return null;
-    }
-
-    private static string StripScopePrefix(string bindingPath, string scope)
-    {
-        if (string.Equals(bindingPath, scope, StringComparison.Ordinal))
-        {
-            return string.Empty;
-        }
-        return bindingPath[(scope.Length + 1)..];
     }
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>

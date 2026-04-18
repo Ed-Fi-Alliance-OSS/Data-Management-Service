@@ -77,48 +77,6 @@ file sealed class MssqlProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHand
         );
 }
 
-/// <summary>
-/// Test-configurable <see cref="IStoredStateProjectionInvoker"/> for MSSQL Slice 2 fixtures.
-/// Emits a single non-collection stored scope at <c>$</c> with caller-supplied visibility
-/// and hidden member paths.
-/// </summary>
-internal sealed class MssqlConfigurableStoredStateProjectionInvoker : IStoredStateProjectionInvoker
-{
-    private readonly ProfileVisibilityKind _rootVisibility;
-    private readonly System.Collections.Immutable.ImmutableArray<string> _rootHiddenMemberPaths;
-
-    public MssqlConfigurableStoredStateProjectionInvoker(
-        ProfileVisibilityKind rootVisibility,
-        System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths
-    )
-    {
-        _rootVisibility = rootVisibility;
-        _rootHiddenMemberPaths = rootHiddenMemberPaths;
-    }
-
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        var rootAddress = new ScopeInstanceAddress("$", []);
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: _rootVisibility,
-                    HiddenMemberPaths: _rootHiddenMemberPaths
-                ),
-            ],
-            VisibleStoredCollectionRows: []
-        );
-    }
-}
-
 internal static class MssqlProfileRootTableOnlyMergeSupport
 {
     public const string NamingStressFixtureRelativePath =
@@ -197,7 +155,7 @@ internal static class MssqlProfileRootTableOnlyMergeSupport
             ),
             ProfileName: profileName,
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlConfigurableStoredStateProjectionInvoker(
+            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
                 rootVisibility,
                 rootHiddenMemberPaths
             )
@@ -852,7 +810,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
             ),
             ProfileName: "shape-gate-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new MssqlConfigurableStoredStateProjectionInvoker(
+            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
                 ProfileVisibilityKind.VisiblePresent,
                 []
             )

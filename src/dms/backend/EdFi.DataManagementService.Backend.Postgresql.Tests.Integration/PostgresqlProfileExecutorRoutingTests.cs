@@ -69,35 +69,6 @@ file sealed class ProfileRoutingNoOpUpdateCascadeHandler : IUpdateCascadeHandler
         );
 }
 
-/// <summary>
-/// Concrete <see cref="IStoredStateProjectionInvoker"/> that returns a root-only
-/// <see cref="ProfileAppliedWriteContext"/>, sufficient for Slice 1 integration tests.
-/// </summary>
-file sealed class RootOnlyStoredStateProjectionInvoker : IStoredStateProjectionInvoker
-{
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        var rootAddress = new ScopeInstanceAddress("$", []);
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: []
-                ),
-            ],
-            VisibleStoredCollectionRows: []
-        );
-    }
-}
-
 file static class ProfileRoutingTestSupport
 {
     public static ServiceProvider CreateServiceProvider()

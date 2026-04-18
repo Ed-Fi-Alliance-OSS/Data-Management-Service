@@ -87,49 +87,6 @@ file sealed class ProfileMergeNoOpUpdateCascadeHandler : IUpdateCascadeHandler
 }
 
 /// <summary>
-/// Test-configurable <see cref="IStoredStateProjectionInvoker"/> that emits a single
-/// non-collection stored scope at <c>$</c> with caller-supplied visibility and hidden
-/// member paths. Sufficient for Slice 2 root-only merge fixtures that need the
-/// synthesizer to see explicit hidden/absent dispositions from the projection.
-/// </summary>
-internal sealed class ConfigurableStoredStateProjectionInvoker : IStoredStateProjectionInvoker
-{
-    private readonly ProfileVisibilityKind _rootVisibility;
-    private readonly System.Collections.Immutable.ImmutableArray<string> _rootHiddenMemberPaths;
-
-    public ConfigurableStoredStateProjectionInvoker(
-        ProfileVisibilityKind rootVisibility,
-        System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths
-    )
-    {
-        _rootVisibility = rootVisibility;
-        _rootHiddenMemberPaths = rootHiddenMemberPaths;
-    }
-
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        var rootAddress = new ScopeInstanceAddress("$", []);
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: _rootVisibility,
-                    HiddenMemberPaths: _rootHiddenMemberPaths
-                ),
-            ],
-            VisibleStoredCollectionRows: []
-        );
-    }
-}
-
-/// <summary>
 /// Shared helpers for the Slice 2 root-table-only profile merge integration tests.
 /// </summary>
 internal static class PostgresqlProfileRootTableOnlyMergeSupport
