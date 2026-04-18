@@ -201,42 +201,6 @@ public class Given_ProfileSynthesizer_with_HiddenPreserved_binding_and_null_Curr
 }
 
 [TestFixture]
-public class Given_ProfileSynthesizer_request_with_multi_table_plan
-{
-    private Action _act = null!;
-
-    [SetUp]
-    public void Setup()
-    {
-        // Construct a plan with a single root table, then compose a second ResourceWritePlan
-        // artificially by wrapping a duplicate TableWritePlan reference — quickest way to
-        // violate the invariant without fabricating a second table model.
-        var plan = BuildSingleScalarBindingRootPlan();
-        var rootPlan = plan.TablePlansInDependencyOrder[0];
-        var multiPlan = new ResourceWritePlan(plan.Model, [rootPlan, rootPlan]);
-        var body = new JsonObject();
-        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
-
-        _act = () =>
-            new RelationalWriteProfileMergeRequest(
-                writePlan: multiPlan,
-                flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "x"),
-                writableRequestBody: body,
-                currentState: null,
-                profileRequest: request,
-                profileAppliedContext: null,
-                resolvedReferences: EmptyResolvedReferenceSet()
-            );
-    }
-
-    [Test]
-    public void It_throws_ArgumentException_about_single_table_write_plan()
-    {
-        _act.Should().Throw<ArgumentException>().WithMessage("*single-table write plan*");
-    }
-}
-
-[TestFixture]
 public class Given_ProfileSynthesizer_request_with_mismatched_applied_context_request
 {
     private Action _act = null!;

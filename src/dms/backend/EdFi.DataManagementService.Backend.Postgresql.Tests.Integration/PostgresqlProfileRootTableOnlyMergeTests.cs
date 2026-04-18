@@ -724,20 +724,22 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
 // reason as Fixture 7.
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 9: Multi-table plan → Slice 2 shape-gate failure
+//  Fixture 9: Multi-table plan with root-only runtime shape → profiled PUT success
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Fixture 9: exercises the Slice 2 shape gate against a resource whose compiled
-/// write plan has more than one table. The profile context classifies the required
-/// slice family as RootTableOnly (only $ is a request scope) so the fence does not
-/// fire, and the shape gate must return UnknownFailure whose message references
-/// the Slice 2 single-table root-only constraint.
+/// Fixture 9: a resource whose compiled write plan has more than one table is still
+/// a supported Slice 2 shape as long as profile metadata confines runtime behavior
+/// to the root table. The profile context here makes only `$` a request scope and
+/// marks no stored scopes besides root; the classifier returns RootTableOnly, the
+/// profile merge synthesizer produces a root-only merge result, and the persister
+/// leaves the extension table untouched. The profiled PUT therefore completes with
+/// UpdateSuccess rather than the prior UnknownFailure shape-gate rejection.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_Gate_Failure
+public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Shape_Succeeds
 {
     private const string RequestBodyJson = """
         {
@@ -795,21 +797,8 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
     }
 
     [Test]
-    public void It_returns_unknown_failure_with_slice_two_shape_gate_message()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .Contain("single-table root-only");
-    }
-
-    [Test]
-    public void It_references_dms_1124_in_the_shape_gate_message()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult.As<UpdateResult.UnknownFailure>().FailureMessage.Should().Contain("DMS-1124");
-    }
+    public void It_returns_update_success() =>
+        _profiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
 
     private static DocumentInfo CreateSchoolDocumentInfo()
     {
@@ -835,7 +824,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeShapeGate",
+                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -846,7 +835,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("profile-merge-shape-gate-seed"),
+            TraceId: new TraceId("profile-merge-multi-table-root-only-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
@@ -866,7 +855,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeShapeGate",
+                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -875,9 +864,9 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
         var requestBody = JsonNode.Parse(RequestBodyJson)!;
 
-        // Build a profile context with only the $ scope (no inlined or collection scopes)
-        // so the slice-fence classifier returns RootTableOnly. The shape gate then fires
-        // because the compiled write plan has more than one table.
+        // Build a profile context with only the $ scope (no inlined or collection scopes).
+        // The slice-fence classifier returns RootTableOnly and the profile merge synthesizer
+        // produces a root-only merge result; the persister leaves the extension table alone.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
@@ -891,7 +880,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
                 RequestScopeStates: [rootScopeState],
                 VisibleRequestCollectionItems: []
             ),
-            ProfileName: "shape-gate-profile",
+            ProfileName: "multi-table-root-only-profile",
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
                 ProfileVisibilityKind.VisiblePresent,
@@ -905,7 +894,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-merge-shape-gate-put"),
+            TraceId: new TraceId("profile-merge-multi-table-root-only-put"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),

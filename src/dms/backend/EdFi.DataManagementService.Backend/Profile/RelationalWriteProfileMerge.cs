@@ -12,9 +12,10 @@ using EdFi.DataManagementService.Core.Profile;
 namespace EdFi.DataManagementService.Backend.Profile;
 
 /// <summary>
-/// Input contract for the profile merge synthesizer. Slice 2 constrains this to a
-/// single-table (root-only) write plan; the synthesizer invariants are checked in
-/// the constructor so downstream code may assume a shape it can rely on.
+/// Input contract for the profile merge synthesizer. Slice 2 merge itself is root-table-only,
+/// but the input write plan may carry additional tables (e.g. a separate-table extension scope
+/// that the profile renders hidden or request-absent). Those non-root tables are intentionally
+/// excluded from the produced merge result; the persister then leaves them untouched.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -38,13 +39,6 @@ internal sealed record RelationalWriteProfileMergeRequest
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
 
-        if (WritePlan.TablePlansInDependencyOrder.Length != 1)
-        {
-            throw new ArgumentException(
-                "RelationalWriteProfileMergeRequest requires a single-table write plan for Slice 2.",
-                nameof(writePlan)
-            );
-        }
         if (
             !ReferenceEquals(
                 WritePlan.TablePlansInDependencyOrder[0],

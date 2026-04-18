@@ -684,13 +684,19 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 9: Multi-table plan → Slice 2 shape-gate failure (MSSQL)
+//  Fixture 9: Multi-table plan with root-only runtime shape → profiled PUT success (MSSQL)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// <summary>
+/// Mirror of the PostgreSQL Fixture 9: a multi-table compiled plan whose profile
+/// metadata keeps runtime behavior confined to the root table is a supported Slice 2
+/// shape. Classifier returns RootTableOnly, the profile merge synthesizer returns a
+/// root-only merge result, and the persister leaves the extension table untouched.
+/// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_Shape_Gate_Failure
+public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Shape_Succeeds
 {
     private const string RequestBodyJson = """
         {
@@ -755,21 +761,8 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
     }
 
     [Test]
-    public void It_returns_unknown_failure_with_slice_two_shape_gate_message()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult
-            .As<UpdateResult.UnknownFailure>()
-            .FailureMessage.Should()
-            .Contain("single-table root-only");
-    }
-
-    [Test]
-    public void It_references_dms_1124_in_the_shape_gate_message()
-    {
-        _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
-        _profiledPutResult.As<UpdateResult.UnknownFailure>().FailureMessage.Should().Contain("DMS-1124");
-    }
+    public void It_returns_update_success() =>
+        _profiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
 
     private static DocumentInfo CreateSchoolDocumentInfo()
     {
@@ -795,7 +788,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeShapeGate",
+                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -806,7 +799,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("mssql-profile-merge-shape-gate-seed"),
+            TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
@@ -826,7 +819,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeShapeGate",
+                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -848,7 +841,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
                 RequestScopeStates: [rootScopeState],
                 VisibleRequestCollectionItems: []
             ),
-            ProfileName: "shape-gate-profile",
+            ProfileName: "multi-table-root-only-profile",
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: new MssqlConfigurableStoredStateProjectionInvoker(
                 ProfileVisibilityKind.VisiblePresent,
@@ -862,7 +855,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_Returns_Slice_Two_
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("mssql-profile-merge-shape-gate-put"),
+            TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-put"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),

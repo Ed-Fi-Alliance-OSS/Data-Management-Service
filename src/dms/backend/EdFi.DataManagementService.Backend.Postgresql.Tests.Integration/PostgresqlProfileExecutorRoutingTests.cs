@@ -124,11 +124,9 @@ file static class ProfileRoutingTestSupport
         JsonNode requestBody
     )
     {
-        // Include the $._ext.sample extension scope so the slice-fence classifier returns
-        // SeparateTableNonCollection. Task 6 landed Slice 2 for RootTableOnly shapes, so a
-        // RootTableOnly classification with a multi-table plan now triggers the Slice 2 shape
-        // gate rather than the slice fence; these integration fixtures target the fence for
-        // non-RootTableOnly families, so include the extension scope to guarantee that.
+        // The extension scope below is intentional. Routing fixtures that use this helper
+        // expect the slice-fence family name to appear in the failure message, so the profile
+        // must include a non-root scope that forces a non-root-table-only classification.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
