@@ -479,13 +479,9 @@ public static class DocumentReconstituter
         IReadOnlyDictionary<long, string> descriptorUriLookup
     )
     {
-        var immediateChildren = FindImmediateChildTables(
-            parentTablePlan.TableModel,
-            reconstitutionContext.TableRowsInDependencyOrder
-        );
-
-        foreach (var childTableRows in immediateChildren)
+        foreach (var childTable in parentTablePlan.ImmediateChildrenInDependencyOrder)
         {
+            var childTableRows = reconstitutionContext.GetTableRowsOrThrow(childTable);
             var childTablePlan = compiledPlan.GetTablePlanOrThrow(childTableRows.TableModel.Table);
             var childKind = childTablePlan.TableModel.IdentityMetadata.TableKind;
 
@@ -1499,8 +1495,23 @@ public static class DocumentReconstituter
     )
     {
         private readonly Dictionary<DbTableName, ChildRowIndex> _childRowIndexesByTable = [];
+        private readonly Dictionary<DbTableName, HydratedTableRows> _tableRowsByTable = BuildTableRowsByTable(
+            tableRowsInDependencyOrder
+        );
 
         public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder => tableRowsInDependencyOrder;
+
+        public HydratedTableRows GetTableRowsOrThrow(DbTableName table)
+        {
+            if (_tableRowsByTable.TryGetValue(table, out var tableRows))
+            {
+                return tableRows;
+            }
+
+            throw new InvalidOperationException(
+                $"Cannot reconstitute document: hydrated table rows for table '{table}' were not found."
+            );
+        }
 
         public IReadOnlyList<object?[]> GetRowsByParentLocator(
             HydratedTableRows childTableRows,
@@ -1519,6 +1530,25 @@ public static class DocumentReconstituter
             }
 
             return childRowIndex.GetRows(parentLocatorValue);
+        }
+
+        private static Dictionary<DbTableName, HydratedTableRows> BuildTableRowsByTable(
+            IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
+        )
+        {
+            Dictionary<DbTableName, HydratedTableRows> tableRowsByTable = [];
+
+            foreach (var tableRows in tableRowsInDependencyOrder)
+            {
+                if (!tableRowsByTable.TryAdd(tableRows.TableModel.Table, tableRows))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot reconstitute document: duplicate hydrated rows were provided for table '{tableRows.TableModel.Table}'."
+                    );
+                }
+            }
+
+            return tableRowsByTable;
         }
     }
 

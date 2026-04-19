@@ -119,6 +119,10 @@ internal sealed record TableReconstitutionPlan
 
     public ImmutableArray<DescriptorReconstitutionBinding> DescriptorBindingsInOrder { get; init; }
 
+    public DbTableName? ImmediateParentTable { get; init; }
+
+    public ImmutableArray<DbTableName> ImmediateChildrenInDependencyOrder { get; init; } = [];
+
     public int ResolveSingleRootScopeLocatorOrdinalOrThrow()
     {
         if (RootScopeLocatorOrdinals.Length != 1)
@@ -268,6 +272,8 @@ internal static class CompiledReconstitutionPlanBuilder
             })
             .ToArray();
 
+        tablePlans = ApplyTopologyOrThrow(readPlan, tablePlans);
+
         return new CompiledReconstitutionPlan(
             ReadPlan: readPlan,
             TablePlansInDependencyOrder: tablePlans,
@@ -333,6 +339,358 @@ internal static class CompiledReconstitutionPlanBuilder
 
         return root;
     }
+
+    private static TableReconstitutionPlan[] ApplyTopologyOrThrow(
+        ResourceReadPlan readPlan,
+        TableReconstitutionPlan[] tablePlansInDependencyOrder
+    )
+    {
+        Dictionary<DbTableName, int> originalOrderByTable = tablePlansInDependencyOrder
+            .Select((tablePlan, index) => new KeyValuePair<DbTableName, int>(tablePlan.Table, index))
+            .ToDictionary();
+        Dictionary<DbTableName, DbTableName?> immediateParentByTable = [];
+        Dictionary<DbTableName, List<DbTableName>> immediateChildrenByTable =
+            tablePlansInDependencyOrder.ToDictionary(
+                static tablePlan => tablePlan.Table,
+                static _ => new List<DbTableName>()
+            );
+
+        foreach (var childTablePlan in tablePlansInDependencyOrder)
+        {
+            var immediateParentTable = ResolveImmediateParentTableOrThrow(
+                readPlan,
+                tablePlansInDependencyOrder,
+                childTablePlan
+            );
+
+            immediateParentByTable[childTablePlan.Table] = immediateParentTable?.Table;
+
+            if (immediateParentTable is not null)
+            {
+                immediateChildrenByTable[immediateParentTable.Table].Add(childTablePlan.Table);
+            }
+        }
+
+        var rootTablePlans = tablePlansInDependencyOrder.Where(tablePlan =>
+            immediateParentByTable[tablePlan.Table] is null
+        );
+
+        if (rootTablePlans.Count() != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan for '{GetResourceDisplayName(readPlan)}': "
+                    + $"expected exactly one root table in page topology, but found {rootTablePlans.Count()}."
+            );
+        }
+
+        List<TableReconstitutionPlan> reorderedTablePlans = [];
+
+        void AppendSubtree(TableReconstitutionPlan tablePlan)
+        {
+            reorderedTablePlans.Add(tablePlan);
+
+            foreach (
+                var childTable in immediateChildrenByTable[tablePlan.Table]
+                    .OrderBy(childTable => originalOrderByTable[childTable])
+            )
+            {
+                AppendSubtree(
+                    tablePlansInDependencyOrder.Single(candidate => candidate.Table.Equals(childTable))
+                );
+            }
+        }
+
+        AppendSubtree(rootTablePlans.Single());
+
+        if (reorderedTablePlans.Count != tablePlansInDependencyOrder.Length)
+        {
+            throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan for '{GetResourceDisplayName(readPlan)}': "
+                    + "page topology ordering did not include every table exactly once."
+            );
+        }
+
+        return
+        [
+            .. reorderedTablePlans.Select(tablePlan =>
+                tablePlan with
+                {
+                    ImmediateParentTable = immediateParentByTable[tablePlan.Table],
+                    ImmediateChildrenInDependencyOrder =
+                    [
+                        .. immediateChildrenByTable[tablePlan.Table]
+                            .OrderBy(childTable => originalOrderByTable[childTable]),
+                    ],
+                }
+            ),
+        ];
+    }
+
+    private static TableReconstitutionPlan? ResolveImmediateParentTableOrThrow(
+        ResourceReadPlan readPlan,
+        IReadOnlyList<TableReconstitutionPlan> tablePlansInDependencyOrder,
+        TableReconstitutionPlan childTablePlan
+    )
+    {
+        var childTableModel = childTablePlan.TableModel;
+        var tableKind = childTableModel.IdentityMetadata.TableKind;
+
+        if (tableKind is DbTableKind.Root)
+        {
+            return null;
+        }
+
+        return tableKind switch
+        {
+            DbTableKind.Collection => ResolveExactScopeParentOrThrow(
+                readPlan,
+                tablePlansInDependencyOrder,
+                childTablePlan,
+                ResolveImmediateAncestorScopeSegmentsOrThrow(childTableModel.JsonScope),
+                static kind => kind is DbTableKind.Root or DbTableKind.Collection,
+                "root or collection table"
+            ),
+            DbTableKind.RootExtension => ResolveExactScopeParentOrThrow(
+                readPlan,
+                tablePlansInDependencyOrder,
+                childTablePlan,
+                [],
+                static kind => kind is DbTableKind.Root,
+                "root table"
+            ),
+            DbTableKind.CollectionExtensionScope => ResolveExactScopeParentOrThrow(
+                readPlan,
+                tablePlansInDependencyOrder,
+                childTablePlan,
+                ResolveBaseScopeSegmentsForCollectionExtensionScopeOrThrow(childTableModel.JsonScope),
+                static kind => kind is DbTableKind.Collection,
+                "collection table aligned to the extended base scope"
+            ),
+            DbTableKind.ExtensionCollection => ResolveExactScopeParentOrThrow(
+                readPlan,
+                tablePlansInDependencyOrder,
+                childTablePlan,
+                ResolveImmediateAncestorScopeSegmentsOrThrow(childTableModel.JsonScope),
+                static kind =>
+                    kind
+                        is DbTableKind.RootExtension
+                            or DbTableKind.CollectionExtensionScope
+                            or DbTableKind.ExtensionCollection,
+                "root extension, collection extension scope, or extension collection table"
+            ),
+            _ => throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan for '{GetResourceDisplayName(readPlan)}': "
+                    + $"table '{childTableModel.Table}' uses unsupported table kind '{tableKind}' for page topology."
+            ),
+        };
+    }
+
+    private static TableReconstitutionPlan ResolveExactScopeParentOrThrow(
+        ResourceReadPlan readPlan,
+        IReadOnlyList<TableReconstitutionPlan> tablePlansInDependencyOrder,
+        TableReconstitutionPlan childTablePlan,
+        IReadOnlyList<JsonPathSegment> expectedParentScopeSegments,
+        Func<DbTableKind, bool> isAllowedParentKind,
+        string expectedParentDescription
+    )
+    {
+        List<TableReconstitutionPlan> candidateParents = [];
+
+        foreach (var candidateParent in tablePlansInDependencyOrder)
+        {
+            if (!isAllowedParentKind(candidateParent.TableModel.IdentityMetadata.TableKind))
+            {
+                continue;
+            }
+
+            if (candidateParent.Table.Equals(childTablePlan.Table))
+            {
+                continue;
+            }
+
+            if (
+                AreSegmentsEqual(
+                    GetRestrictedSegments(candidateParent.TableModel.JsonScope),
+                    expectedParentScopeSegments
+                )
+            )
+            {
+                candidateParents.Add(candidateParent);
+            }
+        }
+
+        if (candidateParents.Count == 1)
+        {
+            return candidateParents[0];
+        }
+
+        var resourceDisplayName = GetResourceDisplayName(readPlan);
+        var expectedScope = FormatScope(expectedParentScopeSegments);
+
+        if (candidateParents.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan for '{resourceDisplayName}': "
+                    + $"table '{childTablePlan.Table}' at scope '{childTablePlan.TableModel.JsonScope.Canonical}' "
+                    + $"expected exactly one {expectedParentDescription} at scope '{expectedScope}', but found none."
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot build compiled reconstitution plan for '{resourceDisplayName}': "
+                + $"table '{childTablePlan.Table}' at scope '{childTablePlan.TableModel.JsonScope.Canonical}' "
+                + $"expected exactly one {expectedParentDescription} at scope '{expectedScope}', "
+                + $"but found {candidateParents.Count}: {string.Join(", ", candidateParents.Select(static candidate => $"'{candidate.Table}'"))}."
+        );
+    }
+
+    private static IReadOnlyList<JsonPathSegment> ResolveImmediateAncestorScopeSegmentsOrThrow(
+        JsonPathExpression jsonScope
+    )
+    {
+        var childSegments = GetRestrictedSegments(jsonScope);
+
+        for (var length = childSegments.Count - 1; length >= 0; length--)
+        {
+            var candidateSegments = childSegments.Take(length).ToArray();
+
+            if (IsPotentialTableScope(candidateSegments))
+            {
+                return candidateSegments;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot build compiled reconstitution plan: scope '{jsonScope.Canonical}' does not have a valid ancestor table scope."
+        );
+    }
+
+    private static IReadOnlyList<JsonPathSegment> ResolveBaseScopeSegmentsForCollectionExtensionScopeOrThrow(
+        JsonPathExpression jsonScope
+    )
+    {
+        var segments = GetRestrictedSegments(jsonScope);
+
+        if (
+            segments.Count < 2
+            || segments[^2] is not JsonPathSegment.Property { Name: "_ext" }
+            || segments[^1] is not JsonPathSegment.Property trailingProject
+        )
+        {
+            throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan: collection extension scope '{jsonScope.Canonical}' "
+                    + "does not end in an '_ext.{project}' attachment segment."
+            );
+        }
+
+        var baseScopeSegments = segments.Take(segments.Count - 2).ToArray();
+
+        if (
+            baseScopeSegments.Length >= 2
+            && baseScopeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
+            && baseScopeSegments[1] is JsonPathSegment.Property leadingProject
+        )
+        {
+            if (!string.Equals(leadingProject.Name, trailingProject.Name, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot build compiled reconstitution plan: collection extension scope '{jsonScope.Canonical}' "
+                        + "uses mismatched leading and trailing extension project segments."
+                );
+            }
+
+            baseScopeSegments = baseScopeSegments.Skip(2).ToArray();
+        }
+
+        if (baseScopeSegments.Length == 0 || baseScopeSegments[^1] is not JsonPathSegment.AnyArrayElement)
+        {
+            throw new InvalidOperationException(
+                $"Cannot build compiled reconstitution plan: collection extension scope '{jsonScope.Canonical}' "
+                    + "does not map to a collection base scope."
+            );
+        }
+
+        return baseScopeSegments;
+    }
+
+    private static bool IsPotentialTableScope(IReadOnlyList<JsonPathSegment> segments)
+    {
+        if (segments.Count == 0)
+        {
+            return true;
+        }
+
+        return segments[^1] is JsonPathSegment.AnyArrayElement || EndsWithExtensionScope(segments);
+    }
+
+    private static bool EndsWithExtensionScope(IReadOnlyList<JsonPathSegment> segments)
+    {
+        return segments.Count >= 2
+            && segments[^2] is JsonPathSegment.Property { Name: "_ext" }
+            && segments[^1] is JsonPathSegment.Property { Name.Length: > 0 };
+    }
+
+    private static bool AreSegmentsEqual(
+        IReadOnlyList<JsonPathSegment> left,
+        IReadOnlyList<JsonPathSegment> right
+    )
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!AreSegmentsEqual(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool AreSegmentsEqual(JsonPathSegment left, JsonPathSegment right)
+    {
+        if (left.GetType() != right.GetType())
+        {
+            return false;
+        }
+
+        return left switch
+        {
+            JsonPathSegment.Property leftProperty when right is JsonPathSegment.Property rightProperty =>
+                string.Equals(leftProperty.Name, rightProperty.Name, StringComparison.Ordinal),
+            JsonPathSegment.AnyArrayElement when right is JsonPathSegment.AnyArrayElement => true,
+            _ => false,
+        };
+    }
+
+    private static string FormatScope(IReadOnlyList<JsonPathSegment> segments)
+    {
+        if (segments.Count == 0)
+        {
+            return "$";
+        }
+
+        var canonical = "$";
+
+        foreach (var segment in segments)
+        {
+            canonical += segment switch
+            {
+                JsonPathSegment.Property property => $".{property.Name}",
+                JsonPathSegment.AnyArrayElement => "[*]",
+                _ => throw new InvalidOperationException("Unsupported restricted JsonPath segment."),
+            };
+        }
+
+        return canonical;
+    }
+
+    private static string GetResourceDisplayName(ResourceReadPlan readPlan) =>
+        $"{readPlan.Model.Resource.ProjectName}.{readPlan.Model.Resource.ResourceName}";
 
     private static FrozenDictionary<
         DbTableName,
@@ -546,6 +904,82 @@ internal static class CompiledReconstitutionPlanBuilder
             }
         }
     }
+
+    private static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
+    {
+        if (path.Canonical == "$")
+        {
+            return [];
+        }
+
+        if (path.Segments.Count > 0)
+        {
+            return path.Segments;
+        }
+
+        return ParseRestrictedCanonical(path.Canonical);
+    }
+
+    private static JsonPathSegment[] ParseRestrictedCanonical(string canonicalPath)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalPath) || canonicalPath[0] != '$')
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{canonicalPath}' must start with '$'."
+            );
+        }
+
+        List<JsonPathSegment> segments = [];
+        var index = 1;
+
+        while (index < canonicalPath.Length)
+        {
+            switch (canonicalPath[index])
+            {
+                case '.':
+                    index = AppendProperty(canonicalPath, index, segments);
+                    break;
+                case '[' when IsArrayWildcard(canonicalPath, index):
+                    segments.Add(new JsonPathSegment.AnyArrayElement());
+                    index += 3;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Restricted JSONPath '{canonicalPath}' contains an unsupported segment."
+                    );
+            }
+        }
+
+        return [.. segments];
+    }
+
+    private static int AppendProperty(string path, int dotIndex, ICollection<JsonPathSegment> segments)
+    {
+        var startIndex = dotIndex + 1;
+        var index = startIndex;
+
+        while (index < path.Length && path[index] is not ('.' or '['))
+        {
+            index++;
+        }
+
+        if (index == startIndex)
+        {
+            throw new InvalidOperationException(
+                $"Restricted JSONPath '{path}' contains an empty property segment."
+            );
+        }
+
+        segments.Add(new JsonPathSegment.Property(path[startIndex..index]));
+
+        return index;
+    }
+
+    private static bool IsArrayWildcard(string path, int openBracketIndex) =>
+        openBracketIndex + 2 < path.Length
+        && path[openBracketIndex] == '['
+        && path[openBracketIndex + 1] == '*'
+        && path[openBracketIndex + 2] == ']';
 }
 
 internal sealed class PropertyOrderNode

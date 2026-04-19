@@ -60,7 +60,7 @@
       "Add unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionTopologyTests.cs` for root collections, nested collections, root extensions, collection extension scopes, extension child collections, and invalid or ambiguous parent derivation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageReconstitutionTopologyTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Page Context Graph Build",
