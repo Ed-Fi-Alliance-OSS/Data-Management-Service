@@ -63,6 +63,37 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
     }
 
     [Test]
+    public void It_should_order_root_collection_children_by_ordinal_for_each_parent()
+    {
+        var firstDocument = _context.DocumentsInOrder[0];
+        var secondDocument = _context.DocumentsInOrder[1];
+
+        firstDocument
+            .RootRow.GetImmediateChildren(_addressTable)
+            .Select(child => child.Row[3])
+            .Should()
+            .Equal("East City", "North City");
+
+        secondDocument
+            .RootRow.GetImmediateChildren(_addressTable)
+            .Select(child => child.Row[3])
+            .Should()
+            .Equal("South City");
+    }
+
+    [Test]
+    public void It_should_order_nested_collection_children_by_ordinal_for_each_parent()
+    {
+        var eastCityAddress = _context.GetRowOrThrow(_addressTable, new ScopeKey([102L]));
+
+        eastCityAddress
+            .GetImmediateChildren(_periodTable)
+            .Select(child => child.Row[4])
+            .Should()
+            .Equal("2023-09-01", "2024-01-05");
+    }
+
+    [Test]
     public void It_should_use_table_qualified_physical_identity_lookups()
     {
         var rootRow = _context.GetRowOrThrow(_rootTable, new ScopeKey([101L]));
@@ -74,6 +105,59 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
         periodRow.Table.Should().Be(_periodTable);
         rootRow.Should().NotBeSameAs(addressRow);
         addressRow.Should().NotBeSameAs(periodRow);
+    }
+}
+
+[TestFixture]
+public class Given_PageOrderedChildRowsCache_With_A_Multi_Document_Page
+{
+    private PageOrderedChildRows _firstLookup = null!;
+    private PageOrderedChildRows _secondLookup = null!;
+    private DbTableName _addressTable = default;
+    private DbTableName _periodTable = default;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(pageData.ReadPlan);
+
+        _firstLookup = PageOrderedChildRowsCache.GetOrBuild(
+            compiledPlan,
+            pageData.HydratedPage.TableRowsInDependencyOrder
+        );
+        _secondLookup = PageOrderedChildRowsCache.GetOrBuild(
+            compiledPlan,
+            pageData.HydratedPage.TableRowsInDependencyOrder
+        );
+        _addressTable = pageData.AddressTable;
+        _periodTable = pageData.PeriodTable;
+    }
+
+    [Test]
+    public void It_should_reuse_the_page_scoped_lookup_for_the_same_hydrated_page()
+    {
+        _secondLookup.Should().BeSameAs(_firstLookup);
+    }
+
+    [Test]
+    public void It_should_order_root_collection_rows_once_per_parent()
+    {
+        _firstLookup
+            .GetRowsByParentLocator(_addressTable, 101L)
+            .Select(row => row[3])
+            .Should()
+            .Equal("East City", "North City");
+    }
+
+    [Test]
+    public void It_should_order_nested_collection_rows_once_per_parent()
+    {
+        _firstLookup
+            .GetRowsByParentLocator(_periodTable, 102L)
+            .Select(row => row[4])
+            .Should()
+            .Equal("2023-09-01", "2024-01-05");
     }
 }
 
@@ -226,6 +310,7 @@ file static class PageReconstitutionContextTestData
                     [101, 101, 101, 2, "2024-08-15"],
                     [201, 202, 202, 1, "2025-01-10"],
                     [102, 102, 101L, 1, "2024-01-05"],
+                    [103, 102, 101L, 0, "2023-09-01"],
                 ],
                 descriptorRowsInPlanOrder:
                 [

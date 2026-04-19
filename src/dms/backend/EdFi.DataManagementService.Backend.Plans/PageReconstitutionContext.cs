@@ -64,6 +64,19 @@ internal sealed class RowNode
             ? children
             : Array.Empty<RowNode>();
 
+    internal void EnsureImmediateChildrenInOrdinalOrder(DbTableName childTable, int ordinalColumnOrdinal)
+    {
+        if (!_immediateChildrenByTable.TryGetValue(childTable, out var children))
+        {
+            return;
+        }
+
+        HydratedRowOrdering.EnsureOrdinalOrder(
+            children,
+            child => Convert.ToInt32(child.Row[ordinalColumnOrdinal])
+        );
+    }
+
     internal void AttachChild(RowNode child)
     {
         ArgumentNullException.ThrowIfNull(child);
@@ -192,6 +205,20 @@ internal sealed class PageReconstitutionContext
             }
 
             rowNodesByTableAndPhysicalIdentity.Add(tablePlan.Table, rowNodesByPhysicalIdentity);
+
+            if (
+                tablePlan.ImmediateParentTable is DbTableName parentTable
+                && tablePlan.OrdinalColumnOrdinal is int ordinalColumnOrdinal
+            )
+            {
+                EnsureImmediateChildrenInOrdinalOrderOrThrow(
+                    compiledPlan,
+                    rowNodesByTableAndPhysicalIdentity,
+                    parentTable,
+                    tablePlan.Table,
+                    ordinalColumnOrdinal
+                );
+            }
         }
 
         return CreateContextOrThrow(
@@ -452,6 +479,30 @@ internal sealed class PageReconstitutionContext
         }
 
         parentRowNode.AttachChild(rowNode);
+    }
+
+    private static void EnsureImmediateChildrenInOrdinalOrderOrThrow(
+        CompiledReconstitutionPlan compiledPlan,
+        IReadOnlyDictionary<DbTableName, Dictionary<ScopeKey, RowNode>> rowNodesByTableAndPhysicalIdentity,
+        DbTableName parentTable,
+        DbTableName childTable,
+        int ordinalColumnOrdinal
+    )
+    {
+        if (
+            !rowNodesByTableAndPhysicalIdentity.TryGetValue(parentTable, out var parentRowsByPhysicalIdentity)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Cannot build page reconstitution context for '{GetResourceDisplayName(compiledPlan)}': "
+                    + $"parent table '{parentTable}' was not available when ordering child table '{childTable}'."
+            );
+        }
+
+        foreach (var parentRowNode in parentRowsByPhysicalIdentity.Values)
+        {
+            parentRowNode.EnsureImmediateChildrenInOrdinalOrder(childTable, ordinalColumnOrdinal);
+        }
     }
 
     private static long ResolveRootDocumentIdOrThrow(TableReconstitutionPlan tablePlan, object?[] row)

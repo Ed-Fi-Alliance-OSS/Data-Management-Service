@@ -78,7 +78,7 @@
       "Add unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs` or `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs` proving array order is preserved by one page-build-time step and not by repeated per-document indexing.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Reconstituter`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Page-Based Document Emit",

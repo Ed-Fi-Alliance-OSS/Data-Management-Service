@@ -1495,6 +1495,9 @@ public static class DocumentReconstituter
     )
     {
         private readonly Dictionary<DbTableName, ChildRowIndex> _childRowIndexesByTable = [];
+        private readonly PageOrderedChildRows? _pageOrderedChildRows = compiledPlan is not null
+            ? PageOrderedChildRowsCache.GetOrBuild(compiledPlan, tableRowsInDependencyOrder)
+            : null;
         private readonly Dictionary<DbTableName, HydratedTableRows> _tableRowsByTable = BuildTableRowsByTable(
             tableRowsInDependencyOrder
         );
@@ -1518,14 +1521,17 @@ public static class DocumentReconstituter
             long parentLocatorValue
         )
         {
+            if (_pageOrderedChildRows is not null)
+            {
+                return _pageOrderedChildRows.GetRowsByParentLocator(
+                    childTableRows.TableModel.Table,
+                    parentLocatorValue
+                );
+            }
+
             if (!_childRowIndexesByTable.TryGetValue(childTableRows.TableModel.Table, out var childRowIndex))
             {
-                childRowIndex = compiledPlan is not null
-                    ? ChildRowIndex.Create(
-                        compiledPlan.GetTablePlanOrThrow(childTableRows.TableModel.Table),
-                        childTableRows
-                    )
-                    : ChildRowIndex.Create(childTableRows);
+                childRowIndex = ChildRowIndex.Create(childTableRows);
                 _childRowIndexesByTable[childTableRows.TableModel.Table] = childRowIndex;
             }
 
@@ -1595,54 +1601,9 @@ public static class DocumentReconstituter
             {
                 foreach (var rows in rowsByParentLocator.Values)
                 {
-                    rows.Sort(
-                        (a, b) =>
-                            Convert
-                                .ToInt32(a[ordinalColumnOrdinal])
-                                .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal]))
-                    );
-                }
-            }
-
-            return new ChildRowIndex(
-                rowsByParentLocator.ToDictionary(
-                    static entry => entry.Key,
-                    static entry => (IReadOnlyList<object?[]>)entry.Value
-                )
-            );
-        }
-
-        public static ChildRowIndex Create(
-            TableReconstitutionPlan tablePlan,
-            HydratedTableRows childTableRows
-        )
-        {
-            var parentLocatorOrdinal = tablePlan.ResolveSingleImmediateParentScopeLocatorOrdinalOrThrow();
-            var ordinalColumnOrdinal = tablePlan.OrdinalColumnOrdinal;
-            Dictionary<long, List<object?[]>> rowsByParentLocator = [];
-
-            foreach (var row in childTableRows.Rows)
-            {
-                var parentLocatorValue = Convert.ToInt64(row[parentLocatorOrdinal]);
-
-                if (!rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows))
-                {
-                    rows = [];
-                    rowsByParentLocator[parentLocatorValue] = rows;
-                }
-
-                rows.Add(row);
-            }
-
-            if (ordinalColumnOrdinal is not null)
-            {
-                foreach (var rows in rowsByParentLocator.Values)
-                {
-                    rows.Sort(
-                        (a, b) =>
-                            Convert
-                                .ToInt32(a[ordinalColumnOrdinal.Value])
-                                .CompareTo(Convert.ToInt32(b[ordinalColumnOrdinal.Value]))
+                    HydratedRowOrdering.EnsureOrdinalOrder(
+                        rows,
+                        row => Convert.ToInt32(row[ordinalColumnOrdinal])
                     );
                 }
             }
