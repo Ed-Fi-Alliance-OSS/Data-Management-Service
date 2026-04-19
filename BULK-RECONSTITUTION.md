@@ -36,7 +36,7 @@ That is functionally correct, but it is not the page-based reconstitution shape 
 - Keep the existing page-keyset and multi-result hydration contracts.
 - Build reconstitution state once per hydrated page.
 - Reuse compiled plan metadata instead of re-deriving it from model objects during every document walk.
-- Keep GET-by-id, query, committed write readback, and stored-state projection on one materialization path.
+- Fix the query-path regression in `RelationalDocumentStoreRepository.BuildQuerySuccess()` by making query-page materialization page-scoped instead of per-document page setup.
 - Preserve current JSON semantics, including `_ext`, descriptor emission, readable-profile projection, `_etag`, and `_lastModifiedDate`.
 
 ## Non-Goals
@@ -46,6 +46,7 @@ That is functionally correct, but it is not the page-based reconstitution shape 
 - No descriptor endpoint redesign.
 - No switch to streaming JSON in the first implementation.
 - No required-array behavior change.
+- No GET-by-id or write-path unification as part of this story-sized fix.
 
 ## Design Summary
 
@@ -58,7 +59,7 @@ Introduce two reconstitution layers:
 
 2. `PageReconstitutionContext`
    - built once per `HydratedPage`
-   - contains the row graph, descriptor lookup, and page ordering for one query page or one GET-by-id page
+   - contains the row graph, descriptor lookup, and page ordering for one hydrated query page
 
 Per-document materialization then becomes a pure emit pass over an already attached row graph.
 
@@ -370,7 +371,7 @@ Nothing in this flow should rebuild page indexes.
 
 ## Proposed API Changes
 
-Make page materialization the materializer interface.
+Add a query-page materialization entry point without turning this design into a broader read-path unification project.
 
 ```csharp
 public sealed record RelationalReadPageMaterializationRequest(
@@ -389,17 +390,17 @@ public interface IRelationalReadMaterializer
     IReadOnlyList<MaterializedDocument> MaterializePage(
         RelationalReadPageMaterializationRequest request
     );
+
+    JsonNode Materialize(RelationalReadMaterializationRequest request);
 }
 ```
 
-There is no need for a compatibility shim here. The call graph is small and internal:
+This is intentionally not a migration plan. The goal is to fix query-page reconstitution directly while leaving the current single-document materialization API in place for non-query callers that do not have the page-level performance problem under review.
 
-- query path
-- GET-by-id path
-- committed write readback
-- stored-state projection during profile-aware writes
+That keeps scope aligned to the story and review comment:
 
-All of those callers can switch directly to `MaterializePage(...)`. Single-document callers should hydrate a one-document page, call `MaterializePage(...)`, and assert that exactly one `MaterializedDocument` was returned.
+- query uses `MaterializePage(...)`
+- existing single-document callers continue using `Materialize(...)`
 
 ## Changes to `DocumentReconstituter`
 
@@ -414,7 +415,7 @@ internal static JsonNode ReconstituteDocument(
 );
 ```
 
-The old single-document page-rowset entry point should be removed as part of the same refactor. There is no value in keeping two reconstitution entry points when every caller can move to the page-based API directly.
+The query path should call this page-based reconstitution flow. The existing single-document entry point can remain for GET-by-id and write-side callers because those paths are out of scope for this design and are not the source of the query-page regression.
 
 ## Repository and Caller Changes
 
@@ -428,13 +429,15 @@ The old single-document page-rowset entry point should be removed as part of the
 
 It should stop looping `DocumentMetadata` and calling `_readMaterializer.Materialize(...)` per item.
 
-### GET by id
+### Out of Scope Callers
 
-GET-by-id should also use `MaterializePage(...)`, just with a single-document page. That keeps GET and query on the same implementation path.
+This design does not require changing:
 
-### Write-Side Readbacks
+- GET-by-id materialization
+- committed write readback
+- stored-state projection during profile-aware writes
 
-The committed-representation reader and stored-state projection path should also switch directly to `MaterializePage(...)` with single-document hydrated pages. That keeps one real materialization path in the codebase instead of a page path plus a legacy compatibility layer.
+Those callers can be unified later if that becomes desirable, but that is not required to fix the query-path performance issue described in the review.
 
 ## Complexity and Expected Gain
 
@@ -500,9 +503,6 @@ These are compilation or hydration contract problems, not normal runtime varianc
 
 - query path calls `MaterializePage(...)` once per page
 - query path still applies readable-profile projection per item and refreshes `_etag`
-- GET-by-id uses the same page materialization path
-- committed write readback uses the same page materialization path
-- stored-state projection uses the same page materialization path
 
 ### Integration Tests
 
@@ -517,11 +517,11 @@ Implement a page-first reconstitution pipeline with:
 - a plan-scoped `CompiledReconstitutionPlan`
 - a page-scoped `PageReconstitutionContext`
 - a page-first `IRelationalReadMaterializer.MaterializePage(...)`
-- direct cutover of all existing callers to that API in the same change
+- direct cutover of the query path to that API in the same change
 
 That is the smallest change that actually fixes the review point:
 
 - hydration stays bulk,
 - reconstitution setup becomes bulk too,
-- GET and query stay aligned to one read path,
-- and the implementation finally matches the redesign’s intended page-based reconstitution model.
+- the query path finally matches the redesign’s intended page-based reconstitution model,
+- and the change stays scoped to the story and regression actually under review.
