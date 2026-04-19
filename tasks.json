@@ -42,6 +42,6 @@
       "Add or update tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs` proving mixed-case supported query fields no longer return `UnknownFailure` and still follow the expected repository behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

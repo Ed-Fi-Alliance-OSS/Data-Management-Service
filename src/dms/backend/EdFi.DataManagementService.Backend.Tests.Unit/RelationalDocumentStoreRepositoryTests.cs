@@ -555,6 +555,53 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_executes_mixed_case_root_column_queries_without_returning_unknown_failure()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("abababab-1111-2222-3333-cdcdcdcdcdcd"));
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "Name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("nAmE", "$.name", "Lincoln High", "string")],
+            totalCount: false
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+        PageKeysetSpec.Query capturedKeyset = null!;
+
+        A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                capturedKeyset =
+                    call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query
+                    ?? throw new AssertionException(
+                        "Mixed-case root-column query should hydrate through PageKeysetSpec.Query."
+                    );
+            })
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset.ParameterValues["name"].Should().Be("Lincoln High");
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_applies_readable_profile_projection_to_each_query_result_and_refreshes_etags()
     {
         var firstDocumentUuid = new DocumentUuid(Guid.Parse("12121212-1111-2222-3333-444444444444"));
@@ -708,6 +755,38 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_short_circuits_mixed_case_invalid_id_queries_without_returning_unknown_failure()
+    {
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "id",
+                    "$.id",
+                    "string",
+                    new RelationalQueryFieldTarget.DocumentUuid()
+                )
+            ),
+            [CreateQueryElement("ID", "$.id", "not-a-guid", "string")],
+            totalCount: true
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -2216,9 +2295,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     supportedFields.ToDictionary(
                         static supportedField => supportedField.QueryFieldName,
                         static supportedField => supportedField,
-                        StringComparer.Ordinal
+                        StringComparer.OrdinalIgnoreCase
                     ),
-                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.Ordinal)
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
                 ),
             },
         };
@@ -2240,8 +2319,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             {
                 [resource] = new RelationalQueryCapability(
                     new RelationalQuerySupport.Omitted(omission),
-                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.Ordinal),
-                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.Ordinal)
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
                 ),
             },
         };
