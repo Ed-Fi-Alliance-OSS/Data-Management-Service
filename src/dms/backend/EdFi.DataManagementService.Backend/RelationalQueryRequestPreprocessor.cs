@@ -92,6 +92,7 @@ internal static class RelationalQueryRequestPreprocessor
                         new PendingDescriptorQueryResolution(
                             index,
                             queryElement,
+                            supportedField,
                             CreateDescriptorReference(queryElement, descriptorResource, index)
                         )
                     );
@@ -168,9 +169,7 @@ internal static class RelationalQueryRequestPreprocessor
                 preprocessedElements[pendingDescriptorResolution.Index] =
                     new PreprocessedRelationalQueryElement(
                         pendingDescriptorResolution.QueryElement,
-                        queryCapability.SupportedFieldsByQueryField[
-                            pendingDescriptorResolution.QueryElement.QueryFieldName
-                        ],
+                        pendingDescriptorResolution.SupportedField,
                         new PreprocessedRelationalQueryValue.DescriptorDocumentId(
                             resolvedDescriptorReference.DocumentId
                         )
@@ -235,6 +234,7 @@ internal static class RelationalQueryRequestPreprocessor
     private sealed record PendingDescriptorQueryResolution(
         int Index,
         QueryElement QueryElement,
+        SupportedRelationalQueryField SupportedField,
         DescriptorReference DescriptorReference
     );
 }
