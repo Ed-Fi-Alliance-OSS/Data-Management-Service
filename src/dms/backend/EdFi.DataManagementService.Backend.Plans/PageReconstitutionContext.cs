@@ -150,8 +150,27 @@ internal sealed class PageReconstitutionContext
         ArgumentNullException.ThrowIfNull(compiledPlan);
         ArgumentNullException.ThrowIfNull(hydratedPage);
 
-        var hydratedRowsByTable = BuildHydratedRowsByTable(hydratedPage.TableRowsInDependencyOrder);
-        var descriptorUrisById = BuildDescriptorUriLookup(hydratedPage.DescriptorRowsInPlanOrder);
+        return Build(
+            compiledPlan,
+            hydratedPage.DocumentMetadata,
+            hydratedPage.TableRowsInDependencyOrder,
+            BuildDescriptorUriLookup(hydratedPage.DescriptorRowsInPlanOrder)
+        );
+    }
+
+    internal static PageReconstitutionContext Build(
+        CompiledReconstitutionPlan compiledPlan,
+        IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyDictionary<long, string> descriptorUrisById
+    )
+    {
+        ArgumentNullException.ThrowIfNull(compiledPlan);
+        ArgumentNullException.ThrowIfNull(documentMetadataRows);
+        ArgumentNullException.ThrowIfNull(tableRowsInDependencyOrder);
+        ArgumentNullException.ThrowIfNull(descriptorUrisById);
+
+        var hydratedRowsByTable = BuildHydratedRowsByTable(tableRowsInDependencyOrder);
         var rowNodesByTableAndPhysicalIdentity = new Dictionary<DbTableName, Dictionary<ScopeKey, RowNode>>();
         var rootRowsByDocumentId = new Dictionary<long, RowNode>();
 
@@ -224,7 +243,7 @@ internal sealed class PageReconstitutionContext
         return CreateContextOrThrow(
             compiledPlan,
             descriptorUrisById,
-            hydratedPage.DocumentMetadata,
+            documentMetadataRows,
             rootRowsByDocumentId,
             rowNodesByTableAndPhysicalIdentity
         );

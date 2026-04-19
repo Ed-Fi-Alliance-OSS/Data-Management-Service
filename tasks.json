@@ -87,7 +87,7 @@
       "Add or update coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs` proving page-based reconstitution matches existing JSON semantics for root scalars, nested collections, references, descriptors, and `_ext`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter DocumentReconstituterTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Page Materializer API",
