@@ -74,12 +74,14 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         // Sort scope canonicals longest-first so longest-prefix wins.
         var candidateScopes = BuildCandidateScopeSet(profileRequest, profileAppliedContext);
 
-        // Records the (memberPath, matchKind) of every ordinary binding that resolved to a
-        // profile-governed containing scope. Drives the post-pass drift check below.
-        var bindingsByContainingScope = new Dictionary<
-            string,
-            List<(string MemberPath, ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKind)>
-        >(StringComparer.Ordinal);
+        // Records the (memberPath, governingPath, matchKind) inventory of every ordinary
+        // binding that resolved to a profile-governed containing scope. `memberPath` is the
+        // binding's own scope-relative path; `governingPath` is the path used for hidden-path
+        // matching — equal to `memberPath` for scalar/descriptor, and the owning document-
+        // reference root for reference-sourced bindings. Drives the post-pass drift check.
+        var bindingsByContainingScope = new Dictionary<string, List<GovernedBindingEntry>>(
+            StringComparer.Ordinal
+        );
 
         var dispositions = new RootBindingDisposition[rootTable.ColumnBindings.Length];
         for (var bindingIndex = 0; bindingIndex < rootTable.ColumnBindings.Length; bindingIndex++)
@@ -98,6 +100,47 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                 profileAppliedContext,
                 bindingsByContainingScope
             );
+        }
+
+        // Register key-unification member paths into the drift-check inventory.
+        // K-u members are not ordinary bindings (their canonical + presence bindings are
+        // resolver-owned), but they are legitimate targets for profile-hidden paths — the
+        // resolver evaluates them in ProfileRootKeyUnificationResolver.EvaluateMember.
+        // Without this registration, ValidateStoredScopeMetadata would reject hidden
+        // paths targeting k-u members as upstream contract drift, which is wrong.
+        foreach (var keyUnificationPlan in rootTable.KeyUnificationPlans)
+        {
+            foreach (var member in keyUnificationPlan.MembersInOrder)
+            {
+                var memberPathAbsolute = member.RelativePath.Canonical;
+                var containingScope = TryMatchLongestScope(memberPathAbsolute, candidateScopes);
+
+                if (containingScope is null)
+                {
+                    continue;
+                }
+
+                var strippedMemberPath = StripScopePrefix(memberPathAbsolute, containingScope);
+                var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
+                var governingPath = member switch
+                {
+                    KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
+                        refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                        containingScope
+                    ),
+                    _ => strippedMemberPath,
+                };
+
+                if (!bindingsByContainingScope.TryGetValue(containingScope, out var bindingsUnderScope))
+                {
+                    bindingsUnderScope = [];
+                    bindingsByContainingScope[containingScope] = bindingsUnderScope;
+                }
+
+                bindingsUnderScope.Add(
+                    new GovernedBindingEntry(strippedMemberPath, governingPath, matchKind)
+                );
+            }
         }
 
         // Fail-closed metadata-drift check: every stored scope and every hidden member path
@@ -159,10 +202,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         ImmutableArray<string> candidateScopes,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
-        Dictionary<
-            string,
-            List<(string MemberPath, ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKind)>
-        > bindingsByContainingScope
+        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope
     )
     {
         var binding = rootTable.ColumnBindings[bindingIndex];
@@ -182,6 +222,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         }
 
         var bindingPath = ResolveBindingRootRelativePath(writePlan, binding, bindingIndex, rootTable);
+        var governingPathAbsolute = ResolveBindingGoverningPath(writePlan, binding, bindingIndex, rootTable);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
         var containingScope = TryMatchLongestScope(bindingPath, candidateScopes);
@@ -191,6 +232,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         }
 
         var memberPath = StripScopePrefix(bindingPath, containingScope);
+        var governingPath = StripScopePrefix(governingPathAbsolute, containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
         // Record this binding under its containing scope so the post-pass drift check can
@@ -200,7 +242,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             bindingsUnderScope = [];
             bindingsByContainingScope[containingScope] = bindingsUnderScope;
         }
-        bindingsUnderScope.Add((memberPath, matchKind));
+        bindingsUnderScope.Add(new GovernedBindingEntry(memberPath, governingPath, matchKind));
 
         if (profileAppliedContext is null)
         {
@@ -219,7 +261,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             }
             if (
                 ProfileMemberGovernanceRules.IsHiddenGoverned(
-                    memberPath,
+                    governingPath,
                     storedScope.HiddenMemberPaths,
                     matchKind
                 )
@@ -248,10 +290,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
     /// </summary>
     private static void ValidateStoredScopeMetadata(
         ProfileAppliedWriteContext profileAppliedContext,
-        Dictionary<
-            string,
-            List<(string MemberPath, ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKind)>
-        > bindingsByContainingScope,
+        Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope,
         TableWritePlan rootTable
     )
     {
@@ -272,18 +311,14 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
 
             foreach (var hiddenPath in storedScope.HiddenMemberPaths)
             {
-                var matched = false;
                 var singleHiddenPath = ImmutableArray.Create(hiddenPath);
-                foreach (var (memberPath, matchKind) in bindingsUnderScope)
-                {
-                    if (
-                        ProfileMemberGovernanceRules.IsHiddenGoverned(memberPath, singleHiddenPath, matchKind)
+                var matched = bindingsUnderScope.Exists(entry =>
+                    ProfileMemberGovernanceRules.IsHiddenGoverned(
+                        entry.GoverningPath,
+                        singleHiddenPath,
+                        entry.MatchKind
                     )
-                    {
-                        matched = true;
-                        break;
-                    }
-                }
+                );
                 if (!matched)
                 {
                     throw new InvalidOperationException(
@@ -323,6 +358,39 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             ),
         };
 
+    /// <summary>
+    /// Absolute JSONPath used to match the binding against profile <c>HiddenMemberPaths</c>.
+    /// Equals <see cref="ResolveBindingRootRelativePath"/> for scalar/descriptor bindings; for
+    /// document-reference and reference-derived bindings it is the owning reference root
+    /// (<c>DocumentReferenceBinding.ReferenceObjectPath</c> / <c>ReferenceDerivedValueSourceMetadata.ReferenceObjectPath</c>),
+    /// so a single hidden sub-reference path preserves the whole reference-derived storage family.
+    /// </summary>
+    private static string ResolveBindingGoverningPath(
+        ResourceWritePlan writePlan,
+        WriteColumnBinding binding,
+        int bindingIndex,
+        TableWritePlan rootTable
+    ) =>
+        binding.Source switch
+        {
+            WriteValueSource.Scalar scalar => scalar.RelativePath.Canonical,
+            WriteValueSource.DescriptorReference descriptor => descriptor.RelativePath.Canonical,
+            WriteValueSource.DocumentReference documentReference => writePlan
+                .Model
+                .DocumentReferenceBindings[documentReference.BindingIndex]
+                .ReferenceObjectPath
+                .Canonical,
+            WriteValueSource.ReferenceDerived referenceDerived => referenceDerived
+                .ReferenceSource
+                .ReferenceObjectPath
+                .Canonical,
+            _ => throw new InvalidOperationException(
+                $"Root-table binding at index {bindingIndex} on table '{FormatTable(rootTable)}' "
+                    + $"has a WriteValueSource kind '{binding.Source.GetType().Name}' that the classifier "
+                    + "does not know how to resolve for governance. Storage-managed and plan-shape kinds must be filtered upstream."
+            ),
+        };
+
     private static string? TryMatchLongestScope(string bindingPath, ImmutableArray<string> candidateScopes)
     {
         // candidateScopes is pre-sorted longest-first.
@@ -358,4 +426,10 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
 
     private static string FormatTable(TableWritePlan rootTable) =>
         $"{rootTable.TableModel.Table.Schema.Value}.{rootTable.TableModel.Table.Name}";
+
+    private readonly record struct GovernedBindingEntry(
+        string MemberPath,
+        string GoverningPath,
+        ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKind
+    );
 }

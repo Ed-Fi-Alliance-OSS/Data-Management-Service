@@ -226,8 +226,16 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
         var storedScope = context.ProfileAppliedContext is not null
             ? ProfileMemberGovernanceRules.LookupStoredScope(context.ProfileAppliedContext, containingScope)
             : null;
-        var matchKind = MatchKindForMember(member);
+        var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
         var strippedMemberPath = StripScopePrefix(memberPath, containingScope);
+        var governingPath = member switch
+        {
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived => StripScopePrefix(
+                refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                containingScope
+            ),
+            _ => strippedMemberPath,
+        };
 
         if (storedScope is not null)
         {
@@ -237,7 +245,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             }
             if (
                 ProfileMemberGovernanceRules.IsHiddenGoverned(
-                    strippedMemberPath,
+                    governingPath,
                     storedScope.HiddenMemberPaths,
                     matchKind
                 )
@@ -373,25 +381,6 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
         }
         return bindingPath[(scope.Length + 1)..];
     }
-
-    private static ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKindForMember(
-        KeyUnificationMemberWritePlan member
-    ) =>
-        member switch
-        {
-            KeyUnificationMemberWritePlan.ScalarMember => ProfileMemberGovernanceRules
-                .HiddenPathMatchKind
-                .Exact,
-            KeyUnificationMemberWritePlan.DescriptorMember => ProfileMemberGovernanceRules
-                .HiddenPathMatchKind
-                .Exact,
-            KeyUnificationMemberWritePlan.ReferenceDerivedMember => ProfileMemberGovernanceRules
-                .HiddenPathMatchKind
-                .AncestorOrExact,
-            _ => throw new InvalidOperationException(
-                $"ProfileRootKeyUnificationResolver does not handle key-unification member kind '{member.GetType().Name}'."
-            ),
-        };
 
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
