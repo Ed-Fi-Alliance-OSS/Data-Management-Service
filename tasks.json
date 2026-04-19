@@ -105,7 +105,7 @@
       "Add or update repository-focused tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs` proving query execution makes one page materialization call, preserves returned ids/order, still applies readable-profile projection, and refreshes `_etag` after projection.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Bulk Reconstitution End-to-End Coverage",

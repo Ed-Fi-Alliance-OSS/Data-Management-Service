@@ -503,7 +503,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             []
         );
         PageKeysetSpec.Query capturedKeyset = null!;
-        List<RelationalReadMaterializationRequest> capturedReadRequests = [];
+        RelationalReadPageMaterializationRequest capturedReadRequest = null!;
 
         A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
             .Invokes(call =>
@@ -515,15 +515,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     );
             })
             .Returns(hydratedPage);
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .Invokes(call =>
-                capturedReadRequests.Add(call.GetArgument<RelationalReadMaterializationRequest>(0)!)
+                capturedReadRequest = call.GetArgument<RelationalReadPageMaterializationRequest>(0)!
             )
-            .ReturnsLazily(call =>
-            {
-                var request = call.GetArgument<RelationalReadMaterializationRequest>(0)!;
-                return JsonNode.Parse($$"""{"id":"{{request.DocumentMetadata.DocumentUuid}}"}""")!;
-            });
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{firstDocumentUuid.Value}}"}""")!
+                ),
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[1],
+                    JsonNode.Parse($$"""{"id":"{{secondDocumentUuid.Value}}"}""")!
+                ),
+            ]);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
@@ -540,18 +545,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedKeyset.ParameterValues["offset"].Should().Be(0L);
         capturedKeyset.ParameterValues["limit"].Should().Be(25L);
         capturedKeyset.Plan.TotalCountSql.Should().NotBeNull();
-        capturedReadRequests
-            .Select(request => request.DocumentMetadata.DocumentId)
-            .Should()
-            .Equal(345L, 678L);
-        capturedReadRequests
-            .Select(request => request.ReadMode)
-            .Should()
-            .OnlyContain(static mode => mode == RelationalGetRequestReadMode.ExternalResponse);
-        capturedReadRequests
-            .Select(request => request.TableRowsInDependencyOrder)
-            .Should()
-            .OnlyContain(tableRows => ReferenceEquals(tableRows, hydratedPage.TableRowsInDependencyOrder));
+        capturedReadRequest.ReadPlan.Should().BeSameAs(readPlan);
+        capturedReadRequest.HydratedPage.Should().BeSameAs(hydratedPage);
+        capturedReadRequest.ReadMode.Should().Be(RelationalGetRequestReadMode.ExternalResponse);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -590,15 +590,22 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     );
             })
             .Returns(hydratedPage);
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .Returns(JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!);
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(
+                    hydratedPage.DocumentMetadata[0],
+                    JsonNode.Parse($$"""{"id":"{{documentUuid.Value}}"}""")!
+                ),
+            ]);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
         result.Should().BeOfType<QueryResult.QuerySuccess>();
         capturedKeyset.ParameterValues["name"].Should().Be("Lincoln High");
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -700,16 +707,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         A.CallTo(() => _documentHydrator.HydrateAsync(readPlan, A<PageKeysetSpec>._, A<CancellationToken>._))
             .Returns(hydratedPage);
-        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
-            .ReturnsLazily(
-                (RelationalReadMaterializationRequest request) =>
-                    request.DocumentMetadata.DocumentId switch
-                    {
-                        345L => materializedFirst,
-                        678L => materializedSecond,
-                        _ => throw new AssertionException("Unexpected query materialization request."),
-                    }
-            );
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([
+                new MaterializedDocument(hydratedPage.DocumentMetadata[0], materializedFirst),
+                new MaterializedDocument(hydratedPage.DocumentMetadata[1], materializedSecond),
+            ]);
         A.CallTo(() =>
                 _readableProfileProjector.Project(
                     A<JsonNode>._,
@@ -755,6 +757,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
     }
 
     [Test]
@@ -784,6 +790,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .MustNotHaveHappened();
@@ -822,6 +830,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .MustNotHaveHappened();
@@ -940,6 +950,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .MustNotHaveHappened();
     }
@@ -1000,6 +1012,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
             .MustNotHaveHappened();
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .MustNotHaveHappened();

@@ -740,30 +740,33 @@ public sealed class RelationalDocumentStoreRepository(
 
         JsonArray edfiDocs = [];
         var projectionContext = relationalQueryRequest.ReadableProfileProjectionContext;
+        var materializedDocuments = _readMaterializer.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
 
-        foreach (var documentMetadata in hydratedPage.DocumentMetadata)
+        foreach (
+            var edfiDoc in materializedDocuments.Select(static materializedDocument =>
+                materializedDocument.Document
+            )
+        )
         {
-            var edfiDoc = _readMaterializer.Materialize(
-                new RelationalReadMaterializationRequest(
-                    readPlan,
-                    documentMetadata,
-                    hydratedPage.TableRowsInDependencyOrder,
-                    hydratedPage.DescriptorRowsInPlanOrder,
-                    RelationalGetRequestReadMode.ExternalResponse
-                )
-            );
+            var projectedOrUnchangedDocument = edfiDoc;
 
             if (projectionContext is not null)
             {
-                edfiDoc = _readableProfileProjector.Project(
-                    edfiDoc,
+                projectedOrUnchangedDocument = _readableProfileProjector.Project(
+                    projectedOrUnchangedDocument,
                     projectionContext.ContentTypeDefinition,
                     projectionContext.IdentityPropertyNames
                 );
-                RelationalApiMetadataFormatter.RefreshEtag(edfiDoc);
+                RelationalApiMetadataFormatter.RefreshEtag(projectedOrUnchangedDocument);
             }
 
-            edfiDocs.Add(edfiDoc);
+            edfiDocs.Add(projectedOrUnchangedDocument);
         }
 
         return new QueryResult.QuerySuccess(
