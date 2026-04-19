@@ -17,6 +17,7 @@ internal sealed class RelationalQueryCapabilityCompiler
     private const string DescriptorEndpointQueryStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
     private const string QueryCapabilityPlanKind = "query capability";
     private const string ResourceIdJsonPath = "$.id";
+    private static readonly StringComparer QueryFieldNameComparer = StringComparer.OrdinalIgnoreCase;
 
     public RelationalQueryCapability Compile(ConcreteResourceModel concreteResourceModel)
     {
@@ -33,11 +34,11 @@ internal sealed class RelationalQueryCapabilityCompiler
                     )
                 ),
                 new Dictionary<string, SupportedRelationalQueryField>(
-                    StringComparer.Ordinal
-                ).ToFrozenDictionary(StringComparer.Ordinal),
+                    QueryFieldNameComparer
+                ).ToFrozenDictionary(QueryFieldNameComparer),
                 new Dictionary<string, UnsupportedRelationalQueryField>(
-                    StringComparer.Ordinal
-                ).ToFrozenDictionary(StringComparer.Ordinal)
+                    QueryFieldNameComparer
+                ).ToFrozenDictionary(QueryFieldNameComparer)
             );
         }
 
@@ -65,10 +66,10 @@ internal sealed class RelationalQueryCapabilityCompiler
             )
         );
         Dictionary<string, SupportedRelationalQueryField> supportedFieldsByQueryField = new(
-            StringComparer.Ordinal
+            QueryFieldNameComparer
         );
         Dictionary<string, UnsupportedRelationalQueryField> unsupportedFieldsByQueryField = new(
-            StringComparer.Ordinal
+            QueryFieldNameComparer
         );
 
         foreach (
@@ -90,8 +91,8 @@ internal sealed class RelationalQueryCapabilityCompiler
 
         return new RelationalQueryCapability(
             CreateSupport(unsupportedFieldsByQueryField),
-            supportedFieldsByQueryField.ToFrozenDictionary(StringComparer.Ordinal),
-            unsupportedFieldsByQueryField.ToFrozenDictionary(StringComparer.Ordinal)
+            supportedFieldsByQueryField.ToFrozenDictionary(QueryFieldNameComparer),
+            unsupportedFieldsByQueryField.ToFrozenDictionary(QueryFieldNameComparer)
         );
     }
 

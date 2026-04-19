@@ -15,7 +15,7 @@
       "Update compiler coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs` to prove supported and unsupported query-field metadata can be retrieved case-insensitively without changing the stored canonical names.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter MappingSetCompilerTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Preprocessor Field Resolution",

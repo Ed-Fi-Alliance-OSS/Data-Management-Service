@@ -187,6 +187,50 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_materialize_query_field_capability_dictionaries_with_case_insensitive_lookup()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+
+        var keyUnificationSupportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.KeyUnificationResource]
+            .SupportedFieldsByQueryField.Should()
+            .BeAssignableTo<FrozenDictionary<string, SupportedRelationalQueryField>>()
+            .Subject;
+        var extensionUnsupportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.ExtensionTableResource]
+            .UnsupportedFieldsByQueryField.Should()
+            .BeAssignableTo<FrozenDictionary<string, UnsupportedRelationalQueryField>>()
+            .Subject;
+        var descriptorSupportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+            .SupportedFieldsByQueryField.Should()
+            .BeAssignableTo<FrozenDictionary<string, SupportedRelationalQueryField>>()
+            .Subject;
+        var descriptorUnsupportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+            .UnsupportedFieldsByQueryField.Should()
+            .BeAssignableTo<FrozenDictionary<string, UnsupportedRelationalQueryField>>()
+            .Subject;
+
+        keyUnificationSupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
+        extensionUnsupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
+        descriptorSupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
+        descriptorUnsupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
+
+        keyUnificationSupportedFields["ID"].QueryFieldName.Should().Be("id");
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.ProjectionMetadataResource]
+            .SupportedFieldsByQueryField["SchoolId"]
+            .QueryFieldName.Should()
+            .Be("schoolId");
+        extensionUnsupportedFields["FavoriteColor"].QueryFieldName.Should().Be("favoriteColor");
+        extensionUnsupportedFields["FavoriteColor"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.NonRootTable);
+    }
+
+    [Test]
     public void It_should_classify_unsupported_fields_and_omit_resources_with_unsupported_query_mappings()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
