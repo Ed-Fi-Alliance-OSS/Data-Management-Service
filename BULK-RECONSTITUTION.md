@@ -93,7 +93,30 @@ The design should use those compiled contracts, not rebuild equivalent knowledge
 ### Plan-Scoped Cache
 
 ```csharp
-internal readonly record struct ScopeIdentity(long Value);
+internal readonly record struct ScopeKey
+{
+    public ScopeKey(IEnumerable<object?> parts)
+    {
+        Parts = [.. parts];
+    }
+
+    public ImmutableArray<object?> Parts { get; }
+
+    public bool Equals(ScopeKey other) =>
+        Parts.SequenceEqual(other.Parts);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+
+        foreach (var part in Parts)
+        {
+            hash.Add(part);
+        }
+
+        return hash.ToHashCode();
+    }
+}
 
 internal sealed record CompiledReconstitutionPlan(
     PropertyOrderNode PropertyOrderTree,
@@ -135,12 +158,21 @@ internal sealed record RowNode(
     TableReconstitutionPlan TablePlan,
     object?[] Row,
     long DocumentId,
-    ScopeIdentity PhysicalIdentity,
+    ScopeKey PhysicalIdentity,
     IReadOnlyDictionary<DbTableName, IReadOnlyList<RowNode>> ChildrenByTable
 );
 ```
 
 `RowNode` holds a reference to the hydrated row buffer; it does not copy row values into a second page-sized structure.
+
+`ScopeKey` is intentionally composite-ready even though the first implementation still validates single-column locators and identities. That keeps the runtime key shape aligned with the list-based identity metadata already present in `DbTableIdentityMetadata`.
+
+`ScopeKey` must use structural equality over its parts because the page graph uses it as a real dictionary key for:
+
+- `rowsByPhysicalIdentityByTable`
+- immediate-parent lookup during child attachment
+
+Reference equality on the backing collection is not acceptable here. The page builder should also normalize locator/identity values before constructing a `ScopeKey` so logically equal keys do not diverge because of CLR type differences from hydration.
 
 ## Important Design Choices
 
@@ -173,7 +205,7 @@ Even if the first implementation only supports single-column locators and identi
 - `DbTableIdentityMetadata.RootScopeLocatorColumns`
 - `DbTableIdentityMetadata.ImmediateParentScopeLocatorColumns`
 
-That keeps the cache forward-compatible with any future composite locator or identity shape. The first implementation can validate `Count == 1` while building the cache and fail fast if a table exceeds that temporary limit.
+That keeps the cache forward-compatible with any future composite locator or identity shape. The first implementation can validate `Count == 1` while building the cache and fail fast if a table exceeds that temporary limit, while still emitting normalized `ScopeKey` values from the validated ordinal lists.
 
 ### 2. Build Page State Once
 
@@ -277,11 +309,11 @@ For the root table:
 
 - create one `RowNode` per hydrated root row
 - resolve `DocumentId` from the validated root-scope locator
-- resolve physical identity from the validated physical-row identity
+- build `PhysicalIdentity` as a normalized `ScopeKey` from `PhysicalRowIdentityOrdinals`
 - validate there is exactly one root row per `DocumentId`
 - retain both:
   - `rootByDocumentId`
-  - `rowsByPhysicalIdentity` for the root table
+  - `rowsByPhysicalIdentityByTable[rootTable]`, keyed by `ScopeKey`
 
 ### Phase 4: Attach Non-Root Rows Once
 
@@ -290,12 +322,12 @@ For each non-root table in dependency order:
 1. create a `RowNode` for each hydrated row
 2. resolve:
    - `DocumentId`
-   - physical identity
-   - immediate parent locator
-3. add the row to `rowsByPhysicalIdentity` for its own table
+   - `PhysicalIdentity` as a normalized `ScopeKey`
+   - immediate parent key as a normalized `ScopeKey`
+3. add the row to `rowsByPhysicalIdentityByTable[currentTable]`
 4. resolve the parent row once:
    - look up the table’s `ImmediateParentTable`
-   - use the immediate parent locator to find the parent `RowNode`
+   - use the immediate parent `ScopeKey` to find the parent `RowNode`
 5. append the child node to the parent’s `ChildrenByTable[childTable]`
 6. preserve array order by either:
    - validating monotonic hydration order for each attached sibling list, or
@@ -310,6 +342,8 @@ Attachment rules come from the existing table kinds and identity metadata:
 - extension child collections attach to the aligned extension scope row via `BaseCollectionItemId` or the extension collection parent key, depending on the compiled table metadata
 
 The parent lookup must be table-qualified, not locator-only. `BaseCollectionItemId=42` in one table is not globally unique across all possible parent tables.
+
+In the first implementation, both `PhysicalIdentity` and the immediate parent key will be `ScopeKey` values containing exactly one part because cache construction validates the current single-column restriction. The important point is that the page graph no longer hard-codes a scalar key type.
 
 ### Phase 5: Build `DocumentsInOrder`
 
@@ -336,7 +370,7 @@ Nothing in this flow should rebuild page indexes.
 
 ## Proposed API Changes
 
-Make page materialization a first-class interface.
+Make page materialization the materializer interface.
 
 ```csharp
 public sealed record RelationalReadPageMaterializationRequest(
@@ -355,12 +389,17 @@ public interface IRelationalReadMaterializer
     IReadOnlyList<MaterializedDocument> MaterializePage(
         RelationalReadPageMaterializationRequest request
     );
-
-    JsonNode Materialize(RelationalReadMaterializationRequest request);
 }
 ```
 
-`Materialize(...)` remains as a compatibility shim for one-document callers during migration. Internally it should delegate to `MaterializePage(...)` with a one-document `HydratedPage`.
+There is no need for a compatibility shim here. The call graph is small and internal:
+
+- query path
+- GET-by-id path
+- committed write readback
+- stored-state projection during profile-aware writes
+
+All of those callers can switch directly to `MaterializePage(...)`. Single-document callers should hydrate a one-document page, call `MaterializePage(...)`, and assert that exactly one `MaterializedDocument` was returned.
 
 ## Changes to `DocumentReconstituter`
 
@@ -375,13 +414,7 @@ internal static JsonNode ReconstituteDocument(
 );
 ```
 
-The existing entry point can remain temporarily as a wrapper:
-
-1. build a one-document page context
-2. resolve the document
-3. delegate to `ReconstituteDocument(...)`
-
-That avoids a flag-day change across write-path callers and existing tests.
+The old single-document page-rowset entry point should be removed as part of the same refactor. There is no value in keeping two reconstitution entry points when every caller can move to the page-based API directly.
 
 ## Repository and Caller Changes
 
@@ -401,7 +434,7 @@ GET-by-id should also use `MaterializePage(...)`, just with a single-document pa
 
 ### Write-Side Readbacks
 
-The committed-representation reader and stored-state projection path can stay on the compatibility shim initially. They still benefit because the shim routes through the page-first implementation internally.
+The committed-representation reader and stored-state projection path should also switch directly to `MaterializePage(...)` with single-document hydrated pages. That keeps one real materialization path in the codebase instead of a page path plus a legacy compatibility layer.
 
 ## Complexity and Expected Gain
 
@@ -447,6 +480,7 @@ These are compilation or hydration contract problems, not normal runtime varianc
 - compiled reconstitution plan groups reference bindings by table once
 - compiled reconstitution plan groups descriptor bindings by table using descriptor projection ordinals
 - compiled reconstitution plan preserves list-based locator/identity metadata even when first-pass validation requires single-column use
+- page context uses composite-ready `ScopeKey` values for physical identity and parent attachment even when first-pass validation limits those keys to one part
 - compiled reconstitution plan derives exactly one immediate parent table for every non-root table
 - `_ext` child-parent derivation rejects direct base-scope attachment for paths that must attach through an aligned extension scope
 - page context builds one descriptor lookup for the page
@@ -467,22 +501,14 @@ These are compilation or hydration contract problems, not normal runtime varianc
 - query path calls `MaterializePage(...)` once per page
 - query path still applies readable-profile projection per item and refreshes `_etag`
 - GET-by-id uses the same page materialization path
-- single-document compatibility `Materialize(...)` delegates to `MaterializePage(...)`
+- committed write readback uses the same page materialization path
+- stored-state projection uses the same page materialization path
 
 ### Integration Tests
 
 - existing relational query execution tests keep passing
 - recorder-based query tests should switch from “materialized document ids” to “page materialization call count + returned ids”
 - add at least one multi-document page test large enough to catch accidental per-document page setup
-
-## Rollout
-
-1. Add `CompiledReconstitutionPlan` and `PageReconstitutionContext`.
-2. Implement page materialization internally and keep the single-document wrapper.
-3. Switch query reads to `MaterializePage(...)`.
-4. Switch GET-by-id to `MaterializePage(...)`.
-5. Migrate or simplify remaining callers.
-6. Remove the old per-document setup path once no callers depend on it.
 
 ## Recommendation
 
@@ -491,6 +517,7 @@ Implement a page-first reconstitution pipeline with:
 - a plan-scoped `CompiledReconstitutionPlan`
 - a page-scoped `PageReconstitutionContext`
 - a page-first `IRelationalReadMaterializer.MaterializePage(...)`
+- direct cutover of all existing callers to that API in the same change
 
 That is the smallest change that actually fixes the review point:
 
