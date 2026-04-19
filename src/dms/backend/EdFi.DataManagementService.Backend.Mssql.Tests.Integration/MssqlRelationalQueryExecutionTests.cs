@@ -31,12 +31,29 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 internal sealed class MssqlRelationalQueryExecutionRecorder
 {
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
-    public List<long> MaterializedDocumentIds { get; } = [];
+    public List<long> PageMaterializedDocumentIds { get; } = [];
+    public int SingleDocumentMaterializationCallCount { get; private set; }
+    public int PageMaterializationCallCount { get; private set; }
 
     public void Reset()
     {
         HydrationKeysets.Clear();
-        MaterializedDocumentIds.Clear();
+        PageMaterializedDocumentIds.Clear();
+        SingleDocumentMaterializationCallCount = 0;
+        PageMaterializationCallCount = 0;
+    }
+
+    public void RecordSingleDocumentMaterialization()
+    {
+        SingleDocumentMaterializationCallCount++;
+    }
+
+    public void RecordPageMaterialization(IReadOnlyList<MaterializedDocument> materializedDocuments)
+    {
+        PageMaterializationCallCount++;
+        PageMaterializedDocumentIds.AddRange(
+            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
+        );
     }
 }
 
@@ -76,7 +93,7 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
-        _recorder.MaterializedDocumentIds.Add(request.DocumentMetadata.DocumentId);
+        _recorder.RecordSingleDocumentMaterialization();
         return _inner.Materialize(request);
     }
 
@@ -85,9 +102,7 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
     )
     {
         var materializedDocuments = _inner.MaterializePage(request);
-        _recorder.MaterializedDocumentIds.AddRange(
-            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
-        );
+        _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
 
@@ -168,6 +183,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private ResourceInfo _resourceInfo = null!;
     private IReadOnlyList<PersistedQuerySchool> _persistedSchoolsInDocumentOrder = null!;
+    private long _physicalAddressTypeDescriptorId;
+    private long _mailingAddressTypeDescriptorId;
+    private long _stateAbbreviationDescriptorId;
+    private long _educationOrganizationCategoryDescriptorId;
+    private long _ninthGradeLevelDescriptorId;
+    private long _tenthGradeLevelDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -192,6 +213,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
 
         _resourceInfo = CreateResourceInfo(projectSchema, resourceSchema);
+
+        await SeedReferenceDataAsync();
 
         foreach (var schoolSeed in _schoolSeeds)
         {
@@ -255,7 +278,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         var keyset = AssertSingleQueryHydration();
         keyset.Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.MaterializedDocumentIds.Should().Equal(expectedSchool.DocumentId);
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     [Test]
@@ -279,13 +302,13 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 _persistedSchoolsInDocumentOrder[0].DocumentUuid.ToString(),
                 _persistedSchoolsInDocumentOrder[1].DocumentUuid.ToString()
             );
+        AssertSchoolQueryDocument(firstPageSuccess.EdfiDocs[0], _persistedSchoolsInDocumentOrder[0]);
+        AssertSchoolQueryDocument(firstPageSuccess.EdfiDocs[1], _persistedSchoolsInDocumentOrder[1]);
         AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder
-            .MaterializedDocumentIds.Should()
-            .Equal(
-                _persistedSchoolsInDocumentOrder[0].DocumentId,
-                _persistedSchoolsInDocumentOrder[1].DocumentId
-            );
+        AssertPageMaterialization(
+            _persistedSchoolsInDocumentOrder[0].DocumentId,
+            _persistedSchoolsInDocumentOrder[1].DocumentId
+        );
 
         _recorder.Reset();
 
@@ -304,8 +327,9 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
             .Should()
             .Equal(_persistedSchoolsInDocumentOrder[2].DocumentUuid.ToString());
+        AssertSchoolQueryDocument(secondPageSuccess.EdfiDocs[0], _persistedSchoolsInDocumentOrder[2]);
         AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.MaterializedDocumentIds.Should().Equal(_persistedSchoolsInDocumentOrder[2].DocumentId);
+        AssertPageMaterialization(_persistedSchoolsInDocumentOrder[2].DocumentId);
     }
 
     [Test]
@@ -332,7 +356,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             .Be(expectedSchool.NameOfInstitution);
 
         AssertSingleQueryHydration();
-        _recorder.MaterializedDocumentIds.Should().Equal(expectedSchool.DocumentId);
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     [Test]
@@ -359,7 +383,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         success.TotalCount.Should().Be(0);
         success.EdfiDocs.Should().BeEmpty();
         AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.MaterializedDocumentIds.Should().BeEmpty();
+        _recorder.PageMaterializedDocumentIds.Should().BeEmpty();
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
     }
 
     private static ServiceProvider CreateServiceProvider()
@@ -498,35 +523,131 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         ];
     }
 
+    private async Task SeedReferenceDataAsync()
+    {
+        _physicalAddressTypeDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("10111111-1111-1111-1111-111111111111"),
+            "AddressTypeDescriptor",
+            "Ed-Fi:AddressTypeDescriptor",
+            "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+            "uri://ed-fi.org/AddressTypeDescriptor",
+            "Physical",
+            "Physical"
+        );
+        _mailingAddressTypeDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("20222222-2222-2222-2222-222222222222"),
+            "AddressTypeDescriptor",
+            "Ed-Fi:AddressTypeDescriptor",
+            "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+            "uri://ed-fi.org/AddressTypeDescriptor",
+            "Mailing",
+            "Mailing"
+        );
+        _stateAbbreviationDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("30333333-3333-3333-3333-333333333333"),
+            "StateAbbreviationDescriptor",
+            "Ed-Fi:StateAbbreviationDescriptor",
+            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+            "uri://ed-fi.org/StateAbbreviationDescriptor",
+            "TX",
+            "Texas"
+        );
+        _educationOrganizationCategoryDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("40444444-4444-4444-4444-444444444444"),
+            "EducationOrganizationCategoryDescriptor",
+            "Ed-Fi:EducationOrganizationCategoryDescriptor",
+            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
+            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+            "School",
+            "School"
+        );
+        _ninthGradeLevelDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("50555555-5555-5555-5555-555555555555"),
+            "GradeLevelDescriptor",
+            "Ed-Fi:GradeLevelDescriptor",
+            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
+            "uri://ed-fi.org/GradeLevelDescriptor",
+            "Ninth grade",
+            "Ninth grade"
+        );
+        _tenthGradeLevelDescriptorId = await SeedDescriptorAsync(
+            Guid.Parse("60666666-6666-6666-6666-666666666666"),
+            "GradeLevelDescriptor",
+            "Ed-Fi:GradeLevelDescriptor",
+            "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
+            "uri://ed-fi.org/GradeLevelDescriptor",
+            "Tenth grade",
+            "Tenth grade"
+        );
+    }
+
+    private async Task<long> SeedDescriptorAsync(
+        Guid documentUuid,
+        string resourceName,
+        string discriminator,
+        string uri,
+        string @namespace,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
+        var documentId = await InsertDescriptorAsync(
+            documentUuid,
+            resourceKeyId,
+            discriminator,
+            uri,
+            @namespace,
+            codeValue,
+            shortDescription
+        );
+
+        await UpsertReferentialIdentityAsync(
+            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
+            documentId,
+            resourceKeyId
+        );
+
+        return documentId;
+    }
+
     private async Task SeedSchoolAsync(QuerySchoolSeed schoolSeed)
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var documentId = await InsertDocumentAsync(schoolSeed.DocumentUuid.Value, resourceKeyId);
+
         await ExecuteWithTriggersTemporarilyDisabledAsync(
             "edfi",
             "School",
             async () => await InsertSchoolAsync(documentId, schoolSeed.SchoolId, schoolSeed.NameOfInstitution)
         );
-        await InsertEducationOrganizationIdentityAsync(documentId, schoolSeed.SchoolId, "Ed-Fi:School");
-        await UpsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "School", false),
-                ("$.schoolId", schoolSeed.SchoolId.ToString(CultureInfo.InvariantCulture))
-            ),
+        await InsertSchoolExtensionAsync(documentId, isExemplary: true);
+        await InsertSchoolEducationOrganizationCategoryAsync(
             documentId,
-            resourceKeyId
+            ordinal: 0,
+            _educationOrganizationCategoryDescriptorId
         );
-        await UpsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", schoolSeed.SchoolId.ToString(CultureInfo.InvariantCulture))
-            ),
+        await InsertSchoolGradeLevelAsync(documentId, ordinal: 0, _tenthGradeLevelDescriptorId);
+        await InsertSchoolGradeLevelAsync(documentId, ordinal: 1, _ninthGradeLevelDescriptorId);
+        await InsertSchoolAddressAsync(
             documentId,
-            educationOrganizationResourceKeyId
+            ordinal: 0,
+            _physicalAddressTypeDescriptorId,
+            _stateAbbreviationDescriptorId,
+            city: "Austin",
+            postalCode: "78701",
+            streetNumberName: "100 Congress Ave",
+            doNotPublishIndicator: false
+        );
+        await InsertSchoolAddressAsync(
+            documentId,
+            ordinal: 1,
+            _mailingAddressTypeDescriptorId,
+            _stateAbbreviationDescriptorId,
+            city: "Austin",
+            postalCode: "78702",
+            streetNumberName: "200 Trinity St",
+            doNotPublishIndicator: true
         );
     }
 
@@ -535,6 +656,68 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _recorder.HydrationKeysets.Should().ContainSingle();
         _recorder.HydrationKeysets[0].Should().BeOfType<PageKeysetSpec.Query>();
         return (PageKeysetSpec.Query)_recorder.HydrationKeysets[0];
+    }
+
+    private void AssertPageMaterialization(params long[] expectedDocumentIds)
+    {
+        _recorder.PageMaterializationCallCount.Should().Be(1);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+        _recorder.PageMaterializedDocumentIds.Should().Equal(expectedDocumentIds);
+    }
+
+    private static void AssertSchoolQueryDocument(JsonNode? document, PersistedQuerySchool expectedSchool)
+    {
+        document.Should().NotBeNull();
+        document!["id"]!.GetValue<string>().Should().Be(expectedSchool.DocumentUuid.ToString());
+        document["schoolId"]!.GetValue<long>().Should().Be(expectedSchool.SchoolId);
+        document["nameOfInstitution"]!.GetValue<string>().Should().Be(expectedSchool.NameOfInstitution);
+        document["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
+
+        document["educationOrganizationCategories"]!
+            .AsArray()
+            .Select(category => category!["educationOrganizationCategoryDescriptor"]!.GetValue<string>())
+            .Should()
+            .Equal("uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School");
+        document["gradeLevels"]!
+            .AsArray()
+            .Select(gradeLevel => gradeLevel!["gradeLevelDescriptor"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
+                "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+            );
+        document["addresses"]!
+            .AsArray()
+            .Select(address => new
+            {
+                AddressTypeDescriptor = address!["addressTypeDescriptor"]!.GetValue<string>(),
+                StateAbbreviationDescriptor = address["stateAbbreviationDescriptor"]!.GetValue<string>(),
+                City = address["city"]!.GetValue<string>(),
+                PostalCode = address["postalCode"]!.GetValue<string>(),
+                StreetNumberName = address["streetNumberName"]!.GetValue<string>(),
+                DoNotPublishIndicator = address["doNotPublishIndicator"]!.GetValue<bool>(),
+            })
+            .Should()
+            .Equal(
+                new
+                {
+                    AddressTypeDescriptor = "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                    StateAbbreviationDescriptor = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    City = "Austin",
+                    PostalCode = "78701",
+                    StreetNumberName = "100 Congress Ave",
+                    DoNotPublishIndicator = false,
+                },
+                new
+                {
+                    AddressTypeDescriptor = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                    StateAbbreviationDescriptor = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    City = "Austin",
+                    PostalCode = "78702",
+                    StreetNumberName = "200 Trinity St",
+                    DoNotPublishIndicator = true,
+                }
+            );
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)
@@ -594,25 +777,144 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
     }
 
-    private async Task InsertEducationOrganizationIdentityAsync(
+    private async Task InsertSchoolExtensionAsync(long documentId, bool isExemplary)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [sample].[SchoolExtension] ([DocumentId], [IsExemplary])
+            VALUES (@documentId, @isExemplary);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@isExemplary", isExemplary)
+        );
+    }
+
+    private async Task InsertSchoolEducationOrganizationCategoryAsync(
         long documentId,
-        int educationOrganizationId,
-        string discriminator
+        int ordinal,
+        long educationOrganizationCategoryDescriptorId
     )
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EducationOrganizationIdentity] (
-                [DocumentId],
-                [EducationOrganizationId],
-                [Discriminator]
+            INSERT INTO [edfi].[SchoolEducationOrganizationCategory] (
+                [Ordinal],
+                [School_DocumentId],
+                [EducationOrganizationCategoryDescriptor_DescriptorId]
             )
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            VALUES (@ordinal, @documentId, @descriptorId);
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@descriptorId", educationOrganizationCategoryDescriptorId)
+        );
+    }
+
+    private async Task InsertSchoolGradeLevelAsync(long documentId, int ordinal, long gradeLevelDescriptorId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SchoolGradeLevel] (
+                [Ordinal],
+                [School_DocumentId],
+                [GradeLevelDescriptor_DescriptorId]
+            )
+            VALUES (@ordinal, @documentId, @descriptorId);
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@descriptorId", gradeLevelDescriptorId)
+        );
+    }
+
+    private async Task InsertSchoolAddressAsync(
+        long documentId,
+        int ordinal,
+        long addressTypeDescriptorId,
+        long stateAbbreviationDescriptorId,
+        string city,
+        string postalCode,
+        string streetNumberName,
+        bool doNotPublishIndicator
+    )
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[SchoolAddress] (
+                [Ordinal],
+                [School_DocumentId],
+                [AddressTypeDescriptor_DescriptorId],
+                [StateAbbreviationDescriptor_DescriptorId],
+                [City],
+                [PostalCode],
+                [StreetNumberName],
+                [DoNotPublishIndicator]
+            )
+            VALUES (
+                @ordinal,
+                @documentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
+                @city,
+                @postalCode,
+                @streetNumberName,
+                @doNotPublishIndicator
+            );
+            """,
+            new SqlParameter("@ordinal", ordinal),
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
+            new SqlParameter("@city", city),
+            new SqlParameter("@postalCode", postalCode),
+            new SqlParameter("@streetNumberName", streetNumberName),
+            new SqlParameter("@doNotPublishIndicator", doNotPublishIndicator)
+        );
+    }
+
+    private async Task<long> InsertDescriptorAsync(
+        Guid documentUuid,
+        short resourceKeyId,
+        string discriminator,
+        string uri,
+        string @namespace,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[Descriptor] (
+                [DocumentId],
+                [Namespace],
+                [CodeValue],
+                [ShortDescription],
+                [Description],
+                [Discriminator],
+                [Uri]
+            )
+            VALUES (
+                @documentId,
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                @description,
+                @discriminator,
+                @uri
+            );
             """,
             new SqlParameter("@documentId", documentId),
-            new SqlParameter("@educationOrganizationId", educationOrganizationId),
-            new SqlParameter("@discriminator", discriminator)
+            new SqlParameter("@namespace", @namespace),
+            new SqlParameter("@codeValue", codeValue),
+            new SqlParameter("@shortDescription", shortDescription),
+            new SqlParameter("@description", shortDescription),
+            new SqlParameter("@discriminator", discriminator),
+            new SqlParameter("@uri", uri)
         );
+
+        return documentId;
     }
 
     private async Task UpsertReferentialIdentityAsync(
@@ -657,22 +959,19 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         }
     }
 
-    private static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
+    private static ReferentialId CreateDescriptorReferentialId(
+        string projectName,
+        string resourceName,
+        string descriptorUri
     )
     {
         return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
+            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
+                new DocumentIdentityElement(
+                    DocumentIdentity.DescriptorIdentityJsonPath,
+                    descriptorUri.ToLowerInvariant()
+                ),
             ])
         );
     }

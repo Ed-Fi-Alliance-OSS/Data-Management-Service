@@ -79,12 +79,29 @@ internal sealed class PostgresqlRelationalQueryNoOpUpdateCascadeHandler : IUpdat
 internal sealed class PostgresqlRelationalQueryExecutionRecorder
 {
     public List<PageKeysetSpec> HydrationKeysets { get; } = [];
-    public List<long> MaterializedDocumentIds { get; } = [];
+    public List<long> PageMaterializedDocumentIds { get; } = [];
+    public int SingleDocumentMaterializationCallCount { get; private set; }
+    public int PageMaterializationCallCount { get; private set; }
 
     public void Reset()
     {
         HydrationKeysets.Clear();
-        MaterializedDocumentIds.Clear();
+        PageMaterializedDocumentIds.Clear();
+        SingleDocumentMaterializationCallCount = 0;
+        PageMaterializationCallCount = 0;
+    }
+
+    public void RecordSingleDocumentMaterialization()
+    {
+        SingleDocumentMaterializationCallCount++;
+    }
+
+    public void RecordPageMaterialization(IReadOnlyList<MaterializedDocument> materializedDocuments)
+    {
+        PageMaterializationCallCount++;
+        PageMaterializedDocumentIds.AddRange(
+            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
+        );
     }
 }
 
@@ -121,7 +138,7 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
 
     public JsonNode Materialize(RelationalReadMaterializationRequest request)
     {
-        _recorder.MaterializedDocumentIds.Add(request.DocumentMetadata.DocumentId);
+        _recorder.RecordSingleDocumentMaterialization();
         return _inner.Materialize(request);
     }
 
@@ -130,9 +147,7 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
     )
     {
         var materializedDocuments = _inner.MaterializePage(request);
-        _recorder.MaterializedDocumentIds.AddRange(
-            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
-        );
+        _recorder.RecordPageMaterialization(materializedDocuments);
         return materializedDocuments;
     }
 }
@@ -281,7 +296,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
         var keyset = AssertSingleQueryHydration();
         keyset.Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.MaterializedDocumentIds.Should().Equal(expectedSchool.DocumentId);
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     [Test]
@@ -305,13 +320,13 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 _persistedSchoolsInDocumentOrder[0].DocumentUuid.ToString(),
                 _persistedSchoolsInDocumentOrder[1].DocumentUuid.ToString()
             );
+        AssertSchoolQueryDocument(firstPageSuccess.EdfiDocs[0], _persistedSchoolsInDocumentOrder[0]);
+        AssertSchoolQueryDocument(firstPageSuccess.EdfiDocs[1], _persistedSchoolsInDocumentOrder[1]);
         AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder
-            .MaterializedDocumentIds.Should()
-            .Equal(
-                _persistedSchoolsInDocumentOrder[0].DocumentId,
-                _persistedSchoolsInDocumentOrder[1].DocumentId
-            );
+        AssertPageMaterialization(
+            _persistedSchoolsInDocumentOrder[0].DocumentId,
+            _persistedSchoolsInDocumentOrder[1].DocumentId
+        );
 
         _recorder.Reset();
 
@@ -330,8 +345,9 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
             .Should()
             .Equal(_persistedSchoolsInDocumentOrder[2].DocumentUuid.ToString());
+        AssertSchoolQueryDocument(secondPageSuccess.EdfiDocs[0], _persistedSchoolsInDocumentOrder[2]);
         AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.MaterializedDocumentIds.Should().Equal(_persistedSchoolsInDocumentOrder[2].DocumentId);
+        AssertPageMaterialization(_persistedSchoolsInDocumentOrder[2].DocumentId);
     }
 
     [Test]
@@ -358,7 +374,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             .Be(expectedSchool.NameOfInstitution);
 
         AssertSingleQueryHydration();
-        _recorder.MaterializedDocumentIds.Should().Equal(expectedSchool.DocumentId);
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     private static ServiceProvider CreateServiceProvider()
@@ -664,6 +680,67 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         _recorder.HydrationKeysets.Should().ContainSingle();
         _recorder.HydrationKeysets[0].Should().BeOfType<PageKeysetSpec.Query>();
         return (PageKeysetSpec.Query)_recorder.HydrationKeysets[0];
+    }
+
+    private void AssertPageMaterialization(params long[] expectedDocumentIds)
+    {
+        _recorder.PageMaterializationCallCount.Should().Be(1);
+        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+        _recorder.PageMaterializedDocumentIds.Should().Equal(expectedDocumentIds);
+    }
+
+    private static void AssertSchoolQueryDocument(JsonNode? document, PersistedQuerySchool expectedSchool)
+    {
+        document.Should().NotBeNull();
+        document!["id"]!.GetValue<string>().Should().Be(expectedSchool.DocumentUuid.ToString());
+        document["schoolId"]!.GetValue<long>().Should().Be(expectedSchool.SchoolId);
+        document["nameOfInstitution"]!.GetValue<string>().Should().Be(expectedSchool.NameOfInstitution);
+
+        document["educationOrganizationCategories"]!
+            .AsArray()
+            .Select(category => category!["educationOrganizationCategoryDescriptor"]!.GetValue<string>())
+            .Should()
+            .Equal("uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School");
+        document["gradeLevels"]!
+            .AsArray()
+            .Select(gradeLevel => gradeLevel!["gradeLevelDescriptor"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
+                "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+            );
+        document["addresses"]!
+            .AsArray()
+            .Select(address => new
+            {
+                AddressTypeDescriptor = address!["addressTypeDescriptor"]!.GetValue<string>(),
+                StateAbbreviationDescriptor = address["stateAbbreviationDescriptor"]!.GetValue<string>(),
+                City = address["city"]!.GetValue<string>(),
+                PostalCode = address["postalCode"]!.GetValue<string>(),
+                StreetNumberName = address["streetNumberName"]!.GetValue<string>(),
+                DoNotPublishIndicator = address["doNotPublishIndicator"]!.GetValue<bool>(),
+            })
+            .Should()
+            .Equal(
+                new
+                {
+                    AddressTypeDescriptor = "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                    StateAbbreviationDescriptor = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    City = "Austin",
+                    PostalCode = "78701",
+                    StreetNumberName = "100 Congress Ave",
+                    DoNotPublishIndicator = false,
+                },
+                new
+                {
+                    AddressTypeDescriptor = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                    StateAbbreviationDescriptor = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                    City = "Austin",
+                    PostalCode = "78702",
+                    StreetNumberName = "200 Trinity St",
+                    DoNotPublishIndicator = true,
+                }
+            );
     }
 
     private void SetSelectedInstance(IServiceProvider serviceProvider)
