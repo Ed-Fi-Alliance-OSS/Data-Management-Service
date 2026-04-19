@@ -248,8 +248,13 @@ public class Given_Classifier_with_document_reference_whole_reference_hidden
 }
 
 [TestFixture]
-public class Given_Classifier_with_document_reference_exact_child_hidden
+public class Given_Classifier_with_document_reference_sub_reference_member_hidden
 {
+    // profiles.md:782: a hidden path naming a sub-member of a document reference
+    // (schoolReference.schoolId) preserves the entire reference-derived storage family
+    // because the FK and every derived identity column are all governed by the same owning
+    // reference root (schoolReference). Sibling identity parts are preserved even though
+    // the hidden path names only one of them.
     private ProfileRootTableBindingClassification _result = null!;
 
     [SetUp]
@@ -275,19 +280,16 @@ public class Given_Classifier_with_document_reference_exact_child_hidden
     }
 
     [Test]
-    public void It_does_not_preserve_the_FK_binding_exact_child_miss() =>
-        // FK binding's member path is "schoolReference"; the hidden path is "schoolReference.schoolId"
-        // (a descendant). Ancestor-or-exact matching does NOT consider descendants of memberPath
-        // as ancestors of hiddenPath. So FK is VisibleWritable.
-        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.VisibleWritable);
+    public void It_preserves_the_FK_binding() =>
+        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.HiddenPreserved);
 
     [Test]
-    public void It_preserves_only_the_exact_matching_derived_binding() =>
+    public void It_preserves_the_exact_matching_derived_binding() =>
         _result.BindingsByIndex[1].Should().Be(RootBindingDisposition.HiddenPreserved);
 
     [Test]
-    public void It_does_not_preserve_sibling_derived_binding() =>
-        _result.BindingsByIndex[2].Should().Be(RootBindingDisposition.VisibleWritable);
+    public void It_preserves_the_sibling_derived_binding() =>
+        _result.BindingsByIndex[2].Should().Be(RootBindingDisposition.HiddenPreserved);
 }
 
 [TestFixture]

@@ -1037,6 +1037,181 @@ public class Given_Mssql_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndP
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Fixture C.1: Hidden *sub-reference* member path preserves FK + propagated identity.
+//  MSSQL mirror of the pgsql Fixture C.1. Regression for profile hidden-reference
+//  governance (profiles.md:782): hiding a sub-reference path must preserve the FK
+//  column and every propagated identity binding as a single reference-derived group.
+// ─────────────────────────────────────────────────────────────────────────────
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropagatedIdentity
+{
+    private static readonly Guid ItemDocumentUuid = Guid.Parse("bb100004-0000-0000-0000-000000000004");
+    private static readonly Guid StudentDocumentUuid = Guid.Parse("bb100004-1000-0000-0000-000000000004");
+    private static readonly Guid PublicDescriptorDocumentUuid = Guid.Parse(
+        "bb100004-2000-0000-0000-000000000004"
+    );
+    private const int ItemId = 9104;
+    private const string StudentUniqueId = "STU-104";
+    private const string DescriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+    private const string PublicCodeValue = "Public";
+    private static readonly string PublicUri = $"{DescriptorNamespace}#{PublicCodeValue}";
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private long _studentDocumentId;
+    private long _publicDescriptorDocumentId;
+    private UpdateResult _putResult = null!;
+    private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRootOnlyFixtureSupport.FixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRootOnlyFixtureSupport.CreateServiceProvider();
+
+        _studentDocumentId = await MssqlProfileRootOnlyFixtureSupport.SeedStudentAsync(
+            _database,
+            StudentDocumentUuid,
+            StudentUniqueId
+        );
+        _publicDescriptorDocumentId = await MssqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+            _database,
+            PublicDescriptorDocumentUuid,
+            DescriptorNamespace,
+            PublicCodeValue,
+            PublicCodeValue
+        );
+        await MssqlProfileRootOnlyFixtureSupport.SeedProfileRootOnlyMergeItemRowAsync(
+            _database,
+            ItemDocumentUuid,
+            ItemId,
+            displayName: "OriginalDisplay",
+            clearableText: null,
+            preservedText: null,
+            studentDocumentId: _studentDocumentId,
+            studentUniqueId: StudentUniqueId,
+            unifiedDescriptorId: _publicDescriptorDocumentId,
+            primaryPresent: true,
+            secondaryPresent: true
+        );
+
+        var writeBody = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = ItemId,
+            ["displayName"] = "UpdatedDisplay",
+            ["primarySchoolTypeDescriptor"] = PublicUri,
+            ["secondarySchoolTypeDescriptor"] = PublicUri,
+        };
+        _putResult = await ExecuteProfiledPutAsync(writeBody);
+        _rowAfterPut = await MssqlProfileRootOnlyFixtureSupport.ReadItemRowWithReferenceColumnsAsync(
+            _database,
+            new DocumentUuid(ItemDocumentUuid)
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success() => _putResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+
+    [Test]
+    public void It_updates_display_name() => _rowAfterPut["DisplayName"].Should().Be("UpdatedDisplay");
+
+    [Test]
+    public void It_preserves_student_reference_document_id() =>
+        _rowAfterPut["StudentReference_DocumentId"].Should().Be(_studentDocumentId);
+
+    [Test]
+    public void It_preserves_student_reference_student_unique_id() =>
+        _rowAfterPut["StudentReference_StudentUniqueId"].Should().Be(StudentUniqueId);
+
+    private async Task<UpdateResult> ExecuteProfiledPutAsync(JsonNode writeBody)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfileRootOnlyFixtureSubRefHidden",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+        var writePlan = _mappingSet.WritePlansByResource[
+            MssqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResource
+        ];
+        var profileContext = MssqlProfileRootOnlyFixtureSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            rootVisibility: ProfileVisibilityKind.VisiblePresent,
+            rootHiddenMemberPaths: ["studentReference.studentUniqueId"],
+            profileScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+            profileScopeHiddenMemberPaths: []
+        );
+        var descriptorReferences = new[]
+        {
+            MssqlProfileRootOnlyFixtureSupport.BuildSchoolTypeDescriptorReference(
+                PublicUri,
+                "$.primarySchoolTypeDescriptor"
+            ),
+            MssqlProfileRootOnlyFixtureSupport.BuildSchoolTypeDescriptorReference(
+                PublicUri,
+                "$.secondarySchoolTypeDescriptor"
+            ),
+        };
+        var updateRequest = new UpdateRequest(
+            ResourceInfo: MssqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResourceInfo,
+            DocumentInfo: MssqlProfileRootOnlyFixtureSupport.CreateDocumentInfoWithReferences(
+                ItemId,
+                documentReferences: [],
+                descriptorReferences: descriptorReferences
+            ),
+            MappingSet: _mappingSet,
+            EdfiDoc: writeBody,
+            Headers: [],
+            TraceId: new TraceId("mssql-profile-root-only-hidden-sub-ref-put"),
+            DocumentUuid: new DocumentUuid(ItemDocumentUuid),
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileContext
+        );
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpdateDocumentById(updateRequest);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Fixture D: Key-unification hidden member + visible agreement.
 //  MSSQL mirror of scenario 7a.
 // ─────────────────────────────────────────────────────────────────────────────

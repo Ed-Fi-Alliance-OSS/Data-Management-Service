@@ -110,6 +110,92 @@ internal static class ProfileTestDoubles
     }
 
     /// <summary>
+    /// Build a root plan with a KeyUnificationWritePlan whose single member is a
+    /// ReferenceDerivedMember. Useful for tests that need the resolver's reference-rooted
+    /// governance path. Bindings: [0] = canonical (Precomputed), [1] = ReferenceDerived
+    /// member value column. No presence column.
+    /// </summary>
+    internal static (
+        ResourceWritePlan Plan,
+        int CanonicalBindingIndex,
+        int MemberBindingIndex,
+        DbColumnName MemberColumnName
+    ) BuildRootPlanWithReferenceDerivedKeyUnificationMember(
+        string referenceMemberPath,
+        string derivedMemberPath
+    )
+    {
+        var referenceObjectPath = Path(referenceMemberPath);
+        var identitySegment = derivedMemberPath[(referenceMemberPath.Length + 1)..];
+
+        var canonicalColumn = Column("KU_Canonical", ColumnKind.Scalar, Int32Type());
+        var memberColumn = Column(
+            "KU_" + SanitizePath(identitySegment) + "_FromReference",
+            ColumnKind.Scalar,
+            Int32Type(),
+            sourceJsonPath: Path(derivedMemberPath)
+        );
+        var rootModel = RootTable("RefKUHost", [canonicalColumn, memberColumn]);
+
+        var canonicalBinding = new WriteColumnBinding(
+            canonicalColumn,
+            new WriteValueSource.Precomputed(),
+            canonicalColumn.ColumnName.Value
+        );
+        var referenceSource = new ReferenceDerivedValueSourceMetadata(
+            BindingIndex: 0,
+            ReferenceObjectPath: referenceObjectPath,
+            IdentityJsonPath: Path("$." + identitySegment),
+            ReferenceJsonPath: Path(derivedMemberPath)
+        );
+        var memberBinding = new WriteColumnBinding(
+            memberColumn,
+            new WriteValueSource.ReferenceDerived(referenceSource),
+            memberColumn.ColumnName.Value
+        );
+
+        var keyUnificationPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: 0,
+            MembersInOrder:
+            [
+                new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
+                    MemberPathColumn: memberColumn.ColumnName,
+                    RelativePath: Path(derivedMemberPath),
+                    ReferenceSource: referenceSource,
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                ),
+            ]
+        );
+
+        var rootPlan = RootPlan(
+            rootModel,
+            [canonicalBinding, memberBinding],
+            keyUnificationPlans: [keyUnificationPlan]
+        );
+
+        // Register a DocumentReferenceBinding so the resource model carries the owning reference.
+        var fkColumn = Column("UnusedRef_DocumentId", ColumnKind.DocumentFk, Int64Type());
+        var docRefBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: referenceObjectPath,
+            Table: rootModel.Table,
+            FkColumn: fkColumn.ColumnName,
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings: []
+        );
+
+        return (
+            WrapPlan(rootModel, [rootPlan], documentReferenceBindings: [docRefBinding]),
+            0,
+            1,
+            memberColumn.ColumnName
+        );
+    }
+
+    /// <summary>
     /// Build a root plan with a KeyUnificationWritePlan whose scalar member has a synthetic
     /// presence column. Returns the plan plus resolver-owned binding indices.
     /// Bindings: [0] = canonical scalar (Precomputed), [1] = synthetic presence (Precomputed),

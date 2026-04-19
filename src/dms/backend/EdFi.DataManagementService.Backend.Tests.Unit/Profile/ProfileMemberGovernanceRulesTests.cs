@@ -20,7 +20,7 @@ public class Given_IsHiddenGoverned_with_exact_match_and_exact_path
     public void Setup()
     {
         _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "birthDate",
+            governingPath: "birthDate",
             hiddenMemberPaths: ImmutableArray.Create("birthDate"),
             matchKind: HiddenPathMatchKind.Exact
         );
@@ -39,7 +39,7 @@ public class Given_IsHiddenGoverned_with_exact_match_and_different_path
     public void Setup()
     {
         _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "middleName",
+            governingPath: "middleName",
             hiddenMemberPaths: ImmutableArray.Create("birthDate"),
             matchKind: HiddenPathMatchKind.Exact
         );
@@ -50,17 +50,19 @@ public class Given_IsHiddenGoverned_with_exact_match_and_different_path
 }
 
 [TestFixture]
-public class Given_IsHiddenGoverned_with_ancestor_match_and_whole_reference_hidden
+public class Given_IsHiddenGoverned_reference_rooted_with_whole_reference_hidden
 {
+    // Whole reference hidden: HiddenMemberPaths contains "schoolReference". A reference-rooted
+    // binding whose governing path is also "schoolReference" is preserved by exact match.
     private bool _result;
 
     [SetUp]
     public void Setup()
     {
         _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "schoolReference.schoolId",
+            governingPath: "schoolReference",
             hiddenMemberPaths: ImmutableArray.Create("schoolReference"),
-            matchKind: HiddenPathMatchKind.AncestorOrExact
+            matchKind: HiddenPathMatchKind.ReferenceRooted
         );
     }
 
@@ -69,46 +71,83 @@ public class Given_IsHiddenGoverned_with_ancestor_match_and_whole_reference_hidd
 }
 
 [TestFixture]
-public class Given_IsHiddenGoverned_with_ancestor_match_and_exact_child_hidden
+public class Given_IsHiddenGoverned_reference_rooted_with_sub_reference_path_hidden
 {
-    private bool _child;
-    private bool _sibling;
+    // profiles.md:782 contract: a hidden path naming a sub-member of a reference
+    // (schoolReference.schoolId) preserves the entire reference-derived storage family
+    // keyed on the reference root (schoolReference). All three bindings whose governing
+    // reference root is "schoolReference" are preserved — FK, this identity part, and any
+    // sibling identity part.
+    private bool _fkBinding;
+    private bool _hiddenChildBinding;
+    private bool _siblingChildBinding;
 
     [SetUp]
     public void Setup()
     {
         var hidden = ImmutableArray.Create("schoolReference.schoolId");
-        _child = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "schoolReference.schoolId",
+
+        _fkBinding = ProfileMemberGovernanceRules.IsHiddenGoverned(
+            governingPath: "schoolReference",
             hiddenMemberPaths: hidden,
-            matchKind: HiddenPathMatchKind.AncestorOrExact
+            matchKind: HiddenPathMatchKind.ReferenceRooted
         );
-        _sibling = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "schoolReference.localEducationAgencyId",
+        _hiddenChildBinding = ProfileMemberGovernanceRules.IsHiddenGoverned(
+            governingPath: "schoolReference",
             hiddenMemberPaths: hidden,
-            matchKind: HiddenPathMatchKind.AncestorOrExact
+            matchKind: HiddenPathMatchKind.ReferenceRooted
+        );
+        _siblingChildBinding = ProfileMemberGovernanceRules.IsHiddenGoverned(
+            governingPath: "schoolReference",
+            hiddenMemberPaths: hidden,
+            matchKind: HiddenPathMatchKind.ReferenceRooted
         );
     }
 
     [Test]
-    public void It_matches_the_exact_child() => _child.Should().BeTrue();
+    public void It_preserves_the_FK_binding() => _fkBinding.Should().BeTrue();
 
     [Test]
-    public void It_does_not_match_a_sibling_child() => _sibling.Should().BeFalse();
+    public void It_preserves_the_exact_child_binding() => _hiddenChildBinding.Should().BeTrue();
+
+    [Test]
+    public void It_preserves_the_sibling_child_binding() => _siblingChildBinding.Should().BeTrue();
 }
 
 [TestFixture]
-public class Given_IsHiddenGoverned_with_ancestor_match_and_prefix_without_dot_boundary
+public class Given_IsHiddenGoverned_reference_rooted_with_unrelated_prefix_without_dot_boundary
 {
+    // Defensive: a hidden path like "school" must not match governing path "schoolReference"
+    // even though the strings share a prefix — the dot boundary is required.
     private bool _result;
 
     [SetUp]
     public void Setup()
     {
         _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "schoolReference.schoolId",
+            governingPath: "schoolReference",
             hiddenMemberPaths: ImmutableArray.Create("school"),
-            matchKind: HiddenPathMatchKind.AncestorOrExact
+            matchKind: HiddenPathMatchKind.ReferenceRooted
+        );
+    }
+
+    [Test]
+    public void It_returns_false() => _result.Should().BeFalse();
+}
+
+[TestFixture]
+public class Given_IsHiddenGoverned_reference_rooted_with_disjoint_hidden_path
+{
+    // A hidden path for an unrelated reference (or scalar) must not govern this reference.
+    private bool _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
+            governingPath: "schoolReference",
+            hiddenMemberPaths: ImmutableArray.Create("studentReference.studentUniqueId"),
+            matchKind: HiddenPathMatchKind.ReferenceRooted
         );
     }
 
@@ -119,13 +158,16 @@ public class Given_IsHiddenGoverned_with_ancestor_match_and_prefix_without_dot_b
 [TestFixture]
 public class Given_IsHiddenGoverned_with_exact_match_and_ancestor_path
 {
+    // Exact-match bindings (scalar, descriptor) only match their own path exactly; a hidden path
+    // naming an ancestor scope does not reach the scalar because scope-level hiding is expressed
+    // via stored-scope visibility, not via ancestor member paths.
     private bool _result;
 
     [SetUp]
     public void Setup()
     {
         _result = ProfileMemberGovernanceRules.IsHiddenGoverned(
-            memberPath: "studentReference.studentUniqueId",
+            governingPath: "studentReference.studentUniqueId",
             hiddenMemberPaths: ImmutableArray.Create("studentReference"),
             matchKind: HiddenPathMatchKind.Exact
         );

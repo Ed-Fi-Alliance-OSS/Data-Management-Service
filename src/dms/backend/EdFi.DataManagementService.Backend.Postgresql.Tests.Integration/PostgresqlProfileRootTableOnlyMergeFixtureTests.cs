@@ -1108,6 +1108,186 @@ public class Given_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndPropaga
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Fixture C.1: Hidden *sub-reference* member path preserves FK + propagated identity.
+//  Regression for profile hidden-reference governance (profiles.md:782). Hiding a
+//  sub-member of a reference (studentReference.studentUniqueId) — rather than the
+//  whole reference root (studentReference) — must preserve the FK column and every
+//  propagated identity binding as a single reference-derived group. Under the
+//  pre-Phase-2 matching rule the FK binding stayed writable for this case because
+//  ancestor-or-exact matching on the binding's own path did not reach the FK root.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Same seed and request shape as
+/// <see cref="Given_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndPropagatedIdentity"/>,
+/// but the profile's hidden-member-path points at
+/// <c>studentReference.studentUniqueId</c> instead of <c>studentReference</c>. The FK and
+/// propagated identity columns must still both be preserved because they are governed by
+/// the same owning reference root.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropagatedIdentity
+{
+    private static readonly Guid ItemDocumentUuid = Guid.Parse("bb000004-0000-0000-0000-000000000004");
+    private static readonly Guid StudentDocumentUuid = Guid.Parse("bb000004-1000-0000-0000-000000000004");
+    private static readonly Guid PublicDescriptorDocumentUuid = Guid.Parse(
+        "bb000004-2000-0000-0000-000000000004"
+    );
+    private const int ItemId = 9004;
+    private const string StudentUniqueId = "STU-004";
+    private const string DescriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+    private const string PublicCodeValue = "Public";
+    private static readonly string PublicUri = $"{DescriptorNamespace}#{PublicCodeValue}";
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private long _studentDocumentId;
+    private long _publicDescriptorDocumentId;
+    private UpdateResult _putResult = null!;
+    private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            PostgresqlProfileRootOnlyFixtureSupport.FixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostgresqlProfileRootOnlyFixtureSupport.CreateServiceProvider();
+
+        _studentDocumentId = await PostgresqlProfileRootOnlyFixtureSupport.SeedStudentAsync(
+            _database,
+            StudentDocumentUuid,
+            StudentUniqueId
+        );
+        _publicDescriptorDocumentId =
+            await PostgresqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+                _database,
+                PublicDescriptorDocumentUuid,
+                DescriptorNamespace,
+                PublicCodeValue,
+                PublicCodeValue
+            );
+        await PostgresqlProfileRootOnlyFixtureSupport.SeedProfileRootOnlyMergeItemRowAsync(
+            _database,
+            ItemDocumentUuid,
+            ItemId,
+            displayName: "OriginalDisplay",
+            clearableText: null,
+            preservedText: null,
+            studentDocumentId: _studentDocumentId,
+            studentUniqueId: StudentUniqueId,
+            unifiedDescriptorId: _publicDescriptorDocumentId,
+            primaryPresent: true,
+            secondaryPresent: true
+        );
+
+        var writeBody = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = ItemId,
+            ["displayName"] = "UpdatedDisplay",
+            ["primarySchoolTypeDescriptor"] = PublicUri,
+            ["secondarySchoolTypeDescriptor"] = PublicUri,
+        };
+        _putResult = await ExecuteProfiledPutAsync(writeBody);
+        _rowAfterPut = await PostgresqlProfileRootOnlyFixtureSupport.ReadItemRowWithReferenceColumnsAsync(
+            _database,
+            new DocumentUuid(ItemDocumentUuid)
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_update_success() => _putResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+
+    [Test]
+    public void It_updates_display_name() => _rowAfterPut["DisplayName"].Should().Be("UpdatedDisplay");
+
+    [Test]
+    public void It_preserves_student_reference_document_id() =>
+        _rowAfterPut["StudentReference_DocumentId"].Should().Be(_studentDocumentId);
+
+    [Test]
+    public void It_preserves_student_reference_student_unique_id() =>
+        _rowAfterPut["StudentReference_StudentUniqueId"].Should().Be(StudentUniqueId);
+
+    private async Task<UpdateResult> ExecuteProfiledPutAsync(JsonNode writeBody)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfileRootOnlyFixtureSubRefHidden",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+        var writePlan = _mappingSet.WritePlansByResource[
+            PostgresqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResource
+        ];
+        var profileContext = PostgresqlProfileRootOnlyFixtureSupport.CreateProfileContext(
+            writePlan,
+            writeBody.DeepClone(),
+            rootVisibility: ProfileVisibilityKind.VisiblePresent,
+            rootHiddenMemberPaths: ["studentReference.studentUniqueId"],
+            profileScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+            profileScopeHiddenMemberPaths: []
+        );
+        var descriptorReferences = new[]
+        {
+            PostgresqlProfileRootOnlyFixtureSupport.BuildSchoolTypeDescriptorReference(
+                PublicUri,
+                "$.primarySchoolTypeDescriptor"
+            ),
+            PostgresqlProfileRootOnlyFixtureSupport.BuildSchoolTypeDescriptorReference(
+                PublicUri,
+                "$.secondarySchoolTypeDescriptor"
+            ),
+        };
+        var updateRequest = new UpdateRequest(
+            ResourceInfo: PostgresqlProfileRootOnlyFixtureSupport.ProfileRootOnlyMergeItemResourceInfo,
+            DocumentInfo: PostgresqlProfileRootOnlyFixtureSupport.CreateDocumentInfoWithReferences(
+                ItemId,
+                documentReferences: [],
+                descriptorReferences: descriptorReferences
+            ),
+            MappingSet: _mappingSet,
+            EdfiDoc: writeBody,
+            Headers: [],
+            TraceId: new TraceId("profile-root-only-hidden-sub-ref-put"),
+            DocumentUuid: new DocumentUuid(ItemDocumentUuid),
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new ProfileRootOnlyFixtureNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileRootOnlyFixtureAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileContext
+        );
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpdateDocumentById(updateRequest);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Fixture D: Key-unification hidden member + visible agreement.
 //  Spec scenario 7a — hiding one descriptor member while the other visibly
 //  resolves to the same canonical URI succeeds; the canonical FK is preserved

@@ -18,21 +18,40 @@ internal static class ProfileMemberGovernanceRules
 {
     internal enum HiddenPathMatchKind
     {
-        /// <summary>Exact-path match only (Scalar, DescriptorReference).</summary>
+        /// <summary>
+        /// Hidden path must equal the binding's governing path exactly. Used for scalar
+        /// and descriptor bindings, where governance is keyed on the binding's own member path.
+        /// </summary>
         Exact,
 
-        /// <summary>Ancestor-or-exact match (DocumentReference, ReferenceDerived).</summary>
-        AncestorOrExact,
+        /// <summary>
+        /// Hidden path must equal the binding's governing reference path, or be a descendant
+        /// of it. Used for document-reference FK bindings and reference-derived bindings: the
+        /// governing path is the owning reference root (e.g. <c>schoolReference</c>), and any
+        /// hidden member at or below that root (e.g. <c>schoolReference.schoolId</c>) preserves
+        /// the entire reference-derived storage family.
+        /// See <c>profiles.md:782</c> and <c>02-root-table-only-profile-merge.md:75</c>.
+        /// </summary>
+        ReferenceRooted,
     }
 
+    /// <summary>
+    /// Returns true iff any hidden member path in <paramref name="hiddenMemberPaths"/> governs
+    /// a binding with the given <paramref name="governingPath"/> and <paramref name="matchKind"/>.
+    /// </summary>
+    /// <param name="governingPath">
+    /// Scope-relative path used for hidden-path matching. For <see cref="HiddenPathMatchKind.Exact"/>
+    /// this is the binding's own member path. For <see cref="HiddenPathMatchKind.ReferenceRooted"/>
+    /// this is the owning document-reference root path.
+    /// </param>
     internal static bool IsHiddenGoverned(
-        string memberPath,
+        string governingPath,
         ImmutableArray<string> hiddenMemberPaths,
         HiddenPathMatchKind matchKind
     )
     {
-        ArgumentNullException.ThrowIfNull(memberPath);
-        return hiddenMemberPaths.Any(hidden => IsMatch(memberPath, hidden, matchKind));
+        ArgumentNullException.ThrowIfNull(governingPath);
+        return hiddenMemberPaths.Any(hidden => IsMatch(governingPath, hidden, matchKind));
     }
 
     internal static HiddenPathMatchKind MatchKindFor(WriteValueSource source) =>
@@ -40,8 +59,8 @@ internal static class ProfileMemberGovernanceRules
         {
             WriteValueSource.Scalar => HiddenPathMatchKind.Exact,
             WriteValueSource.DescriptorReference => HiddenPathMatchKind.Exact,
-            WriteValueSource.DocumentReference => HiddenPathMatchKind.AncestorOrExact,
-            WriteValueSource.ReferenceDerived => HiddenPathMatchKind.AncestorOrExact,
+            WriteValueSource.DocumentReference => HiddenPathMatchKind.ReferenceRooted,
+            WriteValueSource.ReferenceDerived => HiddenPathMatchKind.ReferenceRooted,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(source),
                 source.GetType().Name,
@@ -55,7 +74,7 @@ internal static class ProfileMemberGovernanceRules
         {
             KeyUnificationMemberWritePlan.ScalarMember => HiddenPathMatchKind.Exact,
             KeyUnificationMemberWritePlan.DescriptorMember => HiddenPathMatchKind.Exact,
-            KeyUnificationMemberWritePlan.ReferenceDerivedMember => HiddenPathMatchKind.AncestorOrExact,
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember => HiddenPathMatchKind.ReferenceRooted,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(member),
                 member.GetType().Name,
@@ -73,17 +92,17 @@ internal static class ProfileMemberGovernanceRules
         string scopeCanonical
     ) => context.StoredScopeStates.FirstOrDefault(state => state.Address.JsonScope == scopeCanonical);
 
-    private static bool IsMatch(string memberPath, string hiddenPath, HiddenPathMatchKind matchKind)
+    private static bool IsMatch(string governingPath, string hiddenPath, HiddenPathMatchKind matchKind)
     {
-        if (string.Equals(memberPath, hiddenPath, StringComparison.Ordinal))
+        if (string.Equals(governingPath, hiddenPath, StringComparison.Ordinal))
         {
             return true;
         }
         if (
-            matchKind == HiddenPathMatchKind.AncestorOrExact
-            && memberPath.StartsWith(hiddenPath, StringComparison.Ordinal)
-            && memberPath.Length > hiddenPath.Length
-            && memberPath[hiddenPath.Length] == '.'
+            matchKind == HiddenPathMatchKind.ReferenceRooted
+            && hiddenPath.StartsWith(governingPath, StringComparison.Ordinal)
+            && hiddenPath.Length > governingPath.Length
+            && hiddenPath[governingPath.Length] == '.'
         )
         {
             return true;

@@ -231,6 +231,17 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             : null;
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
         var strippedMemberPath = ProfileScopeMatching.StripScopePrefix(memberPath, containingScope);
+        // For reference-derived members the governing path is the owning reference root, not the
+        // member's own path — any hidden sub-reference path preserves the whole reference family.
+        var governingPath = member switch
+        {
+            KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
+                ProfileScopeMatching.StripScopePrefix(
+                    refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                    containingScope
+                ),
+            _ => strippedMemberPath,
+        };
 
         if (storedScope is not null)
         {
@@ -240,7 +251,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             }
             if (
                 ProfileMemberGovernanceRules.IsHiddenGoverned(
-                    strippedMemberPath,
+                    governingPath,
                     storedScope.HiddenMemberPaths,
                     matchKind
                 )
