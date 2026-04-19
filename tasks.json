@@ -43,5 +43,78 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reconstitution Plan Cache",
+    "description": "Introduce plan-scoped bulk-reconstitution metadata for relational reads. Acceptance: add `ScopeKey`, `CompiledReconstitutionPlan`, and `TableReconstitutionPlan` (or equivalent) plus a builder/cache keyed by `ResourceReadPlan`; the builder resolves and stores table-local root-scope locator, immediate-parent locator, physical-row-identity, and ordinal ordinals from compiled read-plan metadata; groups `ReferenceIdentityProjectionBinding`s by table once; flattens `DescriptorProjectionPlansInOrder[*].SourcesInOrder` into table-local descriptor bindings using compiled descriptor ordinals instead of `Model.DescriptorEdgeSources`; builds the property-order tree once; `ScopeKey` uses structural equality over canonicalized parts; and the compiled shape preserves list-based locator/identity metadata even though the first-pass implementation still validates single-column use.",
+    "steps-to-verify": [
+      "Add new unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs` proving reference bindings, descriptor bindings, ordinals, `ScopeKey` equality, and cached property ordering are derived once from `ResourceReadPlan`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter CompiledReconstitutionPlanTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Immediate Parent Topology",
+    "description": "Derive and validate page-level parent/child table topology once during compiled reconstitution-plan construction. Acceptance: every non-root table gets exactly one `ImmediateParentTable`; `ImmediateChildrenInDependencyOrder` is emitted deterministically; parent tables always appear earlier in dependency order; allowed attachment pairs are enforced for root collections, nested collections, root extension scopes, collection extension scopes, and extension child collections; and `_ext` child collections such as `$.addresses[*]._ext.sample.services[*]` attach through the aligned extension scope table instead of directly to the base collection scope.",
+    "steps-to-verify": [
+      "Add unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionTopologyTests.cs` for root collections, nested collections, root extensions, collection extension scopes, extension child collections, and invalid or ambiguous parent derivation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageReconstitutionTopologyTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page Context Graph Build",
+    "description": "Add page-scoped row-graph construction for hydrated query pages. Acceptance: introduce `PageReconstitutionContext`, `DocumentPageNode`, and `RowNode` (or equivalent); build one descriptor URI lookup per `HydratedPage`; create root nodes keyed by `DocumentId`; canonicalize provider-shaped numeric locator and identity values to `long` before constructing first-pass `ScopeKey([longValue])` instances; build table-qualified physical-identity lookups; attach every non-root row to its resolved immediate parent exactly once; preserve `HydratedPage.DocumentMetadata` order in `DocumentsInOrder`; and fail fast on duplicate root rows, duplicate physical row identities, orphaned child rows, metadata rows without roots, or extra roots not present in metadata.",
+    "steps-to-verify": [
+      "Add unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs` proving numeric canonicalization, single-build descriptor lookup, row attachment, ordered `DocumentsInOrder`, and the expected fail-fast defects.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter PageReconstitutionContextTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page-Level Child Ordering",
+    "description": "Move child-row ordering work out of per-document reconstitution and into page construction. Acceptance: sibling lists are validated for monotonic hydration order or sorted exactly once per `(parent, child table)` using the compiled `Ordinal` metadata; `DocumentReconstituter` no longer depends on per-document `ChildRowIndex.Create(...)` regrouping and sorting to restore array order; and nested collections plus extension collections keep deterministic JSON order across all documents in the page.",
+    "steps-to-verify": [
+      "Add unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageReconstitutionContextTests.cs` or `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs` proving array order is preserved by one page-build-time step and not by repeated per-document indexing.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Reconstituter`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page-Based Document Emit",
+    "description": "Refactor `DocumentReconstituter` to emit documents from the page row graph instead of rediscovering page structure per document. Acceptance: add a page-first entry point such as `ReconstituteDocument(DocumentPageNode, PageReconstitutionContext)`; root scalars, references, descriptors, child collections, and `_ext` scopes are emitted from attached `RowNode` children in compiled dependency order; descriptor strings come from the page lookup; property reordering uses the cached property-order tree instead of rebuilding it per document; and representative nested-plus-`_ext` fixtures remain semantically equivalent to the current JSON output.",
+    "steps-to-verify": [
+      "Add or update coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/DocumentReconstituterTests.cs` proving page-based reconstitution matches existing JSON semantics for root scalars, nested collections, references, descriptors, and `_ext`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter DocumentReconstituterTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Page Materializer API",
+    "description": "Extend the relational read materializer with a page-first API without breaking current single-document callers. Acceptance: add `RelationalReadPageMaterializationRequest`, `MaterializedDocument`, and `IRelationalReadMaterializer.MaterializePage(...)` (or equivalent); `RelationalReadMaterializer` builds or retrieves the compiled reconstitution plan once per `ResourceReadPlan`, builds one `PageReconstitutionContext` per hydrated page, returns documents in `HydratedPage.DocumentMetadata` order, injects `id`/`_etag`/`_lastModifiedDate` only for `ExternalResponse`, and keeps the existing single-document `Materialize(...)` behavior valid for GET-by-id and write-side callers.",
+    "steps-to-verify": [
+      "Add or update tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalReadMaterializerTests.cs` proving `MaterializePage(...)` emits ordered results, builds descriptor lookup once per page, preserves stored-document vs external-response metadata behavior, and keeps single-document materialization working.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalReadMaterializerTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Repository Cutover",
+    "description": "Cut the query path over to page-based materialization. Acceptance: `RelationalDocumentStoreRepository.BuildQuerySuccess()` calls `_readMaterializer.MaterializePage(...)` exactly once per hydrated page instead of looping `DocumentMetadata` with single-document `Materialize(...)`; readable-profile projection still executes per returned item; `_etag` is refreshed after profile projection; query item order still matches hydrated page order; and `totalCount=true` behavior remains unchanged.",
+    "steps-to-verify": [
+      "Add or update repository-focused tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalDocumentStoreRepositoryTests.cs` proving query execution makes one page materialization call, preserves returned ids/order, still applies readable-profile projection, and refreshes `_etag` after projection.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalDocumentStoreRepositoryTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Bulk Reconstitution End-to-End Coverage",
+    "description": "Add regression coverage that locks the new page-first query reconstitution path end to end. Acceptance: update recorder-based unit tests to assert page materialization call count and returned document ids instead of per-document materializer calls; keep existing relational query execution tests passing; and add at least one multi-document query-page scenario on both PostgreSQL and SQL Server with child rows plus `_ext` or descriptor data so the provider-sensitive query path exercises page-scoped reconstitution rather than a hidden per-document fallback.",
+    "steps-to-verify": [
+      "Add or update provider integration coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalQueryExecutionTests.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalQueryExecutionTests.cs`, plus any supporting repository/unit recorder tests needed for call-count assertions.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalQueryExecutionTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalQueryExecutionTests`"
+    ],
+    "completed": false
   }
 ]

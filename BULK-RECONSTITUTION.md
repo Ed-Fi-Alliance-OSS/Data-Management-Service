@@ -173,7 +173,17 @@ internal sealed record RowNode(
 - `rowsByPhysicalIdentityByTable`
 - immediate-parent lookup during child attachment
 
-Reference equality on the backing collection is not acceptable here. The page builder should also normalize locator/identity values before constructing a `ScopeKey` so logically equal keys do not diverge because of CLR type differences from hydration.
+Reference equality on the backing collection is not acceptable here.
+
+For the first implementation, normalization must be explicit rather than implied:
+
+- every validated locator/identity value is converted to a canonical `long` before it becomes a `ScopeKey` part
+- first-pass `ScopeKey` instances therefore contain exactly one `long` part
+- this matches the current `Convert.ToInt64(...)` behavior already used by `DocumentReconstituter` for root lookup and child-row parent grouping
+
+This is important because hydrated rows currently hold raw provider-shaped `object?` values from `DbDataReader.GetValue(...)`. Without explicit canonicalization, logically equal keys can diverge because of CLR type differences during hydration. For example, boxed `int`, `long`, and `short` values with the same numeric value would not compare equal as `object` parts in a dictionary key.
+
+Composite support can come later by adding multiple canonicalized parts to `ScopeKey`, but the first-pass design should state clearly that the canonical runtime representation is `ScopeKey([longValue])`, not “normalized somehow”.
 
 ## Important Design Choices
 
@@ -206,7 +216,7 @@ Even if the first implementation only supports single-column locators and identi
 - `DbTableIdentityMetadata.RootScopeLocatorColumns`
 - `DbTableIdentityMetadata.ImmediateParentScopeLocatorColumns`
 
-That keeps the cache forward-compatible with any future composite locator or identity shape. The first implementation can validate `Count == 1` while building the cache and fail fast if a table exceeds that temporary limit, while still emitting normalized `ScopeKey` values from the validated ordinal lists.
+That keeps the cache forward-compatible with any future composite locator or identity shape. The first implementation can validate `Count == 1` while building the cache and fail fast if a table exceeds that temporary limit, while still emitting canonical `ScopeKey([longValue])` instances from the validated ordinal lists.
 
 ### 2. Build Page State Once
 
@@ -310,7 +320,7 @@ For the root table:
 
 - create one `RowNode` per hydrated root row
 - resolve `DocumentId` from the validated root-scope locator
-- build `PhysicalIdentity` as a normalized `ScopeKey` from `PhysicalRowIdentityOrdinals`
+- build `PhysicalIdentity` as a canonical `ScopeKey([longValue])` from `PhysicalRowIdentityOrdinals`
 - validate there is exactly one root row per `DocumentId`
 - retain both:
   - `rootByDocumentId`
@@ -323,8 +333,8 @@ For each non-root table in dependency order:
 1. create a `RowNode` for each hydrated row
 2. resolve:
    - `DocumentId`
-   - `PhysicalIdentity` as a normalized `ScopeKey`
-   - immediate parent key as a normalized `ScopeKey`
+   - `PhysicalIdentity` as a canonical `ScopeKey([longValue])`
+   - immediate parent key as a canonical `ScopeKey([longValue])`
 3. add the row to `rowsByPhysicalIdentityByTable[currentTable]`
 4. resolve the parent row once:
    - look up the table’s `ImmediateParentTable`
@@ -344,7 +354,7 @@ Attachment rules come from the existing table kinds and identity metadata:
 
 The parent lookup must be table-qualified, not locator-only. `BaseCollectionItemId=42` in one table is not globally unique across all possible parent tables.
 
-In the first implementation, both `PhysicalIdentity` and the immediate parent key will be `ScopeKey` values containing exactly one part because cache construction validates the current single-column restriction. The important point is that the page graph no longer hard-codes a scalar key type.
+In the first implementation, both `PhysicalIdentity` and the immediate parent key will be `ScopeKey` values containing exactly one canonical `long` part because cache construction validates the current single-column restriction. The important point is that the page graph no longer hard-codes a scalar key type, while still making the first-pass runtime equality contract precise.
 
 ### Phase 5: Build `DocumentsInOrder`
 
@@ -483,7 +493,8 @@ These are compilation or hydration contract problems, not normal runtime varianc
 - compiled reconstitution plan groups reference bindings by table once
 - compiled reconstitution plan groups descriptor bindings by table using descriptor projection ordinals
 - compiled reconstitution plan preserves list-based locator/identity metadata even when first-pass validation requires single-column use
-- page context uses composite-ready `ScopeKey` values for physical identity and parent attachment even when first-pass validation limits those keys to one part
+- page context uses canonical `ScopeKey([longValue])` values for physical identity and parent attachment in the first pass
+- page context canonicalizes provider-shaped numeric hydration values before building `ScopeKey` instances
 - compiled reconstitution plan derives exactly one immediate parent table for every non-root table
 - `_ext` child-parent derivation rejects direct base-scope attachment for paths that must attach through an aligned extension scope
 - page context builds one descriptor lookup for the page
