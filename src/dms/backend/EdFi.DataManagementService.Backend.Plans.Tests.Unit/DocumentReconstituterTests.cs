@@ -4152,12 +4152,7 @@ public class Given_DocumentReconstituter_PropertyOrderNode_Empty_Sentinel
     [SetUp]
     public void SetUp()
     {
-        var propertyOrderNodeType = typeof(DocumentReconstituter).GetNestedType(
-            "PropertyOrderNode",
-            BindingFlags.NonPublic
-        );
-        propertyOrderNodeType.Should().NotBeNull();
-
+        var propertyOrderNodeType = typeof(PropertyOrderNode);
         var emptyField = propertyOrderNodeType!.GetField("Empty", BindingFlags.Public | BindingFlags.Static);
         emptyField.Should().NotBeNull();
 

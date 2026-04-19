@@ -39,9 +39,8 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
 
         var materializedDocument = DocumentReconstituter.Reconstitute(
             request.DocumentMetadata.DocumentId,
+            request.ReadPlan,
             request.TableRowsInDependencyOrder,
-            request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
-            request.ReadPlan.Model.DescriptorEdgeSources,
             descriptorUriLookup
         );
 

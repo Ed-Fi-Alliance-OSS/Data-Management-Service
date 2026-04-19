@@ -51,7 +51,7 @@
       "Add new unit coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/CompiledReconstitutionPlanTests.cs` proving reference bindings, descriptor bindings, ordinals, `ScopeKey` equality, and cached property ordering are derived once from `ResourceReadPlan`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter CompiledReconstitutionPlanTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Immediate Parent Topology",
