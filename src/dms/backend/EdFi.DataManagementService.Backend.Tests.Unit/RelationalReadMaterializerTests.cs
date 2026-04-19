@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalReadMaterializer
 {
     private static readonly Guid _documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
+    private static readonly Guid _secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc");
 
     [Test]
     public void It_injects_a_canonical_etag_and_stored_last_modified_date_for_external_response_reads()
@@ -132,6 +133,102 @@ public class Given_RelationalReadMaterializer
             .GetValue<string>()
             .Should()
             .Be("uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade");
+    }
+
+    [Test]
+    public void It_materializes_page_documents_in_metadata_order_for_external_response_reads()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = CreateReadPlan();
+        var firstDocumentMetadata = CreateDocumentMetadataRow(
+            documentId: 345L,
+            documentUuid: _documentUuid,
+            contentVersion: 91L,
+            contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+        );
+        var secondDocumentMetadata = CreateDocumentMetadataRow(
+            documentId: 678L,
+            documentUuid: _secondDocumentUuid,
+            contentVersion: 92L,
+            contentLastModifiedAt: new DateTimeOffset(2026, 4, 4, 15, 11, 12, TimeSpan.Zero)
+        );
+
+        var result = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                CreateHydratedPage(
+                    [firstDocumentMetadata, secondDocumentMetadata],
+                    CreateHydratedTableRows(readPlan, (678L, "Cedar High"), (345L, "Lincoln High")),
+                    []
+                ),
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+
+        result.Should().HaveCount(2);
+        result.Select(static document => document.DocumentMetadata.DocumentId).Should().Equal(345L, 678L);
+        result
+            .Select(document => document.Document["name"]!.GetValue<string>())
+            .Should()
+            .Equal("Lincoln High", "Cedar High");
+        result
+            .Select(document => document.Document["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_documentUuid.ToString(), _secondDocumentUuid.ToString());
+        result
+            .Select(document => document.Document["_lastModifiedDate"]!.GetValue<string>())
+            .Should()
+            .Equal("2026-04-03T14:10:11Z", "2026-04-04T15:11:12Z");
+    }
+
+    [Test]
+    public void It_materializes_page_documents_from_shared_descriptor_rows_for_stored_document_reads()
+    {
+        var sut = new RelationalReadMaterializer();
+        var readPlan = CreateReadPlanWithDescriptor();
+        var firstDocumentMetadata = CreateDocumentMetadataRow(
+            documentId: 345L,
+            documentUuid: _documentUuid,
+            contentVersion: 91L,
+            contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
+        );
+        var secondDocumentMetadata = CreateDocumentMetadataRow(
+            documentId: 678L,
+            documentUuid: _secondDocumentUuid,
+            contentVersion: 92L,
+            contentLastModifiedAt: new DateTimeOffset(2026, 4, 4, 15, 11, 12, TimeSpan.Zero)
+        );
+
+        var result = sut.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                CreateHydratedPage(
+                    [firstDocumentMetadata, secondDocumentMetadata],
+                    CreateHydratedDescriptorTableRows(readPlan, (678L, 601L), (345L, 601L)),
+                    CreateHydratedDescriptorRows(
+                        (601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")
+                    )
+                ),
+                RelationalGetRequestReadMode.StoredDocument
+            )
+        );
+
+        result.Should().HaveCount(2);
+        result.Select(static document => document.DocumentMetadata.DocumentId).Should().Equal(345L, 678L);
+        result
+            .Select(document => document.Document["entryGradeLevelDescriptor"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade",
+                "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"
+            );
+
+        foreach (var document in result)
+        {
+            document.Document["id"].Should().BeNull();
+            document.Document["_etag"].Should().BeNull();
+            document.Document["_lastModifiedDate"].Should().BeNull();
+        }
     }
 
     private static ResourceReadPlan CreateReadPlan()
@@ -284,11 +381,18 @@ public class Given_RelationalReadMaterializer
     private static DocumentMetadataRow CreateDocumentMetadataRow(
         long contentVersion,
         DateTimeOffset contentLastModifiedAt
+    ) => CreateDocumentMetadataRow(345L, _documentUuid, contentVersion, contentLastModifiedAt);
+
+    private static DocumentMetadataRow CreateDocumentMetadataRow(
+        long documentId,
+        Guid documentUuid,
+        long contentVersion,
+        DateTimeOffset contentLastModifiedAt
     )
     {
         return new DocumentMetadataRow(
-            DocumentId: 345L,
-            DocumentUuid: _documentUuid,
+            DocumentId: documentId,
+            DocumentUuid: documentUuid,
             ContentVersion: contentVersion,
             IdentityVersion: 92L,
             ContentLastModifiedAt: contentLastModifiedAt,
@@ -335,4 +439,10 @@ public class Given_RelationalReadMaterializer
             ),
         ];
     }
+
+    private static HydratedPage CreateHydratedPage(
+        IReadOnlyList<DocumentMetadataRow> documentMetadata,
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
+    ) => new(null, documentMetadata, tableRowsInDependencyOrder, descriptorRowsInPlanOrder);
 }

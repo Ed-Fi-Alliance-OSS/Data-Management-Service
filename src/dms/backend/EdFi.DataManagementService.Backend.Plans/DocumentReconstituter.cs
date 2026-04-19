@@ -51,6 +51,28 @@ public static class DocumentReconstituter
         return Reconstitute(documentId, tableRowsInDependencyOrder, compiledPlan, descriptorUriLookup);
     }
 
+    /// <summary>
+    /// Reconstitutes all documents from a hydrated page using one page-scoped graph/context build.
+    /// </summary>
+    public static IReadOnlyList<JsonNode> ReconstitutePage(
+        ResourceReadPlan readPlan,
+        HydratedPage hydratedPage
+    )
+    {
+        ArgumentNullException.ThrowIfNull(readPlan);
+        ArgumentNullException.ThrowIfNull(hydratedPage);
+
+        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(readPlan);
+        var pageReconstitutionContext = PageReconstitutionContext.Build(compiledPlan, hydratedPage);
+
+        return
+        [
+            .. pageReconstitutionContext.DocumentsInOrder.Select(documentPageNode =>
+                ReconstituteDocument(documentPageNode, pageReconstitutionContext)
+            ),
+        ];
+    }
+
     internal static JsonNode ReconstituteDocument(
         DocumentPageNode documentPageNode,
         PageReconstitutionContext pageReconstitutionContext

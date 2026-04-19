@@ -80,6 +80,17 @@ internal sealed class RecordingRelationalReadMaterializer(MssqlRelationalQueryEx
         return _inner.Materialize(request);
     }
 
+    public IReadOnlyList<MaterializedDocument> MaterializePage(
+        RelationalReadPageMaterializationRequest request
+    )
+    {
+        var materializedDocuments = _inner.MaterializePage(request);
+        _recorder.MaterializedDocumentIds.AddRange(
+            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
+        );
+        return materializedDocuments;
+    }
+
     private static IRelationalReadMaterializer CreateInnerMaterializer()
     {
         var innerType =

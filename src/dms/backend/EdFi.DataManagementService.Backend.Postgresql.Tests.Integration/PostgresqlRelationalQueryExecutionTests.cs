@@ -124,6 +124,17 @@ internal sealed class RecordingRelationalReadMaterializer(PostgresqlRelationalQu
         _recorder.MaterializedDocumentIds.Add(request.DocumentMetadata.DocumentId);
         return _inner.Materialize(request);
     }
+
+    public IReadOnlyList<MaterializedDocument> MaterializePage(
+        RelationalReadPageMaterializationRequest request
+    )
+    {
+        var materializedDocuments = _inner.MaterializePage(request);
+        _recorder.MaterializedDocumentIds.AddRange(
+            materializedDocuments.Select(static document => document.DocumentMetadata.DocumentId)
+        );
+        return materializedDocuments;
+    }
 }
 
 internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalReadTargetLookupService

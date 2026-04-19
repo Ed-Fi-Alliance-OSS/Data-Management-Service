@@ -96,7 +96,7 @@
       "Add or update tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalReadMaterializerTests.cs` proving `MaterializePage(...)` emits ordered results, builds descriptor lookup once per page, preserves stored-document vs external-response metadata behavior, and keeps single-document materialization working.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter RelationalReadMaterializerTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Repository Cutover",
