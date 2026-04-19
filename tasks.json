@@ -33,7 +33,7 @@
       "Add compiler-focused tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` proving case-insensitive query-field collisions fail deterministically and ordinary query-field mappings still compile.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter MappingSetCompilerTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Repository Regression Coverage",

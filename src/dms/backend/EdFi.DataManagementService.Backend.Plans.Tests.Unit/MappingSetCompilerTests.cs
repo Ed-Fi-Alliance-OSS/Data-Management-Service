@@ -231,6 +231,83 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_fail_when_query_field_names_collide_case_insensitively()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var supportedResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.SupportedResource
+        );
+
+        supportedResourceIndex.Should().NotBe(-1);
+
+        concreteResources[supportedResourceIndex] = concreteResources[supportedResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("SchoolId", [("$.schoolYear", "number")]),
+                ("schoolId", [("$.schoolYear", "number")])
+            ),
+        };
+
+        var modelSetWithCollision = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var act = () => new MappingSetCompiler().Compile(modelSetWithCollision);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile query capability: resource 'Ed-Fi.Student' contains queryFieldMapping entries that collide case-insensitively: 'SchoolId', 'schoolId'. "
+                    + "Rename each colliding entry so every query field name is unique under OrdinalIgnoreCase comparison."
+            );
+    }
+
+    [Test]
+    public void It_should_compile_distinct_query_field_names_that_do_not_collide_case_insensitively()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        var supportedResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.SupportedResource
+        );
+
+        supportedResourceIndex.Should().NotBe(-1);
+
+        concreteResources[supportedResourceIndex] = concreteResources[supportedResourceIndex] with
+        {
+            QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
+                ("SchoolId", [("$.schoolYear", "number")]),
+                ("schoolIdentifier", [("$.schoolYear", "number")])
+            ),
+        };
+
+        var modelSetWithoutCollision = fixture.ModelSet with
+        {
+            ConcreteResourcesInNameOrder = concreteResources,
+        };
+
+        var mappingSet = new MappingSetCompiler().Compile(modelSetWithoutCollision);
+
+        var supportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .SupportedFieldsByQueryField;
+
+        mappingSet
+            .QueryCapabilitiesByResource[fixture.SupportedResource]
+            .Support.Should()
+            .BeOfType<RelationalQuerySupport.Supported>();
+        supportedFields.Should().ContainKeys("SchoolId", "schoolIdentifier");
+        supportedFields["SchoolId"].QueryFieldName.Should().Be("SchoolId");
+        supportedFields["schoolIdentifier"].QueryFieldName.Should().Be("schoolIdentifier");
+    }
+
+    [Test]
     public void It_should_classify_unsupported_fields_and_omit_resources_with_unsupported_query_mappings()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);

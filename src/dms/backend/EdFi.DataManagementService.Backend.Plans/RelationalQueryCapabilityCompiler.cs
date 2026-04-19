@@ -22,6 +22,7 @@ internal sealed class RelationalQueryCapabilityCompiler
     public RelationalQueryCapability Compile(ConcreteResourceModel concreteResourceModel)
     {
         ArgumentNullException.ThrowIfNull(concreteResourceModel);
+        ValidateCaseInsensitiveQueryFieldNameCollisions(concreteResourceModel);
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
@@ -93,6 +94,39 @@ internal sealed class RelationalQueryCapabilityCompiler
             CreateSupport(unsupportedFieldsByQueryField),
             supportedFieldsByQueryField.ToFrozenDictionary(QueryFieldNameComparer),
             unsupportedFieldsByQueryField.ToFrozenDictionary(QueryFieldNameComparer)
+        );
+    }
+
+    private static void ValidateCaseInsensitiveQueryFieldNameCollisions(
+        ConcreteResourceModel concreteResourceModel
+    )
+    {
+        string[][] collidingQueryFieldGroups = concreteResourceModel
+            .QueryFieldMappingsByQueryField.Values.Select(static queryFieldMapping =>
+                queryFieldMapping.QueryFieldName
+            )
+            .OrderBy(static queryFieldName => queryFieldName, StringComparer.Ordinal)
+            .GroupBy(static queryFieldName => queryFieldName, QueryFieldNameComparer)
+            .Select(static queryFieldGroup => queryFieldGroup.ToArray())
+            .Where(static queryFieldGroup => queryFieldGroup.Length > 1)
+            .ToArray();
+
+        if (collidingQueryFieldGroups.Length == 0)
+        {
+            return;
+        }
+
+        var resource = concreteResourceModel.RelationalModel.Resource;
+        var collisionSummary = string.Join(
+            "; ",
+            collidingQueryFieldGroups.Select(static queryFieldGroup =>
+                string.Join(", ", queryFieldGroup.Select(static queryFieldName => $"'{queryFieldName}'"))
+            )
+        );
+
+        throw new InvalidOperationException(
+            $"Cannot compile {QueryCapabilityPlanKind}: resource '{resource.ProjectName}.{resource.ResourceName}' contains queryFieldMapping entries that collide case-insensitively: {collisionSummary}. "
+                + "Rename each colliding entry so every query field name is unique under OrdinalIgnoreCase comparison."
         );
     }
 
