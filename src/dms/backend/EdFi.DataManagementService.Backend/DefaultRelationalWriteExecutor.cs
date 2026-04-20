@@ -25,7 +25,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteTargetLookupResolver targetLookupResolver,
     IRelationalWriteFreshnessChecker writeFreshnessChecker,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
-    IRelationalWriteNoProfilePersister noProfilePersister,
+    IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
+    IRelationalWritePersister persister,
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
     IRelationalWriteConstraintResolver writeConstraintResolver,
     IRelationalReadMaterializer readMaterializer
@@ -57,8 +58,11 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer =
         noProfileMergeSynthesizer ?? throw new ArgumentNullException(nameof(noProfileMergeSynthesizer));
 
-    private readonly IRelationalWriteNoProfilePersister _noProfilePersister =
-        noProfilePersister ?? throw new ArgumentNullException(nameof(noProfilePersister));
+    private readonly IRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer =
+        profileMergeSynthesizer ?? throw new ArgumentNullException(nameof(profileMergeSynthesizer));
+
+    private readonly IRelationalWritePersister _persister =
+        persister ?? throw new ArgumentNullException(nameof(persister));
 
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
         writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
@@ -149,7 +153,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                 currentState = inSessionTargetResolution.CurrentState;
             }
 
-            // Profile decision sequence — runs before flattening
+            RelationalWriteMergeResult mergeResult;
+
+            // Profile decision sequence — runs before flattening for profile-aware dispatch
             if (request.ProfileWriteContext is not null)
             {
                 var profileWriteContext = request.ProfileWriteContext;
@@ -236,7 +242,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     .Select(d => (d.JsonScope, d.ScopeKind))
                     .ToArray();
                 var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan, inlinedScopes);
-                var requiredFamily = profileAppliedWriteContext is not null
+                var requestOrContextFamily = profileAppliedWriteContext is not null
                     ? ProfileSliceFenceClassifier.ClassifyForExistingDocument(
                         profileAppliedWriteContext,
                         topologyIndex
@@ -246,29 +252,70 @@ internal sealed class DefaultRelationalWriteExecutor(
                         topologyIndex
                     );
 
-                // After Slice 1 lands, no families are landed.
-                // Later slices remove families from this fence.
-                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return BuildSliceFenceResult(request.OperationKind, requiredFamily);
+                var catalogFamily = ProfileSliceFenceClassifier.ClassifyFromCatalog(
+                    profileWriteContext.CompiledScopeCatalog,
+                    topologyIndex
+                );
+
+                var requiredFamily =
+                    requestOrContextFamily > catalogFamily ? requestOrContextFamily : catalogFamily;
+
+                if (requiredFamily != RequiredSliceFamily.RootTableOnly)
+                {
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return BuildSliceFenceResult(request.OperationKind, requiredFamily);
+                }
+
+                // Slice-2 classification passed: flatten + profile synthesize. The fence has
+                // already rejected any profiled separate-table or collection shape that would leak
+                // beyond the root table, so the synthesizer can assume the merge input is truly
+                // root-only.
+                var profileFlattenedWriteSet = _writeFlattener.Flatten(
+                    new FlatteningInput(
+                        executionRequest.OperationKind,
+                        executionRequest.TargetContext,
+                        executionRequest.WritePlan,
+                        executionRequest.SelectedBody,
+                        resolvedReferences
+                    )
+                );
+
+                mergeResult = _profileMergeSynthesizer.Synthesize(
+                    new RelationalWriteProfileMergeRequest(
+                        executionRequest.WritePlan,
+                        profileFlattenedWriteSet,
+                        executionRequest.SelectedBody,
+                        currentState,
+                        profileWriteContext.Request,
+                        profileAppliedWriteContext,
+                        resolvedReferences
+                    )
+                );
             }
+            else
+            {
+                var flattenedWriteSet = _writeFlattener.Flatten(
+                    new FlatteningInput(
+                        executionRequest.OperationKind,
+                        executionRequest.TargetContext,
+                        executionRequest.WritePlan,
+                        executionRequest.SelectedBody,
+                        resolvedReferences
+                    )
+                );
 
-            var flattenedWriteSet = _writeFlattener.Flatten(
-                new FlatteningInput(
-                    executionRequest.OperationKind,
-                    executionRequest.TargetContext,
-                    executionRequest.WritePlan,
-                    executionRequest.SelectedBody,
-                    resolvedReferences
-                )
-            );
-
-            var noProfileMergeResult = _noProfileMergeSynthesizer.Synthesize(
-                new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
-            );
+                mergeResult = _noProfileMergeSynthesizer.Synthesize(
+                    new RelationalWriteNoProfileMergeRequest(
+                        request.WritePlan,
+                        flattenedWriteSet,
+                        currentState
+                    )
+                );
+            }
 
             var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
                 executionRequest,
-                noProfileMergeResult
+                mergeResult
             );
 
             if (identityStabilityFailure is not null)
@@ -279,7 +326,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (
                 targetContext is RelationalWriteTargetContext.ExistingDocument guardedTarget
-                && RelationalWriteGuardedNoOp.IsNoOpCandidate(noProfileMergeResult)
+                && mergeResult.SupportsGuardedNoOp
+                && RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult)
             )
             {
                 var isCurrent = await _writeFreshnessChecker
@@ -312,8 +360,8 @@ internal sealed class DefaultRelationalWriteExecutor(
                 );
             }
 
-            var persistedTarget = await _noProfilePersister
-                .PersistAsync(executionRequest, noProfileMergeResult, writeSession, cancellationToken)
+            var persistedTarget = await _persister
+                .PersistAsync(executionRequest, mergeResult, writeSession, cancellationToken)
                 .ConfigureAwait(false);
 
             ValidatePersistedTargetIdentity(executionRequest.TargetContext, persistedTarget);
@@ -329,6 +377,11 @@ internal sealed class DefaultRelationalWriteExecutor(
                 persistedTarget,
                 committedResponse
             );
+        }
+        catch (RelationalWriteProfileMergeInvariantException ex)
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildSliceFenceResult(request.OperationKind, ex.EscapedFamily);
         }
         catch (RelationalWriteRequestValidationException ex)
         {

@@ -282,3 +282,42 @@ public class Given_no_additionalScopes_the_factory_behaves_as_before
         result[0].JsonScope.Should().Be("$");
     }
 }
+
+[TestFixture]
+public class Given_out_of_order_inlined_collection_and_child_scopes_via_additionalScopes
+{
+    private CompiledScopeDescriptor[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = AdapterFactoryTestFixtures.BuildRootWithInlinedCollectionAndNestedObjectPlan();
+
+        var additionalScopes = new List<(string JsonScope, ScopeKind Kind)>
+        {
+            ("$.inlineItems[*].details", ScopeKind.NonCollection),
+            ("$.inlineItems[*]", ScopeKind.Collection),
+        };
+
+        _result = CompiledScopeAdapterFactory.BuildFromWritePlan(plan, additionalScopes);
+    }
+
+    [Test]
+    public void It_emits_inlined_scopes_in_parent_before_child_order()
+    {
+        _result
+            .Select(scope => scope.JsonScope)
+            .Should()
+            .Equal("$", "$.inlineItems[*]", "$.inlineItems[*].details");
+    }
+
+    [Test]
+    public void It_sets_the_nested_object_parent_and_collection_ancestors_from_the_normalized_scope_graph()
+    {
+        var detailsScope = _result.Single(scope => scope.JsonScope == "$.inlineItems[*].details");
+
+        detailsScope.ImmediateParentJsonScope.Should().Be("$.inlineItems[*]");
+        detailsScope.CollectionAncestorsInOrder.Should().Equal("$.inlineItems[*]");
+        detailsScope.CanonicalScopeRelativeMemberPaths.Should().Equal("code");
+    }
+}

@@ -10,6 +10,8 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -31,7 +33,8 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
-    private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+    private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
+    private RecordingRelationalWritePersister _noProfilePersister = null!;
     private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
     private RecordingRelationalReadMaterializer _readMaterializer = null!;
@@ -48,7 +51,8 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
-        _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+        _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
+        _noProfilePersister = new RecordingRelationalWritePersister();
         _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
         _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
         _readMaterializer = new RecordingRelationalReadMaterializer();
@@ -61,6 +65,7 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             _noProfileMergeSynthesizer,
+            _profileMergeSynthesizer,
             _noProfilePersister,
             _writeExceptionClassifier,
             _writeConstraintResolver,
@@ -649,6 +654,7 @@ public class Given_Default_Relational_Write_Executor
             _targetLookupResolver,
             _writeFreshnessChecker,
             new RelationalWriteNoProfileMergeSynthesizer(),
+            _profileMergeSynthesizer,
             _noProfilePersister,
             _writeExceptionClassifier,
             _writeConstraintResolver,
@@ -1637,9 +1643,105 @@ public class Given_Default_Relational_Write_Executor
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
-        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
-        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
+        var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, extensionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, extensionPlan]);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "flattener must not be called — profile decision runs before flatten");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "no-profile merge must not run when profile context is present");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "profile merge must not run when the required family is fenced");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "no-profile persister must not run when profile context is present");
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(0, "materializer must not be called for create-new");
+        _writeSessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(1, "session must be rolled back when profile persist is fenced");
+        _writeSessionFactory
+            .Session.CommitCallCount.Should()
+            .Be(0, "session must not be committed when profile persist is fenced");
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("SeparateTableNonCollection");
+    }
+
+    [Test]
+    public async Task It_fences_profiled_create_new_when_catalog_has_top_level_collection_scope()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, collectionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+
+        // Profile emits ONLY the root scope. Neither VisibleRequestCollectionItems
+        // nor any Collection scope state is present. The request-derived classifier
+        // alone returns RootTableOnly; only the catalog-derived fence (Task 4)
+        // escalates to TopLevelCollection here.
         var profileContext = new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: writableBody,
@@ -1659,8 +1761,10 @@ public class Given_Default_Relational_Write_Executor
             StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
         );
 
-        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
         {
+            WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
 
@@ -1668,29 +1772,95 @@ public class Given_Default_Relational_Write_Executor
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(0, "flattener must not be called — profile decision runs before flatten");
-        _noProfileMergeSynthesizer
+            .Be(0, "flattener must not be called — catalog fence runs before flatten");
+        _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
-            .Be(0, "no-profile merge must not run when profile context is present");
+            .Be(0, "profile merge must not run when catalog fence escalates the family");
         _noProfilePersister
             .TryPersistCallCount.Should()
-            .Be(0, "no-profile persister must not run when profile context is present");
-        _readMaterializer
-            .MaterializeCallCount.Should()
-            .Be(0, "materializer must not be called for create-new");
+            .Be(0, "persister must not run when the write is fenced");
         _writeSessionFactory
             .Session.RollbackCallCount.Should()
-            .Be(1, "session must be rolled back when profile persist is fenced");
+            .Be(1, "session must be rolled back when the catalog fence fires");
         _writeSessionFactory
             .Session.CommitCallCount.Should()
-            .Be(0, "session must not be committed when profile persist is fenced");
+            .Be(0, "session must not be committed when the catalog fence fires");
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         upsertResult
             .Result.Should()
             .BeOfType<UpsertResult.UnknownFailure>()
             .Which.FailureMessage.Should()
-            .Contain("RootTableOnly");
+            .Contain("TopLevelCollection");
+    }
+
+    [TestCase(RequiredSliceFamily.SeparateTableNonCollection)]
+    [TestCase(RequiredSliceFamily.TopLevelCollection)]
+    [TestCase(RequiredSliceFamily.NestedAndExtensionCollections)]
+    public async Task It_maps_profile_merge_invariant_exception_to_slice_fence_failure(
+        RequiredSliceFamily escapedFamily
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+
+        // Root-only catalog so the catalog fence does NOT fire; the executor reaches
+        // the profile merge synthesizer, which is stubbed to throw. The catch in
+        // DefaultRelationalWriteExecutor maps the invariant exception to the family
+        // carried by the exception.
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        _profileMergeSynthesizer.ExceptionToThrow = new RelationalWriteProfileMergeInvariantException(
+            escapedFamily,
+            "simulated upstream slice-fence drift"
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "profile merge synthesizer must be reached before the invariant trips");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persister must not run when the invariant exception is mapped to slice fence");
+        _writeSessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(1, "session must be rolled back when the invariant exception is mapped");
+        _writeSessionFactory
+            .Session.CommitCallCount.Should()
+            .Be(0, "session must not be committed when the invariant exception is mapped");
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var failure = upsertResult.Result.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+        failure.FailureMessage.Should().Contain(escapedFamily.ToString());
     }
 
     [Test]
@@ -1746,31 +1916,52 @@ public class Given_Default_Relational_Write_Executor
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
-        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
-        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
+        var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, extensionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, extensionPlan]);
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
 
         var storedStateProjectionInvoker = A.Fake<IStoredStateProjectionInvoker>();
+        var profileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: writableBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
         var expectedAppliedWriteContext = new ProfileAppliedWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
+            Request: profileRequest,
             VisibleStoredBody: JsonNode.Parse("""{"schoolId":255901}""")!,
             StoredScopeStates:
             [
                 new StoredScopeState(
                     Address: new ScopeInstanceAddress("$", []),
                     Visibility: ProfileVisibilityKind.VisiblePresent,
+                    HiddenMemberPaths: []
+                ),
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
                     HiddenMemberPaths: []
                 ),
             ],
@@ -1787,26 +1978,16 @@ public class Given_Default_Relational_Write_Executor
             .Returns(expectedAppliedWriteContext);
 
         var profileContext = new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
+            Request: profileRequest,
             ProfileName: "test-write-profile",
             CompiledScopeCatalog: scopeCatalog,
             StoredStateProjectionInvoker: storedStateProjectionInvoker
         );
 
-        var request = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody) with
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        var request = baseRequest with
         {
+            WritePlan = resourceWritePlan,
             ProfileWriteContext = profileContext,
         };
 
@@ -1835,7 +2016,7 @@ public class Given_Default_Relational_Write_Executor
             .Result.Should()
             .BeOfType<UpdateResult.UnknownFailure>()
             .Which.FailureMessage.Should()
-            .Contain("RootTableOnly");
+            .Contain("SeparateTableNonCollection");
     }
 
     [Test]
@@ -1901,6 +2082,210 @@ public class Given_Default_Relational_Write_Executor
         _readMaterializer
             .MaterializeCallCount.Should()
             .Be(0, "materializer must not be called when no profile context is present");
+    }
+
+    [Test]
+    public async Task It_fences_profiled_create_new_for_multi_table_plan_with_hidden_separate_table_scope()
+    {
+        // A multi-table compiled plan must not bypass Slice 2 just because the separate-table
+        // scope is hidden in the request contract. The fence should still classify it as
+        // SeparateTableNonCollection.
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
+        var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, extensionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, extensionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        Creatable: false
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        // Pre-configure the flattener: for multi-table plans the default fallback uses .Single()
+        // on the plan's table list. The profile merge synthesizer only uses the root row, so a
+        // root-only FlattenedWriteSet is the correct handoff shape for Slice 2 regardless of
+        // how many tables the compiled plan carries.
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [
+                    FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("Lincoln High"),
+                ]
+            )
+        );
+
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [
+                        new RelationalWriteMergedTableRow(
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ],
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: false
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "the slice fence must reject hidden separate-table shapes before flatten");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "the profile synthesizer must not run when the slice fence rejects the request");
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "the no-profile synthesizer must not run for profiled writes");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "the persister must not run when the slice fence rejects the request");
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(0, "the materializer must not run for a fenced create-new request");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("SeparateTableNonCollection");
+    }
+
+    [Test]
+    public async Task It_synthesizes_profile_merge_for_root_table_only_create_new_request()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var request = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody) with
+        {
+            ProfileWriteContext = profileContext,
+        };
+
+        _profileMergeSynthesizer.ResultToReturn = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [
+                        new RelationalWriteMergedTableRow(
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ],
+                            [
+                                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                                new FlattenedWriteValue.Literal(255901),
+                                new FlattenedWriteValue.Literal("Lincoln High"),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: false
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(1, "the profile path must flatten before invoking the profile synthesizer");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "the profile synthesizer must be invoked when the Slice 2 gates pass");
+        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
+        _profileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(request.WritePlan);
+        _profileMergeSynthesizer.CapturedRequest!.WritableRequestBody.Should().BeSameAs(writableBody);
+        _profileMergeSynthesizer.CapturedRequest!.CurrentState.Should().BeNull();
+        _profileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().BeSameAs(profileContext.Request);
+        _profileMergeSynthesizer.CapturedRequest!.ProfileAppliedContext.Should().BeNull();
+        _noProfileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "the no-profile synthesizer must not run for profiled writes");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(1, "the persister must receive the profile merge result");
+        _noProfilePersister.CapturedMergeResult.Should().BeSameAs(_profileMergeSynthesizer.ResultToReturn);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
@@ -2565,41 +2950,84 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteNoProfileMergeRequest? CapturedRequest { get; private set; }
 
-        public RelationalWriteNoProfileMergeResult? ResultToReturn { get; set; }
+        public RelationalWriteMergeResult? ResultToReturn { get; set; }
 
-        public RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
+        public RelationalWriteMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
 
             return ResultToReturn
-                ?? new RelationalWriteNoProfileMergeResult([
-                    new RelationalWriteNoProfileTableState(
-                        request.WritePlan.TablePlansInDependencyOrder[0],
-                        [
-                            new RelationalWriteNoProfileTableRow(
-                                request.FlattenedWriteSet.RootRow.Values,
-                                request.FlattenedWriteSet.RootRow.Values
-                            ),
-                        ],
-                        [
-                            new RelationalWriteNoProfileTableRow(
-                                request.FlattenedWriteSet.RootRow.Values,
-                                request.FlattenedWriteSet.RootRow.Values
-                            ),
-                        ]
-                    ),
-                ]);
+                ?? new RelationalWriteMergeResult(
+                    [
+                        new RelationalWriteMergedTableState(
+                            request.WritePlan.TablePlansInDependencyOrder[0],
+                            [
+                                new RelationalWriteMergedTableRow(
+                                    request.FlattenedWriteSet.RootRow.Values,
+                                    request.FlattenedWriteSet.RootRow.Values
+                                ),
+                            ],
+                            [
+                                new RelationalWriteMergedTableRow(
+                                    request.FlattenedWriteSet.RootRow.Values,
+                                    request.FlattenedWriteSet.RootRow.Values
+                                ),
+                            ]
+                        ),
+                    ],
+                    supportsGuardedNoOp: true
+                );
         }
     }
 
-    private sealed class RecordingRelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
+    private sealed class RecordingRelationalWriteProfileMergeSynthesizer
+        : IRelationalWriteProfileMergeSynthesizer
+    {
+        public int SynthesizeCallCount { get; private set; }
+
+        public RelationalWriteProfileMergeRequest? CapturedRequest { get; private set; }
+
+        public RelationalWriteMergeResult? ResultToReturn { get; set; }
+
+        public Exception? ExceptionToThrow { get; set; }
+
+        public RelationalWriteMergeResult Synthesize(RelationalWriteProfileMergeRequest request)
+        {
+            SynthesizeCallCount++;
+            CapturedRequest = request;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return ResultToReturn
+                ?? new RelationalWriteMergeResult(
+                    [
+                        new RelationalWriteMergedTableState(
+                            request.WritePlan.TablePlansInDependencyOrder[0],
+                            [],
+                            [
+                                new RelationalWriteMergedTableRow(
+                                    request.FlattenedWriteSet.RootRow.Values,
+                                    request.FlattenedWriteSet.RootRow.Values
+                                ),
+                            ]
+                        ),
+                    ],
+                    supportsGuardedNoOp: false
+                );
+        }
+    }
+
+    private sealed class RecordingRelationalWritePersister : IRelationalWritePersister
     {
         public int TryPersistCallCount { get; private set; }
 
         public RelationalWriteExecutorRequest? CapturedRequest { get; private set; }
 
-        public RelationalWriteNoProfileMergeResult? CapturedMergeResult { get; private set; }
+        public RelationalWriteMergeResult? CapturedMergeResult { get; private set; }
 
         public IRelationalWriteSession? CapturedWriteSession { get; private set; }
 
@@ -2609,7 +3037,7 @@ public class Given_Default_Relational_Write_Executor
 
         public Task<RelationalWritePersistResult> PersistAsync(
             RelationalWriteExecutorRequest request,
-            RelationalWriteNoProfileMergeResult mergeResult,
+            RelationalWriteMergeResult mergeResult,
             IRelationalWriteSession writeSession,
             CancellationToken cancellationToken = default
         )
@@ -2642,20 +3070,23 @@ public class Given_Default_Relational_Write_Executor
             };
     }
 
-    private static RelationalWriteNoProfileMergeResult CreateMergeResult(
+    private static RelationalWriteMergeResult CreateMergeResult(
         TableWritePlan rootTableWritePlan,
         int currentSchoolId,
         int mergedSchoolId,
         string currentName = "Lincoln High",
         string mergedName = "Lincoln High"
     ) =>
-        new([
-            new RelationalWriteNoProfileTableState(
-                rootTableWritePlan,
-                [CreateRootTableRow(345L, currentSchoolId, currentName)],
-                [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
-            ),
-        ]);
+        new(
+            [
+                new RelationalWriteMergedTableState(
+                    rootTableWritePlan,
+                    [CreateRootTableRow(345L, currentSchoolId, currentName)],
+                    [CreateRootTableRow(345L, mergedSchoolId, mergedName)]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
 
     private static RelationalWriteCurrentState CreateCurrentState(
         RelationalWriteExecutorRequest request,
@@ -2688,7 +3119,7 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationalWriteNoProfileTableRow CreateRootTableRow(
+    private static RelationalWriteMergedTableRow CreateRootTableRow(
         long documentId,
         int schoolId,
         string name

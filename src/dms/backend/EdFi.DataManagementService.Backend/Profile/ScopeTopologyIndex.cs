@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -58,6 +59,12 @@ internal sealed class ScopeTopologyIndex
         IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes = null
     )
     {
+        var tableScopes = plan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var normalizedAdditionalScopes = InlinedScopeNormalization.Normalize(additionalScopes, tableScopes);
+
         // First pass: collect all collection-kinded scopes (table-backed plus any inlined
         // collections the caller passes in) so nested detection sees them all.
         var collectionScopes = plan
@@ -69,14 +76,11 @@ internal sealed class ScopeTopologyIndex
             .Select(tp => tp.TableModel.JsonScope.Canonical)
             .ToHashSet(StringComparer.Ordinal);
 
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
+            if (kind == ScopeKind.Collection)
             {
-                if (kind == ScopeKind.Collection)
-                {
-                    collectionScopes.Add(jsonScope);
-                }
+                collectionScopes.Add(jsonScope);
             }
         }
 
@@ -90,17 +94,14 @@ internal sealed class ScopeTopologyIndex
             );
         }
 
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
-            {
-                // Inlined scopes must not clobber a table-backed topology. TryAdd skips if the scope is already registered.
-                var topology =
-                    kind == ScopeKind.Collection
-                        ? ClassifyInlinedCollection(jsonScope, collectionScopes)
-                        : InheritAncestorTopology(jsonScope, topologyByScope);
-                topologyByScope.TryAdd(jsonScope, topology);
-            }
+            // Inlined scopes must not clobber a table-backed topology. TryAdd skips if the scope is already registered.
+            var topology =
+                kind == ScopeKind.Collection
+                    ? ClassifyInlinedCollection(jsonScope, collectionScopes)
+                    : InheritAncestorTopology(jsonScope, topologyByScope);
+            topologyByScope.TryAdd(jsonScope, topology);
         }
 
         return new ScopeTopologyIndex(topologyByScope);

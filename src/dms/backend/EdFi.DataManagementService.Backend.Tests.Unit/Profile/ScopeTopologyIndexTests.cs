@@ -297,6 +297,28 @@ public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_to
 }
 
 [TestFixture]
+public class Given_ScopeTopologyIndex_with_out_of_order_inlined_collection_and_child_scope
+{
+    private ScopeTopologyIndex _index = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _index = ScopeTopologyIndexTestHelpers.BuildIndexWithInlined(
+            [ScopeTopologyIndexTestHelpers.CreateTablePlan("$", "Root", DbTableKind.Root)],
+            ("$.inlineItems[*].details", ScopeKind.NonCollection),
+            ("$.inlineItems[*]", ScopeKind.Collection)
+        );
+    }
+
+    [Test]
+    public void It_classifies_the_child_from_the_inlined_collection_ancestor_even_when_the_child_is_listed_first()
+    {
+        _index.GetTopology("$.inlineItems[*].details").Should().Be(ScopeTopologyKind.TopLevelBaseCollection);
+    }
+}
+
+[TestFixture]
 public class Given_ScopeTopologyIndex_with_inlined_non_collection_scope_under_nested_collection
 {
     private ScopeTopologyIndex _index = null!;

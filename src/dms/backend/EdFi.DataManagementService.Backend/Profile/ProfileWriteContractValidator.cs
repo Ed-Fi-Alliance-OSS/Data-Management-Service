@@ -57,6 +57,16 @@ internal static class ProfileWriteContractValidator
 
         // Phase 2: per-entry validation.
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
+        ValidateRequiredScopeStateCoverage(
+            request.RequestScopeStates.Select(s => s.Address),
+            GetRequiredRootedNonCollectionScopes(scopeCatalog),
+            streamName: "RequestScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
         ValidateRequestContractCore(
             request,
             catalogByJsonScope,
@@ -165,6 +175,28 @@ internal static class ProfileWriteContractValidator
 
         // Phase 2: per-entry validation (existing behavior).
         var catalogByJsonScope = BuildCatalogLookup(scopeCatalog);
+        var requiredRootedNonCollectionScopes = GetRequiredRootedNonCollectionScopes(scopeCatalog);
+
+        ValidateRequiredScopeStateCoverage(
+            context.Request.RequestScopeStates.Select(s => s.Address),
+            requiredRootedNonCollectionScopes,
+            streamName: "RequestScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
+        ValidateRequiredScopeStateCoverage(
+            context.StoredScopeStates.Select(s => s.Address),
+            requiredRootedNonCollectionScopes,
+            streamName: "StoredScopeStates",
+            profileName,
+            resourceName,
+            method,
+            operation,
+            failures
+        );
 
         ValidateRequestContractCore(
             context.Request,
@@ -279,6 +311,73 @@ internal static class ProfileWriteContractValidator
     private static Dictionary<string, CompiledScopeDescriptor> BuildCatalogLookup(
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     ) => scopeCatalog.ToDictionary(d => d.JsonScope);
+
+    /// <summary>
+    /// Scope-state completeness check for root-rooted non-collection scopes. These scopes
+    /// are the ones whose visibility can directly drive root-row overlay/clear behavior and
+    /// executor slice routing without any collection-row identity context. Missing metadata
+    /// for one of these scopes must fail closed as a contract mismatch rather than falling
+    /// through to a default-visible interpretation.
+    /// </summary>
+    /// <remarks>
+    /// Scopes that reach collection rows through a shared base collection (e.g. a
+    /// <c>CollectionExtensionScope</c> whose own walk-up ancestors can't see the base
+    /// <c>Collection</c> table, because the base collection is stored under a sibling
+    /// scope path) can surface with an empty <c>CollectionAncestorsInOrder</c> even
+    /// though their data semantically lives inside a collection row. The <c>[*]</c>
+    /// literal in the JSON-scope path is a structural marker of collection-membership,
+    /// so exclude any scope containing <c>[*]</c> from the required set regardless of
+    /// the ancestor walk's result — those scopes need a collection-row identity
+    /// context and can't be validated as root-rooted.
+    /// </remarks>
+    private static ImmutableArray<CompiledScopeDescriptor> GetRequiredRootedNonCollectionScopes(
+        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
+    ) =>
+        [
+            .. scopeCatalog
+                .Where(scope =>
+                    scope.ScopeKind != ScopeKind.Collection
+                    && scope.CollectionAncestorsInOrder.Length == 0
+                    && !scope.JsonScope.Contains("[*]", StringComparison.Ordinal)
+                )
+                .OrderBy(scope => scope.JsonScope.Length)
+                .ThenBy(scope => scope.JsonScope, StringComparer.Ordinal),
+        ];
+
+    private static void ValidateRequiredScopeStateCoverage(
+        IEnumerable<ScopeInstanceAddress> addresses,
+        ImmutableArray<CompiledScopeDescriptor> requiredScopes,
+        string streamName,
+        string profileName,
+        string resourceName,
+        string method,
+        string operation,
+        List<ProfileFailure> failures
+    )
+    {
+        var emittedJsonScopes = addresses
+            .Select(address => address.JsonScope)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var requiredScope in requiredScopes)
+        {
+            if (emittedJsonScopes.Contains(requiredScope.JsonScope))
+            {
+                continue;
+            }
+
+            failures.Add(
+                ProfileFailures.CoreBackendContractMismatch(
+                    ProfileFailureEmitter.BackendProfileWriteContext,
+                    $"Core omitted required {streamName} metadata for compiled non-collection scope "
+                        + $"'{requiredScope.JsonScope}'.",
+                    new ProfileFailureContext(profileName, resourceName, method, operation),
+                    new ProfileFailureDiagnostic.Scope(requiredScope.JsonScope, requiredScope.ScopeKind),
+                    new ProfileFailureDiagnostic.CompiledScope(requiredScope)
+                )
+            );
+        }
+    }
 
     private static void ValidateScopeInstanceAddress(
         ScopeInstanceAddress address,

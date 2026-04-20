@@ -18,14 +18,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Relational_Write_No_Profile_Persister
+public class Given_Relational_Write_Persister
 {
-    private RelationalWriteNoProfilePersister _sut = null!;
+    private RelationalWritePersister _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfilePersister();
+        _sut = new RelationalWritePersister();
     }
 
     [Test]
@@ -35,18 +35,21 @@ public class Given_Relational_Write_No_Profile_Persister
         var rootExtensionPlan = CreateRootExtensionPlan();
         var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [],
-                [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                rootExtensionPlan,
-                [],
-                [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, "BLUE")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    rootExtensionPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, "BLUE")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
@@ -86,13 +89,16 @@ public class Given_Relational_Write_No_Profile_Persister
         var rootPlan = CreateRootPlan(includeShortName: true);
         var writePlan = CreateWritePlan([rootPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High", "LHS")],
-                [CreateRow(345L, 255901, "Lincoln High Updated", null)]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High", "LHS")],
+                    [CreateRow(345L, 255901, "Lincoln High Updated", null)]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
         var result = await _sut.PersistAsync(request, mergeResult, writeSession);
@@ -120,14 +126,17 @@ public class Given_Relational_Write_No_Profile_Persister
         var rootExtensionPlan = CreateRootExtensionPlan();
         var writePlan = CreateWritePlan([rootPlan, rootExtensionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(rootExtensionPlan, [CreateRow(345L, "BLUE")], []),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(rootExtensionPlan, [CreateRow(345L, "BLUE")], []),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
@@ -145,23 +154,26 @@ public class Given_Relational_Write_No_Profile_Persister
         var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [CreateRow(44L, 345L, 0, "Mailing")],
-                [CreateRow(44L, 345L, 0, "Mailing")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [CreateRow(44L, "Blue")],
-                [CreateRow(44L, "Red")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [CreateRow(44L, 345L, 0, "Mailing")],
+                    [CreateRow(44L, 345L, 0, "Mailing")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [CreateRow(44L, "Blue")],
+                    [CreateRow(44L, "Red")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([new CommandResponse()]);
 
         await _sut.PersistAsync(request, mergeResult, writeSession);
@@ -186,38 +198,41 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ],
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [],
-                [
-                    CreateRow(44L, "Blue"),
-                    CreateRow(45L, "Red"),
-                    CreateRow(46L, "Orange"),
-                    CreateRow(47L, "Purple"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ],
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [],
+                    [
+                        CreateRow(44L, "Blue"),
+                        CreateRow(45L, "Red"),
+                        CreateRow(46L, "Orange"),
+                        CreateRow(47L, "Purple"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -262,43 +277,46 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ],
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [
-                    CreateRow(44L, "Blue"),
-                    CreateRow(45L, "Green"),
-                    CreateRow(46L, "Orange"),
-                    CreateRow(47L, "Purple"),
-                ],
-                [
-                    CreateRow(44L, "Blue-Updated"),
-                    CreateRow(45L, "Green-Updated"),
-                    CreateRow(46L, "Orange-Updated"),
-                    CreateRow(47L, "Purple-Updated"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ],
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [
+                        CreateRow(44L, "Blue"),
+                        CreateRow(45L, "Green"),
+                        CreateRow(46L, "Orange"),
+                        CreateRow(47L, "Purple"),
+                    ],
+                    [
+                        CreateRow(44L, "Blue-Updated"),
+                        CreateRow(45L, "Green-Updated"),
+                        CreateRow(46L, "Orange-Updated"),
+                        CreateRow(47L, "Purple-Updated"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -343,38 +361,41 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ],
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                    CreateRow(47L, 345L, 3, "Shipping"),
-                ]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [
-                    CreateRow(44L, "Blue"),
-                    CreateRow(45L, "Green"),
-                    CreateRow(46L, "Orange"),
-                    CreateRow(47L, "Purple"),
-                ],
-                []
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ],
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                        CreateRow(47L, 345L, 3, "Shipping"),
+                    ]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [
+                        CreateRow(44L, "Blue"),
+                        CreateRow(45L, "Green"),
+                        CreateRow(46L, "Orange"),
+                        CreateRow(47L, "Purple"),
+                    ],
+                    []
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -413,23 +434,26 @@ public class Given_Relational_Write_No_Profile_Persister
         var writePlan = CreateWritePlan([rootPlan, collectionExtensionScopePlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [],
-                [CreateRow(addressCollectionItemId, "Blue")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [],
-                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [],
+                    [CreateRow(addressCollectionItemId, "Blue")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
@@ -458,31 +482,34 @@ public class Given_Relational_Write_No_Profile_Persister
         var collectionExtensionScopePlan = CreateCollectionExtensionScopePlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan, collectionExtensionScopePlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                ],
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Work"),
-                ]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionExtensionScopePlan,
-                [CreateRow(44L, "Blue"), CreateRow(45L, "Green")],
-                [CreateRow(44L, "Purple"), CreateRow(46L, "Orange")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                    ],
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Work"),
+                    ]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionExtensionScopePlan,
+                    [CreateRow(44L, "Blue"), CreateRow(45L, "Green")],
+                    [CreateRow(44L, "Purple"), CreateRow(46L, "Orange")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -512,18 +539,21 @@ public class Given_Relational_Write_No_Profile_Persister
         var collectionPlan = CreateCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
-                [CreateRow(45L, 345L, 0, "Home"), CreateRow(NewCollectionItemId(), 345L, 1, "Physical")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                    [CreateRow(45L, 345L, 0, "Home"), CreateRow(NewCollectionItemId(), 345L, 1, "Physical")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -567,23 +597,26 @@ public class Given_Relational_Write_No_Profile_Persister
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
         var periodCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                addressPlan,
-                [],
-                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                periodPlan,
-                [],
-                [CreateRow(periodCollectionItemId, 345L, addressCollectionItemId, 0, "2026-09-01")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    addressPlan,
+                    [],
+                    [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+                ),
+                new RelationalWriteMergedTableState(
+                    periodPlan,
+                    [],
+                    [CreateRow(periodCollectionItemId, 345L, addressCollectionItemId, 0, "2026-09-01")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
@@ -616,21 +649,24 @@ public class Given_Relational_Write_No_Profile_Persister
         var extensionCollectionPlan = CreateExtensionCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, extensionCollectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                extensionCollectionPlan,
-                [CreateRow(44L, 345L, 0, "Tutor"), CreateRow(45L, 345L, 1, "Mentor")],
-                [
-                    CreateRow(45L, 345L, 0, "Mentor Updated"),
-                    CreateRow(NewCollectionItemId(), 345L, 1, "Coach"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    extensionCollectionPlan,
+                    [CreateRow(44L, 345L, 0, "Tutor"), CreateRow(45L, 345L, 1, "Mentor")],
+                    [
+                        CreateRow(45L, 345L, 0, "Mentor Updated"),
+                        CreateRow(NewCollectionItemId(), 345L, 1, "Coach"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -672,26 +708,29 @@ public class Given_Relational_Write_No_Profile_Persister
         var collectionAlignedExtensionChildPlan = CreateCollectionAlignedExtensionChildCollectionPlan();
         var writePlan = CreateWritePlan([rootPlan, addressPlan, collectionAlignedExtensionChildPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                addressPlan,
-                [CreateRow(44L, 345L, 0, "Home")],
-                [CreateRow(44L, 345L, 0, "Home")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionAlignedExtensionChildPlan,
-                [CreateRow(500L, 345L, 44L, 0, "Bus"), CreateRow(501L, 345L, 44L, 1, "Meal")],
-                [
-                    CreateRow(501L, 345L, 44L, 0, "Meal Updated"),
-                    CreateRow(NewCollectionItemId(), 345L, 44L, 1, "Tutor"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    addressPlan,
+                    [CreateRow(44L, 345L, 0, "Home")],
+                    [CreateRow(44L, 345L, 0, "Home")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionAlignedExtensionChildPlan,
+                    [CreateRow(500L, 345L, 44L, 0, "Bus"), CreateRow(501L, 345L, 44L, 1, "Meal")],
+                    [
+                        CreateRow(501L, 345L, 44L, 0, "Meal Updated"),
+                        CreateRow(NewCollectionItemId(), 345L, 44L, 1, "Tutor"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -737,23 +776,26 @@ public class Given_Relational_Write_No_Profile_Persister
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
         var addressCollectionItemId = NewCollectionItemId();
         var serviceCollectionItemId = NewCollectionItemId();
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                addressPlan,
-                [],
-                [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionAlignedExtensionChildPlan,
-                [],
-                [CreateRow(serviceCollectionItemId, 345L, addressCollectionItemId, 0, "Bus")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    addressPlan,
+                    [],
+                    [CreateRow(addressCollectionItemId, 345L, 0, "Home")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionAlignedExtensionChildPlan,
+                    [],
+                    [CreateRow(serviceCollectionItemId, 345L, addressCollectionItemId, 0, "Bus")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(ScalarResult: 910L),
             new CommandResponse(),
@@ -793,30 +835,33 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Physical"),
-                    CreateRow(47L, 345L, 3, "Temporary"),
-                    CreateRow(48L, 345L, 4, "Shipping"),
-                ],
-                [
-                    CreateRow(44L, 345L, 0, "Mailing Updated"),
-                    CreateRow(45L, 345L, 1, "Home Updated"),
-                    CreateRow(46L, 345L, 2, "Physical Updated"),
-                    CreateRow(47L, 345L, 3, "Temporary Updated"),
-                    CreateRow(48L, 345L, 4, "Shipping Updated"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Physical"),
+                        CreateRow(47L, 345L, 3, "Temporary"),
+                        CreateRow(48L, 345L, 4, "Shipping"),
+                    ],
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing Updated"),
+                        CreateRow(45L, 345L, 1, "Home Updated"),
+                        CreateRow(46L, 345L, 2, "Physical Updated"),
+                        CreateRow(47L, 345L, 3, "Temporary Updated"),
+                        CreateRow(48L, 345L, 4, "Shipping Updated"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -862,24 +907,27 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Physical"),
-                    CreateRow(47L, 345L, 3, "Temporary"),
-                    CreateRow(48L, 345L, 4, "Shipping"),
-                ],
-                []
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Physical"),
+                        CreateRow(47L, 345L, 3, "Temporary"),
+                        CreateRow(48L, 345L, 4, "Shipping"),
+                    ],
+                    []
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -927,24 +975,27 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [
-                    CreateRow(44L, 345L, 0, "Mailing"),
-                    CreateRow(45L, 345L, 1, "Home"),
-                    CreateRow(46L, 345L, 2, "Physical"),
-                    CreateRow(47L, 345L, 3, "Temporary"),
-                    CreateRow(48L, 345L, 4, "Shipping"),
-                ],
-                []
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [
+                        CreateRow(44L, 345L, 0, "Mailing"),
+                        CreateRow(45L, 345L, 1, "Home"),
+                        CreateRow(46L, 345L, 2, "Physical"),
+                        CreateRow(47L, 345L, 3, "Temporary"),
+                        CreateRow(48L, 345L, 4, "Shipping"),
+                    ],
+                    []
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -992,18 +1043,21 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
-                [CreateRow(45L, 345L, 0, "Home"), CreateRow(44L, 345L, 1, "Mailing")]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [CreateRow(44L, 345L, 0, "Mailing"), CreateRow(45L, 345L, 1, "Home")],
+                    [CreateRow(45L, 345L, 0, "Home"), CreateRow(44L, 345L, 1, "Mailing")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(),
             new CommandResponse(),
@@ -1048,24 +1102,27 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [],
-                [
-                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
-                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
-                    CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
-                    CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
-                    CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                        CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                        CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
+                        CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
+                        CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(
                 ReservationRows:
@@ -1129,21 +1186,24 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [],
-                [
-                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
-                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                        CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(
                 ReservationRows:
@@ -1183,24 +1243,27 @@ public class Given_Relational_Write_No_Profile_Persister
         };
         var writePlan = CreateWritePlan([rootPlan, collectionPlan]);
         var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put, SqlDialect.Mssql);
-        var mergeResult = new RelationalWriteNoProfileMergeResult([
-            new RelationalWriteNoProfileTableState(
-                rootPlan,
-                [CreateRow(345L, 255901, "Lincoln High")],
-                [CreateRow(345L, 255901, "Lincoln High")]
-            ),
-            new RelationalWriteNoProfileTableState(
-                collectionPlan,
-                [],
-                [
-                    CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
-                    CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
-                    CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
-                    CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
-                    CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
-                ]
-            ),
-        ]);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High")],
+                    [CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        CreateRow(NewCollectionItemId(), 345L, 0, "Mailing"),
+                        CreateRow(NewCollectionItemId(), 345L, 1, "Home"),
+                        CreateRow(NewCollectionItemId(), 345L, 2, "Physical"),
+                        CreateRow(NewCollectionItemId(), 345L, 3, "Temporary"),
+                        CreateRow(NewCollectionItemId(), 345L, 4, "Shipping"),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
         var writeSession = new RecordingRelationalWriteSession([
             new CommandResponse(
                 ReservationRows:
@@ -2017,9 +2080,9 @@ public class Given_Relational_Write_No_Profile_Persister
         );
     }
 
-    private static RelationalWriteNoProfileTableRow CreateRow(params object?[] values)
+    private static RelationalWriteMergedTableRow CreateRow(params object?[] values)
     {
-        return new RelationalWriteNoProfileTableRow(
+        return new RelationalWriteMergedTableRow(
             values.Select(value =>
                 value switch
                 {

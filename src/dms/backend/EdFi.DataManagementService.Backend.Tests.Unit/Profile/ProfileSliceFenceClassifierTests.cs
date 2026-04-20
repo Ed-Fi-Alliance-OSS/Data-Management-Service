@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
@@ -370,7 +371,7 @@ public class Given_ProfileSliceFenceClassifier_with_nested_extension_child_colle
 }
 
 [TestFixture]
-public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_request
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_request_remains_fenced
 {
     private RequiredSliceFamily _result;
 
@@ -393,9 +394,9 @@ public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_sep
     }
 
     [Test]
-    public void It_returns_RootTableOnly()
+    public void It_returns_SeparateTableNonCollection()
     {
-        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
     }
 }
 
@@ -680,6 +681,100 @@ public class Given_ProfileSliceFenceClassifier_with_visible_inlined_stored_scope
 
     [Test]
     public void It_returns_NestedAndExtensionCollections_from_inlined_scope_under_extension_collection()
+    {
+        _result.Should().Be(RequiredSliceFamily.NestedAndExtensionCollections);
+    }
+}
+
+// ── ClassifyFromCatalog tests ──────────────────────────────────────────────
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_ClassifyFromCatalog_with_only_non_collection_scopes
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = ProfileSliceFenceClassifierTestHelpers.RootTablePlan();
+        var extensionPlan = ProfileSliceFenceClassifierTestHelpers.CreateTablePlan(
+            "$._ext.sample",
+            "RootExtension",
+            DbTableKind.RootExtension
+        );
+        var catalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            ProfileSliceFenceClassifierTestHelpers.CreateWritePlan(rootPlan, extensionPlan)
+        );
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(rootPlan, extensionPlan);
+
+        _result = ProfileSliceFenceClassifier.ClassifyFromCatalog(catalog, index);
+    }
+
+    [Test]
+    public void It_returns_RootTableOnly()
+    {
+        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_ClassifyFromCatalog_with_top_level_collection_scope
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = ProfileSliceFenceClassifierTestHelpers.RootTablePlan();
+        var collectionPlan = ProfileSliceFenceClassifierTestHelpers.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var catalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            ProfileSliceFenceClassifierTestHelpers.CreateWritePlan(rootPlan, collectionPlan)
+        );
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(rootPlan, collectionPlan);
+
+        _result = ProfileSliceFenceClassifier.ClassifyFromCatalog(catalog, index);
+    }
+
+    [Test]
+    public void It_escalates_to_TopLevelCollection()
+    {
+        _result.Should().Be(RequiredSliceFamily.TopLevelCollection);
+    }
+}
+
+[TestFixture]
+public class Given_ProfileSliceFenceClassifier_ClassifyFromCatalog_with_nested_collection_scope
+{
+    private RequiredSliceFamily _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var rootPlan = ProfileSliceFenceClassifierTestHelpers.RootTablePlan();
+        var addressesPlan = ProfileSliceFenceClassifierTestHelpers.CreateCollectionTablePlan(
+            "$.addresses[*]",
+            "Addresses",
+            DbTableKind.Collection
+        );
+        var periodsPlan = ProfileSliceFenceClassifierTestHelpers.CreateCollectionTablePlan(
+            "$.addresses[*].periods[*]",
+            "AddressPeriods",
+            DbTableKind.Collection
+        );
+        var catalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
+            ProfileSliceFenceClassifierTestHelpers.CreateWritePlan(rootPlan, addressesPlan, periodsPlan)
+        );
+        var index = ProfileSliceFenceClassifierTestHelpers.BuildIndex(rootPlan, addressesPlan, periodsPlan);
+
+        _result = ProfileSliceFenceClassifier.ClassifyFromCatalog(catalog, index);
+    }
+
+    [Test]
+    public void It_escalates_to_NestedAndExtensionCollections()
     {
         _result.Should().Be(RequiredSliceFamily.NestedAndExtensionCollections);
     }

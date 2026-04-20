@@ -33,6 +33,12 @@ public static class CompiledScopeAdapterFactory
         IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes = null
     )
     {
+        var tableScopes = plan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var normalizedAdditionalScopes = InlinedScopeNormalization.Normalize(additionalScopes, tableScopes);
+
         // Build a lookup of JsonScope canonical string -> ScopeKind for parent resolution.
         // Starts with table-backed scopes; additional scopes are added below.
         var scopeKindByCanonical = plan
@@ -40,12 +46,9 @@ public static class CompiledScopeAdapterFactory
             .ToDictionary(tm => tm.JsonScope.Canonical, tm => ToScopeKind(tm.IdentityMetadata.TableKind));
 
         // Register additional scopes so parent/ancestor resolution includes them
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
-            {
-                scopeKindByCanonical.TryAdd(jsonScope, kind);
-            }
+            scopeKindByCanonical.TryAdd(jsonScope, kind);
         }
 
         // Build descriptors for table-backed scopes (existing behavior)
@@ -54,14 +57,14 @@ public static class CompiledScopeAdapterFactory
         );
 
         // Build descriptors for additional (inlined) scopes
-        if (additionalScopes is { Count: > 0 })
+        if (normalizedAdditionalScopes.Count > 0)
         {
             var tableByScope = plan.TablePlansInDependencyOrder.ToDictionary(
                 tp => tp.TableModel.JsonScope.Canonical,
                 tp => tp.TableModel
             );
 
-            foreach (var (jsonScope, kind) in additionalScopes)
+            foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
             {
                 descriptors.Add(BuildInlinedDescriptor(jsonScope, kind, scopeKindByCanonical, tableByScope));
             }

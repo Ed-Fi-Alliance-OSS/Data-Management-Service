@@ -12,21 +12,21 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal interface IRelationalWriteNoProfilePersister
+internal interface IRelationalWritePersister
 {
     Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
-        RelationalWriteNoProfileMergeResult mergeResult,
+        RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
     );
 }
 
-internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProfilePersister
+internal sealed class RelationalWritePersister : IRelationalWritePersister
 {
     public async Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
-        RelationalWriteNoProfileMergeResult mergeResult,
+        RelationalWriteMergeResult mergeResult,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken = default
     )
@@ -37,7 +37,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
         var targetContext =
             request.TargetContext
             ?? throw new InvalidOperationException(
-                "Relational no-profile persistence requires an executor-resolved target context."
+                "Relational persistence requires an executor-resolved target context."
             );
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
@@ -83,7 +83,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task ExecuteDeletesAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileMergeResult mergeResult,
+        RelationalWriteMergeResult mergeResult,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -143,7 +143,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task ExecuteUpsertsAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileMergeResult mergeResult,
+        RelationalWriteMergeResult mergeResult,
         long rootDocumentId,
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -154,7 +154,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
         while (pendingTableStates.Length > 0)
         {
-            List<RelationalWriteNoProfileTableState> deferredTableStates = [];
+            List<RelationalWriteMergedTableState> deferredTableStates = [];
             var persistedTableCount = 0;
 
             foreach (var tableState in pendingTableStates)
@@ -239,7 +239,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     }
 
     private static bool HasBlockingUnresolvedCollectionItemIds(
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
     {
@@ -353,7 +353,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     }
 
     private static async Task DeleteOmittedNonCollectionRowAsync(
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -390,7 +390,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     }
 
     private static async Task UpsertNonCollectionRowAsync(
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -451,7 +451,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task DeleteOmittedCollectionAlignedScopeRowsAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -471,7 +471,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
             );
         }
 
-        List<RelationalWriteNoProfileTableRow> rowsToDelete = [];
+        List<RelationalWriteMergedTableRow> rowsToDelete = [];
 
         foreach (var currentRow in tableState.CurrentRows)
         {
@@ -502,7 +502,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task UpsertCollectionAlignedScopeRowsAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -514,8 +514,8 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
             "current",
             tableState.TableWritePlan
         );
-        List<RelationalWriteNoProfileTableRow> rowsToUpdate = [];
-        List<RelationalWriteNoProfileTableRow> rowsToInsert = [];
+        List<RelationalWriteMergedTableRow> rowsToUpdate = [];
+        List<RelationalWriteMergedTableRow> rowsToInsert = [];
 
         foreach (var mergedRow in tableState.MergedRows)
         {
@@ -586,7 +586,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task DeleteOmittedCollectionRowsAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -599,7 +599,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
                 $"Collection table '{FormatTable(tableState.TableWritePlan)}' does not have a compiled collection merge plan."
             );
         var retainedStableRowIdentities = GetRetainedStableRowIdentities(tableState);
-        List<RelationalWriteNoProfileTableRow> rowsToDelete = [];
+        List<RelationalWriteMergedTableRow> rowsToDelete = [];
 
         foreach (var currentRow in tableState.CurrentRows)
         {
@@ -636,7 +636,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static async Task UpsertCollectionRowsAsync(
         SqlDialect dialect,
-        RelationalWriteNoProfileTableState tableState,
+        RelationalWriteMergedTableState tableState,
         long rootDocumentId,
         Dictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -654,8 +654,8 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
                 currentRow.Values[mergePlan.StableRowIdentityBindingIndex]
             )
         );
-        List<RelationalWriteNoProfileTableRow> rowsToUpdate = [];
-        List<RelationalWriteNoProfileTableRow> rowsToInsert = [];
+        List<RelationalWriteMergedTableRow> rowsToUpdate = [];
+        List<RelationalWriteMergedTableRow> rowsToInsert = [];
         var hasOrdinalReorder = false;
 
         foreach (var mergedRow in tableState.MergedRows)
@@ -767,7 +767,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
         }
     }
 
-    private static HashSet<long> GetRetainedStableRowIdentities(RelationalWriteNoProfileTableState tableState)
+    private static HashSet<long> GetRetainedStableRowIdentities(RelationalWriteMergedTableState tableState)
     {
         var mergePlan =
             tableState.TableWritePlan.CollectionMergePlan
@@ -1023,7 +1023,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
         TableWritePlan tableWritePlan,
         string sql,
         Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -1065,7 +1065,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
         TableWritePlan tableWritePlan,
         string sql,
         Func<WritePlanBatchSqlEmitter, int, string> emitBatchSql,
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -1094,7 +1094,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     private static async Task ExecuteCollectionInsertBatchAsync(
         SqlDialect dialect,
         TableWritePlan tableWritePlan,
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds,
         IRelationalWriteSession writeSession,
@@ -1137,8 +1137,8 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
             .ConfigureAwait(false);
     }
 
-    private static RelationalWriteNoProfileTableRow? GetSingleRowOrThrow(
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+    private static RelationalWriteMergedTableRow? GetSingleRowOrThrow(
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         string rowKind,
         TableWritePlan tableWritePlan
     )
@@ -1148,7 +1148,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
             0 => null,
             1 => rows[0],
             _ => throw new InvalidOperationException(
-                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during no-profile persistence. "
+                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during relational persistence. "
                     + "Only zero or one row is supported before collection merge execution lands."
             ),
         };
@@ -1156,14 +1156,14 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static IReadOnlyDictionary<
         string,
-        RelationalWriteNoProfileTableRow
+        RelationalWriteMergedTableRow
     > GetRowsByPhysicalIdentityOrThrow(
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         string rowKind,
         TableWritePlan tableWritePlan
     )
     {
-        Dictionary<string, RelationalWriteNoProfileTableRow> rowsByPhysicalIdentity = new(
+        Dictionary<string, RelationalWriteMergedTableRow> rowsByPhysicalIdentity = new(
             StringComparer.Ordinal
         );
 
@@ -1184,7 +1184,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
 
     private static string ResolvePhysicalRowIdentityKey(
         TableWritePlan tableWritePlan,
-        RelationalWriteNoProfileTableRow row
+        RelationalWriteMergedTableRow row
     )
     {
         var identityColumns = tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns;
@@ -1230,7 +1230,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     private static RelationalCommand BuildRowCommand(
         TableWritePlan tableWritePlan,
         string sql,
-        RelationalWriteNoProfileTableRow row,
+        RelationalWriteMergedTableRow row,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
@@ -1258,7 +1258,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     private static RelationalCommand BuildBatchCommand(
         string sql,
         TableWritePlan tableWritePlan,
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         long rootDocumentId,
         IReadOnlyDictionary<FlattenedWriteValue.UnresolvedCollectionItemId, long> reservedCollectionItemIds
     )
@@ -1289,19 +1289,19 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
         return new RelationalCommand(sql, parameters);
     }
 
-    private static IReadOnlyList<RelationalWriteNoProfileTableRow> CreateTemporaryOrdinalRows(
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+    private static IReadOnlyList<RelationalWriteMergedTableRow> CreateTemporaryOrdinalRows(
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         int ordinalBindingIndex
     )
     {
-        RelationalWriteNoProfileTableRow[] temporaryRows = new RelationalWriteNoProfileTableRow[rows.Count];
+        RelationalWriteMergedTableRow[] temporaryRows = new RelationalWriteMergedTableRow[rows.Count];
 
         for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
             var temporaryValues = rows[rowIndex].Values.ToArray();
             temporaryValues[ordinalBindingIndex] = new FlattenedWriteValue.Literal(-1 - rowIndex);
 
-            temporaryRows[rowIndex] = new RelationalWriteNoProfileTableRow(
+            temporaryRows[rowIndex] = new RelationalWriteMergedTableRow(
                 temporaryValues,
                 rows[rowIndex].ComparableValues
             );
@@ -1311,7 +1311,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     }
 
     private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetStableRowIdentityTokens(
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
         int stableRowIdentityBindingIndex
     )
     {
@@ -1332,7 +1332,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWriteNoProf
     }
 
     private static IReadOnlyList<FlattenedWriteValue.UnresolvedCollectionItemId> GetUnresolvedCollectionItemIds(
-        IReadOnlyList<RelationalWriteNoProfileTableRow> rows
+        IReadOnlyList<RelationalWriteMergedTableRow> rows
     )
     {
         List<FlattenedWriteValue.UnresolvedCollectionItemId> unresolvedCollectionItemIds = [];

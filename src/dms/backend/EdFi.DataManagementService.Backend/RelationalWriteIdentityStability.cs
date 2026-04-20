@@ -13,25 +13,25 @@ internal static class RelationalWriteIdentityStability
 {
     public static RelationalWriteExecutorResult? TryBuildFailureResult(
         RelationalWriteExecutorRequest request,
-        RelationalWriteNoProfileMergeResult noProfileMergeResult
+        RelationalWriteMergeResult mergeResult
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(noProfileMergeResult);
+        ArgumentNullException.ThrowIfNull(mergeResult);
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
         {
             return null;
         }
 
-        var rootTableState = noProfileMergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
+        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
             tableState.TableWritePlan.TableModel.Table.Equals(request.WritePlan.Model.Root.Table)
         );
 
         if (rootTableState is null)
         {
             throw new InvalidOperationException(
-                $"No-profile merge synthesis for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
+                $"Existing-document write identity guard for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
                     + $"did not include root table '{request.WritePlan.Model.Root.Table}'. This indicates an internal merge-synthesis bug."
             );
         }
