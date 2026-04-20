@@ -5,12 +5,16 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-public class SearchContainerSetup(Func<bool>? useRelationalBackend = null, Func<Task>? resetDatabase = null)
-    : ContainerSetupBase
+public class SearchContainerSetup(
+    Func<bool>? useRelationalBackend = null,
+    Func<Task>? resetLegacyDatabase = null,
+    Func<Task>? resetRelationalDatabase = null
+) : ContainerSetupBase
 {
     private readonly Func<bool> _useRelationalBackend =
         useRelationalBackend ?? (() => AppSettings.UseRelationalBackend);
-    private readonly Func<Task> _resetDatabase = resetDatabase ?? ResetDatabase;
+    private readonly Func<Task> _resetLegacyDatabase = resetLegacyDatabase ?? ResetDatabase;
+    private readonly Func<Task> _resetRelationalDatabase = resetRelationalDatabase ?? ResetRelationalDatabase;
 
     public override string ApiUrl()
     {
@@ -21,9 +25,10 @@ public class SearchContainerSetup(Func<bool>? useRelationalBackend = null, Func<
     {
         if (_useRelationalBackend())
         {
+            await _resetRelationalDatabase();
             return;
         }
 
-        await _resetDatabase();
+        await _resetLegacyDatabase();
     }
 }

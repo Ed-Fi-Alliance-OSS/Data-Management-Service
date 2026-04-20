@@ -11,16 +11,25 @@ namespace EdFi.DataManagementService.Tests.Unit.Management;
 [TestFixture]
 public class Given_Search_Container_Setup_When_Legacy_Backend_Is_Active
 {
-    private int _resetDatabaseCalls;
+    private int _resetLegacyDatabaseCalls;
+    private int _resetRelationalDatabaseCalls;
 
     [SetUp]
     public async Task Setup()
     {
+        _resetLegacyDatabaseCalls = 0;
+        _resetRelationalDatabaseCalls = 0;
+
         var sut = new SearchContainerSetup(
             useRelationalBackend: () => false,
-            resetDatabase: () =>
+            resetLegacyDatabase: () =>
             {
-                _resetDatabaseCalls++;
+                _resetLegacyDatabaseCalls++;
+                return Task.CompletedTask;
+            },
+            resetRelationalDatabase: () =>
+            {
+                _resetRelationalDatabaseCalls++;
                 return Task.CompletedTask;
             }
         );
@@ -31,23 +40,38 @@ public class Given_Search_Container_Setup_When_Legacy_Backend_Is_Active
     [Test]
     public void It_resets_the_legacy_database()
     {
-        _resetDatabaseCalls.Should().Be(1);
+        _resetLegacyDatabaseCalls.Should().Be(1);
+    }
+
+    [Test]
+    public void It_does_not_reset_the_relational_database()
+    {
+        _resetRelationalDatabaseCalls.Should().Be(0);
     }
 }
 
 [TestFixture]
 public class Given_Search_Container_Setup_When_Relational_Backend_Is_Active
 {
-    private int _resetDatabaseCalls;
+    private int _resetLegacyDatabaseCalls;
+    private int _resetRelationalDatabaseCalls;
 
     [SetUp]
     public async Task Setup()
     {
+        _resetLegacyDatabaseCalls = 0;
+        _resetRelationalDatabaseCalls = 0;
+
         var sut = new SearchContainerSetup(
             useRelationalBackend: () => true,
-            resetDatabase: () =>
+            resetLegacyDatabase: () =>
             {
-                _resetDatabaseCalls++;
+                _resetLegacyDatabaseCalls++;
+                return Task.CompletedTask;
+            },
+            resetRelationalDatabase: () =>
+            {
+                _resetRelationalDatabaseCalls++;
                 return Task.CompletedTask;
             }
         );
@@ -56,8 +80,14 @@ public class Given_Search_Container_Setup_When_Relational_Backend_Is_Active
     }
 
     [Test]
-    public void It_skips_the_legacy_database_reset()
+    public void It_does_not_reset_the_legacy_database()
     {
-        _resetDatabaseCalls.Should().Be(0);
+        _resetLegacyDatabaseCalls.Should().Be(0);
+    }
+
+    [Test]
+    public void It_resets_the_relational_database()
+    {
+        _resetRelationalDatabaseCalls.Should().Be(1);
     }
 }
