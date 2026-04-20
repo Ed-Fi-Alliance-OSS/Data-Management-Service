@@ -1720,6 +1720,145 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_fences_profiled_create_new_when_catalog_has_top_level_collection_scope()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+        var resourceModel = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "School"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootPlan.TableModel,
+            TablesInDependencyOrder: [rootPlan.TableModel, collectionTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan, collectionPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+
+        // Profile emits ONLY the root scope. Neither VisibleRequestCollectionItems
+        // nor any Collection scope state is present. The request-derived classifier
+        // alone returns RootTableOnly; only the catalog-derived fence (Task 4)
+        // escalates to TopLevelCollection here.
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _writeFlattener
+            .FlattenCallCount.Should()
+            .Be(0, "flattener must not be called — catalog fence runs before flatten");
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(0, "profile merge must not run when catalog fence escalates the family");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persister must not run when the write is fenced");
+        _writeSessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(1, "session must be rolled back when the catalog fence fires");
+        _writeSessionFactory
+            .Session.CommitCallCount.Should()
+            .Be(0, "session must not be committed when the catalog fence fires");
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("TopLevelCollection");
+    }
+
+    [Test]
+    public async Task It_maps_profile_merge_invariant_exception_to_slice_fence_failure()
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
+        var rootPlan = CreateRootPlan();
+        var resourceModel = CreateRelationalResourceModel(rootPlan.TableModel);
+        var resourceWritePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(resourceWritePlan);
+
+        // Root-only catalog so the catalog fence does NOT fire; the executor reaches
+        // the profile merge synthesizer, which is stubbed to throw. The catch in
+        // DefaultRelationalWriteExecutor maps the invariant exception to a
+        // deterministic SeparateTableNonCollection slice-fence UnknownFailure.
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: writableBody,
+                RootResourceCreatable: true,
+                RequestScopeStates:
+                [
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$", []),
+                        Visibility: ProfileVisibilityKind.VisiblePresent,
+                        Creatable: true
+                    ),
+                ],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "test-write-profile",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: A.Fake<IStoredStateProjectionInvoker>()
+        );
+
+        _profileMergeSynthesizer.ExceptionToThrow = new RelationalWriteProfileMergeInvariantException(
+            "simulated upstream slice-fence drift"
+        );
+
+        var baseRequest = CreateRequest(RelationalWriteOperationKind.Post, selectedBody: writableBody);
+        var request = baseRequest with
+        {
+            WritePlan = resourceWritePlan,
+            ProfileWriteContext = profileContext,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        _profileMergeSynthesizer
+            .SynthesizeCallCount.Should()
+            .Be(1, "profile merge synthesizer must be reached before the invariant trips");
+        _noProfilePersister
+            .TryPersistCallCount.Should()
+            .Be(0, "persister must not run when the invariant exception is mapped to slice fence");
+        _writeSessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(1, "session must be rolled back when the invariant exception is mapped");
+        _writeSessionFactory
+            .Session.CommitCallCount.Should()
+            .Be(0, "session must not be committed when the invariant exception is mapped");
+
+        var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+        var failure = upsertResult.Result.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+        failure.FailureMessage.Should().Contain("SeparateTableNonCollection");
+    }
+
+    [Test]
     public async Task It_rejects_profiled_create_new_when_root_is_not_creatable()
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
@@ -2844,10 +2983,17 @@ public class Given_Default_Relational_Write_Executor
 
         public RelationalWriteMergeResult? ResultToReturn { get; set; }
 
+        public Exception? ExceptionToThrow { get; set; }
+
         public RelationalWriteMergeResult Synthesize(RelationalWriteProfileMergeRequest request)
         {
             SynthesizeCallCount++;
             CapturedRequest = request;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
 
             return ResultToReturn
                 ?? new RelationalWriteMergeResult(
