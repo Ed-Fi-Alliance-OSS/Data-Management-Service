@@ -85,6 +85,9 @@ file static class MssqlProfileRoutingTestSupport
         // The extension scope below is intentional. Routing fixtures that use this helper
         // expect the slice-fence family name to appear in the failure message, so the profile
         // must include a non-root scope that forces a non-root-table-only classification.
+        // Stored-side metadata must also cover $._ext.sample so the contract validator's
+        // required-scope-coverage check passes on existing-document flows; the slice fence
+        // then classifies the shape rather than the validator rejecting the request first.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
         var rootScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$", []),
@@ -106,7 +109,13 @@ file static class MssqlProfileRoutingTestSupport
             ),
             ProfileName: "test-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new TwoNonCollectionScopesStoredStateProjectionInvoker(
+                secondScopeJsonScope: "$._ext.sample",
+                rootVisibility: ProfileVisibilityKind.VisiblePresent,
+                rootHiddenMemberPaths: [],
+                secondScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+                secondScopeHiddenMemberPaths: []
+            )
         );
     }
 
@@ -164,6 +173,14 @@ file static class MssqlProfileRoutingTestSupport
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
         );
+        // The RootExtension non-collection scope is required on both sides by the
+        // contract validator independent of this fixture's focus on the inlined
+        // collection descendant.
+        var extensionScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$._ext.sample", []),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
         var inlinedScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$.addresses[*].mileInfo", [addressesAncestor]),
             Visibility: ProfileVisibilityKind.VisiblePresent,
@@ -174,12 +191,18 @@ file static class MssqlProfileRoutingTestSupport
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState, inlinedScopeState],
+                RequestScopeStates: [rootScopeState, extensionScopeState, inlinedScopeState],
                 VisibleRequestCollectionItems: []
             ),
             ProfileName: "test-profile-with-inlined-descendant",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new RootOnlyStoredStateProjectionInvoker()
+            StoredStateProjectionInvoker: new TwoNonCollectionScopesStoredStateProjectionInvoker(
+                secondScopeJsonScope: "$._ext.sample",
+                rootVisibility: ProfileVisibilityKind.VisiblePresent,
+                rootHiddenMemberPaths: [],
+                secondScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+                secondScopeHiddenMemberPaths: []
+            )
         );
     }
 }
@@ -321,7 +344,8 @@ public class Given_A_Mssql_Profiled_Post_Create_Where_Root_Is_Not_Creatable
 
 /// <summary>
 /// Verifies that a profiled POST that resolves to post-as-update (existing document)
-/// reaches the slice fence and returns a family name like "SeparateTableNonCollection",
+/// reaches the slice fence and returns a family name (for the School catalog,
+/// the conservative catalog fence dominates at NestedAndExtensionCollections),
 /// instead of the old broad "DMS-1124 pending" message.
 /// </summary>
 [TestFixture]
@@ -437,7 +461,7 @@ public class Given_A_Mssql_Profiled_Post_As_Update_Reaching_Slice_Fence
         _profiledPostAsUpdateResult
             .As<UpsertResult.UnknownFailure>()
             .FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+            .Contain("NestedAndExtensionCollections");
     }
 
     [Test]
@@ -545,8 +569,9 @@ public class Given_A_Mssql_Profiled_Post_As_Update_Reaching_Slice_Fence
 
 /// <summary>
 /// Verifies that a profiled PUT targeting an existing document reaches the slice fence
-/// and returns a family name like "SeparateTableNonCollection", instead of the old broad
-/// "DMS-1124 pending" message.
+/// and returns a family name (for the School catalog, the conservative catalog fence
+/// dominates at NestedAndExtensionCollections), instead of the old broad "DMS-1124
+/// pending" message.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -658,7 +683,7 @@ public class Given_A_Mssql_Profiled_Put_Reaching_Slice_Fence
         _profiledPutResult
             .As<UpdateResult.UnknownFailure>()
             .FailureMessage.Should()
-            .Contain("SeparateTableNonCollection");
+            .Contain("NestedAndExtensionCollections");
     }
 
     [Test]
@@ -766,8 +791,10 @@ public class Given_A_Mssql_Profiled_Put_Reaching_Slice_Fence
 
 /// <summary>
 /// Verifies that a profiled PUT whose compiled scope catalog contains an inlined scope
-/// beneath a top-level collection ancestor routes to the <c>TopLevelCollection</c> fence,
-/// not the default <c>RootTableOnly</c> fence.
+/// beneath a top-level collection ancestor routes to a collection-family fence
+/// rather than falling through to <c>RootTableOnly</c>. The School catalog has
+/// nested collections too, so Task 4's conservative catalog fence dominates at
+/// <c>NestedAndExtensionCollections</c>.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -844,13 +871,13 @@ public class Given_A_Mssql_Profiled_Put_With_Inlined_Collection_Descendant_Scope
     }
 
     [Test]
-    public void It_returns_unknown_failure_with_TopLevelCollection_family_in_slice_fence()
+    public void It_returns_unknown_failure_with_collection_family_in_slice_fence()
     {
         _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>();
         _profiledPutResult
             .As<UpdateResult.UnknownFailure>()
             .FailureMessage.Should()
-            .Contain("TopLevelCollection");
+            .Contain("NestedAndExtensionCollections");
     }
 
     [Test]

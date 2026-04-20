@@ -319,13 +319,26 @@ internal static class ProfileWriteContractValidator
     /// for one of these scopes must fail closed as a contract mismatch rather than falling
     /// through to a default-visible interpretation.
     /// </summary>
+    /// <remarks>
+    /// Scopes that reach collection rows through a shared base collection (e.g. a
+    /// <c>CollectionExtensionScope</c> whose own walk-up ancestors can't see the base
+    /// <c>Collection</c> table, because the base collection is stored under a sibling
+    /// scope path) can surface with an empty <c>CollectionAncestorsInOrder</c> even
+    /// though their data semantically lives inside a collection row. The <c>[*]</c>
+    /// literal in the JSON-scope path is a structural marker of collection-membership,
+    /// so exclude any scope containing <c>[*]</c> from the required set regardless of
+    /// the ancestor walk's result — those scopes need a collection-row identity
+    /// context and can't be validated as root-rooted.
+    /// </remarks>
     private static ImmutableArray<CompiledScopeDescriptor> GetRequiredRootedNonCollectionScopes(
         IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
     ) =>
         [
             .. scopeCatalog
                 .Where(scope =>
-                    scope.ScopeKind != ScopeKind.Collection && scope.CollectionAncestorsInOrder.Length == 0
+                    scope.ScopeKind != ScopeKind.Collection
+                    && scope.CollectionAncestorsInOrder.Length == 0
+                    && !scope.JsonScope.Contains("[*]", StringComparison.Ordinal)
                 )
                 .OrderBy(scope => scope.JsonScope.Length)
                 .ThenBy(scope => scope.JsonScope, StringComparer.Ordinal),
