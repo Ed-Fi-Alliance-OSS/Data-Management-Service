@@ -433,6 +433,132 @@ internal static class AdapterFactoryTestFixtures
         return new ResourceWritePlan(model, [rootPlan]);
     }
 
+    /// <summary>
+    /// Builds a ResourceWritePlan with a root table that stores an inlined collection scope
+    /// and a nested inlined object scope inside each collection item.
+    /// </summary>
+    public static ResourceWritePlan BuildRootWithInlinedCollectionAndNestedObjectPlan()
+    {
+        var rootTableModel = new DbTableModel(
+            Table: new DbTableName(_schema, "Student"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false),
+                Column(
+                    "StudentUniqueId",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    isNullable: false,
+                    sourceJsonPath: Path("$.studentUniqueId", new JsonPathSegment.Property("studentUniqueId"))
+                ),
+                Column(
+                    "InlineItemType",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.inlineItems[*].type",
+                        new JsonPathSegment.Property("inlineItems"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("type")
+                    )
+                ),
+                Column(
+                    "InlineDetailCode",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 30),
+                    isNullable: true,
+                    sourceJsonPath: Path(
+                        "$.inlineItems[*].details.code",
+                        new JsonPathSegment.Property("inlineItems"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("details"),
+                        new JsonPathSegment.Property("code")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var rootPlan = new TableWritePlan(
+            TableModel: rootTableModel,
+            InsertSql: "INSERT INTO edfi.\"Student\" VALUES (...)",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, rootTableModel.Columns.Count, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(
+                    rootTableModel.Columns[0],
+                    new WriteValueSource.DocumentId(),
+                    "DocumentId"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[1],
+                    new WriteValueSource.Scalar(
+                        Path("$.studentUniqueId", new JsonPathSegment.Property("studentUniqueId")),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 32)
+                    ),
+                    "StudentUniqueId"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[2],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.inlineItems[*].type",
+                            new JsonPathSegment.Property("inlineItems"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("type")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "InlineItemType"
+                ),
+                new WriteColumnBinding(
+                    rootTableModel.Columns[3],
+                    new WriteValueSource.Scalar(
+                        Path(
+                            "$.inlineItems[*].details.code",
+                            new JsonPathSegment.Property("inlineItems"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("details"),
+                            new JsonPathSegment.Property("code")
+                        ),
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 30)
+                    ),
+                    "InlineDetailCode"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        var model = new RelationalResourceModel(
+            Resource: _resource,
+            PhysicalSchema: _schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: [rootTableModel],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        return new ResourceWritePlan(model, [rootPlan]);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static JsonPathExpression Path(string canonical, params JsonPathSegment[] segments) =>

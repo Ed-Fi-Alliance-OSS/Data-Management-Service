@@ -33,6 +33,12 @@ public static class CompiledScopeAdapterFactory
         IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes = null
     )
     {
+        var tableScopes = plan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var normalizedAdditionalScopes = NormalizeAdditionalScopes(additionalScopes, tableScopes);
+
         // Build a lookup of JsonScope canonical string -> ScopeKind for parent resolution.
         // Starts with table-backed scopes; additional scopes are added below.
         var scopeKindByCanonical = plan
@@ -40,12 +46,9 @@ public static class CompiledScopeAdapterFactory
             .ToDictionary(tm => tm.JsonScope.Canonical, tm => ToScopeKind(tm.IdentityMetadata.TableKind));
 
         // Register additional scopes so parent/ancestor resolution includes them
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
-            {
-                scopeKindByCanonical.TryAdd(jsonScope, kind);
-            }
+            scopeKindByCanonical.TryAdd(jsonScope, kind);
         }
 
         // Build descriptors for table-backed scopes (existing behavior)
@@ -54,14 +57,14 @@ public static class CompiledScopeAdapterFactory
         );
 
         // Build descriptors for additional (inlined) scopes
-        if (additionalScopes is { Count: > 0 })
+        if (normalizedAdditionalScopes.Count > 0)
         {
             var tableByScope = plan.TablePlansInDependencyOrder.ToDictionary(
                 tp => tp.TableModel.JsonScope.Canonical,
                 tp => tp.TableModel
             );
 
-            foreach (var (jsonScope, kind) in additionalScopes)
+            foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
             {
                 descriptors.Add(BuildInlinedDescriptor(jsonScope, kind, scopeKindByCanonical, tableByScope));
             }
@@ -329,4 +332,42 @@ public static class CompiledScopeAdapterFactory
         // Collection columns: SourceJsonPath is already scope-relative with $ root marker
         return canonicalPath.StartsWith("$.", StringComparison.Ordinal) ? canonicalPath[2..] : canonicalPath;
     }
+
+    private static IReadOnlyList<(string JsonScope, ScopeKind Kind)> NormalizeAdditionalScopes(
+        IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes,
+        IReadOnlySet<string> knownScopes
+    )
+    {
+        if (additionalScopes is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        List<(string JsonScope, ScopeKind Kind, int Depth, int Index)> normalized = [];
+        HashSet<string> seenScopes = new(knownScopes, StringComparer.Ordinal);
+
+        for (var index = 0; index < additionalScopes.Count; index++)
+        {
+            var (jsonScope, kind) = additionalScopes[index];
+
+            if (!seenScopes.Add(jsonScope))
+            {
+                continue;
+            }
+
+            normalized.Add((jsonScope, kind, CountScopeDepth(jsonScope), index));
+        }
+
+        normalized.Sort(
+            static (left, right) =>
+            {
+                var depthComparison = left.Depth.CompareTo(right.Depth);
+                return depthComparison != 0 ? depthComparison : left.Index.CompareTo(right.Index);
+            }
+        );
+
+        return [.. normalized.Select(scope => (scope.JsonScope, scope.Kind))];
+    }
+
+    private static int CountScopeDepth(string jsonScope) => jsonScope.Count(c => c == '.') + 1;
 }

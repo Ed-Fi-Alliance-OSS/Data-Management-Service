@@ -58,6 +58,12 @@ internal sealed class ScopeTopologyIndex
         IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes = null
     )
     {
+        var tableScopes = plan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var normalizedAdditionalScopes = NormalizeAdditionalScopes(additionalScopes, tableScopes);
+
         // First pass: collect all collection-kinded scopes (table-backed plus any inlined
         // collections the caller passes in) so nested detection sees them all.
         var collectionScopes = plan
@@ -69,14 +75,11 @@ internal sealed class ScopeTopologyIndex
             .Select(tp => tp.TableModel.JsonScope.Canonical)
             .ToHashSet(StringComparer.Ordinal);
 
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
+            if (kind == ScopeKind.Collection)
             {
-                if (kind == ScopeKind.Collection)
-                {
-                    collectionScopes.Add(jsonScope);
-                }
+                collectionScopes.Add(jsonScope);
             }
         }
 
@@ -90,17 +93,14 @@ internal sealed class ScopeTopologyIndex
             );
         }
 
-        if (additionalScopes is { Count: > 0 })
+        foreach (var (jsonScope, kind) in normalizedAdditionalScopes)
         {
-            foreach (var (jsonScope, kind) in additionalScopes)
-            {
-                // Inlined scopes must not clobber a table-backed topology. TryAdd skips if the scope is already registered.
-                var topology =
-                    kind == ScopeKind.Collection
-                        ? ClassifyInlinedCollection(jsonScope, collectionScopes)
-                        : InheritAncestorTopology(jsonScope, topologyByScope);
-                topologyByScope.TryAdd(jsonScope, topology);
-            }
+            // Inlined scopes must not clobber a table-backed topology. TryAdd skips if the scope is already registered.
+            var topology =
+                kind == ScopeKind.Collection
+                    ? ClassifyInlinedCollection(jsonScope, collectionScopes)
+                    : InheritAncestorTopology(jsonScope, topologyByScope);
+            topologyByScope.TryAdd(jsonScope, topology);
         }
 
         return new ScopeTopologyIndex(topologyByScope);
@@ -155,6 +155,48 @@ internal sealed class ScopeTopologyIndex
 
         return false;
     }
+
+    /// <summary>
+    /// Normalizes caller-supplied inlined scopes so ancestors are processed before descendants.
+    /// Skips duplicate scopes and scopes already represented by a table-backed plan entry.
+    /// </summary>
+    private static IReadOnlyList<(string JsonScope, ScopeKind Kind)> NormalizeAdditionalScopes(
+        IReadOnlyList<(string JsonScope, ScopeKind Kind)>? additionalScopes,
+        IReadOnlySet<string> knownScopes
+    )
+    {
+        if (additionalScopes is not { Count: > 0 })
+        {
+            return [];
+        }
+
+        List<(string JsonScope, ScopeKind Kind, int Depth, int Index)> normalized = [];
+        HashSet<string> seenScopes = new(knownScopes, StringComparer.Ordinal);
+
+        for (var index = 0; index < additionalScopes.Count; index++)
+        {
+            var (jsonScope, kind) = additionalScopes[index];
+
+            if (!seenScopes.Add(jsonScope))
+            {
+                continue;
+            }
+
+            normalized.Add((jsonScope, kind, CountScopeDepth(jsonScope), index));
+        }
+
+        normalized.Sort(
+            static (left, right) =>
+            {
+                var depthComparison = left.Depth.CompareTo(right.Depth);
+                return depthComparison != 0 ? depthComparison : left.Index.CompareTo(right.Index);
+            }
+        );
+
+        return [.. normalized.Select(scope => (scope.JsonScope, scope.Kind))];
+    }
+
+    private static int CountScopeDepth(string jsonScope) => jsonScope.Count(c => c == '.') + 1;
 
     /// <summary>
     /// Walks the dot-separated ancestor prefixes of <paramref name="jsonScope"/> (excluding the
