@@ -242,7 +242,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     .Select(d => (d.JsonScope, d.ScopeKind))
                     .ToArray();
                 var topologyIndex = ScopeTopologyIndex.BuildFromWritePlan(request.WritePlan, inlinedScopes);
-                var requiredFamily = profileAppliedWriteContext is not null
+                var requestOrContextFamily = profileAppliedWriteContext is not null
                     ? ProfileSliceFenceClassifier.ClassifyForExistingDocument(
                         profileAppliedWriteContext,
                         topologyIndex
@@ -251,6 +251,14 @@ internal sealed class DefaultRelationalWriteExecutor(
                         profileWriteContext.Request,
                         topologyIndex
                     );
+
+                var catalogFamily = ProfileSliceFenceClassifier.ClassifyFromCatalog(
+                    profileWriteContext.CompiledScopeCatalog,
+                    topologyIndex
+                );
+
+                var requiredFamily =
+                    requestOrContextFamily > catalogFamily ? requestOrContextFamily : catalogFamily;
 
                 if (requiredFamily != RequiredSliceFamily.RootTableOnly)
                 {
