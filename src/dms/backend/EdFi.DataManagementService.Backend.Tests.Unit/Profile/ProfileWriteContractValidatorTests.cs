@@ -1949,3 +1949,254 @@ public class Given_SameJsonScope_Under_Different_AncestorCollectionInstances_Whe
         _result.Should().NotContain(f => f is DuplicateScopeAddressCoreBackendContractMismatchFailure);
     }
 }
+
+[TestFixture]
+public class Given_Complete_Request_And_Stored_NonCollection_Scope_Metadata_In_Multi_Table_Catalog_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["campusCode"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    extensionAddress,
+                    ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(extensionAddress, ProfileVisibilityKind.VisibleAbsent, []),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_no_failures()
+    {
+        _result.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_Missing_StoredScopeState_For_Extension_NonCollection_Scope_In_Multi_Table_Catalog_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["campusCode"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    extensionAddress,
+                    ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, [])],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_contract_mismatch_failure_for_the_missing_extension_scope()
+    {
+        _result.Should().ContainSingle();
+        var failure = _result[0].Should().BeOfType<GenericCoreBackendContractMismatchFailure>().Subject;
+        failure.Message.Should().Contain("StoredScopeStates").And.Contain("$._ext.sample");
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
+            .Single()
+            .JsonScope.Should()
+            .Be("$._ext.sample");
+    }
+}
+
+[TestFixture]
+public class Given_Missing_RequestScopeState_For_Extension_NonCollection_Scope_In_Multi_Table_Catalog_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$._ext.sample",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["campusCode"]
+            ),
+            new(
+                JsonScope: "$.addresses[*]",
+                ScopeKind: ScopeKind.Collection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: ["addressType"],
+                CanonicalScopeRelativeMemberPaths: ["addressType"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(extensionAddress, ProfileVisibilityKind.VisibleAbsent, []),
+            ],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_contract_mismatch_failure_for_the_missing_extension_scope()
+    {
+        _result.Should().ContainSingle();
+        var failure = _result[0].Should().BeOfType<GenericCoreBackendContractMismatchFailure>().Subject;
+        failure.Message.Should().Contain("RequestScopeStates").And.Contain("$._ext.sample");
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
+            .Single()
+            .JsonScope.Should()
+            .Be("$._ext.sample");
+    }
+}
