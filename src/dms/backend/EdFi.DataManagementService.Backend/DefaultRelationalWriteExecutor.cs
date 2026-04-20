@@ -379,6 +379,14 @@ internal sealed class DefaultRelationalWriteExecutor(
                 committedResponse
             );
         }
+        catch (RelationalWriteProfileMergeInvariantException)
+        {
+            await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return BuildSliceFenceResult(
+                request.OperationKind,
+                RequiredSliceFamily.SeparateTableNonCollection
+            );
+        }
         catch (RelationalWriteRequestValidationException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
