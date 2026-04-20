@@ -16,8 +16,15 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 /// and prevent cache pollution between test runs.
 /// </summary>
 [Binding]
-public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLogger logger)
+public class ClaimSetManagementHooks(
+    PlaywrightContext playwrightContext,
+    TestLogger logger,
+    FeatureContext featureContext
+)
 {
+    private const string ResetDataBeforeScenarioTag = "reset-data-before-scenario";
+
+    private readonly FeatureContext _featureContext = featureContext;
     private readonly PlaywrightContext _playwrightContext = playwrightContext;
     private readonly TestLogger _logger = logger;
 
@@ -28,6 +35,22 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
     [BeforeScenario(Order = 100)] // Run early in the scenario setup
     public async Task ClearCacheBeforeScenario()
     {
+        if (
+            _featureContext.FeatureInfo.Tags.Contains(
+                ResetDataBeforeScenarioTag,
+                StringComparer.OrdinalIgnoreCase
+            )
+        )
+        {
+            _logger.log.Information(
+                "===== ClaimSetManagementHooks: Resetting data before scenario for feature tag '{FeatureTag}' in '{FeatureTitle}' =====",
+                ResetDataBeforeScenarioTag,
+                _featureContext.FeatureInfo.Title
+            );
+
+            await new SearchContainerSetup().ResetData();
+        }
+
         _logger.log.Information("===== BeforeScenario: Universal cache clearing =====");
 
         const int MaxRetries = 5;

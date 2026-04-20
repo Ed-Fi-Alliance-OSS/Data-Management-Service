@@ -55,26 +55,6 @@ public static class SetupHooks
     }
 
     /// <summary>
-    /// Resets data before scenarios in features that opt into per-scenario isolation.
-    /// This supports feature files that seed data in a real Background block.
-    /// </summary>
-    [BeforeScenario("reset-data-before-scenario", Order = 80)]
-    public static async Task BeforeScenario(
-        FeatureContext featureContext,
-        ScenarioContext scenarioContext,
-        TestLogger logger
-    )
-    {
-        logger.log.Information(
-            "===== SetupHooks: Resetting data before scenario '{ScenarioTitle}' in feature '{FeatureTitle}' =====",
-            scenarioContext.ScenarioInfo.Title,
-            featureContext.FeatureInfo.Title
-        );
-
-        await _containerSetup!.ResetData();
-    }
-
-    /// <summary>
     /// Executes after each feature/scenario group completes.
     /// Resets the data state in the container environment to ensure test isolation
     /// between different feature groups.
