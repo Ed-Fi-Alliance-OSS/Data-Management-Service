@@ -4273,6 +4273,15 @@ public class Given_DocumentReconstituter_With_Page_Based_Collection_Extension_Re
             .Should()
             .Be("Leave at door");
     }
+
+    [Test]
+    public void It_should_not_emit_a_spurious_addresses_branch_for_canonical_collection_extension_scopes()
+    {
+        _pageBasedResult["addresses"]![0]!["addresses"].Should().BeNull();
+        _pageBasedResult["addresses"]![1]!["addresses"].Should().BeNull();
+        _compiledResult["addresses"]![0]!["addresses"].Should().BeNull();
+        _compiledResult["addresses"]![1]!["addresses"].Should().BeNull();
+    }
 }
 
 file static class PageBasedDocumentReconstituterTestData
@@ -4570,14 +4579,18 @@ file static class PageBasedDocumentReconstituterTestData
             new JsonPathSegment.Property("city")
         );
         var extensionScope = CreatePath(
-            "$.addresses[*]._ext.sample",
+            "$._ext.sample.addresses[*]._ext.sample",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
             new JsonPathSegment.Property("addresses"),
             new JsonPathSegment.AnyArrayElement(),
             new JsonPathSegment.Property("_ext"),
             new JsonPathSegment.Property("sample")
         );
         var isUrbanPath = CreatePath(
-            "$.addresses[*]._ext.sample.isUrban",
+            "$._ext.sample.addresses[*]._ext.sample.isUrban",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
             new JsonPathSegment.Property("addresses"),
             new JsonPathSegment.AnyArrayElement(),
             new JsonPathSegment.Property("_ext"),
@@ -4585,7 +4598,9 @@ file static class PageBasedDocumentReconstituterTestData
             new JsonPathSegment.Property("isUrban")
         );
         var deliveryNotesScope = CreatePath(
-            "$.addresses[*]._ext.sample.deliveryNotes[*]",
+            "$._ext.sample.addresses[*]._ext.sample.deliveryNotes[*]",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
             new JsonPathSegment.Property("addresses"),
             new JsonPathSegment.AnyArrayElement(),
             new JsonPathSegment.Property("_ext"),
@@ -4594,7 +4609,9 @@ file static class PageBasedDocumentReconstituterTestData
             new JsonPathSegment.AnyArrayElement()
         );
         var notePath = CreatePath(
-            "$.addresses[*]._ext.sample.deliveryNotes[*].note",
+            "$._ext.sample.addresses[*]._ext.sample.deliveryNotes[*].note",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
             new JsonPathSegment.Property("addresses"),
             new JsonPathSegment.AnyArrayElement(),
             new JsonPathSegment.Property("_ext"),

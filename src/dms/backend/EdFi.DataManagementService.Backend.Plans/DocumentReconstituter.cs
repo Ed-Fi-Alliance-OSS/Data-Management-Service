@@ -625,7 +625,8 @@ public static class DocumentReconstituter
         var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
             parentObject,
             childTableModel.JsonScope,
-            parentTableModel.JsonScope
+            parentTableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
 
         var array = new JsonArray();
@@ -706,7 +707,8 @@ public static class DocumentReconstituter
         var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
             parentObject,
             childTableModel.JsonScope,
-            parentTablePlan.TableModel.JsonScope
+            parentTablePlan.TableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
 
         var array = new JsonArray();
@@ -753,7 +755,8 @@ public static class DocumentReconstituter
         var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
             parentObject,
             childTableModel.JsonScope,
-            parentRow.TablePlan.TableModel.JsonScope
+            parentRow.TablePlan.TableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
 
         var array = new JsonArray();
@@ -811,7 +814,8 @@ public static class DocumentReconstituter
         // Parse the extension scope to get _ext and project name
         var (extPropertyName, projectName) = ParseExtensionScope(
             childTableModel.JsonScope,
-            parentTableModel.JsonScope
+            parentTableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
 
         // Extension scope rows are 1:1 with the parent (for root extensions) or
@@ -900,7 +904,8 @@ public static class DocumentReconstituter
 
         var (extPropertyName, projectName) = ParseExtensionScope(
             childTableModel.JsonScope,
-            parentTablePlan.TableModel.JsonScope
+            parentTablePlan.TableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
 
         var extensionRow = matchingRows[0];
@@ -953,7 +958,8 @@ public static class DocumentReconstituter
         var childTableModel = childTablePlan.TableModel;
         var (extPropertyName, projectName) = ParseExtensionScope(
             childTableModel.JsonScope,
-            parentRow.TablePlan.TableModel.JsonScope
+            parentRow.TablePlan.TableModel.JsonScope,
+            childTableModel.IdentityMetadata.TableKind
         );
         var extensionRow = childRows[0];
         var projectObject = new JsonObject();
@@ -1033,11 +1039,6 @@ public static class DocumentReconstituter
 
             var childScope = childTableModel.JsonScope;
 
-            if (!IsScopePrefix(parentScope, childScope))
-            {
-                continue;
-            }
-
             if (!IsImmediateChild(parentScope, childScope, childTableModel.IdentityMetadata.TableKind))
             {
                 continue;
@@ -1058,12 +1059,17 @@ public static class DocumentReconstituter
         DbTableKind childKind
     )
     {
-        if (!IsScopePrefix(parentScope, childScope))
+        if (
+            !JsonScopeAttachmentResolver.TryResolveRelativeAttachmentSegments(
+                parentScope,
+                childScope,
+                childKind,
+                out var relativeSegments
+            )
+        )
         {
             return false;
         }
-
-        var relativeSegments = GetRelativeScopeSegments(parentScope, childScope);
 
         return childKind switch
         {
@@ -1127,50 +1133,6 @@ public static class DocumentReconstituter
         relativeSegments.Count >= 2
         && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
         && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
-
-    private static JsonPathSegment[] GetRelativeScopeSegments(
-        JsonPathExpression parentScope,
-        JsonPathExpression childScope
-    )
-    {
-        var parentSegments = GetRestrictedSegments(parentScope);
-        var childSegments = GetRestrictedSegments(childScope);
-
-        return [.. childSegments.Skip(parentSegments.Count)];
-    }
-
-    private static bool IsScopePrefix(JsonPathExpression parentScope, JsonPathExpression childScope)
-    {
-        var parentSegments = GetRestrictedSegments(parentScope);
-        var childSegments = GetRestrictedSegments(childScope);
-
-        if (parentSegments.Count > childSegments.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < parentSegments.Count; index++)
-        {
-            var parentSegment = parentSegments[index];
-            var childSegment = childSegments[index];
-
-            if (parentSegment.GetType() != childSegment.GetType())
-            {
-                return false;
-            }
-
-            if (
-                parentSegment is JsonPathSegment.Property parentProperty
-                && childSegment is JsonPathSegment.Property childProperty
-                && !string.Equals(parentProperty.Name, childProperty.Name, StringComparison.Ordinal)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     private static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
     {
@@ -1257,24 +1219,26 @@ public static class DocumentReconstituter
     private static (JsonObject TargetObject, string PropertyName) ResolveCollectionTarget(
         JsonObject scopeObject,
         JsonPathExpression collectionScope,
-        JsonPathExpression parentScope
+        JsonPathExpression parentScope,
+        DbTableKind childKind
     )
     {
-        var startIndex = parentScope.Segments.Count;
+        var relativeSegments = JsonScopeAttachmentResolver.ResolveRelativeAttachmentSegmentsOrThrow(
+            parentScope,
+            collectionScope,
+            childKind
+        );
         var target = scopeObject;
 
-        for (var i = startIndex; i < collectionScope.Segments.Count; i++)
+        for (var i = 0; i < relativeSegments.Length; i++)
         {
-            if (collectionScope.Segments[i] is not JsonPathSegment.Property prop)
+            if (relativeSegments[i] is not JsonPathSegment.Property prop)
             {
                 continue;
             }
 
             // If the next segment is AnyArrayElement, this property is the collection name
-            if (
-                i + 1 < collectionScope.Segments.Count
-                && collectionScope.Segments[i + 1] is JsonPathSegment.AnyArrayElement
-            )
+            if (i + 1 < relativeSegments.Length && relativeSegments[i + 1] is JsonPathSegment.AnyArrayElement)
             {
                 return (target, prop.Name);
             }
@@ -1301,30 +1265,21 @@ public static class DocumentReconstituter
     /// </summary>
     private static (string ExtPropertyName, string ProjectName) ParseExtensionScope(
         JsonPathExpression childScope,
-        JsonPathExpression parentScope
+        JsonPathExpression parentScope,
+        DbTableKind childKind
     )
     {
-        var parentSegmentCount = parentScope.Segments.Count;
-        string? extName = null;
-        string? projectName = null;
+        var relativeSegments = JsonScopeAttachmentResolver.ResolveRelativeAttachmentSegmentsOrThrow(
+            parentScope,
+            childScope,
+            childKind
+        );
 
-        for (var i = parentSegmentCount; i < childScope.Segments.Count; i++)
-        {
-            if (childScope.Segments[i] is JsonPathSegment.Property prop)
-            {
-                if (extName is null)
-                {
-                    extName = prop.Name;
-                }
-                else
-                {
-                    projectName = prop.Name;
-                    break;
-                }
-            }
-        }
-
-        if (extName is null || projectName is null)
+        if (
+            relativeSegments.Length != 2
+            || relativeSegments[0] is not JsonPathSegment.Property { Name: "_ext" }
+            || relativeSegments[1] is not JsonPathSegment.Property { Name.Length: > 0 } project
+        )
         {
             throw new InvalidOperationException(
                 $"Cannot parse extension scope from '{childScope.Canonical}' "
@@ -1332,7 +1287,7 @@ public static class DocumentReconstituter
             );
         }
 
-        return (extName, projectName);
+        return ("_ext", project.Name);
     }
 
     /// <summary>
