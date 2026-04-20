@@ -1815,6 +1815,11 @@ public class Given_Default_Relational_Write_Executor
                     Visibility: ProfileVisibilityKind.VisiblePresent,
                     HiddenMemberPaths: []
                 ),
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisibleAbsent,
+                    HiddenMemberPaths: []
+                ),
             ],
             VisibleStoredCollectionRows: []
         );
@@ -1938,8 +1943,8 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_synthesizes_profile_merge_for_multi_table_plan_when_runtime_shape_is_root_only()
     {
-        // A multi-table compiled plan (root + separate-table extension) whose profile metadata
-        // leaves non-root scopes out of the request surface still classifies as RootTableOnly.
+        // A multi-table compiled plan (root + separate-table extension) can still classify as
+        // RootTableOnly when the non-root scope is present in the request contract but hidden.
         // The profile merge synthesizer handles the root table; the persister leaves the
         // extension table untouched because it is absent from the produced merge result.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
@@ -1967,6 +1972,11 @@ public class Given_Default_Relational_Write_Executor
                         Address: new ScopeInstanceAddress("$", []),
                         Visibility: ProfileVisibilityKind.VisiblePresent,
                         Creatable: true
+                    ),
+                    new RequestScopeState(
+                        Address: new ScopeInstanceAddress("$._ext.sample", []),
+                        Visibility: ProfileVisibilityKind.Hidden,
+                        Creatable: false
                     ),
                 ],
                 VisibleRequestCollectionItems: []

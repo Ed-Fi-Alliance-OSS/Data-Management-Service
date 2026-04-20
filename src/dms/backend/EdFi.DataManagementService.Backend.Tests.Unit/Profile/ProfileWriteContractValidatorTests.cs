@@ -84,12 +84,14 @@ public class Given_UnknownJsonScope_When_Validating
         };
 
         // Address references a scope not in the catalog
+        var rootAddress = new ScopeInstanceAddress("$", []);
         var unknownAddress = new ScopeInstanceAddress("$.nonExistentScope", []);
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
             RequestScopeStates:
             [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
                 new RequestScopeState(unknownAddress, ProfileVisibilityKind.VisiblePresent, Creatable: false),
             ],
             VisibleRequestCollectionItems: []
@@ -132,6 +134,69 @@ public class Given_UnknownJsonScope_When_Validating
 }
 
 [TestFixture]
+public class Given_Missing_RequestScopeState_for_required_noncollection_scope_When_Validating
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.birthData",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["birthCity"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateRequestContract(
+            request,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_contract_mismatch_failure_for_the_missing_scope()
+    {
+        _result.Should().ContainSingle();
+        var failure = _result[0].Should().BeOfType<GenericCoreBackendContractMismatchFailure>().Subject;
+        failure.Message.Should().Contain("RequestScopeStates").And.Contain("$.birthData");
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
+            .Single()
+            .JsonScope.Should()
+            .Be("$.birthData");
+    }
+}
+
+[TestFixture]
 public class Given_ValidCollectionItemAddress_When_Validating
 {
     private ProfileFailure[] _result = null!;
@@ -170,7 +235,10 @@ public class Given_ValidCollectionItemAddress_When_Validating
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(parentAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -225,7 +293,10 @@ public class Given_UnknownCollectionJsonScope_When_Validating
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(parentAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -417,6 +488,82 @@ public class Given_ValidWriteContext_When_Validating
 }
 
 [TestFixture]
+public class Given_Missing_StoredScopeState_for_required_noncollection_scope_When_ValidatingWriteContext
+{
+    private ProfileFailure[] _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var scopeCatalog = new List<CompiledScopeDescriptor>
+        {
+            new(
+                JsonScope: "$",
+                ScopeKind: ScopeKind.Root,
+                ImmediateParentJsonScope: null,
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["schoolId"]
+            ),
+            new(
+                JsonScope: "$.birthData",
+                ScopeKind: ScopeKind.NonCollection,
+                ImmediateParentJsonScope: "$",
+                CollectionAncestorsInOrder: [],
+                SemanticIdentityRelativePathsInOrder: [],
+                CanonicalScopeRelativeMemberPaths: ["birthCity"]
+            ),
+        };
+
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var birthDataAddress = new ScopeInstanceAddress("$.birthData", []);
+        var request = new ProfileAppliedWriteRequest(
+            WritableRequestBody: JsonNode.Parse("{}")!,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    birthDataAddress,
+                    ProfileVisibilityKind.VisibleAbsent,
+                    Creatable: false
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
+
+        var context = new ProfileAppliedWriteContext(
+            Request: request,
+            VisibleStoredBody: JsonNode.Parse("{}")!,
+            StoredScopeStates: [new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, [])],
+            VisibleStoredCollectionRows: []
+        );
+
+        _result = ProfileWriteContractValidator.ValidateWriteContext(
+            context,
+            scopeCatalog,
+            profileName: "TestProfile",
+            resourceName: "School",
+            method: "PUT",
+            operation: "update"
+        );
+    }
+
+    [Test]
+    public void It_returns_a_single_contract_mismatch_failure_for_the_missing_stored_scope()
+    {
+        _result.Should().ContainSingle();
+        var failure = _result[0].Should().BeOfType<GenericCoreBackendContractMismatchFailure>().Subject;
+        failure.Message.Should().Contain("StoredScopeStates").And.Contain("$.birthData");
+        failure
+            .Diagnostics.OfType<ProfileFailureDiagnostic.Scope>()
+            .Single()
+            .JsonScope.Should()
+            .Be("$.birthData");
+    }
+}
+
+[TestFixture]
 public class Given_HiddenMemberPathNotInCatalog_When_ValidatingWriteContext
 {
     private ProfileFailure[] _result = null!;
@@ -525,7 +672,14 @@ public class Given_CollectionRow_with_unknown_ParentAddress_JsonScope_When_Valid
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -601,7 +755,14 @@ public class Given_CollectionRow_with_wrong_semantic_identity_part_count_When_Va
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -673,7 +834,14 @@ public class Given_CollectionRow_with_wrong_semantic_identity_path_When_Validati
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -741,10 +909,14 @@ public class Given_valid_CollectionRow_with_correct_semantic_identity_When_Valid
             SemanticIdentityInOrder: [new SemanticIdentityPart("addressType", JsonValue.Create("Home"), true)]
         );
 
+        var rootAddress = new ScopeInstanceAddress("$", []);
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -828,10 +1000,14 @@ public class Given_valid_nested_CollectionRowAddress_When_Validating
             periodIdentity
         );
 
+        var rootAddress = new ScopeInstanceAddress("$", []);
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -909,10 +1085,14 @@ public class Given_nested_CollectionRowAddress_with_wrong_ancestor_chain_When_Va
             periodIdentity
         );
 
+        var rootAddress = new ScopeInstanceAddress("$", []);
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -988,6 +1168,11 @@ public class Given_RequestScopeState_targeting_collection_scope_When_Validating
             RootResourceCreatable: true,
             RequestScopeStates:
             [
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
                 new RequestScopeState(
                     collectionAddress,
                     ProfileVisibilityKind.VisiblePresent,
@@ -1068,7 +1253,11 @@ public class Given_StoredScopeState_targeting_collection_scope_When_ValidatingWr
         var context = new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: JsonNode.Parse("{}")!,
-            StoredScopeStates: [new StoredScopeState(collectionAddress, ProfileVisibilityKind.Hidden, [])],
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(collectionAddress, ProfileVisibilityKind.Hidden, []),
+            ],
             VisibleStoredCollectionRows: []
         );
 
@@ -1131,6 +1320,11 @@ public class Given_VisibleRequestCollectionItem_targeting_noncollection_scope_Wh
             RequestScopeStates:
             [
                 new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$._ext.sample", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
             ],
             VisibleRequestCollectionItems:
             [
@@ -1200,6 +1394,11 @@ public class Given_VisibleStoredCollectionRow_targeting_noncollection_scope_When
             RequestScopeStates:
             [
                 new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$._ext.sample", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
             ],
             VisibleRequestCollectionItems: []
         );
@@ -1207,7 +1406,15 @@ public class Given_VisibleStoredCollectionRow_targeting_noncollection_scope_When
         var context = new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: JsonNode.Parse("{}")!,
-            StoredScopeStates: [],
+            StoredScopeStates:
+            [
+                new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, []),
+                new StoredScopeState(
+                    new ScopeInstanceAddress("$._ext.sample", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    []
+                ),
+            ],
             VisibleStoredCollectionRows: [new VisibleStoredCollectionRow(rowAddress, [])]
         );
 
@@ -1275,10 +1482,19 @@ public class Given_CollectionRow_with_wrong_immediate_parent_jsonscope_When_Vali
             [new SemanticIdentityPart("classPeriodName", JsonValue.Create("period1"), IsPresent: true)]
         );
 
+        var rootAddress = new ScopeInstanceAddress("$", []);
         var request = new ProfileAppliedWriteRequest(
             WritableRequestBody: JsonNode.Parse("{}")!,
             RootResourceCreatable: true,
-            RequestScopeStates: [],
+            RequestScopeStates:
+            [
+                new RequestScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, Creatable: true),
+                new RequestScopeState(
+                    new ScopeInstanceAddress("$._ext.sample", []),
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: false
+                ),
+            ],
             VisibleRequestCollectionItems:
             [
                 new VisibleRequestCollectionItem(
@@ -1530,7 +1746,7 @@ public class Given_Duplicate_VisibleStoredCollectionRow_When_ValidatingWriteCont
         var context = new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: JsonNode.Parse("{}")!,
-            StoredScopeStates: [],
+            StoredScopeStates: [new StoredScopeState(rootAddress, ProfileVisibilityKind.VisiblePresent, [])],
             VisibleStoredCollectionRows:
             [
                 new VisibleStoredCollectionRow(rowAddress, []),
