@@ -80,13 +80,12 @@ internal sealed record RelationalWriteProfileMergeRequest
             || !FlattenedWriteSet.RootRow.CollectionCandidates.IsEmpty
         )
         {
-            throw new ArgumentException(
+            throw new RelationalWriteProfileMergeInvariantException(
                 $"{nameof(flattenedWriteSet)} contains non-root buffers "
                     + $"(RootExtensionRows={FlattenedWriteSet.RootRow.RootExtensionRows.Length}, "
                     + $"CollectionCandidates={FlattenedWriteSet.RootRow.CollectionCandidates.Length}) "
                     + "but the Slice-2 profile merge synthesizer handles only the root table. "
-                    + "This indicates upstream slice-fence or profile-shaping contract drift.",
-                nameof(flattenedWriteSet)
+                    + "This indicates upstream slice-fence or profile-shaping contract drift."
             );
         }
     }
