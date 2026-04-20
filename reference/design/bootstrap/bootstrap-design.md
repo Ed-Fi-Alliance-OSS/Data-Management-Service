@@ -268,6 +268,11 @@ host-side materialization path is the option set implemented in
 `src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Program.cs`; bootstrap consumes that existing
 surface rather than defining a second downloader contract in this design.
 
+This is an intentional migration from the current `SCHEMA_PACKAGES`-driven local default documented under
+`eng/docker-compose`, which stages Data Standard 5.2 plus TPDM today. DMS-916 v1 narrows the normative
+developer bootstrap profile to core only when `-Extensions` is omitted. TPDM is outside the initial
+`-Extensions` support surface for this ticket rather than an implied default that bootstrap must preserve.
+
 ```powershell
 pwsh eng/docker-compose/start-local-dms.ps1
 ```
@@ -1316,7 +1321,10 @@ startup, so Keycloak and self-contained auth continue to work consistently.
 
 `$seedKey`, `$seedSecret`, `$smokeKey`, and `$smokeSecret` exist only as PowerShell variables within the
 bootstrap script's process lifetime. They are not persisted to disk. On subsequent bootstrap runs, new
-application records are created. Bootstrap uses fixed application names and cleans up or overwrites existing records for those names to prevent credential bloat in the CMS database, producing fresh credentials at bootstrap time.
+application records are created. In v1, bootstrap treats application creation as create-only work and does
+not promise in-place cleanup or overwrite semantics for existing CMS application records. Fixed application
+names remain useful as stable display labels, but fresh credentials come from new records created during the
+current run.
 
 **Design rationale:** Writing OAuth secrets - even to a git-ignored local file - creates unnecessary
 plaintext-at-rest exposure on developer machines and in CI agents. Bootstrap credential creation is fast
@@ -1407,7 +1415,8 @@ Step 10. Seed-loader credential bootstrap
 
 Step 11. Seed data loading
   - Invoke BulkLoadClient with `$seedKey` / `$seedSecret`.
-  - Load core files first, then extension files.
+  - Invoke once against the merged seed workspace; bootstrap does not define a second core-before-extension
+    ordering rule beyond the external JSONL ordering already carried by the staged sources.
 ```
 
 Smoke-test credential bootstrap (step 7a) is CMS-only work anchored to the step-7-selected target set.
@@ -1445,7 +1454,11 @@ pwsh eng/docker-compose/start-local-dms.ps1 -Extensions "sample","homograph"
 pwsh eng/docker-compose/start-local-dms.ps1   # no -Extensions: core only
 ```
 
-**Default behavior**: omitting `-Extensions` loads core Ed-Fi resources only - no staged extension security fragments, no extension ApiSchema overlays, and no extension seed data. This keeps the default environment minimal and fast to start.
+**Default behavior**: omitting `-Extensions` loads core Ed-Fi resources only - no staged extension security
+fragments, no extension ApiSchema overlays, and no extension seed data. This is an intentional change from
+today's `eng/docker-compose` baseline, which includes TPDM in `SCHEMA_PACKAGES`; DMS-916 v1 does not carry
+that default forward into the normative bootstrap contract. The narrowed default keeps the environment
+minimal and fast to start.
 
 **How it works at runtime:**
 

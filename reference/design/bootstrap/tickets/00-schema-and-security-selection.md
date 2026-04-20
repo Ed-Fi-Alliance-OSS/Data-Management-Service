@@ -27,6 +27,10 @@ In this story, the selected schema set drives the DDL target, the hash-validatio
 physical schema footprint for the run. Core-only selection yields only core tables. Core plus a supported
 extension such as Sample yields the tables required by that combined schema set. A database provisioned for a
 different extension selection is incompatible existing state for this story's bootstrap run.
+This story also makes the default-profile migration explicit: the current `eng/docker-compose` baseline
+includes TPDM in `SCHEMA_PACKAGES`, but DMS-916 v1 intentionally narrows the normative bootstrap default to
+core only when `-Extensions` is omitted. TPDM is therefore outside this story's initial supported extension
+surface unless a later design change adds it explicitly.
 
 ## Acceptance Criteria
 
