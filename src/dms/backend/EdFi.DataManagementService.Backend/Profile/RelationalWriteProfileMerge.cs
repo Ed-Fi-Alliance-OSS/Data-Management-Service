@@ -68,6 +68,27 @@ internal sealed record RelationalWriteProfileMergeRequest
                     + "or both be non-null (existing-document)."
             );
         }
+        // Fail-closed guardrail: the slice fence must have classified the shape as root-table-only
+        // before this synthesizer runs. The flattener skips emitting root-extension rows and
+        // collection candidates when the profile has stripped their scope data (see
+        // RelationalWriteFlattener.HasBoundScopeData), so any non-empty buffer here means either
+        // the fence misclassified (e.g. a topology gap) or the shaper left data it should have
+        // stripped. Either way, the Slice-2 synthesizer would silently drop that data — instead,
+        // throw so the drift surfaces as a deterministic invariant failure.
+        if (
+            !FlattenedWriteSet.RootRow.RootExtensionRows.IsEmpty
+            || !FlattenedWriteSet.RootRow.CollectionCandidates.IsEmpty
+        )
+        {
+            throw new ArgumentException(
+                $"{nameof(flattenedWriteSet)} contains non-root buffers "
+                    + $"(RootExtensionRows={FlattenedWriteSet.RootRow.RootExtensionRows.Length}, "
+                    + $"CollectionCandidates={FlattenedWriteSet.RootRow.CollectionCandidates.Length}) "
+                    + "but the Slice-2 profile merge synthesizer handles only the root table. "
+                    + "This indicates upstream slice-fence or profile-shaping contract drift.",
+                nameof(flattenedWriteSet)
+            );
+        }
     }
 
     public ResourceWritePlan WritePlan { get; init; }
