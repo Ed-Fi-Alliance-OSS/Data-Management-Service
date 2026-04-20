@@ -15,8 +15,11 @@
 //   covered by the sibling PostgresqlProfileRootTableOnlyMergeFixtureTests against
 //   the synthetic profile-root-only-merge fixture.
 //
-// Fixture 9 (shape-gate) uses the School resource from the focused
-// stable-key-extension-child-collections fixture, which has a multi-table write plan.
+// Fixture 9 is split into 9a (POST) and 9b (PUT) conservative-slice-fence
+// fixtures against the School resource from the focused
+// stable-key-extension-child-collections fixture. The multi-table success
+// case is out of scope because the School catalog contains collection
+// scopes.
 
 using System.Data;
 using System.Globalization;
@@ -823,7 +826,7 @@ public class Given_A_Profiled_Post_Multi_Table_Collection_Fence_Returns_Slice_Fe
         var extensionScopeState = new RequestScopeState(
             Address: new ScopeInstanceAddress("$._ext.sample", []),
             Visibility: ProfileVisibilityKind.Hidden,
-            Creatable: true
+            Creatable: false
         );
         var profileContext = new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
@@ -871,14 +874,12 @@ public class Given_A_Profiled_Post_Multi_Table_Collection_Fence_Returns_Slice_Fe
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Fixture 9b: the School fixture's compiled catalog contains collection scopes
-/// (addresses[*], periods[*], interventions[*], sponsorReferences[*]). The
-/// current Slice 2 contract has no completeness marker for collection scopes,
-/// so the conservative fence must refuse to run the merge synthesizer whenever
-/// the catalog contains any collection scope — even when the profile context
-/// emits complete non-collection scope metadata. The PUT returns a deterministic
-/// slice-fence failure and the stored SchoolExtension column value is
-/// unchanged.
+/// Fixture 9b: the School resource has a multi-table write plan, and this
+/// fixture emits complete non-collection scope metadata for an existing visible
+/// extension row. The profiled PUT omits the extension scope from the writable
+/// request body, marks it VisibleAbsent on the request side, and marks it
+/// VisiblePresent on the stored side. Slice 2 must fail deterministically
+/// before DML, leaving the stored SchoolExtension column value unchanged.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -900,19 +901,14 @@ public class Given_A_Profiled_Put_Multi_Table_Collection_Fence_Returns_Slice_Fen
         }
         """;
 
-    // The profiled PUT body supplies a different campusCode. If the fence
-    // were not firing, a visible-absent root-only profile merge could
-    // potentially rewrite or clear this column; asserting the stored
-    // campusCode remains the seed value after the PUT proves the pre-merge
-    // rollback protected the extension row.
+    // The profiled PUT body omits the extension scope entirely, matching the
+    // VisibleAbsent request-side scope state below. If Slice 2 reached
+    // separate-table merge logic anyway, the existing visible extension row
+    // would be on the delete path; asserting the stored campusCode remains the
+    // seed value proves the pre-DML fence protected that row.
     private const string PutBodyJson = """
         {
-          "schoolId": 255903,
-          "_ext": {
-            "sample": {
-              "campusCode": "PUT-CAMPUS-B"
-            }
-          }
+          "schoolId": 255903
         }
         """;
 
@@ -1083,7 +1079,7 @@ public class Given_A_Profiled_Put_Multi_Table_Collection_Fence_Returns_Slice_Fen
                 secondScopeJsonScope: "$._ext.sample",
                 rootVisibility: ProfileVisibilityKind.VisiblePresent,
                 rootHiddenMemberPaths: [],
-                secondScopeVisibility: ProfileVisibilityKind.VisibleAbsent,
+                secondScopeVisibility: ProfileVisibilityKind.VisiblePresent,
                 secondScopeHiddenMemberPaths: []
             )
         );

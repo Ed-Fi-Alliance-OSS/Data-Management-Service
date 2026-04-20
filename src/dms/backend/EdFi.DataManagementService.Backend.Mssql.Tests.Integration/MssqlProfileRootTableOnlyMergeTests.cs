@@ -16,8 +16,11 @@
 //   profile-root-only-merge fixture. See the pgsql sibling file for detailed
 //   rationale.
 //
-// Fixture 9 (shape-gate) uses the School resource from the focused
-// stable-key-extension-child-collections fixture, which has a multi-table write plan.
+// Fixture 9 is split into 9a (POST) and 9b (PUT) conservative-slice-fence
+// fixtures against the School resource from the focused
+// stable-key-extension-child-collections fixture. The multi-table success
+// case is out of scope because the School catalog contains collection
+// scopes.
 
 using System.Data;
 using System.Globalization;
@@ -644,23 +647,26 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 9: Multi-table plan with root-only runtime shape → profiled PUT success (MSSQL)
+//  Fixture 9a: Multi-table plan, POST create-new is conservatively fenced by
+//  the catalog rule (MSSQL).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Mirror of the PostgreSQL Fixture 9: a multi-table compiled plan whose profile
-/// metadata keeps runtime behavior confined to the root table is a supported Slice 2
-/// shape. Classifier returns RootTableOnly, the profile merge synthesizer returns a
-/// root-only merge result, and the persister leaves the extension table untouched.
+/// MSSQL parity of PG Fixture 9a: the School catalog contains collection
+/// scopes, Slice 2 has no completeness marker for them, so the conservative
+/// fence refuses the merge even when the profile emits complete non-collection
+/// scope metadata. The profiled POST returns a deterministic slice-fence
+/// UnknownFailure and no row is written to the School or SchoolExtension
+/// tables.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Shape_Succeeds
+public class Given_A_Mssql_Profiled_Post_Multi_Table_Collection_Fence_Returns_Slice_Fence_Failure
 {
     private const string RequestBodyJson = """
         {
-          "schoolId": 255901
+          "schoolId": 255902
         }
         """;
 
@@ -674,15 +680,17 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
         EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
         AuthorizationSecurableInfo: []
     );
-    private static readonly DocumentUuid ExistingDocumentUuid = new(
-        Guid.Parse("99999999-9999-9999-9999-999999999999")
+    private static readonly DocumentUuid NewDocumentUuid = new(
+        Guid.Parse("99999999-9999-9999-9999-a00000099aaa")
     );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private UpdateResult _profiledPutResult = null!;
+    private UpsertResult _profiledPostResult = null!;
+    private int _schoolRowCountAfter;
+    private int _extensionRowCountAfter;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -701,10 +709,9 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = MssqlProfileRootTableOnlyMergeSupport.CreateServiceProvider();
 
-        var createResult = await ExecuteNonProfiledUpsertAsync();
-        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-
-        _profiledPutResult = await ExecuteProfiledPutAsync();
+        _profiledPostResult = await ExecuteProfiledPostAsync();
+        _schoolRowCountAfter = await CountRowsAsync("[edfi].[School]");
+        _extensionRowCountAfter = await CountRowsAsync("[sample].[SchoolExtension]");
     }
 
     [OneTimeTearDown]
@@ -721,13 +728,225 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
     }
 
     [Test]
-    public void It_returns_update_success() =>
-        _profiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    public void It_returns_a_slice_fence_unknown_failure()
+    {
+        var failure = _profiledPostResult.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+    }
+
+    [Test]
+    public void It_does_not_write_a_school_row() => _schoolRowCountAfter.Should().Be(0);
+
+    [Test]
+    public void It_does_not_write_a_school_extension_row() => _extensionRowCountAfter.Should().Be(0);
 
     private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
+        ]);
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private async Task<UpsertResult> ExecuteProfiledPostAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableCollectionFencePost",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
+        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$", []),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var extensionScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$._ext.sample", []),
+            Visibility: ProfileVisibilityKind.Hidden,
+            Creatable: false
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody.DeepClone(),
+                RootResourceCreatable: true,
+                RequestScopeStates: [rootScopeState, extensionScopeState],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "multi-table-collection-fence-profile-post",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
+                ProfileVisibilityKind.VisiblePresent,
+                []
+            )
+        );
+
+        var upsertRequest = new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId("mssql-profile-merge-multi-table-collection-fence-post"),
+            DocumentUuid: NewDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new MssqlProfileMergeAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileContext
+        );
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(upsertRequest);
+    }
+
+    private async Task<int> CountRowsAsync(string bracketedTableName)
+    {
+        var rows = await _database.QueryRowsAsync($"SELECT COUNT(1) AS [n] FROM {bracketedTableName};");
+        return Convert.ToInt32(rows[0]["n"], CultureInfo.InvariantCulture);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Fixture 9b: Multi-table plan, PUT existing with complete non-collection
+//  scope metadata is conservatively fenced by the collection-catalog rule
+//  (MSSQL).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// MSSQL parity of PG Fixture 9b: the School resource has a multi-table write
+/// plan, and this fixture emits complete non-collection scope metadata for an
+/// existing visible extension row. The profiled PUT omits the extension scope
+/// from the writable request body, marks it VisibleAbsent on the request side,
+/// and marks it VisiblePresent on the stored side. Slice 2 must fail
+/// deterministically before DML, leaving the stored SchoolExtension column
+/// value unchanged.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_A_Mssql_Profiled_Put_Multi_Table_Collection_Fence_Returns_Slice_Fence_Failure
+{
+    private const string SeedBodyJson = """
+        {
+          "schoolId": 255903,
+          "_ext": {
+            "sample": {
+              "campusCode": "SEEDED-CAMPUS-A"
+            }
+          }
+        }
+        """;
+
+    private const string PutBodyJson = """
+        {
+          "schoolId": 255903
+        }
+        """;
+
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+        AuthorizationSecurableInfo: []
+    );
+    private static readonly DocumentUuid ExistingDocumentUuid = new(
+        Guid.Parse("99999999-9999-9999-9999-a00000099bbb")
+    );
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpdateResult _profiledPutResult = null!;
+    private int _extensionRowCountBefore;
+    private int _extensionRowCountAfter;
+    private string? _campusCodeBefore;
+    private string? _campusCodeAfter;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            MssqlProfileRootTableOnlyMergeSupport.SchoolFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = MssqlProfileRootTableOnlyMergeSupport.CreateServiceProvider();
+
+        var seedResult = await ExecuteNonProfiledUpsertAsync();
+        seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        _extensionRowCountBefore = await CountSchoolExtensionRowsAsync();
+        _campusCodeBefore = await ReadCampusCodeAsync();
+        _extensionRowCountBefore.Should().Be(1);
+        _campusCodeBefore.Should().Be("SEEDED-CAMPUS-A");
+
+        _profiledPutResult = await ExecuteProfiledPutAsync();
+        _extensionRowCountAfter = await CountSchoolExtensionRowsAsync();
+        _campusCodeAfter = await ReadCampusCodeAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_a_slice_fence_unknown_failure()
+    {
+        var failure = _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+    }
+
+    [Test]
+    public void It_does_not_delete_the_school_extension_row() =>
+        _extensionRowCountAfter.Should().Be(_extensionRowCountBefore);
+
+    [Test]
+    public void It_does_not_overwrite_the_school_extension_column() =>
+        _campusCodeAfter.Should().Be(_campusCodeBefore);
+
+    private static DocumentInfo CreateSchoolDocumentInfo()
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255903"),
         ]);
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
@@ -748,7 +967,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableCollectionFence",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -757,9 +976,9 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: JsonNode.Parse(SeedBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-seed"),
+            TraceId: new TraceId("mssql-profile-merge-multi-table-collection-fence-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
@@ -779,33 +998,43 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    InstanceName: "MssqlProfileRootTableOnlyMergeMultiTableCollectionFence",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
             );
 
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
-        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+        var requestBody = JsonNode.Parse(PutBodyJson)!;
 
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
-        var rootScopeState = new RequestScopeState(
-            Address: new ScopeInstanceAddress("$", []),
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var rootRequest = new RequestScopeState(
+            Address: rootAddress,
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
+        );
+        var extensionRequest = new RequestScopeState(
+            Address: extensionAddress,
+            Visibility: ProfileVisibilityKind.VisibleAbsent,
+            Creatable: false
         );
         var profileContext = new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody.DeepClone(),
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState],
+                RequestScopeStates: [rootRequest, extensionRequest],
                 VisibleRequestCollectionItems: []
             ),
-            ProfileName: "multi-table-root-only-profile",
+            ProfileName: "multi-table-collection-fence-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
-                ProfileVisibilityKind.VisiblePresent,
-                []
+            StoredStateProjectionInvoker: new TwoNonCollectionScopesStoredStateProjectionInvoker(
+                secondScopeJsonScope: "$._ext.sample",
+                rootVisibility: ProfileVisibilityKind.VisiblePresent,
+                rootHiddenMemberPaths: [],
+                secondScopeVisibility: ProfileVisibilityKind.VisiblePresent,
+                secondScopeHiddenMemberPaths: []
             )
         );
 
@@ -815,7 +1044,7 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("mssql-profile-merge-multi-table-root-only-put"),
+            TraceId: new TraceId("mssql-profile-merge-multi-table-collection-fence-put"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new MssqlProfileMergeNoOpUpdateCascadeHandler(),
@@ -825,5 +1054,25 @@ public class Given_A_Mssql_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runt
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpdateDocumentById(updateRequest);
+    }
+
+    private async Task<int> CountSchoolExtensionRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync("SELECT COUNT(1) AS [n] FROM [sample].[SchoolExtension];");
+        return Convert.ToInt32(rows[0]["n"], CultureInfo.InvariantCulture);
+    }
+
+    private async Task<string?> ReadCampusCodeAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT sx.[CampusCode]
+            FROM [sample].[SchoolExtension] sx
+            INNER JOIN [dms].[Document] d ON d.[DocumentId] = sx.[DocumentId]
+            WHERE d.[DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", ExistingDocumentUuid.Value)
+        );
+        return rows.Count == 0 ? null : rows[0]["CampusCode"] as string;
     }
 }
