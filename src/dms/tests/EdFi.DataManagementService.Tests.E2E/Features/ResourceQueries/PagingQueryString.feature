@@ -12,7 +12,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | 4        | School 4          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
                   | 5        | School 5          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
 
-        @API-120
+        @API-120 @relational-backend
         Scenario: 01 Ensure clients can get information when filtering by limit and and a valid offset
              When a GET request is made to "/ed-fi/schools?offset=3&limit=2"
              Then it should respond with 200

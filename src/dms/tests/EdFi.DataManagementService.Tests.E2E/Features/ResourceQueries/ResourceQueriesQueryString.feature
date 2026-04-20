@@ -112,7 +112,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @API-129
+        @API-129 @relational-backend
         Scenario: 06 Ensure clients can GET information when querying by string parameter
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200
@@ -148,7 +148,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-131
+        @API-131 @relational-backend
         Scenario: 08 Ensure clients can GET information when querying with mixed case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIdentifier=Week+One"
              Then it should respond with 200
@@ -322,6 +322,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
+        @relational-backend
         Scenario: 17 Ensure clients can GET information when querying by value in a document reference
              When a GET request is made to "/ed-fi/academicWeeks?schoolId=2"
              Then it should respond with 200
