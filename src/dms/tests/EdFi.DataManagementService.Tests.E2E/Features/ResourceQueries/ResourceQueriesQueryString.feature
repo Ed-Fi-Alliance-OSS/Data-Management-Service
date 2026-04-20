@@ -1,10 +1,9 @@
+@reset-data-before-scenario
 Feature: Query String handling for GET requests for Resource Queries
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        Scenario: 00 Background
-            Given the system has these "schools"
+              And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
               And the system has these "academicweeks"
@@ -38,7 +37,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-124
+        @API-124 @relational-backend
         Scenario: 01.1 Ensure clients can GET information when querying by valid datetime ignoring time
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15T17:30:00.000000Z"
              Then it should respond with 200

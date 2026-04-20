@@ -1,10 +1,9 @@
+@reset-data-before-scenario
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        Scenario: 00 Background
-            Given the system has these "schools"
+              And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                                               |
                   | 1        | School 1          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
                   | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]   | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
