@@ -1,0 +1,26 @@
+{
+  "ConnectionStrings": {
+    "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+  },
+  "ConfigurationServiceSettings": {
+    "BaseUrl": "http://localhost:8081",
+    "ClientId": "CMSReadOnlyAccess",
+    "ClientSecret": "ValidClientSecret1234567890!Abcd",
+    "Scope": "edfi_admin_api/readonly_access"
+  },
+  "AppSettings": {
+    "UseApiSchemaPath": true,
+    "ApiSchemaPath": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema",
+    "DeployDatabaseOnStartup": false,
+    "AuthenticationService": "http://localhost:8081/connect/token"
+  },
+  "JwtAuthentication": {
+    "Authority": "http://localhost:8081",
+    "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration"
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug"
+    }
+  }
+}
