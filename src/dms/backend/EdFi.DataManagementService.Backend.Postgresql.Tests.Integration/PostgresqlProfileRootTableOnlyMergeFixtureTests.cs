@@ -108,10 +108,9 @@ file sealed class ProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateCascad
 }
 
 /// <summary>
-/// Test-configurable <see cref="IStoredStateProjectionInvoker"/> that emits two scope states:
-/// the root scope at <c>$</c> with caller-supplied visibility/hidden-member-paths, and an
-/// inlined sub-scope at <c>$.profileScope</c> with caller-supplied visibility/hidden-member-paths.
-/// Required for the ProfileRootOnlyMergeItem fixtures that exercise an inlined profileScope.
+/// Test-configurable <see cref="IStoredStateProjectionInvoker"/> that emits the root scope plus
+/// the inlined non-collection scopes used by the ProfileRootOnlyMergeItem fixture:
+/// <c>$.profileScope</c> and <c>$.studentReference</c>.
 /// </summary>
 internal sealed class ProfileRootOnlyFixtureProjectionInvoker : IStoredStateProjectionInvoker
 {
@@ -119,18 +118,27 @@ internal sealed class ProfileRootOnlyFixtureProjectionInvoker : IStoredStateProj
     private readonly System.Collections.Immutable.ImmutableArray<string> _rootHiddenMemberPaths;
     private readonly ProfileVisibilityKind _profileScopeVisibility;
     private readonly System.Collections.Immutable.ImmutableArray<string> _profileScopeHiddenMemberPaths;
+    private readonly bool _emitStudentReferenceScope;
+    private readonly ProfileVisibilityKind _studentReferenceVisibility;
+    private readonly System.Collections.Immutable.ImmutableArray<string> _studentReferenceHiddenMemberPaths;
 
     public ProfileRootOnlyFixtureProjectionInvoker(
         ProfileVisibilityKind rootVisibility,
         System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths,
         ProfileVisibilityKind profileScopeVisibility,
-        System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths
+        System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths,
+        bool emitStudentReferenceScope,
+        ProfileVisibilityKind studentReferenceVisibility,
+        System.Collections.Immutable.ImmutableArray<string> studentReferenceHiddenMemberPaths
     )
     {
         _rootVisibility = rootVisibility;
         _rootHiddenMemberPaths = rootHiddenMemberPaths;
         _profileScopeVisibility = profileScopeVisibility;
         _profileScopeHiddenMemberPaths = profileScopeHiddenMemberPaths;
+        _emitStudentReferenceScope = emitStudentReferenceScope;
+        _studentReferenceVisibility = studentReferenceVisibility;
+        _studentReferenceHiddenMemberPaths = studentReferenceHiddenMemberPaths;
     }
 
     public ProfileAppliedWriteContext ProjectStoredState(
@@ -141,22 +149,31 @@ internal sealed class ProfileRootOnlyFixtureProjectionInvoker : IStoredStateProj
     {
         var rootAddress = new ScopeInstanceAddress("$", []);
         var profileScopeAddress = new ScopeInstanceAddress("$.profileScope", []);
+        var storedScopeStates = new List<StoredScopeState>
+        {
+            new(Address: rootAddress, Visibility: _rootVisibility, HiddenMemberPaths: _rootHiddenMemberPaths),
+            new(
+                Address: profileScopeAddress,
+                Visibility: _profileScopeVisibility,
+                HiddenMemberPaths: _profileScopeHiddenMemberPaths
+            ),
+        };
+
+        if (_emitStudentReferenceScope)
+        {
+            storedScopeStates.Add(
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$.studentReference", []),
+                    Visibility: _studentReferenceVisibility,
+                    HiddenMemberPaths: _studentReferenceHiddenMemberPaths
+                )
+            );
+        }
+
         return new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: _rootVisibility,
-                    HiddenMemberPaths: _rootHiddenMemberPaths
-                ),
-                new StoredScopeState(
-                    Address: profileScopeAddress,
-                    Visibility: _profileScopeVisibility,
-                    HiddenMemberPaths: _profileScopeHiddenMemberPaths
-                ),
-            ],
+            StoredScopeStates: [.. storedScopeStates],
             VisibleStoredCollectionRows: []
         );
     }
@@ -186,10 +203,15 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         AuthorizationSecurableInfo: []
     );
 
-    public static readonly IReadOnlyList<(string JsonScope, ScopeKind Kind)> InlinedScopes =
-    [
-        ("$.profileScope", ScopeKind.NonCollection),
-    ];
+    private static readonly (string JsonScope, ScopeKind Kind) ProfileScopeInlinedScope = (
+        "$.profileScope",
+        ScopeKind.NonCollection
+    );
+
+    private static readonly (string JsonScope, ScopeKind Kind) StudentReferenceInlinedScope = (
+        "$.studentReference",
+        ScopeKind.NonCollection
+    );
 
     public static ServiceProvider CreateServiceProvider()
     {
@@ -237,24 +259,48 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths,
         ProfileVisibilityKind profileScopeVisibility,
         System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths,
+        ProfileVisibilityKind? studentReferenceRequestVisibility = null,
+        ProfileVisibilityKind? studentReferenceStoredVisibility = null,
+        System.Collections.Immutable.ImmutableArray<string> studentReferenceStoredHiddenMemberPaths = default,
         bool creatable = true,
         string profileName = "root-only-merge-profile"
     )
     {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, InlinedScopes);
-        RequestScopeState[] scopeStates =
-        [
-            new RequestScopeState(
-                Address: new ScopeInstanceAddress("$", []),
-                Visibility: rootVisibility,
-                Creatable: creatable
-            ),
-            new RequestScopeState(
+        var emitStudentReferenceScope =
+            studentReferenceRequestVisibility is not null
+            || studentReferenceStoredVisibility is not null
+            || (
+                !studentReferenceStoredHiddenMemberPaths.IsDefault
+                && !studentReferenceStoredHiddenMemberPaths.IsEmpty
+            );
+        var normalizedStudentReferenceHiddenMemberPaths = studentReferenceStoredHiddenMemberPaths.IsDefault
+            ? []
+            : studentReferenceStoredHiddenMemberPaths;
+        var additionalScopes = emitStudentReferenceScope
+            ? new[] { ProfileScopeInlinedScope, StudentReferenceInlinedScope }
+            : new[] { ProfileScopeInlinedScope };
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
+        var scopeStates = new List<RequestScopeState>
+        {
+            new(Address: new ScopeInstanceAddress("$", []), Visibility: rootVisibility, Creatable: creatable),
+            new(
                 Address: new ScopeInstanceAddress("$.profileScope", []),
                 Visibility: profileScopeVisibility,
                 Creatable: creatable
             ),
-        ];
+        };
+
+        if (emitStudentReferenceScope)
+        {
+            scopeStates.Add(
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$.studentReference", []),
+                    Visibility: studentReferenceRequestVisibility ?? ProfileVisibilityKind.VisiblePresent,
+                    Creatable: creatable
+                )
+            );
+        }
+
         return new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
@@ -268,7 +314,12 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
                 rootVisibility,
                 rootHiddenMemberPaths,
                 profileScopeVisibility,
-                profileScopeHiddenMemberPaths
+                profileScopeHiddenMemberPaths,
+                emitStudentReferenceScope,
+                studentReferenceStoredVisibility
+                    ?? studentReferenceRequestVisibility
+                    ?? ProfileVisibilityKind.VisiblePresent,
+                normalizedStudentReferenceHiddenMemberPaths
             )
         );
     }
@@ -1120,10 +1171,10 @@ public class Given_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndPropaga
 /// <summary>
 /// Same seed and request shape as
 /// <see cref="Given_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndPropagatedIdentity"/>,
-/// but the profile's hidden-member-path points at
-/// <c>studentReference.studentUniqueId</c> instead of <c>studentReference</c>. The FK and
-/// propagated identity columns must still both be preserved because they are governed by
-/// the same owning reference root.
+/// but the profile governs the dedicated inlined reference scope <c>$.studentReference</c>
+/// and preserves its stored <c>studentUniqueId</c> hidden member path while the request
+/// omits the reference scope. The FK and propagated identity columns must still both be
+/// preserved because they are governed by the same owning reference root.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -1249,9 +1300,12 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
             writePlan,
             writeBody.DeepClone(),
             rootVisibility: ProfileVisibilityKind.VisiblePresent,
-            rootHiddenMemberPaths: ["studentReference.studentUniqueId"],
+            rootHiddenMemberPaths: [],
             profileScopeVisibility: ProfileVisibilityKind.VisiblePresent,
-            profileScopeHiddenMemberPaths: []
+            profileScopeHiddenMemberPaths: [],
+            studentReferenceRequestVisibility: ProfileVisibilityKind.VisibleAbsent,
+            studentReferenceStoredVisibility: ProfileVisibilityKind.VisiblePresent,
+            studentReferenceStoredHiddenMemberPaths: ["studentUniqueId"]
         );
         var descriptorReferences = new[]
         {

@@ -293,6 +293,45 @@ public class Given_Classifier_with_document_reference_sub_reference_member_hidde
 }
 
 [TestFixture]
+public class Given_Classifier_with_inlined_document_reference_scope_hidden_member_path
+{
+    private ProfileRootTableBindingClassification _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        string[] derivedMemberPaths =
+        [
+            "$.schoolReference.schoolId",
+            "$.schoolReference.localEducationAgencyId",
+        ];
+        var plan = ProfileTestDoubles.BuildRootPlanWithDocumentReferenceBindings(
+            referenceMemberPath: "$.schoolReference",
+            derivedMemberPaths: derivedMemberPaths
+        );
+        var request = ProfileTestDoubles.CreateRequest(
+            scopeStates: ProfileTestDoubles.RequestVisiblePresentScope("$")
+        );
+        var context = ProfileTestDoubles.CreateContext(
+            request,
+            storedScopeStates: ProfileTestDoubles.StoredVisiblePresentScope("$.schoolReference", "schoolId")
+        );
+        _result = new ProfileRootTableBindingClassifier().Classify(plan, request, context);
+    }
+
+    [Test]
+    public void It_preserves_the_FK_binding() =>
+        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.HiddenPreserved);
+
+    [Test]
+    public void It_preserves_every_derived_binding()
+    {
+        _result.BindingsByIndex[1].Should().Be(RootBindingDisposition.HiddenPreserved);
+        _result.BindingsByIndex[2].Should().Be(RootBindingDisposition.HiddenPreserved);
+    }
+}
+
+[TestFixture]
 public class Given_Classifier_with_descriptor_reference_and_exact_match_hidden_path
 {
     private ProfileRootTableBindingClassification _result = null!;

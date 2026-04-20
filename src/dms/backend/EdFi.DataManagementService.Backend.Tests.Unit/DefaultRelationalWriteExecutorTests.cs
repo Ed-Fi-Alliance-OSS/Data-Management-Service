@@ -1794,8 +1794,12 @@ public class Given_Default_Relational_Write_Executor
             .Contain("TopLevelCollection");
     }
 
-    [Test]
-    public async Task It_maps_profile_merge_invariant_exception_to_slice_fence_failure()
+    [TestCase(RequiredSliceFamily.SeparateTableNonCollection)]
+    [TestCase(RequiredSliceFamily.TopLevelCollection)]
+    [TestCase(RequiredSliceFamily.NestedAndExtensionCollections)]
+    public async Task It_maps_profile_merge_invariant_exception_to_slice_fence_failure(
+        RequiredSliceFamily escapedFamily
+    )
     {
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
@@ -1805,8 +1809,8 @@ public class Given_Default_Relational_Write_Executor
 
         // Root-only catalog so the catalog fence does NOT fire; the executor reaches
         // the profile merge synthesizer, which is stubbed to throw. The catch in
-        // DefaultRelationalWriteExecutor maps the invariant exception to a
-        // deterministic SeparateTableNonCollection slice-fence UnknownFailure.
+        // DefaultRelationalWriteExecutor maps the invariant exception to the family
+        // carried by the exception.
         var profileContext = new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: writableBody,
@@ -1827,6 +1831,7 @@ public class Given_Default_Relational_Write_Executor
         );
 
         _profileMergeSynthesizer.ExceptionToThrow = new RelationalWriteProfileMergeInvariantException(
+            escapedFamily,
             "simulated upstream slice-fence drift"
         );
 
@@ -1855,7 +1860,7 @@ public class Given_Default_Relational_Write_Executor
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         var failure = upsertResult.Result.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
         failure.FailureMessage.Should().Contain("Profile-aware persist");
-        failure.FailureMessage.Should().Contain("SeparateTableNonCollection");
+        failure.FailureMessage.Should().Contain(escapedFamily.ToString());
     }
 
     [Test]
@@ -2080,12 +2085,11 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_synthesizes_profile_merge_for_multi_table_plan_when_runtime_shape_is_root_only()
+    public async Task It_fences_profiled_create_new_for_multi_table_plan_with_hidden_separate_table_scope()
     {
-        // A multi-table compiled plan (root + separate-table extension) can still classify as
-        // RootTableOnly when the non-root scope is present in the request contract but hidden.
-        // The profile merge synthesizer handles the root table; the persister leaves the
-        // extension table untouched because it is absent from the produced merge result.
+        // A multi-table compiled plan must not bypass Slice 2 just because the separate-table
+        // scope is hidden in the request contract. The fence should still classify it as
+        // SeparateTableNonCollection.
         var writableBody = JsonNode.Parse("""{"schoolId":255901}""")!;
         var rootPlan = CreateRootPlan();
         var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
@@ -2175,25 +2179,28 @@ public class Given_Default_Relational_Write_Executor
 
         _writeFlattener
             .FlattenCallCount.Should()
-            .Be(1, "the profile path must flatten once classification passes");
+            .Be(0, "the slice fence must reject hidden separate-table shapes before flatten");
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
-            .Be(1, "the profile synthesizer must run for root-only runtime shapes even on multi-table plans");
-        _profileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
-        _profileMergeSynthesizer.CapturedRequest!.WritePlan.Should().BeSameAs(resourceWritePlan);
+            .Be(0, "the profile synthesizer must not run when the slice fence rejects the request");
         _noProfileMergeSynthesizer
             .SynthesizeCallCount.Should()
             .Be(0, "the no-profile synthesizer must not run for profiled writes");
         _noProfilePersister
             .TryPersistCallCount.Should()
-            .Be(1, "the persister must receive the profile merge result");
-        _noProfilePersister.CapturedMergeResult.Should().BeSameAs(_profileMergeSynthesizer.ResultToReturn);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+            .Be(0, "the persister must not run when the slice fence rejects the request");
+        _readMaterializer
+            .MaterializeCallCount.Should()
+            .Be(0, "the materializer must not run for a fenced create-new request");
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
-        upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        upsertResult
+            .Result.Should()
+            .BeOfType<UpsertResult.UnknownFailure>()
+            .Which.FailureMessage.Should()
+            .Contain("SeparateTableNonCollection");
     }
 
     [Test]

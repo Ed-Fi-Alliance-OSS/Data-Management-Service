@@ -80,7 +80,9 @@ internal sealed record RelationalWriteProfileMergeRequest
             || !FlattenedWriteSet.RootRow.CollectionCandidates.IsEmpty
         )
         {
+            var escapedFamily = DetermineEscapedFamily(FlattenedWriteSet.RootRow);
             throw new RelationalWriteProfileMergeInvariantException(
+                escapedFamily,
                 $"{nameof(flattenedWriteSet)} contains non-root buffers "
                     + $"(RootExtensionRows={FlattenedWriteSet.RootRow.RootExtensionRows.Length}, "
                     + $"CollectionCandidates={FlattenedWriteSet.RootRow.CollectionCandidates.Length}) "
@@ -103,6 +105,27 @@ internal sealed record RelationalWriteProfileMergeRequest
     public ProfileAppliedWriteContext? ProfileAppliedContext { get; init; }
 
     public ResolvedReferenceSet ResolvedReferences { get; init; }
+
+    private static RequiredSliceFamily DetermineEscapedFamily(RootWriteRowBuffer rootRow)
+    {
+        if (!rootRow.RootExtensionRows.IsEmpty)
+        {
+            return RequiredSliceFamily.SeparateTableNonCollection;
+        }
+
+        foreach (var collectionCandidate in rootRow.CollectionCandidates)
+        {
+            if (
+                !collectionCandidate.AttachedAlignedScopeData.IsEmpty
+                || !collectionCandidate.CollectionCandidates.IsEmpty
+            )
+            {
+                return RequiredSliceFamily.NestedAndExtensionCollections;
+            }
+        }
+
+        return RequiredSliceFamily.TopLevelCollection;
+    }
 }
 
 internal interface IRelationalWriteProfileMergeSynthesizer
@@ -218,6 +241,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             WritableRequestBody: request.WritableRequestBody,
             CurrentRootRowByColumnName: currentRootRowByColumnName,
             ResolvedReferenceLookups: resolvedReferenceLookups,
+            DocumentReferenceBindings: request.WritePlan.Model.DocumentReferenceBindings,
             ProfileRequest: request.ProfileRequest,
             ProfileAppliedContext: request.ProfileAppliedContext
         );

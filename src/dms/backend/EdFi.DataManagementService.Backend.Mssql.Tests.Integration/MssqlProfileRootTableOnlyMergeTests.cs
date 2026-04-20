@@ -655,9 +655,11 @@ public class Given_A_Mssql_Profiled_Post_As_Update_With_Hidden_Inlined_Preservat
 /// MSSQL parity of PG Fixture 9a: the School catalog contains collection
 /// scopes, Slice 2 has no completeness marker for them, so the conservative
 /// fence refuses the merge even when the profile emits complete non-collection
-/// scope metadata. The profiled POST returns a deterministic slice-fence
-/// UnknownFailure and no row is written to the School or SchoolExtension
-/// tables.
+/// scope metadata. The profiled POST still carries a hidden separate-table
+/// extension scope, so this fixture proves Slice 2 does not fall through to a
+/// root-only profiled write. The profiled POST returns a deterministic
+/// slice-fence UnknownFailure and no row is written to the School or
+/// SchoolExtension tables.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -732,6 +734,13 @@ public class Given_A_Mssql_Profiled_Post_Multi_Table_Collection_Fence_Returns_Sl
     {
         var failure = _profiledPostResult.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
         failure.FailureMessage.Should().Contain("Profile-aware persist");
+    }
+
+    [Test]
+    public void It_does_not_fall_through_to_RootTableOnly()
+    {
+        var failure = _profiledPostResult.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().NotContain("RootTableOnly");
     }
 
     [Test]

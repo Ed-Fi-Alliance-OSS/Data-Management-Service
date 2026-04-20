@@ -371,7 +371,7 @@ public class Given_ProfileSliceFenceClassifier_with_nested_extension_child_colle
 }
 
 [TestFixture]
-public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_request
+public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_separate_table_in_request_remains_fenced
 {
     private RequiredSliceFamily _result;
 
@@ -394,9 +394,9 @@ public class Given_ProfileSliceFenceClassifier_request_root_only_with_hidden_sep
     }
 
     [Test]
-    public void It_returns_RootTableOnly()
+    public void It_returns_SeparateTableNonCollection()
     {
-        _result.Should().Be(RequiredSliceFamily.RootTableOnly);
+        _result.Should().Be(RequiredSliceFamily.SeparateTableNonCollection);
     }
 }
 

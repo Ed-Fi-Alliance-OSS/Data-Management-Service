@@ -9,9 +9,9 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// Thrown by <see cref="RelationalWriteProfileMergeRequest"/> only for the
 /// Slice 2 shape-drift case: the flattener produced a non-root buffer
 /// (RootExtensionRows or CollectionCandidates) even though upstream slice
-/// fencing classified the shape as root-table-only. The executor catches
-/// this exception and maps it to a deterministic slice-fence failure so a
-/// fence regression does not surface as an unhandled 500.
+/// fencing classified the shape as root-table-only. The exception carries
+/// the family that escaped so the executor can surface the correct slice-fence
+/// failure instead of collapsing every invariant into the same family.
 ///
 /// Other constructor preconditions (root-table mismatch, request-instance
 /// mismatch, current-state/context pairing) are caller-wiring bugs and stay
@@ -19,9 +19,21 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </summary>
 public sealed class RelationalWriteProfileMergeInvariantException : Exception
 {
-    public RelationalWriteProfileMergeInvariantException(string message)
-        : base(message) { }
+    public RelationalWriteProfileMergeInvariantException(RequiredSliceFamily escapedFamily, string message)
+        : base(message)
+    {
+        EscapedFamily = escapedFamily;
+    }
 
-    public RelationalWriteProfileMergeInvariantException(string message, Exception inner)
-        : base(message, inner) { }
+    public RelationalWriteProfileMergeInvariantException(
+        RequiredSliceFamily escapedFamily,
+        string message,
+        Exception inner
+    )
+        : base(message, inner)
+    {
+        EscapedFamily = escapedFamily;
+    }
+
+    public RequiredSliceFamily EscapedFamily { get; }
 }

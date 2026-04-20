@@ -68,8 +68,9 @@ file sealed class MssqlProfileRootOnlyFixtureNoOpUpdateCascadeHandler : IUpdateC
 }
 
 /// <summary>
-/// MSSQL-flavored projection invoker; emits root scope plus an inlined
-/// <c>$.profileScope</c> scope with caller-supplied visibility/hidden-member-paths.
+/// MSSQL-flavored projection invoker; emits the root scope plus the inlined
+/// non-collection scopes used by the ProfileRootOnlyMergeItem fixture:
+/// <c>$.profileScope</c> and <c>$.studentReference</c>.
 /// </summary>
 internal sealed class MssqlProfileRootOnlyFixtureProjectionInvoker : IStoredStateProjectionInvoker
 {
@@ -77,18 +78,27 @@ internal sealed class MssqlProfileRootOnlyFixtureProjectionInvoker : IStoredStat
     private readonly System.Collections.Immutable.ImmutableArray<string> _rootHiddenMemberPaths;
     private readonly ProfileVisibilityKind _profileScopeVisibility;
     private readonly System.Collections.Immutable.ImmutableArray<string> _profileScopeHiddenMemberPaths;
+    private readonly bool _emitStudentReferenceScope;
+    private readonly ProfileVisibilityKind _studentReferenceVisibility;
+    private readonly System.Collections.Immutable.ImmutableArray<string> _studentReferenceHiddenMemberPaths;
 
     public MssqlProfileRootOnlyFixtureProjectionInvoker(
         ProfileVisibilityKind rootVisibility,
         System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths,
         ProfileVisibilityKind profileScopeVisibility,
-        System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths
+        System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths,
+        bool emitStudentReferenceScope,
+        ProfileVisibilityKind studentReferenceVisibility,
+        System.Collections.Immutable.ImmutableArray<string> studentReferenceHiddenMemberPaths
     )
     {
         _rootVisibility = rootVisibility;
         _rootHiddenMemberPaths = rootHiddenMemberPaths;
         _profileScopeVisibility = profileScopeVisibility;
         _profileScopeHiddenMemberPaths = profileScopeHiddenMemberPaths;
+        _emitStudentReferenceScope = emitStudentReferenceScope;
+        _studentReferenceVisibility = studentReferenceVisibility;
+        _studentReferenceHiddenMemberPaths = studentReferenceHiddenMemberPaths;
     }
 
     public ProfileAppliedWriteContext ProjectStoredState(
@@ -99,22 +109,31 @@ internal sealed class MssqlProfileRootOnlyFixtureProjectionInvoker : IStoredStat
     {
         var rootAddress = new ScopeInstanceAddress("$", []);
         var profileScopeAddress = new ScopeInstanceAddress("$.profileScope", []);
+        var storedScopeStates = new List<StoredScopeState>
+        {
+            new(Address: rootAddress, Visibility: _rootVisibility, HiddenMemberPaths: _rootHiddenMemberPaths),
+            new(
+                Address: profileScopeAddress,
+                Visibility: _profileScopeVisibility,
+                HiddenMemberPaths: _profileScopeHiddenMemberPaths
+            ),
+        };
+
+        if (_emitStudentReferenceScope)
+        {
+            storedScopeStates.Add(
+                new StoredScopeState(
+                    Address: new ScopeInstanceAddress("$.studentReference", []),
+                    Visibility: _studentReferenceVisibility,
+                    HiddenMemberPaths: _studentReferenceHiddenMemberPaths
+                )
+            );
+        }
+
         return new ProfileAppliedWriteContext(
             Request: request,
             VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: rootAddress,
-                    Visibility: _rootVisibility,
-                    HiddenMemberPaths: _rootHiddenMemberPaths
-                ),
-                new StoredScopeState(
-                    Address: profileScopeAddress,
-                    Visibility: _profileScopeVisibility,
-                    HiddenMemberPaths: _profileScopeHiddenMemberPaths
-                ),
-            ],
+            StoredScopeStates: [.. storedScopeStates],
             VisibleStoredCollectionRows: []
         );
     }
@@ -140,10 +159,15 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         AuthorizationSecurableInfo: []
     );
 
-    public static readonly IReadOnlyList<(string JsonScope, ScopeKind Kind)> InlinedScopes =
-    [
-        ("$.profileScope", ScopeKind.NonCollection),
-    ];
+    private static readonly (string JsonScope, ScopeKind Kind) ProfileScopeInlinedScope = (
+        "$.profileScope",
+        ScopeKind.NonCollection
+    );
+
+    private static readonly (string JsonScope, ScopeKind Kind) StudentReferenceInlinedScope = (
+        "$.studentReference",
+        ScopeKind.NonCollection
+    );
 
     public static ServiceProvider CreateServiceProvider()
     {
@@ -187,24 +211,48 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         System.Collections.Immutable.ImmutableArray<string> rootHiddenMemberPaths,
         ProfileVisibilityKind profileScopeVisibility,
         System.Collections.Immutable.ImmutableArray<string> profileScopeHiddenMemberPaths,
+        ProfileVisibilityKind? studentReferenceRequestVisibility = null,
+        ProfileVisibilityKind? studentReferenceStoredVisibility = null,
+        System.Collections.Immutable.ImmutableArray<string> studentReferenceStoredHiddenMemberPaths = default,
         bool creatable = true,
         string profileName = "root-only-merge-profile"
     )
     {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, InlinedScopes);
-        RequestScopeState[] scopeStates =
-        [
-            new RequestScopeState(
-                Address: new ScopeInstanceAddress("$", []),
-                Visibility: rootVisibility,
-                Creatable: creatable
-            ),
-            new RequestScopeState(
+        var emitStudentReferenceScope =
+            studentReferenceRequestVisibility is not null
+            || studentReferenceStoredVisibility is not null
+            || (
+                !studentReferenceStoredHiddenMemberPaths.IsDefault
+                && !studentReferenceStoredHiddenMemberPaths.IsEmpty
+            );
+        var normalizedStudentReferenceHiddenMemberPaths = studentReferenceStoredHiddenMemberPaths.IsDefault
+            ? []
+            : studentReferenceStoredHiddenMemberPaths;
+        var additionalScopes = emitStudentReferenceScope
+            ? new[] { ProfileScopeInlinedScope, StudentReferenceInlinedScope }
+            : new[] { ProfileScopeInlinedScope };
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan, additionalScopes);
+        var scopeStates = new List<RequestScopeState>
+        {
+            new(Address: new ScopeInstanceAddress("$", []), Visibility: rootVisibility, Creatable: creatable),
+            new(
                 Address: new ScopeInstanceAddress("$.profileScope", []),
                 Visibility: profileScopeVisibility,
                 Creatable: creatable
             ),
-        ];
+        };
+
+        if (emitStudentReferenceScope)
+        {
+            scopeStates.Add(
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$.studentReference", []),
+                    Visibility: studentReferenceRequestVisibility ?? ProfileVisibilityKind.VisiblePresent,
+                    Creatable: creatable
+                )
+            );
+        }
+
         return new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody,
@@ -218,7 +266,12 @@ internal static class MssqlProfileRootOnlyFixtureSupport
                 rootVisibility,
                 rootHiddenMemberPaths,
                 profileScopeVisibility,
-                profileScopeHiddenMemberPaths
+                profileScopeHiddenMemberPaths,
+                emitStudentReferenceScope,
+                studentReferenceStoredVisibility
+                    ?? studentReferenceRequestVisibility
+                    ?? ProfileVisibilityKind.VisiblePresent,
+                normalizedStudentReferenceHiddenMemberPaths
             )
         );
     }
@@ -1037,10 +1090,12 @@ public class Given_Mssql_ProfiledRootOnly_HiddenStudentReference_PreservesFKAndP
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture C.1: Hidden *sub-reference* member path preserves FK + propagated identity.
-//  MSSQL mirror of the pgsql Fixture C.1. Regression for profile hidden-reference
-//  governance (profiles.md:782): hiding a sub-reference path must preserve the FK
-//  column and every propagated identity binding as a single reference-derived group.
+//  Fixture C.1: Hidden member path under the dedicated inlined reference scope
+//  preserves FK + propagated identity. MSSQL mirror of the pgsql Fixture C.1.
+//  Regression for profile hidden-reference governance (profiles.md:782):
+//  governing $.studentReference.studentUniqueId through the $.studentReference
+//  scope must preserve the FK column and every propagated identity binding as a
+//  single reference-derived group.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -1173,9 +1228,12 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             writePlan,
             writeBody.DeepClone(),
             rootVisibility: ProfileVisibilityKind.VisiblePresent,
-            rootHiddenMemberPaths: ["studentReference.studentUniqueId"],
+            rootHiddenMemberPaths: [],
             profileScopeVisibility: ProfileVisibilityKind.VisiblePresent,
-            profileScopeHiddenMemberPaths: []
+            profileScopeHiddenMemberPaths: [],
+            studentReferenceRequestVisibility: ProfileVisibilityKind.VisibleAbsent,
+            studentReferenceStoredVisibility: ProfileVisibilityKind.VisiblePresent,
+            studentReferenceStoredHiddenMemberPaths: ["studentUniqueId"]
         );
         var descriptorReferences = new[]
         {

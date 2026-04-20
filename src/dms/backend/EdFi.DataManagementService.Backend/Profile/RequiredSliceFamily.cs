@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// Ordered by landing sequence so <c>max(requiredFamilies)</c> is unambiguous.
 /// Root creatability rejection is a terminal outcome, not a family.
 /// </summary>
-internal enum RequiredSliceFamily
+public enum RequiredSliceFamily
 {
     RootTableOnly = 0,
     SeparateTableNonCollection = 1,

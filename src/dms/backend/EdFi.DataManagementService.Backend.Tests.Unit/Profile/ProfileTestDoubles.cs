@@ -184,7 +184,14 @@ internal static class ProfileTestDoubles
             Table: rootModel.Table,
             FkColumn: fkColumn.ColumnName,
             TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
-            IdentityBindings: []
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: Path("$.schoolId"),
+                    ReferenceJsonPath: Path(referenceMemberPath + ".schoolId"),
+                    Column: memberColumn.ColumnName
+                ),
+            ]
         );
 
         return (
@@ -323,13 +330,26 @@ internal static class ProfileTestDoubles
         var allBindings = new List<WriteColumnBinding> { fkBinding };
         allBindings.AddRange(derivedBindings);
 
+        var identityBindings = derivedMemberPaths
+            .Select(
+                (p, i) =>
+                    new ReferenceIdentityBinding(
+                        IdentityJsonPath: Path(
+                            "$." + derivedMemberPaths[i][(referenceMemberPath.Length + 1)..]
+                        ),
+                        ReferenceJsonPath: Path(p),
+                        Column: derivedColumns[i].ColumnName
+                    )
+            )
+            .ToArray();
+
         var documentReferenceBinding = new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: referenceObjectPath,
             Table: rootModel.Table,
             FkColumn: fkColumn.ColumnName,
             TargetResource: new QualifiedResourceName("Ed-Fi", "Target"),
-            IdentityBindings: []
+            IdentityBindings: identityBindings
         );
 
         var rootPlan = RootPlan(rootModel, allBindings);
@@ -569,6 +589,7 @@ internal static class ProfileTestDoubles
             WritableRequestBody: writableBody ?? new JsonObject(),
             CurrentRootRowByColumnName: currentRootRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
             ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(writePlan),
+            DocumentReferenceBindings: writePlan.Model.DocumentReferenceBindings,
             ProfileRequest: profileRequest ?? CreateRequest(),
             ProfileAppliedContext: profileAppliedContext
         );

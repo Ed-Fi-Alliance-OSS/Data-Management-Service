@@ -33,6 +33,7 @@ internal sealed record ProfileRootKeyUnificationContext(
     JsonNode WritableRequestBody,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRootRowByColumnName,
     FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups,
+    IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     ProfileAppliedWriteRequest ProfileRequest,
     ProfileAppliedWriteContext? ProfileAppliedContext
 );
@@ -229,14 +230,12 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             ? ProfileMemberGovernanceRules.LookupStoredScope(context.ProfileAppliedContext, containingScope)
             : null;
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
-        var strippedMemberPath = ProfileScopeMatching.StripScopePrefix(memberPath, containingScope);
-        // For reference-derived members the governing path is the owning reference root, not the
-        // member's own path — any hidden sub-reference path preserves the whole reference family.
+        var strippedMemberPath = ProfileScopeMatching.NormalizeGovernancePath(memberPath, containingScope);
         var governingPath = member switch
         {
             KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
-                ProfileScopeMatching.StripScopePrefix(
-                    refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                ProfileScopeMatching.NormalizeReferenceGovernancePath(
+                    context.DocumentReferenceBindings[refDerived.ReferenceSource.BindingIndex],
                     containingScope
                 ),
             _ => strippedMemberPath,

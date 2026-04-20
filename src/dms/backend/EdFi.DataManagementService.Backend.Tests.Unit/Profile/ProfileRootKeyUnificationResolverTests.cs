@@ -652,3 +652,58 @@ public class Given_Resolver_with_reference_derived_member_and_hidden_sibling_sub
         return row;
     }
 }
+
+[TestFixture]
+public class Given_Resolver_with_inlined_reference_scope_hidden_member_path
+{
+    private FlattenedWriteValue[] _row = null!;
+    private int _canonicalIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _, memberColumnName) = BuildRootPlanWithReferenceDerivedKeyUnificationMember(
+            referenceMemberPath: "$.schoolReference",
+            derivedMemberPath: "$.schoolReference.localEducationAgencyId"
+        );
+        _canonicalIndex = canonicalIdx;
+
+        var request = CreateRequest(scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(
+            request,
+            storedScopeStates: StoredVisiblePresentScope("$.schoolReference", "schoolId")
+        );
+
+        var currentRow = new Dictionary<DbColumnName, object?> { [memberColumnName] = 777 };
+
+        var context = BuildResolverContext(
+            plan,
+            currentRootRowByColumnName: currentRow,
+            profileRequest: request,
+            profileAppliedContext: appliedContext
+        );
+
+        _row = NewInitialRow(plan);
+        var resolverOwned = ImmutableHashSet.Create(_canonicalIndex);
+        new ProfileRootKeyUnificationResolver().Resolve(
+            plan.TablePlansInDependencyOrder[0],
+            context,
+            _row,
+            resolverOwned
+        );
+    }
+
+    [Test]
+    public void It_writes_canonical_from_stored_hidden_inlined_reference_value() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(777);
+
+    private static FlattenedWriteValue[] NewInitialRow(ResourceWritePlan plan)
+    {
+        var row = new FlattenedWriteValue[plan.TablePlansInDependencyOrder[0].ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+        return row;
+    }
+}

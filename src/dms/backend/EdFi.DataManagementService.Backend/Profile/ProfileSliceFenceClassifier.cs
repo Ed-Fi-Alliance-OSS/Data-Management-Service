@@ -15,7 +15,8 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// <remarks>
 /// Visibility rule for scope-state streams:
 /// <see cref="ProfileVisibilityKind.Hidden"/> scope-state metadata is preserve-only
-/// and does not escalate; <see cref="ProfileVisibilityKind.VisiblePresent"/> and
+/// except for separate-table non-collection scopes, which remain fenced even when
+/// hidden or request-absent; <see cref="ProfileVisibilityKind.VisiblePresent"/> and
 /// <see cref="ProfileVisibilityKind.VisibleAbsent"/> both escalate by topology.
 /// Row streams (<c>VisibleRequestCollectionItems</c>, <c>VisibleStoredCollectionRows</c>)
 /// are visible-only by contract and continue to escalate unconditionally.
@@ -35,11 +36,15 @@ internal static class ProfileSliceFenceClassifier
 
         foreach (var scopeState in request.RequestScopeStates)
         {
-            if (scopeState.Visibility == ProfileVisibilityKind.Hidden)
+            var family = ToFamily(topologyIndex.GetTopology(scopeState.Address.JsonScope));
+
+            if (
+                scopeState.Visibility == ProfileVisibilityKind.Hidden
+                && family != RequiredSliceFamily.SeparateTableNonCollection
+            )
             {
                 continue;
             }
-            var family = ToFamily(topologyIndex.GetTopology(scopeState.Address.JsonScope));
             if (family > max)
             {
                 max = family;

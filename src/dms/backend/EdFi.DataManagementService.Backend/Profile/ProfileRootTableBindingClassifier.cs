@@ -128,11 +128,13 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                 var governingPath = member switch
                 {
                     KeyUnificationMemberWritePlan.ReferenceDerivedMember refDerived =>
-                        ProfileScopeMatching.StripScopePrefix(
-                            refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
+                        ProfileScopeMatching.NormalizeReferenceGovernancePath(
+                            writePlan.Model.DocumentReferenceBindings[
+                                refDerived.ReferenceSource.BindingIndex
+                            ],
                             containingScope
                         ),
-                    _ => ProfileScopeMatching.StripScopePrefix(memberPathAbsolute, containingScope),
+                    _ => ProfileScopeMatching.NormalizeGovernancePath(memberPathAbsolute, containingScope),
                 };
 
                 if (!bindingsByContainingScope.TryGetValue(containingScope, out var bindingsUnderScope))
@@ -199,7 +201,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         }
 
         var bindingPath = ResolveBindingRootRelativePath(writePlan, binding, bindingIndex, rootTable);
-        var governingPathAbsolute = ResolveBindingGoverningPath(writePlan, binding, bindingIndex, rootTable);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
         var containingScope = ProfileScopeMatching.TryMatchLongestScope(bindingPath, candidateScopes);
@@ -208,7 +209,13 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             return RootBindingDisposition.VisibleWritable;
         }
 
-        var governingPath = ProfileScopeMatching.StripScopePrefix(governingPathAbsolute, containingScope);
+        var governingPath = ResolveBindingGoverningPath(
+            writePlan,
+            binding,
+            bindingIndex,
+            rootTable,
+            containingScope
+        );
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
         // Record this binding under its containing scope so the post-pass drift check can
@@ -335,31 +342,38 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         };
 
     /// <summary>
-    /// Absolute JSONPath used to match the binding against profile <c>HiddenMemberPaths</c>.
-    /// Equals <see cref="ResolveBindingRootRelativePath"/> for scalar/descriptor bindings; for
-    /// document-reference and reference-derived bindings it is the owning reference root
-    /// (<c>DocumentReferenceBinding.ReferenceObjectPath</c> / <c>ReferenceDerivedValueSourceMetadata.ReferenceObjectPath</c>),
-    /// so a single hidden sub-reference path preserves the whole reference-derived storage family.
+    /// Scope-relative path used to match the binding against profile <c>HiddenMemberPaths</c>.
+    /// Equals the binding member path for scalar/descriptor bindings; for reference-rooted
+    /// bindings it resolves to the shared governing reference path for the owning site within
+    /// the containing scope.
     /// </summary>
     private static string ResolveBindingGoverningPath(
         ResourceWritePlan writePlan,
         WriteColumnBinding binding,
         int bindingIndex,
-        TableWritePlan rootTable
+        TableWritePlan rootTable,
+        string containingScope
     ) =>
         binding.Source switch
         {
-            WriteValueSource.Scalar scalar => scalar.RelativePath.Canonical,
-            WriteValueSource.DescriptorReference descriptor => descriptor.RelativePath.Canonical,
-            WriteValueSource.DocumentReference documentReference => writePlan
-                .Model
-                .DocumentReferenceBindings[documentReference.BindingIndex]
-                .ReferenceObjectPath
-                .Canonical,
-            WriteValueSource.ReferenceDerived referenceDerived => referenceDerived
-                .ReferenceSource
-                .ReferenceObjectPath
-                .Canonical,
+            WriteValueSource.Scalar scalar => ProfileScopeMatching.NormalizeGovernancePath(
+                scalar.RelativePath.Canonical,
+                containingScope
+            ),
+            WriteValueSource.DescriptorReference descriptor => ProfileScopeMatching.NormalizeGovernancePath(
+                descriptor.RelativePath.Canonical,
+                containingScope
+            ),
+            WriteValueSource.DocumentReference documentReference =>
+                ProfileScopeMatching.NormalizeReferenceGovernancePath(
+                    writePlan.Model.DocumentReferenceBindings[documentReference.BindingIndex],
+                    containingScope
+                ),
+            WriteValueSource.ReferenceDerived referenceDerived =>
+                ProfileScopeMatching.NormalizeReferenceGovernancePath(
+                    writePlan.Model.DocumentReferenceBindings[referenceDerived.ReferenceSource.BindingIndex],
+                    containingScope
+                ),
             _ => throw new InvalidOperationException(
                 $"Root-table binding at index {bindingIndex} on table '{FormatTable(rootTable)}' "
                     + $"has a WriteValueSource kind '{binding.Source.GetType().Name}' that the classifier "

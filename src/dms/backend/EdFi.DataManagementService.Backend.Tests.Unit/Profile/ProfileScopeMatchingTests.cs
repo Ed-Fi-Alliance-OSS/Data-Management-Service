@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using FluentAssertions;
 using NUnit.Framework;
@@ -122,4 +123,60 @@ public class Given_ProfileScopeMatching_stripping_scope_prefixes
             )
             .Should()
             .BeEmpty();
+}
+
+[TestFixture]
+public class Given_ProfileScopeMatching_normalizing_governance_paths
+{
+    [Test]
+    public void It_returns_scope_relative_path_for_descendant_bindings() =>
+        ProfileScopeMatching
+            .NormalizeGovernancePath(
+                "$.studentEducationOrganizationAssociation.schoolReference.schoolId",
+                "$.studentEducationOrganizationAssociation.schoolReference"
+            )
+            .Should()
+            .Be("schoolId");
+
+    [Test]
+    public void It_keeps_inlined_reference_scope_relative_paths_non_empty() =>
+        ProfileScopeMatching
+            .NormalizeGovernancePath("$.schoolReference", "$.schoolReference")
+            .Should()
+            .Be("schoolReference");
+}
+
+[TestFixture]
+public class Given_ProfileScopeMatching_normalizing_reference_governance_paths
+{
+    [Test]
+    public void It_returns_the_reference_root_for_root_scope() =>
+        ProfileScopeMatching
+            .NormalizeReferenceGovernancePath(BuildDocumentReferenceBinding(), "$")
+            .Should()
+            .Be("schoolReference");
+
+    [Test]
+    public void It_returns_the_scope_relative_reference_identity_path_for_inlined_scope() =>
+        ProfileScopeMatching
+            .NormalizeReferenceGovernancePath(BuildDocumentReferenceBinding(), "$.schoolReference")
+            .Should()
+            .Be("schoolId");
+
+    private static DocumentReferenceBinding BuildDocumentReferenceBinding() =>
+        new(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: new JsonPathExpression("$.schoolReference", []),
+            Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
+            FkColumn: new DbColumnName("School_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    IdentityJsonPath: new JsonPathExpression("$.schoolId", []),
+                    ReferenceJsonPath: new JsonPathExpression("$.schoolReference.schoolId", []),
+                    Column: new DbColumnName("SchoolId")
+                ),
+            ]
+        );
 }

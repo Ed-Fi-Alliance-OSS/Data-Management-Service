@@ -266,11 +266,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                     return BuildSliceFenceResult(request.OperationKind, requiredFamily);
                 }
 
-                // Slice-2 classification passed: flatten + profile synthesize. The profile merge
-                // synthesizer itself is root-only; non-root tables absent from its merge result are
-                // left untouched by the persister, which is the correct behavior for Slice 2 shapes
-                // whose runtime semantics are confined to the root table (e.g. hidden separate-table
-                // scopes on an existing document).
+                // Slice-2 classification passed: flatten + profile synthesize. The fence has
+                // already rejected any profiled separate-table or collection shape that would leak
+                // beyond the root table, so the synthesizer can assume the merge input is truly
+                // root-only.
                 var profileFlattenedWriteSet = _writeFlattener.Flatten(
                     new FlatteningInput(
                         executionRequest.OperationKind,
@@ -379,13 +378,10 @@ internal sealed class DefaultRelationalWriteExecutor(
                 committedResponse
             );
         }
-        catch (RelationalWriteProfileMergeInvariantException)
+        catch (RelationalWriteProfileMergeInvariantException ex)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return BuildSliceFenceResult(
-                request.OperationKind,
-                RequiredSliceFamily.SeparateTableNonCollection
-            );
+            return BuildSliceFenceResult(request.OperationKind, ex.EscapedFamily);
         }
         catch (RelationalWriteRequestValidationException ex)
         {

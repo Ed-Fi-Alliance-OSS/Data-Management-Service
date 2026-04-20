@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Profile;
@@ -64,4 +65,31 @@ internal static class ProfileScopeMatching
 
         return bindingPath[(scope.Length + 1)..];
     }
+
+    internal static string NormalizeGovernancePath(string bindingPath, string scope)
+    {
+        var strippedPath = StripScopePrefix(bindingPath, scope);
+        if (strippedPath.Length > 0)
+        {
+            return strippedPath;
+        }
+
+        if (scope == "$")
+        {
+            return string.Empty;
+        }
+
+        return scope[2..];
+    }
+
+    internal static string NormalizeReferenceGovernancePath(
+        DocumentReferenceBinding documentReferenceBinding,
+        string containingScope
+    ) =>
+        NormalizeGovernancePath(
+            containingScope == "$" || documentReferenceBinding.IdentityBindings.Count == 0
+                ? documentReferenceBinding.ReferenceObjectPath.Canonical
+                : documentReferenceBinding.IdentityBindings[0].ReferenceJsonPath.Canonical,
+            containingScope
+        );
 }
