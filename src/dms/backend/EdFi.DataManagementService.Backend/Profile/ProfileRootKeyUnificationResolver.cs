@@ -31,7 +31,6 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </remarks>
 internal sealed record ProfileRootKeyUnificationContext(
     JsonNode WritableRequestBody,
-    RelationalWriteCurrentState? CurrentState,
     IReadOnlyDictionary<DbColumnName, object?> CurrentRootRowByColumnName,
     FlatteningResolvedReferenceLookupSet ResolvedReferenceLookups,
     ProfileAppliedWriteRequest ProfileRequest,

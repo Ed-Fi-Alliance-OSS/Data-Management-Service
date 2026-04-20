@@ -77,11 +77,11 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             profileAppliedContext
         );
 
-        // Records the (memberPath, governingPath, matchKind) inventory of every ordinary
-        // binding that resolved to a profile-governed containing scope. `memberPath` is the
-        // binding's own scope-relative path; `governingPath` is the path used for hidden-path
-        // matching — equal to `memberPath` for scalar/descriptor, and the owning document-
-        // reference root for reference-sourced bindings. Drives the post-pass drift check.
+        // Records the (governingPath, matchKind) inventory of every ordinary binding that
+        // resolved to a profile-governed containing scope. `governingPath` is the path used
+        // for hidden-path matching — the binding's own scope-relative path for scalar/
+        // descriptor bindings, and the owning document-reference root for reference-sourced
+        // bindings. Drives the post-pass drift check.
         var bindingsByContainingScope = new Dictionary<string, List<GovernedBindingEntry>>(
             StringComparer.Ordinal
         );
@@ -124,10 +124,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                 {
                     continue;
                 }
-                var strippedMemberPath = ProfileScopeMatching.StripScopePrefix(
-                    memberPathAbsolute,
-                    containingScope
-                );
                 var matchKind = ProfileMemberGovernanceRules.MatchKindFor(member);
                 var governingPath = member switch
                 {
@@ -136,7 +132,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                             refDerived.ReferenceSource.ReferenceObjectPath.Canonical,
                             containingScope
                         ),
-                    _ => strippedMemberPath,
+                    _ => ProfileScopeMatching.StripScopePrefix(memberPathAbsolute, containingScope),
                 };
 
                 if (!bindingsByContainingScope.TryGetValue(containingScope, out var bindingsUnderScope))
@@ -144,9 +140,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
                     bindingsUnderScope = [];
                     bindingsByContainingScope[containingScope] = bindingsUnderScope;
                 }
-                bindingsUnderScope.Add(
-                    new GovernedBindingEntry(strippedMemberPath, governingPath, matchKind)
-                );
+                bindingsUnderScope.Add(new GovernedBindingEntry(governingPath, matchKind));
             }
         }
 
@@ -214,7 +208,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             return RootBindingDisposition.VisibleWritable;
         }
 
-        var memberPath = ProfileScopeMatching.StripScopePrefix(bindingPath, containingScope);
         var governingPath = ProfileScopeMatching.StripScopePrefix(governingPathAbsolute, containingScope);
         var matchKind = ProfileMemberGovernanceRules.MatchKindFor(binding.Source);
 
@@ -225,7 +218,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             bindingsUnderScope = [];
             bindingsByContainingScope[containingScope] = bindingsUnderScope;
         }
-        bindingsUnderScope.Add(new GovernedBindingEntry(memberPath, governingPath, matchKind));
+        bindingsUnderScope.Add(new GovernedBindingEntry(governingPath, matchKind));
 
         if (profileAppliedContext is null)
         {
@@ -378,7 +371,6 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         $"{rootTable.TableModel.Table.Schema.Value}.{rootTable.TableModel.Table.Name}";
 
     private readonly record struct GovernedBindingEntry(
-        string MemberPath,
         string GoverningPath,
         ProfileMemberGovernanceRules.HiddenPathMatchKind MatchKind
     );

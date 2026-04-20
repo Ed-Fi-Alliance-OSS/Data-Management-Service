@@ -196,7 +196,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         );
         var resolverContext = new ProfileRootKeyUnificationContext(
             WritableRequestBody: request.WritableRequestBody,
-            CurrentState: request.CurrentState,
             CurrentRootRowByColumnName: currentRootRowByColumnName,
             ResolvedReferenceLookups: resolvedReferenceLookups,
             ProfileRequest: request.ProfileRequest,

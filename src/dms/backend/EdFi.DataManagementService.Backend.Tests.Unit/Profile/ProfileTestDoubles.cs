@@ -560,7 +560,6 @@ internal static class ProfileTestDoubles
     internal static ProfileRootKeyUnificationContext BuildResolverContext(
         ResourceWritePlan writePlan,
         JsonNode? writableBody = null,
-        RelationalWriteCurrentState? currentState = null,
         IReadOnlyDictionary<DbColumnName, object?>? currentRootRowByColumnName = null,
         FlatteningResolvedReferenceLookupSet? resolvedReferenceLookups = null,
         ProfileAppliedWriteRequest? profileRequest = null,
@@ -568,7 +567,6 @@ internal static class ProfileTestDoubles
     ) =>
         new(
             WritableRequestBody: writableBody ?? new JsonObject(),
-            CurrentState: currentState,
             CurrentRootRowByColumnName: currentRootRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
             ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(writePlan),
             ProfileRequest: profileRequest ?? CreateRequest(),
