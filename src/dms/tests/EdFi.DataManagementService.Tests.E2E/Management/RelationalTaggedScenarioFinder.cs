@@ -5,46 +5,9 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-internal static class RelationalCanaryScenarioValidator
+internal static class RelationalTaggedScenarioFinder
 {
     private const string RelationalBackendTag = "@relational-backend";
-
-    public static void AssertExactlyOneTaggedScenario()
-    {
-        AssertExactlyOneTaggedScenario(ResolveFeaturesDirectoryPath());
-    }
-
-    internal static void AssertExactlyOneTaggedScenario(string featuresDirectoryPath)
-    {
-        List<RelationalTaggedScenario> taggedScenarios = [.. FindTaggedScenarios(featuresDirectoryPath)];
-        List<RelationalTaggedScenario> taggedScenarioOutlines =
-        [
-            .. taggedScenarios.Where(scenario => scenario.IsScenarioOutline),
-        ];
-
-        if (taggedScenarioOutlines.Count is not 0)
-        {
-            throw new InvalidOperationException(
-                $"Relational E2E lane requires exactly one concrete scenario tagged with '{RelationalBackendTag}'. Tagged Scenario Outline entries are not supported:{Environment.NewLine}{FormatTaggedScenarioList(taggedScenarioOutlines)}"
-            );
-        }
-
-        if (taggedScenarios.Count is 1)
-        {
-            return;
-        }
-
-        if (taggedScenarios.Count is 0)
-        {
-            throw new InvalidOperationException(
-                $"Relational E2E lane requires exactly one concrete scenario tagged with '{RelationalBackendTag}', but found none in '{featuresDirectoryPath}'."
-            );
-        }
-
-        throw new InvalidOperationException(
-            $"Relational E2E lane requires exactly one concrete scenario tagged with '{RelationalBackendTag}', but found {taggedScenarios.Count}:{Environment.NewLine}{FormatTaggedScenarioList(taggedScenarios)}"
-        );
-    }
 
     internal static IReadOnlyList<RelationalTaggedScenario> FindTaggedScenarios(string featuresDirectoryPath)
     {
@@ -156,46 +119,6 @@ internal static class RelationalCanaryScenarioValidator
 
             pendingTags.Clear();
         }
-    }
-
-    private static string ResolveFeaturesDirectoryPath()
-    {
-        DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
-
-        while (
-            currentDirectory is not null && !File.Exists(Path.Combine(currentDirectory.FullName, "LICENSE"))
-        )
-        {
-            currentDirectory = currentDirectory.Parent;
-        }
-
-        if (currentDirectory is null)
-        {
-            throw new InvalidOperationException(
-                "Could not locate the repository root from the test assembly output."
-            );
-        }
-
-        return Path.Combine(
-            currentDirectory.FullName,
-            "src",
-            "dms",
-            "tests",
-            "EdFi.DataManagementService.Tests.E2E",
-            "Features"
-        );
-    }
-
-    private static string FormatTaggedScenarioList(
-        IReadOnlyCollection<RelationalTaggedScenario> taggedScenarios
-    )
-    {
-        return string.Join(
-            Environment.NewLine,
-            taggedScenarios.Select(scenario =>
-                $"- {scenario.FeaturePath}:{scenario.LineNumber} {scenario.ScenarioName}"
-            )
-        );
     }
 
     internal sealed record RelationalTaggedScenario(

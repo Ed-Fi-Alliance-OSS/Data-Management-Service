@@ -118,7 +118,7 @@ public class Given_Build_Dms_E2E_Guardrails
             """
             USE_RELATIONAL_BACKEND=false
             """,
-            "Category!=@relational-backend|FullyQualifiedName~RelationalCanary"
+            "Category!=@relational-backend|FullyQualifiedName~RelationalBackendLane"
         );
 
         result.ExitCode.Should().NotBe(0);
