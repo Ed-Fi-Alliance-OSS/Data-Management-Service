@@ -18,14 +18,14 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Relational_Write_No_Profile_Persister
+public class Given_Relational_Write_Persister
 {
-    private RelationalWriteNoProfilePersister _sut = null!;
+    private RelationalWritePersister _sut = null!;
 
     [SetUp]
     public void Setup()
     {
-        _sut = new RelationalWriteNoProfilePersister();
+        _sut = new RelationalWritePersister();
     }
 
     [Test]

@@ -60,7 +60,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
-        noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
+        noProfilePersister.Should().BeOfType<RelationalWritePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
         targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();

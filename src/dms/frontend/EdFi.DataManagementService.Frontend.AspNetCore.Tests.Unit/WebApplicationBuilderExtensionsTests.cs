@@ -165,7 +165,7 @@ public class WebApplicationBuilderExtensionsTests
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWritePersister>()
                 .Should()
-                .BeOfType<RelationalWriteNoProfilePersister>();
+                .BeOfType<RelationalWritePersister>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
                 .Should()
@@ -271,7 +271,7 @@ public class WebApplicationBuilderExtensionsTests
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWritePersister>()
                 .Should()
-                .BeOfType<RelationalWriteNoProfilePersister>();
+                .BeOfType<RelationalWritePersister>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
                 .Should()

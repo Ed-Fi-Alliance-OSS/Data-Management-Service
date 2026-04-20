@@ -34,7 +34,7 @@ public class Given_Default_Relational_Write_Executor
     private RecordingRelationalWriteFreshnessChecker _writeFreshnessChecker = null!;
     private RecordingRelationalWriteNoProfileMergeSynthesizer _noProfileMergeSynthesizer = null!;
     private RecordingRelationalWriteProfileMergeSynthesizer _profileMergeSynthesizer = null!;
-    private RecordingRelationalWriteNoProfilePersister _noProfilePersister = null!;
+    private RecordingRelationalWritePersister _noProfilePersister = null!;
     private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
     private RecordingRelationalReadMaterializer _readMaterializer = null!;
@@ -52,7 +52,7 @@ public class Given_Default_Relational_Write_Executor
         _writeFreshnessChecker = new RecordingRelationalWriteFreshnessChecker();
         _noProfileMergeSynthesizer = new RecordingRelationalWriteNoProfileMergeSynthesizer();
         _profileMergeSynthesizer = new RecordingRelationalWriteProfileMergeSynthesizer();
-        _noProfilePersister = new RecordingRelationalWriteNoProfilePersister();
+        _noProfilePersister = new RecordingRelationalWritePersister();
         _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
         _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
         _readMaterializer = new RecordingRelationalReadMaterializer();
@@ -2858,7 +2858,7 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
-    private sealed class RecordingRelationalWriteNoProfilePersister : IRelationalWritePersister
+    private sealed class RecordingRelationalWritePersister : IRelationalWritePersister
     {
         public int TryPersistCallCount { get; private set; }
 

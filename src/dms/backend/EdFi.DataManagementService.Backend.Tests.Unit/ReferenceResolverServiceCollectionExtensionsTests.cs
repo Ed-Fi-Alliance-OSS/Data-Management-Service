@@ -103,7 +103,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         writeFreshnessChecker.Should().BeOfType<RelationalWriteFreshnessChecker>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
-        noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
+        noProfilePersister.Should().BeOfType<RelationalWritePersister>();
         writeExceptionClassifier.Should().BeOfType<NoOpRelationalWriteExceptionClassifier>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();

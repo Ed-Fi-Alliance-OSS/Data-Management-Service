@@ -22,7 +22,7 @@ internal interface IRelationalWritePersister
     );
 }
 
-internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersister
+internal sealed class RelationalWritePersister : IRelationalWritePersister
 {
     public async Task<RelationalWritePersistResult> PersistAsync(
         RelationalWriteExecutorRequest request,
@@ -37,7 +37,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
         var targetContext =
             request.TargetContext
             ?? throw new InvalidOperationException(
-                "Relational no-profile persistence requires an executor-resolved target context."
+                "Relational persistence requires an executor-resolved target context."
             );
 
         var rootDocumentId = await ResolveRootDocumentIdAsync(
@@ -1148,7 +1148,7 @@ internal sealed class RelationalWriteNoProfilePersister : IRelationalWritePersis
             0 => null,
             1 => rows[0],
             _ => throw new InvalidOperationException(
-                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during no-profile persistence. "
+                $"Table '{FormatTable(tableWritePlan)}' produced {rows.Count} {rowKind} rows during relational persistence. "
                     + "Only zero or one row is supported before collection merge execution lands."
             ),
         };
