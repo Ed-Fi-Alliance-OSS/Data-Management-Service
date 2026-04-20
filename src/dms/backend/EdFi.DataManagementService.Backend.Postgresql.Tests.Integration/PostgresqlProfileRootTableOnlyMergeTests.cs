@@ -682,27 +682,35 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
 // Fixture 8 (synthetic presence hidden-member preservation) is deferred for the same
 // reason as Fixture 7.
 
+// Fixture 9 was split into 9a (POST) and 9b (PUT) conservative-slice-fence
+// fixtures after the contract-coverage guard in 9edd66fa and the collection-fence
+// rule in DMS-1124-2. The multi-table success case is out of scope because the
+// School catalog contains collection scopes; single-table success is covered
+// elsewhere.
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 9: Multi-table plan with root-only runtime shape → profiled PUT success
+//  Fixture 9a: Multi-table plan, POST create-new is conservatively fenced by
+//  the catalog rule because the School catalog contains collection scopes and
+//  Slice 2 has no completeness marker for them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Fixture 9: a resource whose compiled write plan has more than one table is still
-/// a supported Slice 2 shape as long as profile metadata confines runtime behavior
-/// to the root table. The profile context here makes only `$` a request scope and
-/// marks no stored scopes besides root; the classifier returns RootTableOnly, the
-/// profile merge synthesizer produces a root-only merge result, and the persister
-/// leaves the extension table untouched. The profiled PUT therefore completes with
-/// UpdateSuccess rather than the prior UnknownFailure shape-gate rejection.
+/// Fixture 9a: the School catalog contains collection scopes (addresses[*],
+/// periods[*], interventions[*], sponsorReferences[*]). Slice 2 has no
+/// completeness marker for collection scopes today, so the conservative fence
+/// refuses the merge even when the profile emits complete non-collection
+/// scope metadata. The profiled POST returns a deterministic slice-fence
+/// UnknownFailure and no row is written to the SchoolExtension or School
+/// tables.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Shape_Succeeds
+public class Given_A_Profiled_Post_Multi_Table_Collection_Fence_Returns_Slice_Fence_Failure
 {
     private const string RequestBodyJson = """
         {
-          "schoolId": 255901
+          "schoolId": 255902
         }
         """;
 
@@ -716,15 +724,17 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
         EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
         AuthorizationSecurableInfo: []
     );
-    private static readonly DocumentUuid ExistingDocumentUuid = new(
-        Guid.Parse("99999999-9999-9999-9999-999999999999")
+    private static readonly DocumentUuid NewDocumentUuid = new(
+        Guid.Parse("99999999-9999-9999-9999-99999999aaaa")
     );
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private UpdateResult _profiledPutResult = null!;
+    private UpsertResult _profiledPostResult = null!;
+    private int _schoolRowCountAfter;
+    private int _extensionRowCountAfter;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -736,10 +746,9 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostgresqlProfileRootTableOnlyMergeSupport.CreateServiceProvider();
 
-        var createResult = await ExecuteNonProfiledUpsertAsync();
-        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-
-        _profiledPutResult = await ExecuteProfiledPutAsync();
+        _profiledPostResult = await ExecuteProfiledPostAsync();
+        _schoolRowCountAfter = await CountRowsAsync(@"""edfi"".""School""");
+        _extensionRowCountAfter = await CountRowsAsync(@"""sample"".""SchoolExtension""");
     }
 
     [OneTimeTearDown]
@@ -756,13 +765,238 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
     }
 
     [Test]
-    public void It_returns_update_success() =>
-        _profiledPutResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    public void It_returns_a_slice_fence_unknown_failure()
+    {
+        var failure = _profiledPostResult.Should().BeOfType<UpsertResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+    }
+
+    [Test]
+    public void It_does_not_write_a_school_row() => _schoolRowCountAfter.Should().Be(0);
+
+    [Test]
+    public void It_does_not_write_a_school_extension_row() => _extensionRowCountAfter.Should().Be(0);
 
     private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
+        ]);
+        return new DocumentInfo(
+            DocumentIdentity: schoolIdentity,
+            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
+            DocumentReferences: [],
+            DocumentReferenceArrays: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+    }
+
+    private async Task<UpsertResult> ExecuteProfiledPostAsync()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .SetSelectedDmsInstance(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "test",
+                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableCollectionFencePost",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
+        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+
+        // Emit complete required non-collection scope metadata so the contract
+        // validator is satisfied. Collection scopes in the catalog still cause
+        // the conservative fence to fire because Slice 2 has no completeness
+        // marker for them.
+        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
+        var rootScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$", []),
+            Visibility: ProfileVisibilityKind.VisiblePresent,
+            Creatable: true
+        );
+        var extensionScopeState = new RequestScopeState(
+            Address: new ScopeInstanceAddress("$._ext.sample", []),
+            Visibility: ProfileVisibilityKind.Hidden,
+            Creatable: true
+        );
+        var profileContext = new BackendProfileWriteContext(
+            Request: new ProfileAppliedWriteRequest(
+                WritableRequestBody: requestBody.DeepClone(),
+                RootResourceCreatable: true,
+                RequestScopeStates: [rootScopeState, extensionScopeState],
+                VisibleRequestCollectionItems: []
+            ),
+            ProfileName: "multi-table-collection-fence-profile-post",
+            CompiledScopeCatalog: scopeCatalog,
+            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
+                ProfileVisibilityKind.VisiblePresent,
+                []
+            )
+        );
+
+        var upsertRequest = new UpsertRequest(
+            ResourceInfo: SchoolResourceInfo,
+            DocumentInfo: CreateSchoolDocumentInfo(),
+            MappingSet: _mappingSet,
+            EdfiDoc: requestBody,
+            Headers: [],
+            TraceId: new TraceId("profile-merge-multi-table-collection-fence-post"),
+            DocumentUuid: NewDocumentUuid,
+            DocumentSecurityElements: new([], [], [], [], []),
+            UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
+            ResourceAuthorizationHandler: new ProfileMergeAllowAllResourceAuthorizationHandler(),
+            ResourceAuthorizationPathways: [],
+            BackendProfileWriteContext: profileContext
+        );
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+        return await repository.UpsertDocument(upsertRequest);
+    }
+
+    private async Task<int> CountRowsAsync(string quotedTableName)
+    {
+        var rows = await _database.QueryRowsAsync($"""SELECT COUNT(1) AS "n" FROM {quotedTableName};""");
+        return Convert.ToInt32(rows[0]["n"], CultureInfo.InvariantCulture);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Fixture 9b: Multi-table plan, PUT existing with complete non-collection
+//  scope metadata is conservatively fenced by the collection-catalog rule.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Fixture 9b: the School fixture's compiled catalog contains collection scopes
+/// (addresses[*], periods[*], interventions[*], sponsorReferences[*]). The
+/// current Slice 2 contract has no completeness marker for collection scopes,
+/// so the conservative fence must refuse to run the merge synthesizer whenever
+/// the catalog contains any collection scope — even when the profile context
+/// emits complete non-collection scope metadata. The PUT returns a deterministic
+/// slice-fence failure and the stored SchoolExtension column value is
+/// unchanged.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Profiled_Put_Multi_Table_Collection_Fence_Returns_Slice_Fence_Failure
+{
+    // Seed body creates a real SchoolExtension row (sample.campusCode) so the
+    // fixture can verify that the conservative fence leaves the stored
+    // extension column value untouched — not just that row count is
+    // unchanged.
+    private const string SeedBodyJson = """
+        {
+          "schoolId": 255903,
+          "_ext": {
+            "sample": {
+              "campusCode": "SEEDED-CAMPUS-A"
+            }
+          }
+        }
+        """;
+
+    // The profiled PUT body supplies a different campusCode. If the fence
+    // were not firing, a visible-absent root-only profile merge could
+    // potentially rewrite or clear this column; asserting the stored
+    // campusCode remains the seed value after the PUT proves the pre-merge
+    // rollback protected the extension row.
+    private const string PutBodyJson = """
+        {
+          "schoolId": 255903,
+          "_ext": {
+            "sample": {
+              "campusCode": "PUT-CAMPUS-B"
+            }
+          }
+        }
+        """;
+
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly ResourceInfo SchoolResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("School"),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
+        AuthorizationSecurableInfo: []
+    );
+    private static readonly DocumentUuid ExistingDocumentUuid = new(
+        Guid.Parse("99999999-9999-9999-9999-a0000099bbbb")
+    );
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+    private UpdateResult _profiledPutResult = null!;
+    private int _extensionRowCountBefore;
+    private int _extensionRowCountAfter;
+    private string? _campusCodeBefore;
+    private string? _campusCodeAfter;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            PostgresqlProfileRootTableOnlyMergeSupport.SchoolFixtureRelativePath
+        );
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _serviceProvider = PostgresqlProfileRootTableOnlyMergeSupport.CreateServiceProvider();
+
+        var seedResult = await ExecuteNonProfiledUpsertAsync();
+        seedResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        _extensionRowCountBefore = await CountSchoolExtensionRowsAsync();
+        _campusCodeBefore = await ReadCampusCodeAsync();
+        // Guard against the seed being silently broken: if the extension row
+        // didn't land, the "no DML" assertion below would be a tautology.
+        _extensionRowCountBefore.Should().Be(1);
+        _campusCodeBefore.Should().Be("SEEDED-CAMPUS-A");
+
+        _profiledPutResult = await ExecuteProfiledPutAsync();
+        _extensionRowCountAfter = await CountSchoolExtensionRowsAsync();
+        _campusCodeAfter = await ReadCampusCodeAsync();
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+        }
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_a_slice_fence_unknown_failure()
+    {
+        var failure = _profiledPutResult.Should().BeOfType<UpdateResult.UnknownFailure>().Subject;
+        failure.FailureMessage.Should().Contain("Profile-aware persist");
+    }
+
+    [Test]
+    public void It_does_not_delete_the_school_extension_row() =>
+        _extensionRowCountAfter.Should().Be(_extensionRowCountBefore);
+
+    [Test]
+    public void It_does_not_overwrite_the_school_extension_column() =>
+        _campusCodeAfter.Should().Be(_campusCodeBefore);
+
+    private static DocumentInfo CreateSchoolDocumentInfo()
+    {
+        var schoolIdentity = new DocumentIdentity([
+            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255903"),
         ]);
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
@@ -783,7 +1017,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableCollectionFence",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
@@ -792,9 +1026,9 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(RequestBodyJson)!,
+            EdfiDoc: JsonNode.Parse(SeedBodyJson)!,
             Headers: [],
-            TraceId: new TraceId("profile-merge-multi-table-root-only-seed"),
+            TraceId: new TraceId("profile-merge-multi-table-collection-fence-seed"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
@@ -814,36 +1048,43 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
                 new DmsInstance(
                     Id: 1,
                     InstanceType: "test",
-                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableRootOnly",
+                    InstanceName: "PostgresqlProfileRootTableOnlyMergeMultiTableCollectionFence",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )
             );
 
         var writePlan = _mappingSet.WritePlansByResource[SchoolResource];
-        var requestBody = JsonNode.Parse(RequestBodyJson)!;
+        var requestBody = JsonNode.Parse(PutBodyJson)!;
 
-        // Build a profile context with only the $ scope (no inlined or collection scopes).
-        // The slice-fence classifier returns RootTableOnly and the profile merge synthesizer
-        // produces a root-only merge result; the persister leaves the extension table alone.
         var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(writePlan);
-        var rootScopeState = new RequestScopeState(
-            Address: new ScopeInstanceAddress("$", []),
+        var rootAddress = new ScopeInstanceAddress("$", []);
+        var extensionAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var rootRequest = new RequestScopeState(
+            Address: rootAddress,
             Visibility: ProfileVisibilityKind.VisiblePresent,
             Creatable: true
+        );
+        var extensionRequest = new RequestScopeState(
+            Address: extensionAddress,
+            Visibility: ProfileVisibilityKind.VisibleAbsent,
+            Creatable: false
         );
         var profileContext = new BackendProfileWriteContext(
             Request: new ProfileAppliedWriteRequest(
                 WritableRequestBody: requestBody.DeepClone(),
                 RootResourceCreatable: true,
-                RequestScopeStates: [rootScopeState],
+                RequestScopeStates: [rootRequest, extensionRequest],
                 VisibleRequestCollectionItems: []
             ),
-            ProfileName: "multi-table-root-only-profile",
+            ProfileName: "multi-table-collection-fence-profile",
             CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new ConfigurableStoredStateProjectionInvoker(
-                ProfileVisibilityKind.VisiblePresent,
-                []
+            StoredStateProjectionInvoker: new TwoNonCollectionScopesStoredStateProjectionInvoker(
+                secondScopeJsonScope: "$._ext.sample",
+                rootVisibility: ProfileVisibilityKind.VisiblePresent,
+                rootHiddenMemberPaths: [],
+                secondScopeVisibility: ProfileVisibilityKind.VisibleAbsent,
+                secondScopeHiddenMemberPaths: []
             )
         );
 
@@ -853,7 +1094,7 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
-            TraceId: new TraceId("profile-merge-multi-table-root-only-put"),
+            TraceId: new TraceId("profile-merge-multi-table-collection-fence-put"),
             DocumentUuid: ExistingDocumentUuid,
             DocumentSecurityElements: new([], [], [], [], []),
             UpdateCascadeHandler: new ProfileMergeNoOpUpdateCascadeHandler(),
@@ -863,5 +1104,27 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
         );
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpdateDocumentById(updateRequest);
+    }
+
+    private async Task<int> CountSchoolExtensionRowsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """SELECT COUNT(1) AS "n" FROM "sample"."SchoolExtension";"""
+        );
+        return Convert.ToInt32(rows[0]["n"], CultureInfo.InvariantCulture);
+    }
+
+    private async Task<string?> ReadCampusCodeAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT sx."CampusCode"
+            FROM "sample"."SchoolExtension" sx
+            INNER JOIN "dms"."Document" d ON d."DocumentId" = sx."DocumentId"
+            WHERE d."DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", ExistingDocumentUuid.Value)
+        );
+        return rows.Count == 0 ? null : rows[0]["CampusCode"] as string;
     }
 }
