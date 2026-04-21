@@ -264,6 +264,84 @@ public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
 }
 
 [TestFixture]
+public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
+{
+    private string _mssqlBatchWithTotalCount = null!;
+    private string _mssqlBatchWithoutTotalCount = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildTestReadPlan(SqlDialect.Mssql);
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+
+        _mssqlBatchWithTotalCount = HydrationBatchBuilder.Build(
+            plan,
+            CreateZeroLimitKeyset(compiler, includeTotalCountSql: true),
+            SqlDialect.Mssql
+        );
+        _mssqlBatchWithoutTotalCount = HydrationBatchBuilder.Build(
+            plan,
+            CreateZeroLimitKeyset(compiler, includeTotalCountSql: false),
+            SqlDialect.Mssql
+        );
+    }
+
+    [Test]
+    public void It_should_materialize_an_empty_keyset_without_embedding_page_sql()
+    {
+        _mssqlBatchWithTotalCount.Should().Contain("INSERT INTO [#page] ([DocumentId])");
+        _mssqlBatchWithTotalCount
+            .Should()
+            .Contain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
+        _mssqlBatchWithTotalCount.Should().NotContain("WITH page_ids AS (");
+        _mssqlBatchWithTotalCount.Should().NotContain("FETCH NEXT @limit ROWS ONLY");
+    }
+
+    [Test]
+    public void It_should_still_emit_total_count_sql_before_document_metadata()
+    {
+        var totalCountIndex = _mssqlBatchWithTotalCount.IndexOf("SELECT COUNT(1)", StringComparison.Ordinal);
+        var docMetadataIndex = _mssqlBatchWithTotalCount.IndexOf(
+            "[dms].[Document]",
+            StringComparison.Ordinal
+        );
+
+        totalCountIndex.Should().BePositive();
+        docMetadataIndex.Should().BeGreaterThan(totalCountIndex);
+    }
+
+    [Test]
+    public void It_should_not_emit_total_count_sql_when_not_requested()
+    {
+        _mssqlBatchWithoutTotalCount.Should().NotContain("SELECT COUNT(1)");
+        _mssqlBatchWithoutTotalCount
+            .Should()
+            .Contain("SELECT CAST(NULL AS bigint) AS [DocumentId] WHERE 1 = 0;");
+    }
+
+    private static PageKeysetSpec.Query CreateZeroLimitKeyset(
+        PageDocumentIdSqlCompiler compiler,
+        bool includeTotalCountSql
+    )
+    {
+        var compiledQueryPlan = compiler.Compile(
+            new PageDocumentIdQuerySpec(
+                RootTable: new DbTableName(new DbSchemaName("edfi"), "School"),
+                Predicates: [],
+                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+                IncludeTotalCountSql: includeTotalCountSql
+            )
+        );
+
+        return new PageKeysetSpec.Query(
+            compiledQueryPlan,
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 0L }
+        );
+    }
+}
+
+[TestFixture]
 public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
 {
     private string _pgsqlBatch = null!;
