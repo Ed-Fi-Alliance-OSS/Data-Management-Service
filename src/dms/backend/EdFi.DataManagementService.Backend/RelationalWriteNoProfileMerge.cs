@@ -42,68 +42,14 @@ internal sealed record RelationalWriteNoProfileMergeRequest
     public RelationalWriteCurrentState? CurrentState { get; init; }
 }
 
-internal sealed record RelationalWriteNoProfileTableRow
-{
-    public RelationalWriteNoProfileTableRow(
-        IEnumerable<FlattenedWriteValue> values,
-        IEnumerable<FlattenedWriteValue> comparableValues
-    )
-    {
-        Values = FlattenedWriteContractSupport.ToImmutableArray(values, nameof(values));
-        ComparableValues = FlattenedWriteContractSupport.ToImmutableArray(
-            comparableValues,
-            nameof(comparableValues)
-        );
-    }
-
-    public ImmutableArray<FlattenedWriteValue> Values { get; init; }
-
-    public ImmutableArray<FlattenedWriteValue> ComparableValues { get; init; }
-}
-
-internal sealed record RelationalWriteNoProfileTableState
-{
-    public RelationalWriteNoProfileTableState(
-        TableWritePlan tableWritePlan,
-        IEnumerable<RelationalWriteNoProfileTableRow> currentRows,
-        IEnumerable<RelationalWriteNoProfileTableRow> mergedRows
-    )
-    {
-        TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
-        CurrentRows = FlattenedWriteContractSupport.ToImmutableArray(currentRows, nameof(currentRows));
-        MergedRows = FlattenedWriteContractSupport.ToImmutableArray(mergedRows, nameof(mergedRows));
-    }
-
-    public TableWritePlan TableWritePlan { get; init; }
-
-    public ImmutableArray<RelationalWriteNoProfileTableRow> CurrentRows { get; init; }
-
-    public ImmutableArray<RelationalWriteNoProfileTableRow> MergedRows { get; init; }
-}
-
-internal sealed record RelationalWriteNoProfileMergeResult
-{
-    public RelationalWriteNoProfileMergeResult(
-        IEnumerable<RelationalWriteNoProfileTableState> tablesInDependencyOrder
-    )
-    {
-        TablesInDependencyOrder = FlattenedWriteContractSupport.ToImmutableArray(
-            tablesInDependencyOrder,
-            nameof(tablesInDependencyOrder)
-        );
-    }
-
-    public ImmutableArray<RelationalWriteNoProfileTableState> TablesInDependencyOrder { get; init; }
-}
-
 internal interface IRelationalWriteNoProfileMergeSynthesizer
 {
-    RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request);
+    RelationalWriteMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request);
 }
 
 internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWriteNoProfileMergeSynthesizer
 {
-    public RelationalWriteNoProfileMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
+    public RelationalWriteMergeResult Synthesize(RelationalWriteNoProfileMergeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -134,10 +80,11 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             tableStateBuilders
         );
 
-        return new RelationalWriteNoProfileMergeResult(
+        return new RelationalWriteMergeResult(
             request.WritePlan.TablePlansInDependencyOrder.Select(tableWritePlan =>
                 tableStateBuilders[tableWritePlan.TableModel.Table].Build()
-            )
+            ),
+            supportsGuardedNoOp: true
         );
     }
 
@@ -282,9 +229,9 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         IReadOnlyList<FlattenedWriteValue> values
     )
     {
-        var comparableValues = ProjectComparableValues(tableWritePlan, values);
+        var comparableValues = RelationalWriteMergeSupport.ProjectComparableValues(tableWritePlan, values);
 
-        return new MergedRow(tableWritePlan, new RelationalWriteNoProfileTableRow(values, comparableValues));
+        return new MergedRow(tableWritePlan, new RelationalWriteMergedTableRow(values, comparableValues));
     }
 
     private static ImmutableArray<FlattenedWriteValue> RewriteParentKeyPartValues(
@@ -347,67 +294,38 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         )
         {
             var columnName = tableWritePlan.TableModel.IdentityMetadata.PhysicalRowIdentityColumns[index];
-            physicalRowIdentityValues[index] = values[FindBindingIndex(tableWritePlan, columnName)];
+            physicalRowIdentityValues[index] = values[
+                RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
+            ];
         }
 
         return physicalRowIdentityValues.ToImmutableArray();
     }
 
-    private static ImmutableArray<FlattenedWriteValue> ProjectComparableValues(
-        TableWritePlan tableWritePlan,
-        IReadOnlyList<FlattenedWriteValue> values
-    )
-    {
-        var bindingIndexes = tableWritePlan.CollectionMergePlan is null
-            ? Enumerable.Range(0, tableWritePlan.ColumnBindings.Length)
-            : tableWritePlan.CollectionMergePlan.CompareBindingIndexesInOrder;
-
-        FlattenedWriteValue[] comparableValues = bindingIndexes
-            .Select(bindingIndex => values[bindingIndex])
-            .ToArray();
-
-        return comparableValues.ToImmutableArray();
-    }
-
-    private static int FindBindingIndex(TableWritePlan tableWritePlan, DbColumnName columnName)
-    {
-        for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
-        {
-            if (tableWritePlan.ColumnBindings[bindingIndex].Column.ColumnName.Equals(columnName))
-            {
-                return bindingIndex;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Table '{FormatTable(tableWritePlan)}' does not contain a binding for column '{columnName.Value}'."
-        );
-    }
-
     private static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
-    private sealed record MergedRow(TableWritePlan TableWritePlan, RelationalWriteNoProfileTableRow Row);
+    private sealed record MergedRow(TableWritePlan TableWritePlan, RelationalWriteMergedTableRow Row);
 
     private sealed class TableStateBuilder(
         TableWritePlan tableWritePlan,
-        ImmutableArray<RelationalWriteNoProfileTableRow> currentRows
+        ImmutableArray<RelationalWriteMergedTableRow> currentRows
     )
     {
-        private readonly List<RelationalWriteNoProfileTableRow> _mergedRows = [];
+        private readonly List<RelationalWriteMergedTableRow> _mergedRows = [];
 
-        public void AddMergedRow(RelationalWriteNoProfileTableRow row)
+        public void AddMergedRow(RelationalWriteMergedTableRow row)
         {
             ArgumentNullException.ThrowIfNull(row);
             _mergedRows.Add(row);
         }
 
-        public RelationalWriteNoProfileTableState Build()
+        public RelationalWriteMergedTableState Build()
         {
             var currentRowsForComparison = IsCollectionAlignedExtensionScope(tableWritePlan)
                 ? OrderCollectionAlignedExtensionScopeRowsIfFullyBound(tableWritePlan, currentRows)
                 : currentRows;
-            IReadOnlyList<RelationalWriteNoProfileTableRow> mergedRows;
+            IReadOnlyList<RelationalWriteMergedTableRow> mergedRows;
 
             if (tableWritePlan.CollectionMergePlan is not null)
             {
@@ -425,16 +343,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 mergedRows = _mergedRows;
             }
 
-            return new RelationalWriteNoProfileTableState(
-                tableWritePlan,
-                currentRowsForComparison,
-                mergedRows
-            );
+            return new RelationalWriteMergedTableState(tableWritePlan, currentRowsForComparison, mergedRows);
         }
 
-        private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderCollectionRowsIfFullyBound(
+        private static IReadOnlyList<RelationalWriteMergedTableRow> OrderCollectionRowsIfFullyBound(
             TableWritePlan tableWritePlan,
-            IReadOnlyList<RelationalWriteNoProfileTableRow> rows
+            IReadOnlyList<RelationalWriteMergedTableRow> rows
         )
         {
             var mergePlan =
@@ -445,7 +359,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
             var parentBindingIndexes = tableWritePlan
                 .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
-                    FindBindingIndex(tableWritePlan, columnName)
+                    RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
                 )
                 .Append(mergePlan.OrdinalBindingIndex)
                 .ToArray();
@@ -453,22 +367,22 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
         }
 
-        private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
+        private static IReadOnlyList<RelationalWriteMergedTableRow> OrderCollectionAlignedExtensionScopeRowsIfFullyBound(
             TableWritePlan tableWritePlan,
-            IReadOnlyList<RelationalWriteNoProfileTableRow> rows
+            IReadOnlyList<RelationalWriteMergedTableRow> rows
         )
         {
             var parentBindingIndexes = tableWritePlan
                 .TableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(columnName =>
-                    FindBindingIndex(tableWritePlan, columnName)
+                    RelationalWriteMergeSupport.FindBindingIndex(tableWritePlan, columnName)
                 )
                 .ToArray();
 
             return OrderRowsByBindingIndexesIfFullyBound(rows, parentBindingIndexes);
         }
 
-        private static IReadOnlyList<RelationalWriteNoProfileTableRow> OrderRowsByBindingIndexesIfFullyBound(
-            IReadOnlyList<RelationalWriteNoProfileTableRow> rows,
+        private static IReadOnlyList<RelationalWriteMergedTableRow> OrderRowsByBindingIndexesIfFullyBound(
+            IReadOnlyList<RelationalWriteMergedTableRow> rows,
             IReadOnlyList<int> bindingIndexes
         )
         {
@@ -496,7 +410,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
     {
         private readonly IReadOnlyDictionary<
             DbTableName,
-            ImmutableArray<RelationalWriteNoProfileTableRow>
+            ImmutableArray<RelationalWriteMergedTableRow>
         > _currentRowsByTable;
 
         private readonly IReadOnlyDictionary<
@@ -507,7 +421,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
         private CurrentStateProjection(
             IReadOnlyDictionary<
                 DbTableName,
-                ImmutableArray<RelationalWriteNoProfileTableRow>
+                ImmutableArray<RelationalWriteMergedTableRow>
             > currentRowsByTable,
             IReadOnlyDictionary<DbTableName, ProjectedCollectionTableState> collectionRowsByTable
         )
@@ -518,7 +432,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
         public static CurrentStateProjection Create(RelationalWriteNoProfileMergeRequest request)
         {
-            Dictionary<DbTableName, ImmutableArray<RelationalWriteNoProfileTableRow>> currentRowsByTable = [];
+            Dictionary<DbTableName, ImmutableArray<RelationalWriteMergedTableRow>> currentRowsByTable = [];
             Dictionary<DbTableName, ProjectedCollectionTableState> collectionRowsByTable = [];
 
             var hydratedRowsByTable = request.CurrentState is null
@@ -533,8 +447,8 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     tableWritePlan.TableModel.Table,
                     out var hydratedTableRows
                 )
-                    ? ProjectCurrentRows(tableWritePlan, hydratedTableRows.Rows)
-                    : ImmutableArray<RelationalWriteNoProfileTableRow>.Empty;
+                    ? RelationalWriteMergeSupport.ProjectCurrentRows(tableWritePlan, hydratedTableRows.Rows)
+                    : ImmutableArray<RelationalWriteMergedTableRow>.Empty;
 
                 currentRowsByTable.Add(tableWritePlan.TableModel.Table, projectedRows);
 
@@ -552,14 +466,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             return new CurrentStateProjection(currentRowsByTable, collectionRowsByTable);
         }
 
-        public ImmutableArray<RelationalWriteNoProfileTableRow> GetCurrentRows(
-            TableWritePlan tableWritePlan
-        ) =>
+        public ImmutableArray<RelationalWriteMergedTableRow> GetCurrentRows(TableWritePlan tableWritePlan) =>
             _currentRowsByTable.TryGetValue(tableWritePlan.TableModel.Table, out var currentRows)
                 ? currentRows
-                : ImmutableArray<RelationalWriteNoProfileTableRow>.Empty;
+                : ImmutableArray<RelationalWriteMergedTableRow>.Empty;
 
-        public RelationalWriteNoProfileTableRow? TryMatchCollectionRow(
+        public RelationalWriteMergedTableRow? TryMatchCollectionRow(
             TableWritePlan tableWritePlan,
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
             IReadOnlyList<object?> semanticIdentityValues
@@ -580,116 +492,25 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 semanticIdentityValues
             );
         }
-
-        private static ImmutableArray<RelationalWriteNoProfileTableRow> ProjectCurrentRows(
-            TableWritePlan tableWritePlan,
-            IReadOnlyList<object?[]> hydratedRows
-        )
-        {
-            List<RelationalWriteNoProfileTableRow> projectedRows = [];
-
-            foreach (var hydratedRow in hydratedRows)
-            {
-                FlattenedWriteValue[] bindingValues = new FlattenedWriteValue[
-                    tableWritePlan.ColumnBindings.Length
-                ];
-
-                for (
-                    var bindingIndex = 0;
-                    bindingIndex < tableWritePlan.ColumnBindings.Length;
-                    bindingIndex++
-                )
-                {
-                    var binding = tableWritePlan.ColumnBindings[bindingIndex];
-                    var columnOrdinal = FindColumnOrdinal(
-                        tableWritePlan.TableModel,
-                        binding.Column.ColumnName
-                    );
-                    bindingValues[bindingIndex] = new FlattenedWriteValue.Literal(
-                        NormalizeHydratedValue(binding.Column, hydratedRow[columnOrdinal])
-                    );
-                }
-
-                projectedRows.Add(
-                    new RelationalWriteNoProfileTableRow(
-                        bindingValues,
-                        ProjectComparableValues(tableWritePlan, bindingValues)
-                    )
-                );
-            }
-
-            return projectedRows.ToImmutableArray();
-        }
-
-        private static int FindColumnOrdinal(DbTableModel tableModel, DbColumnName columnName)
-        {
-            for (var columnOrdinal = 0; columnOrdinal < tableModel.Columns.Count; columnOrdinal++)
-            {
-                if (tableModel.Columns[columnOrdinal].ColumnName.Equals(columnName))
-                {
-                    return columnOrdinal;
-                }
-            }
-
-            throw new InvalidOperationException(
-                $"Hydrated table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}' does not contain column '{columnName.Value}'."
-            );
-        }
-
-        private static object? NormalizeHydratedValue(DbColumnModel column, object? value)
-        {
-            ArgumentNullException.ThrowIfNull(column);
-
-            if (value is null || column.ScalarType is null)
-            {
-                return value;
-            }
-
-            return column.ScalarType.Kind switch
-            {
-                ScalarKind.Date => NormalizeDateValue(value),
-                ScalarKind.Time => NormalizeTimeValue(value),
-                _ => value,
-            };
-        }
-
-        private static object NormalizeDateValue(object value) =>
-            value switch
-            {
-                DateOnly => value,
-                DateTime dateTime => DateOnly.FromDateTime(dateTime),
-                DateTimeOffset dateTimeOffset => DateOnly.FromDateTime(dateTimeOffset.DateTime),
-                _ => value,
-            };
-
-        private static object NormalizeTimeValue(object value) =>
-            value switch
-            {
-                TimeOnly => value,
-                TimeSpan timeSpan => TimeOnly.FromTimeSpan(timeSpan),
-                DateTime dateTime => TimeOnly.FromDateTime(dateTime),
-                DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.DateTime),
-                _ => value,
-            };
     }
 
     private sealed class ProjectedCollectionTableState
     {
         private readonly Dictionary<
             object?[],
-            Dictionary<object?[], RelationalWriteNoProfileTableRow>
+            Dictionary<object?[], RelationalWriteMergedTableRow>
         > _rowsByParentKey;
 
         public ProjectedCollectionTableState(
             TableWritePlan tableWritePlan,
-            IReadOnlyList<RelationalWriteNoProfileTableRow> currentRows
+            IReadOnlyList<RelationalWriteMergedTableRow> currentRows
         )
         {
             TableWritePlan = tableWritePlan ?? throw new ArgumentNullException(nameof(tableWritePlan));
 
             _rowsByParentKey = new Dictionary<
                 object?[],
-                Dictionary<object?[], RelationalWriteNoProfileTableRow>
+                Dictionary<object?[], RelationalWriteMergedTableRow>
             >(ObjectValueArrayComparer.Instance);
 
             foreach (var currentRow in currentRows)
@@ -699,7 +520,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
                 if (!_rowsByParentKey.TryGetValue(parentScopeKey, out var rowsBySemanticIdentity))
                 {
-                    rowsBySemanticIdentity = new Dictionary<object?[], RelationalWriteNoProfileTableRow>(
+                    rowsBySemanticIdentity = new Dictionary<object?[], RelationalWriteMergedTableRow>(
                         ObjectValueArrayComparer.Instance
                     );
                     _rowsByParentKey.Add(parentScopeKey, rowsBySemanticIdentity);
@@ -716,7 +537,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
 
         public TableWritePlan TableWritePlan { get; }
 
-        public RelationalWriteNoProfileTableRow? TryMatch(
+        public RelationalWriteMergedTableRow? TryMatch(
             IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues,
             IReadOnlyList<object?> semanticIdentityValues
         )
@@ -753,7 +574,12 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
             {
                 parentScopeKey[index] = ExtractLiteralValue(
                     tableWritePlan,
-                    values[FindBindingIndex(tableWritePlan, immediateParentScopeColumns[index])],
+                    values[
+                        RelationalWriteMergeSupport.FindBindingIndex(
+                            tableWritePlan,
+                            immediateParentScopeColumns[index]
+                        )
+                    ],
                     immediateParentScopeColumns[index]
                 );
             }
@@ -817,9 +643,9 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
     }
 
     private sealed class BoundRowComparer(IReadOnlyList<int> bindingIndexes)
-        : IComparer<RelationalWriteNoProfileTableRow>
+        : IComparer<RelationalWriteMergedTableRow>
     {
-        public int Compare(RelationalWriteNoProfileTableRow? left, RelationalWriteNoProfileTableRow? right)
+        public int Compare(RelationalWriteMergedTableRow? left, RelationalWriteMergedTableRow? right)
         {
             if (ReferenceEquals(left, right))
             {

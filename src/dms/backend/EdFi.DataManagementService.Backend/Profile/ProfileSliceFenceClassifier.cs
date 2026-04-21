@@ -14,9 +14,13 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// </summary>
 /// <remarks>
 /// Visibility rule for scope-state streams:
-/// <see cref="ProfileVisibilityKind.Hidden"/> scope-state metadata is preserve-only
-/// and does not escalate; <see cref="ProfileVisibilityKind.VisiblePresent"/> and
-/// <see cref="ProfileVisibilityKind.VisibleAbsent"/> both escalate by topology.
+/// On the request side (create-new), <see cref="ProfileVisibilityKind.Hidden"/> scope-state
+/// metadata is preserve-only and does not escalate; only
+/// <see cref="ProfileVisibilityKind.VisiblePresent"/> and
+/// <see cref="ProfileVisibilityKind.VisibleAbsent"/> escalate by topology.
+/// On the stored side, scope states always participate in family selection regardless of
+/// visibility — even hidden stored scopes require the owning slice family because the
+/// existing-document flow still has to preserve them correctly.
 /// Row streams (<c>VisibleRequestCollectionItems</c>, <c>VisibleStoredCollectionRows</c>)
 /// are visible-only by contract and continue to escalate unconditionally.
 /// </remarks>

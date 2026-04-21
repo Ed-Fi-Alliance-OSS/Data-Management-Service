@@ -258,8 +258,8 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer_Extension_Colle
         RelationalWriteGuardedNoOp.IsNoOpCandidate(result).Should().BeTrue();
     }
 
-    private static RelationalWriteNoProfileTableState RequireState(
-        RelationalWriteNoProfileMergeResult result,
+    private static RelationalWriteMergedTableState RequireState(
+        RelationalWriteMergeResult result,
         TableWritePlan tableWritePlan
     )
     {

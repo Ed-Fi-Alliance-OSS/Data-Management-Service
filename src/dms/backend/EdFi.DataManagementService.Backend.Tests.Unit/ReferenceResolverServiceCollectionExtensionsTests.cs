@@ -73,8 +73,7 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
-        var noProfilePersister =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>();
+        var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var writeExceptionClassifier =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteExceptionClassifier>();
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();

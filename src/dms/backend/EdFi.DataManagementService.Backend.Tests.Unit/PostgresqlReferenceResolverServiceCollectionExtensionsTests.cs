@@ -43,8 +43,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalWriteFreshnessChecker>();
         var noProfileMergeSynthesizer =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfileMergeSynthesizer>();
-        var noProfilePersister =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteNoProfilePersister>();
+        var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
         var targetLookupResolver =
