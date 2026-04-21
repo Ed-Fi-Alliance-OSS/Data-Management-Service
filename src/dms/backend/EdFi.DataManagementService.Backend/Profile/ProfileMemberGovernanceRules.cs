@@ -98,15 +98,18 @@ internal static class ProfileMemberGovernanceRules
         {
             return true;
         }
-        if (
-            matchKind == HiddenPathMatchKind.ReferenceRooted
-            && hiddenPath.StartsWith(governingPath, StringComparison.Ordinal)
-            && hiddenPath.Length > governingPath.Length
-            && hiddenPath[governingPath.Length] == '.'
-        )
+        if (matchKind != HiddenPathMatchKind.ReferenceRooted)
+        {
+            return false;
+        }
+        // Empty governingPath means the containing scope IS the reference root, so every
+        // hidden member path under that scope is governed by this reference family.
+        if (governingPath.Length == 0)
         {
             return true;
         }
-        return false;
+        return hiddenPath.StartsWith(governingPath, StringComparison.Ordinal)
+            && hiddenPath.Length > governingPath.Length
+            && hiddenPath[governingPath.Length] == '.';
     }
 }

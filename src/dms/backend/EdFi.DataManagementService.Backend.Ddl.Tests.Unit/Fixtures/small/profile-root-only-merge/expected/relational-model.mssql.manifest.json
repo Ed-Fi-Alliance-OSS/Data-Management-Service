@@ -1,0 +1,690 @@
+{
+  "dialect": "mssql",
+  "effective_schema_hash": "5374395c29d6f67503532983b713b37845dced6bec8f3e86f7a8cca290a1bf10",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProfileRootOnlyMergeItem",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "IX_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "PrimarySchoolTypeDescriptor_Unified_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_ProfileRootOnlyMergeItem_StudentReference_DocumentId_StudentReference_StudentUniqueId",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentReference_DocumentId",
+        "StudentReference_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "PK_ProfileRootOnlyMergeItem",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_ProfileRootOnlyMergeItem_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ProfileRootOnlyMergeItemId"
+      ]
+    },
+    {
+      "name": "PK_Student",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Student_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "StudentUniqueId"
+      ]
+    },
+    {
+      "name": "UX_Student_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "StudentUniqueId"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_ProfileRootOnlyMergeItem_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ProfileRootOnlyMergeItemId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProfileRootOnlyMergeItem",
+      "identity_elements": [
+        {
+          "column": "ProfileRootOnlyMergeItemId",
+          "identity_json_path": "$.profileRootOnlyMergeItemId"
+        }
+      ]
+    },
+    {
+      "name": "TR_ProfileRootOnlyMergeItem_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "ProfileRootOnlyMergeItem"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "ProfileRootOnlyMergeItemId"
+      ]
+    },
+    {
+      "name": "TR_Student_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "StudentUniqueId"
+      ],
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "identity_elements": [
+        {
+          "column": "StudentUniqueId",
+          "identity_json_path": "$.studentUniqueId"
+        }
+      ]
+    },
+    {
+      "name": "TR_Student_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "StudentUniqueId"
+      ]
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "ProfileRootOnlyMergeItem"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "ProfileRootOnlyMergeItem",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.studentReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentReference_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": true,
+              "source_path": "$.studentReference.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PrimarySchoolTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.primarySchoolTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "PrimarySchoolTypeDescriptor_DescriptorId_Present"
+              }
+            },
+            {
+              "name": "SecondarySchoolTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.secondarySchoolTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "SecondarySchoolTypeDescriptor_DescriptorId_Present"
+              }
+            },
+            {
+              "name": "DisplayName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.displayName",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProfileRootOnlyMergeItemId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.profileRootOnlyMergeItemId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProfileScopeClearableText",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.profileScope.clearableText",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProfileScopePreservedText",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.profileScope.preservedText",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [
+            {
+              "canonical_column": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+              "member_path_columns": [
+                "PrimarySchoolTypeDescriptor_DescriptorId",
+                "SecondarySchoolTypeDescriptor_DescriptorId"
+              ]
+            }
+          ],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [
+            {
+              "storage_column": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+              "binding_columns": [
+                "PrimarySchoolTypeDescriptor_DescriptorId",
+                "SecondarySchoolTypeDescriptor_DescriptorId"
+              ],
+              "constraint_name": "FK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ProfileRootOnlyMergeItem_NK",
+              "columns": [
+                "ProfileRootOnlyMergeItemId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProfileRootOnlyMergeItem_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_Unified",
+              "columns": [
+                "PrimarySchoolTypeDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProfileRootOnlyMergeItem_StudentReference_RefKey",
+              "columns": [
+                "StudentReference_DocumentId",
+                "StudentReference_StudentUniqueId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Student"
+              },
+              "target_columns": [
+                "DocumentId",
+                "StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_ProfileRootOnlyMergeItem_StudentReference_AllNone",
+              "fk_column": "StudentReference_DocumentId",
+              "dependent_columns": [
+                "StudentReference_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "NullOrTrue",
+              "name": "CK_ProfileRootOnlyMergeItem_PrimarySchoolTypeDescriptor_DescriptorId_Present_NullOrTrue",
+              "column": "PrimarySchoolTypeDescriptor_DescriptorId_Present"
+            },
+            {
+              "kind": "NullOrTrue",
+              "name": "CK_ProfileRootOnlyMergeItem_SecondarySchoolTypeDescriptor_DescriptorId_Present_NullOrTrue",
+              "column": "SecondarySchoolTypeDescriptor_DescriptorId_Present"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [
+          {
+            "endpoint_a_path": "$.primarySchoolTypeDescriptor",
+            "endpoint_b_path": "$.secondarySchoolTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProfileRootOnlyMergeItem"
+            },
+            "endpoint_a_column": "PrimarySchoolTypeDescriptor_DescriptorId",
+            "endpoint_b_column": "SecondarySchoolTypeDescriptor_DescriptorId",
+            "canonical_column": "PrimarySchoolTypeDescriptor_Unified_DescriptorId"
+          }
+        ],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.studentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "ProfileRootOnlyMergeItem"
+          },
+          "fk_column": "StudentReference_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "identity_bindings": [
+            {
+              "identity_json_path": "$.studentUniqueId",
+              "reference_json_path": "$.studentReference.studentUniqueId",
+              "column": "StudentReference_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.primarySchoolTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProfileRootOnlyMergeItem"
+          },
+          "fk_column": "PrimarySchoolTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProfileRootOnlyMergeItem"
+          },
+          "fk_column": "SecondarySchoolTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          }
+        }
+      ],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "SchoolTypeDescriptor"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "SharedDescriptorTable",
+      "tables": [],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "Student"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "Student",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "FirstName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 75
+              },
+              "is_nullable": false,
+              "source_path": "$.firstName",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Student_NK",
+              "columns": [
+                "StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_Student_RefKey",
+              "columns": [
+                "DocumentId",
+                "StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_Student_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}
