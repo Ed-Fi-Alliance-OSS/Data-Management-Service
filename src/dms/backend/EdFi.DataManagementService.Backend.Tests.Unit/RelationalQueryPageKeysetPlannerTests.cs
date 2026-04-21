@@ -292,7 +292,7 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
-    public void It_should_reject_non_equality_operator_shapes()
+    public void It_should_reject_non_equality_operators_for_DMS_993_runtime_query_execution()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
 

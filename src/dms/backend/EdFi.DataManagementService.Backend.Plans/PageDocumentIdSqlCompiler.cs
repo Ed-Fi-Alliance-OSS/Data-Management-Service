@@ -465,6 +465,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static string ToSqlOperator(QueryComparisonOperator @operator)
     {
+        // Compiler-level support only. DMS-993 runtime query planning routes equality
+        // predicates only; non-equality operators are retained here for future query
+        // syntax stories and must not be treated as currently supported API behavior.
         return @operator switch
         {
             QueryComparisonOperator.Equal => "=",

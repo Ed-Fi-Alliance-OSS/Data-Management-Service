@@ -92,7 +92,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [
                     new QueryValuePredicate(
                         new DbColumnName("SectionIdentifier"),
-                        QueryComparisonOperator.Like,
+                        QueryComparisonOperator.Equal,
                         "sectionIdentifier"
                     ),
                 ],
@@ -106,9 +106,9 @@ public class Given_PageDocumentIdSqlCompiler
             )
         );
 
-        plan.PageDocumentIdSql.Should().Contain("r.\"SectionIdentifier_Unified\" LIKE @sectionIdentifier");
+        plan.PageDocumentIdSql.Should().Contain("r.\"SectionIdentifier_Unified\" = @sectionIdentifier");
         plan.PageDocumentIdSql.Should().NotContain("IS NOT NULL");
-        plan.PageDocumentIdSql.Should().NotContain("r.\"SectionIdentifier\" LIKE @sectionIdentifier");
+        plan.PageDocumentIdSql.Should().NotContain("r.\"SectionIdentifier\" = @sectionIdentifier");
     }
 
     [Test]
@@ -119,7 +119,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [
                     new QueryValuePredicate(
                         new DbColumnName("SchoolId"),
-                        QueryComparisonOperator.GreaterThanOrEqual,
+                        QueryComparisonOperator.Equal,
                         "schoolId"
                     ),
                 ],
@@ -128,8 +128,8 @@ public class Given_PageDocumentIdSqlCompiler
             )
         );
 
-        plan.PageDocumentIdSql.Should().Contain("r.\"SchoolId\" >= @schoolId");
-        plan.TotalCountSql.Should().Contain("r.\"SchoolId\" >= @schoolId");
+        plan.PageDocumentIdSql.Should().Contain("r.\"SchoolId\" = @schoolId");
+        plan.TotalCountSql.Should().Contain("r.\"SchoolId\" = @schoolId");
     }
 
     [Test]
@@ -140,7 +140,7 @@ public class Given_PageDocumentIdSqlCompiler
                 [
                     new QueryValuePredicate(
                         new DbColumnName("AliasB"),
-                        QueryComparisonOperator.GreaterThan,
+                        QueryComparisonOperator.Equal,
                         "zParam"
                     ),
                     new QueryValuePredicate(
@@ -150,7 +150,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                     new QueryValuePredicate(
                         new DbColumnName("AliasC"),
-                        QueryComparisonOperator.LessThan,
+                        QueryComparisonOperator.Equal,
                         "mParam"
                     ),
                 ],
@@ -170,11 +170,11 @@ public class Given_PageDocumentIdSqlCompiler
         );
 
         var firstPredicateIndex = plan.PageDocumentIdSql.IndexOf(
-            "(r.\"AliasC\" < @mParam)",
+            "(r.\"AliasC\" = @mParam)",
             StringComparison.Ordinal
         );
         var secondPredicateIndex = plan.PageDocumentIdSql.IndexOf(
-            "(r.\"CanonicalB\" > @zParam)",
+            "(r.\"CanonicalB\" = @zParam)",
             StringComparison.Ordinal
         );
         var thirdPredicateIndex = plan.PageDocumentIdSql.IndexOf(
@@ -257,7 +257,7 @@ public class Given_PageDocumentIdSqlCompiler
                 ),
                 new QueryValuePredicate(
                     new DbColumnName("SchoolYear"),
-                    QueryComparisonOperator.GreaterThanOrEqual,
+                    QueryComparisonOperator.Equal,
                     "schoolYear"
                 ),
             ],
@@ -309,7 +309,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                     new QueryValuePredicate(
                         new DbColumnName("SchoolYear"),
-                        QueryComparisonOperator.GreaterThanOrEqual,
+                        QueryComparisonOperator.Equal,
                         "schoolYear"
                     ),
                     new QueryValuePredicate(
@@ -337,7 +337,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                     new QueryValuePredicate(
                         new DbColumnName("SchoolYear"),
-                        QueryComparisonOperator.GreaterThanOrEqual,
+                        QueryComparisonOperator.Equal,
                         "schoolYear"
                     ),
                 ],
@@ -506,6 +506,37 @@ public class Given_PageDocumentIdSqlCompiler
             .Contain(
                 "Duplicate filter parameter names are not allowed (case-insensitive). Colliding names: [['SchoolId', 'schoolId']]."
             );
+    }
+
+    [Test]
+    [TestCase(QueryComparisonOperator.NotEqual, "<>")]
+    [TestCase(QueryComparisonOperator.LessThan, "<")]
+    [TestCase(QueryComparisonOperator.LessThanOrEqual, "<=")]
+    [TestCase(QueryComparisonOperator.GreaterThan, ">")]
+    [TestCase(QueryComparisonOperator.GreaterThanOrEqual, ">=")]
+    [TestCase(QueryComparisonOperator.Like, "LIKE")]
+    public void It_should_emit_future_operator_sql_when_called_directly_by_lower_level_compiler(
+        QueryComparisonOperator futureOperator,
+        string expectedSqlOperator
+    )
+    {
+        // Direct compiler coverage only; runtime planning rejects non-equality
+        // operators until a future query-syntax story enables them end to end.
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("NameOfInstitution"),
+                        futureOperator,
+                        "nameOfInstitution"
+                    ),
+                ],
+                []
+            )
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain($"r.\"NameOfInstitution\" {expectedSqlOperator} @nameOfInstitution");
     }
 
     [Test]
