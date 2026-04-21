@@ -24,7 +24,7 @@ public class Given_DocumentReconstituter_With_A_Runtime_Compiled_Page_For_Canoni
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
 
     private IReadOnlyList<JsonNode> _pageResult = null!;
-    private JsonNode _compiledResult = null!;
+    private JsonNode _singleDocumentResult = null!;
 
     [SetUp]
     public void SetUp()
@@ -37,7 +37,7 @@ public class Given_DocumentReconstituter_With_A_Runtime_Compiled_Page_For_Canoni
         var hydratedPage = RuntimeCompiledPageReconstitutionTestData.CreateHydratedPage(readPlan);
 
         _pageResult = DocumentReconstituter.ReconstitutePage(readPlan, hydratedPage);
-        _compiledResult = DocumentReconstituter.Reconstitute(
+        _singleDocumentResult = DocumentReconstituter.Reconstitute(
             1L,
             readPlan,
             hydratedPage.TableRowsInDependencyOrder,
@@ -66,14 +66,14 @@ public class Given_DocumentReconstituter_With_A_Runtime_Compiled_Page_For_Canoni
 
         document["addresses"]![0]!["addresses"].Should().BeNull();
         document["addresses"]![1]!["addresses"].Should().BeNull();
-        _compiledResult["addresses"]![0]!["addresses"].Should().BeNull();
-        _compiledResult["addresses"]![1]!["addresses"].Should().BeNull();
+        _singleDocumentResult["addresses"]![0]!["addresses"].Should().BeNull();
+        _singleDocumentResult["addresses"]![1]!["addresses"].Should().BeNull();
     }
 
     [Test]
-    public void It_should_match_the_single_document_compiled_entry_point()
+    public void It_should_match_the_single_document_entry_point()
     {
-        _compiledResult
+        _singleDocumentResult
             .ToJsonString()
             .Should()
             .Be(_pageResult.Should().ContainSingle().Subject.ToJsonString());

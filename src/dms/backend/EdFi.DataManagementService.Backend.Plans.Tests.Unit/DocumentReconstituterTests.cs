@@ -1773,26 +1773,6 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
     }
 
     [Test]
-    public void It_should_not_discover_deliveryNotes_directly_from_the_address_scope()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_addressTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.Table)
-            .Should()
-            .Equal(_extensionScopeTableName);
-    }
-
-    [Test]
-    public void It_should_discover_deliveryNotes_from_the_extension_scope()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.Table)
-            .Should()
-            .Equal(_extCollectionTableName);
-    }
-
-    [Test]
     public void It_should_emit_address_0_ext_sample_deliveryNotes_with_two_items()
     {
         _result["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]!.AsArray().Should().HaveCount(2);
@@ -2049,26 +2029,6 @@ public class Given_DocumentReconstituter_With_Root_Extension_And_Child_Extension
             descriptorProjectionSources: [],
             descriptorUriLookup: new Dictionary<long, string>()
         );
-    }
-
-    [Test]
-    public void It_should_not_discover_interventions_directly_from_the_root_scope()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_rootTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.Table)
-            .Should()
-            .Equal(_extensionScopeTableName);
-    }
-
-    [Test]
-    public void It_should_discover_interventions_from_the_root_extension_scope()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_extensionScopeTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.Table)
-            .Should()
-            .Equal(_interventionTableName);
     }
 
     [Test]
@@ -2453,26 +2413,6 @@ public class Given_DocumentReconstituter_With_Overlapping_Root_Extension_Project
             descriptorProjectionSources: [],
             descriptorUriLookup: new Dictionary<long, string>()
         );
-    }
-
-    [Test]
-    public void It_should_not_treat_sample2_children_as_children_of_sample()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_sampleExtensionScopeTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.JsonScope.Canonical)
-            .Should()
-            .Equal("$._ext.sample.interventions[*]");
-    }
-
-    [Test]
-    public void It_should_not_treat_sample_children_as_children_of_sample2()
-    {
-        DocumentReconstituter
-            .FindImmediateChildTables(_sample2ExtensionScopeTableModel, _tableRowsInDependencyOrder)
-            .Select(tableRows => tableRows.TableModel.JsonScope.Canonical)
-            .Should()
-            .Equal("$._ext.sample2.interventions[*]");
     }
 
     [Test]
@@ -4147,29 +4087,19 @@ public class Given_DocumentReconstituter_With_Descriptor_On_Collection_Item
 [TestFixture]
 public class Given_DocumentReconstituter_With_Page_Based_Root_Nested_Extension_Reference_And_Descriptor_Reconstitution
 {
-    private JsonNode _legacyResult = null!;
-    private JsonNode _pageBasedResult = null!;
-    private JsonNode _compiledResult = null!;
+    private JsonNode _pageResult = null!;
+    private JsonNode _singleDocumentResult = null!;
 
     [SetUp]
     public void SetUp()
     {
         var testData =
             PageBasedDocumentReconstituterTestData.CreateRootNestedExtensionPageWithReferenceAndDescriptor();
-        var pageContext = PageReconstitutionContext.Build(testData.ReadPlan, testData.HydratedPage);
 
-        _legacyResult = DocumentReconstituter.Reconstitute(
-            documentId: testData.DocumentId,
-            tableRowsInDependencyOrder: testData.HydratedPage.TableRowsInDependencyOrder,
-            referenceProjectionPlans: testData.ReferenceProjectionPlans,
-            descriptorProjectionSources: testData.DescriptorProjectionSources,
-            descriptorUriLookup: testData.DescriptorUriLookup
-        );
-        _pageBasedResult = DocumentReconstituter.ReconstituteDocument(
-            pageContext.GetDocumentOrThrow(testData.DocumentId),
-            pageContext
-        );
-        _compiledResult = DocumentReconstituter.Reconstitute(
+        _pageResult = DocumentReconstituter
+            .ReconstitutePage(testData.ReadPlan, testData.HydratedPage)
+            .Single();
+        _singleDocumentResult = DocumentReconstituter.Reconstitute(
             testData.DocumentId,
             testData.ReadPlan,
             testData.HydratedPage.TableRowsInDependencyOrder,
@@ -4178,63 +4108,47 @@ public class Given_DocumentReconstituter_With_Page_Based_Root_Nested_Extension_R
     }
 
     [Test]
-    public void It_should_match_the_legacy_result_when_reconstituting_from_the_page_graph()
+    public void It_should_keep_the_single_document_entry_point_semantically_equivalent_to_the_page_graph()
     {
-        _pageBasedResult.ToJsonString().Should().Be(_legacyResult.ToJsonString());
-    }
-
-    [Test]
-    public void It_should_keep_the_compiled_read_plan_entry_point_semantically_equivalent()
-    {
-        _compiledResult.ToJsonString().Should().Be(_legacyResult.ToJsonString());
+        _singleDocumentResult.ToJsonString().Should().Be(_pageResult.ToJsonString());
     }
 
     [Test]
     public void It_should_emit_root_scalar_reference_descriptor_nested_collection_and_root_extension_content()
     {
-        _pageBasedResult["schoolId"]!.GetValue<int>().Should().Be(255901);
-        _pageBasedResult["localEducationAgencyReference"]!["localEducationAgencyId"]!
+        _pageResult["schoolId"]!.GetValue<int>().Should().Be(255901);
+        _pageResult["localEducationAgencyReference"]!["localEducationAgencyId"]!
             .GetValue<int>()
             .Should()
             .Be(9001);
-        _pageBasedResult["schoolCategoryDescriptor"]!
+        _pageResult["schoolCategoryDescriptor"]!
             .GetValue<string>()
             .Should()
             .Be("uri://ed-fi.org/SchoolCategoryDescriptor#Alternative");
-        _pageBasedResult["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Grand Bend");
-        _pageBasedResult["addresses"]![0]!["periods"]![0]!["beginDate"]!
+        _pageResult["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Grand Bend");
+        _pageResult["addresses"]![0]!["periods"]![0]!["beginDate"]!
             .GetValue<string>()
             .Should()
             .Be("2024-01-01");
-        _pageBasedResult["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
+        _pageResult["_ext"]!["sample"]!["isExemplary"]!.GetValue<bool>().Should().BeTrue();
     }
 }
 
 [TestFixture]
 public class Given_DocumentReconstituter_With_Page_Based_Collection_Extension_Reconstitution
 {
-    private JsonNode _legacyResult = null!;
-    private JsonNode _pageBasedResult = null!;
-    private JsonNode _compiledResult = null!;
+    private JsonNode _pageResult = null!;
+    private JsonNode _singleDocumentResult = null!;
 
     [SetUp]
     public void SetUp()
     {
         var testData = PageBasedDocumentReconstituterTestData.CreateCollectionExtensionPage();
-        var pageContext = PageReconstitutionContext.Build(testData.ReadPlan, testData.HydratedPage);
 
-        _legacyResult = DocumentReconstituter.Reconstitute(
-            documentId: testData.DocumentId,
-            tableRowsInDependencyOrder: testData.HydratedPage.TableRowsInDependencyOrder,
-            referenceProjectionPlans: testData.ReferenceProjectionPlans,
-            descriptorProjectionSources: testData.DescriptorProjectionSources,
-            descriptorUriLookup: testData.DescriptorUriLookup
-        );
-        _pageBasedResult = DocumentReconstituter.ReconstituteDocument(
-            pageContext.GetDocumentOrThrow(testData.DocumentId),
-            pageContext
-        );
-        _compiledResult = DocumentReconstituter.Reconstitute(
+        _pageResult = DocumentReconstituter
+            .ReconstitutePage(testData.ReadPlan, testData.HydratedPage)
+            .Single();
+        _singleDocumentResult = DocumentReconstituter.Reconstitute(
             testData.DocumentId,
             testData.ReadPlan,
             testData.HydratedPage.TableRowsInDependencyOrder,
@@ -4243,32 +4157,26 @@ public class Given_DocumentReconstituter_With_Page_Based_Collection_Extension_Re
     }
 
     [Test]
-    public void It_should_match_the_legacy_result_when_reconstituting_from_the_page_graph()
+    public void It_should_keep_the_single_document_entry_point_semantically_equivalent_to_the_page_graph()
     {
-        _pageBasedResult.ToJsonString().Should().Be(_legacyResult.ToJsonString());
-    }
-
-    [Test]
-    public void It_should_keep_the_compiled_read_plan_entry_point_semantically_equivalent()
-    {
-        _compiledResult.ToJsonString().Should().Be(_legacyResult.ToJsonString());
+        _singleDocumentResult.ToJsonString().Should().Be(_pageResult.ToJsonString());
     }
 
     [Test]
     public void It_should_preserve_collection_extension_json_shape_and_child_order()
     {
-        _pageBasedResult["addresses"]!.AsArray().Should().HaveCount(2);
-        _pageBasedResult["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Austin");
-        _pageBasedResult["addresses"]![0]!["_ext"]!["sample"]!["isUrban"]!.GetValue<bool>().Should().BeTrue();
-        _pageBasedResult["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+        _pageResult["addresses"]!.AsArray().Should().HaveCount(2);
+        _pageResult["addresses"]![0]!["city"]!.GetValue<string>().Should().Be("Austin");
+        _pageResult["addresses"]![0]!["_ext"]!["sample"]!["isUrban"]!.GetValue<bool>().Should().BeTrue();
+        _pageResult["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
             .GetValue<string>()
             .Should()
             .Be("Call ahead");
-        _pageBasedResult["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![1]!["note"]!
+        _pageResult["addresses"]![0]!["_ext"]!["sample"]!["deliveryNotes"]![1]!["note"]!
             .GetValue<string>()
             .Should()
             .Be("Ring bell");
-        _pageBasedResult["addresses"]![1]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
+        _pageResult["addresses"]![1]!["_ext"]!["sample"]!["deliveryNotes"]![0]!["note"]!
             .GetValue<string>()
             .Should()
             .Be("Leave at door");
@@ -4277,10 +4185,10 @@ public class Given_DocumentReconstituter_With_Page_Based_Collection_Extension_Re
     [Test]
     public void It_should_not_emit_a_spurious_addresses_branch_for_canonical_collection_extension_scopes()
     {
-        _pageBasedResult["addresses"]![0]!["addresses"].Should().BeNull();
-        _pageBasedResult["addresses"]![1]!["addresses"].Should().BeNull();
-        _compiledResult["addresses"]![0]!["addresses"].Should().BeNull();
-        _compiledResult["addresses"]![1]!["addresses"].Should().BeNull();
+        _pageResult["addresses"]![0]!["addresses"].Should().BeNull();
+        _pageResult["addresses"]![1]!["addresses"].Should().BeNull();
+        _singleDocumentResult["addresses"]![0]!["addresses"].Should().BeNull();
+        _singleDocumentResult["addresses"]![1]!["addresses"].Should().BeNull();
     }
 }
 

@@ -109,59 +109,6 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
 }
 
 [TestFixture]
-public class Given_PageOrderedChildRowsCache_With_A_Multi_Document_Page
-{
-    private PageOrderedChildRows _firstLookup = null!;
-    private PageOrderedChildRows _secondLookup = null!;
-    private DbTableName _addressTable = default;
-    private DbTableName _periodTable = default;
-
-    [SetUp]
-    public void SetUp()
-    {
-        var pageData = PageReconstitutionContextTestData.CreateHappyPathPage();
-        var compiledPlan = CompiledReconstitutionPlanCache.GetOrBuild(pageData.ReadPlan);
-
-        _firstLookup = PageOrderedChildRowsCache.GetOrBuild(
-            compiledPlan,
-            pageData.HydratedPage.TableRowsInDependencyOrder
-        );
-        _secondLookup = PageOrderedChildRowsCache.GetOrBuild(
-            compiledPlan,
-            pageData.HydratedPage.TableRowsInDependencyOrder
-        );
-        _addressTable = pageData.AddressTable;
-        _periodTable = pageData.PeriodTable;
-    }
-
-    [Test]
-    public void It_should_reuse_the_page_scoped_lookup_for_the_same_hydrated_page()
-    {
-        _secondLookup.Should().BeSameAs(_firstLookup);
-    }
-
-    [Test]
-    public void It_should_order_root_collection_rows_once_per_parent()
-    {
-        _firstLookup
-            .GetRowsByParentLocator(_addressTable, 101L)
-            .Select(row => row[3])
-            .Should()
-            .Equal("East City", "North City");
-    }
-
-    [Test]
-    public void It_should_order_nested_collection_rows_once_per_parent()
-    {
-        _firstLookup
-            .GetRowsByParentLocator(_periodTable, 102L)
-            .Select(row => row[4])
-            .Should()
-            .Equal("2023-09-01", "2024-01-05");
-    }
-}
-
-[TestFixture]
 public class Given_PageReconstitutionContext_With_Duplicate_Root_Rows
 {
     private Exception _exception = null!;

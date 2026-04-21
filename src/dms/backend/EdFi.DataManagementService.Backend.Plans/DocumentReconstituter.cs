@@ -73,7 +73,7 @@ public static class DocumentReconstituter
         ];
     }
 
-    internal static JsonNode ReconstituteDocument(
+    private static JsonNode ReconstituteDocument(
         DocumentPageNode documentPageNode,
         PageReconstitutionContext pageReconstitutionContext
     )
@@ -128,52 +128,13 @@ public static class DocumentReconstituter
             throw new InvalidOperationException("Cannot reconstitute document: no table rows provided.");
         }
 
-        // Phase 1: Find root table and root row, emit root scalars
-        var rootTableRows = tableRowsInDependencyOrder[0];
-        var rootTableModel = rootTableRows.TableModel;
-        var rootRow = FindRootRow(documentId, rootTableRows);
-        var reconstitutionContext = new ReconstitutionContext(tableRowsInDependencyOrder);
-
-        var result = new JsonObject();
-
-        EmitScalars(result, rootRow, rootTableModel);
-
-        // Phase 2: Emit references on root
-        EmitReferences(result, rootRow, rootTableModel, referenceProjectionPlans);
-
-        // Phase 3: Emit descriptors on root
-        EmitDescriptors(result, rootRow, rootTableModel, descriptorProjectionSources, descriptorUriLookup);
-
-        // Phase 4: Process child tables (collections, extensions, nested)
-        if (tableRowsInDependencyOrder.Count > 1)
-        {
-            EmitChildScopes(
-                result,
-                documentId,
-                null,
-                rootTableModel,
-                reconstitutionContext,
-                referenceProjectionPlans,
-                descriptorProjectionSources,
-                descriptorUriLookup
-            );
-        }
-
-        List<DbTableModel> tableModelsInDependencyOrder = [];
-
-        foreach (var tableRows in tableRowsInDependencyOrder)
-        {
-            tableModelsInDependencyOrder.Add(tableRows.TableModel);
-        }
-
-        return ReorderNode(
-            result,
-            BuildPropertyOrderTree(
-                tableModelsInDependencyOrder,
-                referenceProjectionPlans,
-                descriptorProjectionSources
-            )
+        var readPlan = BuildReadPlanAdapter(
+            tableRowsInDependencyOrder,
+            referenceProjectionPlans,
+            descriptorProjectionSources
         );
+
+        return Reconstitute(documentId, readPlan, tableRowsInDependencyOrder, descriptorUriLookup);
     }
 
     private static JsonNode Reconstitute(
@@ -192,10 +153,11 @@ public static class DocumentReconstituter
             throw new InvalidOperationException("Cannot reconstitute document: no table rows provided.");
         }
 
+        var singleDocumentRows = FilterRowsForDocument(documentId, tableRowsInDependencyOrder, compiledPlan);
         var pageReconstitutionContext = PageReconstitutionContext.Build(
             compiledPlan,
             [CreatePlaceholderDocumentMetadataRow(documentId)],
-            tableRowsInDependencyOrder,
+            singleDocumentRows,
             descriptorUriLookup
         );
 
@@ -205,55 +167,148 @@ public static class DocumentReconstituter
         );
     }
 
-    /// <summary>
-    /// Finds the root row matching the given document id.
-    /// </summary>
-    private static object?[] FindRootRow(long documentId, HydratedTableRows rootTableRows)
+    private static ResourceReadPlan BuildReadPlanAdapter(
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
+        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
+    )
     {
-        var rootScopeLocatorColumns = rootTableRows.TableModel.IdentityMetadata.RootScopeLocatorColumns;
-        if (rootScopeLocatorColumns.Count != 1)
-        {
-            throw new InvalidOperationException(
-                "Cannot reconstitute document: expected exactly one RootScopeLocatorColumn on the root table model, "
-                    + $"but found {rootScopeLocatorColumns.Count}."
-            );
-        }
+        var rootTableModel = tableRowsInDependencyOrder[0].TableModel;
+        var tableModelsInDependencyOrder = tableRowsInDependencyOrder
+            .Select(static tableRows => tableRows.TableModel)
+            .ToArray();
+        var model = new RelationalResourceModel(
+            Resource: new QualifiedResourceName("ReconstitutionAdapter", "Document"),
+            PhysicalSchema: rootTableModel.Table.Schema,
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTableModel,
+            TablesInDependencyOrder: tableModelsInDependencyOrder,
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: descriptorProjectionSources
+        );
 
-        var locatorColumnName = rootScopeLocatorColumns[0];
-        var locatorOrdinal = FindColumnOrdinalByName(rootTableRows.TableModel, locatorColumnName);
-
-        foreach (var row in rootTableRows.Rows)
-        {
-            if (Convert.ToInt64(row[locatorOrdinal]) == documentId)
-            {
-                return row;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot reconstitute document: no root row found for DocumentId {documentId}."
+        return new ResourceReadPlan(
+            Model: model,
+            KeysetTable: new KeysetTableContract(
+                Table: new SqlRelationRef.TempTable("page"),
+                DocumentIdColumnName: new DbColumnName("DocumentId")
+            ),
+            TablePlansInDependencyOrder: tableRowsInDependencyOrder.Select(
+                static tableRows => new TableReadPlan(tableRows.TableModel, string.Empty)
+            ),
+            ReferenceIdentityProjectionPlansInDependencyOrder: referenceProjectionPlans,
+            DescriptorProjectionPlansInOrder: BuildDescriptorProjectionPlans(
+                tableRowsInDependencyOrder,
+                descriptorProjectionSources
+            )
         );
     }
 
-    private static object?[] FindRootRow(
-        long documentId,
-        HydratedTableRows rootTableRows,
-        TableReconstitutionPlan rootTablePlan
+    private static IReadOnlyList<DescriptorProjectionPlan> BuildDescriptorProjectionPlans(
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
     )
     {
-        var locatorOrdinal = rootTablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow();
-
-        foreach (var row in rootTableRows.Rows)
+        if (descriptorProjectionSources.Count == 0)
         {
-            if (Convert.ToInt64(row[locatorOrdinal]) == documentId)
+            return [];
+        }
+
+        Dictionary<DbTableName, HydratedTableRows> tableRowsByTable = [];
+
+        foreach (var tableRows in tableRowsInDependencyOrder)
+        {
+            if (!tableRowsByTable.TryAdd(tableRows.TableModel.Table, tableRows))
             {
-                return row;
+                throw new InvalidOperationException(
+                    $"Cannot build reconstitution read-plan adapter: duplicate hydrated rows were provided for table '{tableRows.TableModel.Table}'."
+                );
             }
         }
 
-        throw new InvalidOperationException(
-            $"Cannot reconstitute document: no root row found for DocumentId {documentId}."
-        );
+        List<DescriptorProjectionSource> projectionSources = [];
+
+        foreach (var descriptorSource in descriptorProjectionSources)
+        {
+            if (!tableRowsByTable.TryGetValue(descriptorSource.Table, out var tableRows))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot build reconstitution read-plan adapter: descriptor projection source for table '{descriptorSource.Table}' "
+                        + "does not have matching hydrated table rows."
+                );
+            }
+
+            projectionSources.Add(
+                new DescriptorProjectionSource(
+                    DescriptorValuePath: descriptorSource.DescriptorValuePath,
+                    Table: descriptorSource.Table,
+                    DescriptorResource: descriptorSource.DescriptorResource,
+                    DescriptorIdColumnOrdinal: FindColumnOrdinalByName(
+                        tableRows.TableModel,
+                        descriptorSource.FkColumn
+                    )
+                )
+            );
+        }
+
+        return
+        [
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: string.Empty,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: projectionSources
+            ),
+        ];
+    }
+
+    private static IReadOnlyList<HydratedTableRows> FilterRowsForDocument(
+        long documentId,
+        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
+        CompiledReconstitutionPlan compiledPlan
+    )
+    {
+        List<HydratedTableRows> singleDocumentRows = [];
+
+        foreach (var tableRows in tableRowsInDependencyOrder)
+        {
+            var tablePlan = compiledPlan.GetTablePlanOrThrow(tableRows.TableModel.Table);
+            var rootScopeLocatorOrdinal = tablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow();
+
+            singleDocumentRows.Add(
+                tableRows with
+                {
+                    Rows =
+                    [
+                        .. tableRows.Rows.Where(row =>
+                            RowBelongsToDocument(
+                                row,
+                                tableRows.TableModel.Table,
+                                rootScopeLocatorOrdinal,
+                                documentId
+                            )
+                        ),
+                    ],
+                }
+            );
+        }
+
+        return singleDocumentRows;
+    }
+
+    private static bool RowBelongsToDocument(
+        object?[] row,
+        DbTableName table,
+        int rootScopeLocatorOrdinal,
+        long documentId
+    )
+    {
+        var rootScopeLocatorValue =
+            row[rootScopeLocatorOrdinal]
+            ?? throw new InvalidOperationException(
+                $"Cannot reconstitute document: table '{table}' has a null root-scope locator value."
+            );
+
+        return Convert.ToInt64(rootScopeLocatorValue) == documentId;
     }
 
     /// <summary>
@@ -288,34 +343,6 @@ public static class DocumentReconstituter
                 tableModel.JsonScope
             );
             targetObject[propertyName] = ConvertToJsonValue(value, column.ScalarType);
-        }
-    }
-
-    /// <summary>
-    /// Emits reference objects from the root row.
-    /// </summary>
-    private static void EmitReferences(
-        JsonObject target,
-        object?[] row,
-        DbTableModel tableModel,
-        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans
-    )
-    {
-        foreach (var plan in referenceProjectionPlans)
-        {
-            if (!plan.Table.Equals(tableModel.Table))
-            {
-                continue;
-            }
-
-            foreach (var binding in plan.BindingsInOrder)
-            {
-                var projectionResult = ReferenceIdentityProjector.Project(row, binding);
-                if (projectionResult is ReferenceProjectionResult.Present present)
-                {
-                    EmitReferenceObject(target, present, tableModel.JsonScope);
-                }
-            }
         }
     }
 
@@ -360,50 +387,6 @@ public static class DocumentReconstituter
         referenceParent[referencePropertyName] = referenceObject;
     }
 
-    /// <summary>
-    /// Emits descriptor URI values from the row.
-    /// </summary>
-    private static void EmitDescriptors(
-        JsonObject target,
-        object?[] row,
-        DbTableModel tableModel,
-        IReadOnlyList<DescriptorEdgeSource> descriptorSources,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        foreach (var source in descriptorSources)
-        {
-            if (!source.Table.Equals(tableModel.Table))
-            {
-                continue;
-            }
-
-            var fkOrdinal = FindColumnOrdinalByName(tableModel, source.FkColumn);
-            var descriptorIdValue = row[fkOrdinal];
-            if (descriptorIdValue is null)
-            {
-                continue;
-            }
-
-            var descriptorId = Convert.ToInt64(descriptorIdValue);
-            if (!descriptorUriLookup.TryGetValue(descriptorId, out var uri))
-            {
-                throw new InvalidOperationException(
-                    $"Descriptor ID {descriptorId} in column '{source.FkColumn}' of table '{tableModel.Table}' "
-                        + "has no resolved URI in the descriptor lookup. "
-                        + "This indicates a descriptor projection plan or executor defect."
-                );
-            }
-
-            var (targetObject, propertyName) = ResolvePathRelativeToScope(
-                target,
-                source.DescriptorValuePath,
-                tableModel.JsonScope
-            );
-            targetObject[propertyName] = JsonValue.Create(uri);
-        }
-    }
-
     private static void EmitDescriptors(
         JsonObject target,
         object?[] row,
@@ -422,8 +405,14 @@ public static class DocumentReconstituter
             var descriptorId = Convert.ToInt64(descriptorIdValue);
             if (!descriptorUriLookup.TryGetValue(descriptorId, out var uri))
             {
+                var descriptorIdColumnName = tablePlan
+                    .TableModel
+                    .Columns[binding.DescriptorIdColumnOrdinal]
+                    .ColumnName
+                    .Value;
+
                 throw new InvalidOperationException(
-                    $"Descriptor ID {descriptorId} at ordinal '{binding.DescriptorIdColumnOrdinal}' of table '{tablePlan.Table}' "
+                    $"Descriptor ID {descriptorId} in column '{descriptorIdColumnName}' at ordinal '{binding.DescriptorIdColumnOrdinal}' of table '{tablePlan.Table}' "
                         + "has no resolved URI in the descriptor lookup. "
                         + "This indicates a descriptor projection plan or executor defect."
                 );
@@ -435,116 +424,6 @@ public static class DocumentReconstituter
                 tablePlan.TableModel.JsonScope
             );
             targetObject[propertyName] = JsonValue.Create(uri);
-        }
-    }
-
-    /// <summary>
-    /// Processes child tables (collections, extensions, nested) and emits them into the parent scope.
-    /// </summary>
-    private static void EmitChildScopes(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        DbTableModel parentTableModel,
-        ReconstitutionContext reconstitutionContext,
-        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
-        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        var immediateChildren = FindImmediateChildTables(
-            parentTableModel,
-            reconstitutionContext.TableRowsInDependencyOrder
-        );
-
-        foreach (var childTableRows in immediateChildren)
-        {
-            var childTableModel = childTableRows.TableModel;
-            var childKind = childTableModel.IdentityMetadata.TableKind;
-
-            switch (childKind)
-            {
-                case DbTableKind.Collection:
-                case DbTableKind.ExtensionCollection:
-                    EmitCollectionArray(
-                        parentObject,
-                        documentId,
-                        parentCollectionItemId,
-                        parentTableModel,
-                        childTableRows,
-                        reconstitutionContext,
-                        referenceProjectionPlans,
-                        descriptorProjectionSources,
-                        descriptorUriLookup
-                    );
-                    break;
-
-                case DbTableKind.RootExtension:
-                case DbTableKind.CollectionExtensionScope:
-                    EmitExtensionScope(
-                        parentObject,
-                        documentId,
-                        parentCollectionItemId,
-                        parentTableModel,
-                        childTableRows,
-                        reconstitutionContext,
-                        referenceProjectionPlans,
-                        descriptorProjectionSources,
-                        descriptorUriLookup
-                    );
-                    break;
-            }
-        }
-    }
-
-    private static void EmitChildScopes(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        TableReconstitutionPlan parentTablePlan,
-        ReconstitutionContext reconstitutionContext,
-        CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        foreach (var childTable in parentTablePlan.ImmediateChildrenInDependencyOrder)
-        {
-            var childTableRows = reconstitutionContext.GetTableRowsOrThrow(childTable);
-            var childTablePlan = compiledPlan.GetTablePlanOrThrow(childTableRows.TableModel.Table);
-            var childKind = childTablePlan.TableModel.IdentityMetadata.TableKind;
-
-            switch (childKind)
-            {
-                case DbTableKind.Collection:
-                case DbTableKind.ExtensionCollection:
-                    EmitCollectionArray(
-                        parentObject,
-                        documentId,
-                        parentCollectionItemId,
-                        parentTablePlan,
-                        childTableRows,
-                        childTablePlan,
-                        reconstitutionContext,
-                        compiledPlan,
-                        descriptorUriLookup
-                    );
-                    break;
-
-                case DbTableKind.RootExtension:
-                case DbTableKind.CollectionExtensionScope:
-                    EmitExtensionScope(
-                        parentObject,
-                        documentId,
-                        parentCollectionItemId,
-                        parentTablePlan,
-                        childTableRows,
-                        childTablePlan,
-                        reconstitutionContext,
-                        compiledPlan,
-                        descriptorUriLookup
-                    );
-                    break;
-            }
         }
     }
 
@@ -592,157 +471,6 @@ public static class DocumentReconstituter
         }
     }
 
-    /// <summary>
-    /// Emits a collection array property from child table rows.
-    /// </summary>
-    private static void EmitCollectionArray(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        DbTableModel parentTableModel,
-        HydratedTableRows childTableRows,
-        ReconstitutionContext reconstitutionContext,
-        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
-        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        var childTableModel = childTableRows.TableModel;
-
-        var matchingRows = FilterChildRows(
-            documentId,
-            parentCollectionItemId,
-            parentTableModel,
-            childTableRows,
-            reconstitutionContext
-        );
-
-        if (matchingRows.Count == 0)
-        {
-            return;
-        }
-
-        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
-            parentObject,
-            childTableModel.JsonScope,
-            parentTableModel.JsonScope,
-            childTableModel.IdentityMetadata.TableKind
-        );
-
-        var array = new JsonArray();
-
-        foreach (var childRow in matchingRows)
-        {
-            var itemObject = new JsonObject();
-
-            // Emit scalars
-            EmitScalars(itemObject, childRow, childTableModel);
-
-            // Emit references on collection items
-            EmitReferences(itemObject, childRow, childTableModel, referenceProjectionPlans);
-
-            // Emit descriptors on collection items
-            EmitDescriptors(
-                itemObject,
-                childRow,
-                childTableModel,
-                descriptorProjectionSources,
-                descriptorUriLookup
-            );
-
-            // Find CollectionKey for nested children
-            var collectionKeyOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.CollectionKey);
-            if (collectionKeyOrdinal >= 0)
-            {
-                var collectionItemId = Convert.ToInt64(childRow[collectionKeyOrdinal]);
-
-                // Recurse for nested child tables
-                EmitChildScopes(
-                    itemObject,
-                    documentId,
-                    collectionItemId,
-                    childTableModel,
-                    reconstitutionContext,
-                    referenceProjectionPlans,
-                    descriptorProjectionSources,
-                    descriptorUriLookup
-                );
-            }
-
-            array.Add(itemObject);
-        }
-
-        // For extension collections, the parent is an _ext.projectName scope,
-        // so the property needs to land on the correct parent
-        collectionTarget[collectionPropertyName] = array;
-    }
-
-    private static void EmitCollectionArray(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        TableReconstitutionPlan parentTablePlan,
-        HydratedTableRows childTableRows,
-        TableReconstitutionPlan childTablePlan,
-        ReconstitutionContext reconstitutionContext,
-        CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        var childTableModel = childTablePlan.TableModel;
-
-        var matchingRows = FilterChildRows(
-            documentId,
-            parentCollectionItemId,
-            parentTablePlan.TableModel,
-            childTableRows,
-            reconstitutionContext
-        );
-
-        if (matchingRows.Count == 0)
-        {
-            return;
-        }
-
-        var (collectionTarget, collectionPropertyName) = ResolveCollectionTarget(
-            parentObject,
-            childTableModel.JsonScope,
-            parentTablePlan.TableModel.JsonScope,
-            childTableModel.IdentityMetadata.TableKind
-        );
-
-        var array = new JsonArray();
-
-        foreach (var childRow in matchingRows)
-        {
-            var itemObject = new JsonObject();
-
-            EmitScalars(itemObject, childRow, childTableModel);
-            EmitReferences(itemObject, childRow, childTablePlan);
-            EmitDescriptors(itemObject, childRow, childTablePlan, descriptorUriLookup);
-
-            var collectionKeyOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.CollectionKey);
-            if (collectionKeyOrdinal >= 0)
-            {
-                var collectionItemId = Convert.ToInt64(childRow[collectionKeyOrdinal]);
-
-                EmitChildScopes(
-                    itemObject,
-                    documentId,
-                    collectionItemId,
-                    childTablePlan,
-                    reconstitutionContext,
-                    compiledPlan,
-                    descriptorUriLookup
-                );
-            }
-
-            array.Add(itemObject);
-        }
-
-        collectionTarget[collectionPropertyName] = array;
-    }
-
     private static void EmitCollectionArray(
         JsonObject parentObject,
         RowNode parentRow,
@@ -779,172 +507,6 @@ public static class DocumentReconstituter
         }
 
         collectionTarget[collectionPropertyName] = array;
-    }
-
-    /// <summary>
-    /// Emits an extension scope (_ext.projectName) from a root extension or collection extension scope table.
-    /// </summary>
-    private static void EmitExtensionScope(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        DbTableModel parentTableModel,
-        HydratedTableRows childTableRows,
-        ReconstitutionContext reconstitutionContext,
-        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
-        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        var childTableModel = childTableRows.TableModel;
-
-        var matchingRows = FilterChildRows(
-            documentId,
-            parentCollectionItemId,
-            parentTableModel,
-            childTableRows,
-            reconstitutionContext
-        );
-
-        if (matchingRows.Count == 0)
-        {
-            return;
-        }
-
-        // Parse the extension scope to get _ext and project name
-        var (extPropertyName, projectName) = ParseExtensionScope(
-            childTableModel.JsonScope,
-            parentTableModel.JsonScope,
-            childTableModel.IdentityMetadata.TableKind
-        );
-
-        // Extension scope rows are 1:1 with the parent (for root extensions) or
-        // 1:1 with each collection item (for collection extension scopes)
-        var extensionRow = matchingRows[0];
-        var projectObject = new JsonObject();
-
-        // Emit scalars
-        EmitScalars(projectObject, extensionRow, childTableModel);
-
-        // Emit references
-        EmitReferences(projectObject, extensionRow, childTableModel, referenceProjectionPlans);
-
-        // Emit descriptors
-        EmitDescriptors(
-            projectObject,
-            extensionRow,
-            childTableModel,
-            descriptorProjectionSources,
-            descriptorUriLookup
-        );
-
-        // Recurse for extension collection children.
-        // Use the extension scope's own CollectionKey if it has one; otherwise
-        // fall back to parentCollectionItemId. CollectionExtensionScope tables
-        // use BaseCollectionItemId (a ParentKeyPart, not CollectionKey) as their
-        // row identity, which equals the parent collection item's key.
-        var collectionKeyOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.CollectionKey);
-        long? extensionScopeId = parentCollectionItemId;
-        if (collectionKeyOrdinal >= 0 && extensionRow[collectionKeyOrdinal] is not null)
-        {
-            extensionScopeId = Convert.ToInt64(extensionRow[collectionKeyOrdinal]);
-        }
-
-        EmitChildScopes(
-            projectObject,
-            documentId,
-            extensionScopeId,
-            childTableModel,
-            reconstitutionContext,
-            referenceProjectionPlans,
-            descriptorProjectionSources,
-            descriptorUriLookup
-        );
-
-        if (!HasMeaningfulContent(projectObject))
-        {
-            return;
-        }
-
-        if (parentObject[extPropertyName] is not JsonObject extObject)
-        {
-            extObject = new JsonObject();
-            parentObject[extPropertyName] = extObject;
-        }
-
-        extObject[projectName] = projectObject;
-    }
-
-    private static void EmitExtensionScope(
-        JsonObject parentObject,
-        long documentId,
-        long? parentCollectionItemId,
-        TableReconstitutionPlan parentTablePlan,
-        HydratedTableRows childTableRows,
-        TableReconstitutionPlan childTablePlan,
-        ReconstitutionContext reconstitutionContext,
-        CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
-    )
-    {
-        var childTableModel = childTablePlan.TableModel;
-
-        var matchingRows = FilterChildRows(
-            documentId,
-            parentCollectionItemId,
-            parentTablePlan.TableModel,
-            childTableRows,
-            reconstitutionContext
-        );
-
-        if (matchingRows.Count == 0)
-        {
-            return;
-        }
-
-        var (extPropertyName, projectName) = ParseExtensionScope(
-            childTableModel.JsonScope,
-            parentTablePlan.TableModel.JsonScope,
-            childTableModel.IdentityMetadata.TableKind
-        );
-
-        var extensionRow = matchingRows[0];
-        var projectObject = new JsonObject();
-
-        EmitScalars(projectObject, extensionRow, childTableModel);
-        EmitReferences(projectObject, extensionRow, childTablePlan);
-        EmitDescriptors(projectObject, extensionRow, childTablePlan, descriptorUriLookup);
-
-        var collectionKeyOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.CollectionKey);
-        long? extensionScopeId = parentCollectionItemId;
-
-        if (collectionKeyOrdinal >= 0 && extensionRow[collectionKeyOrdinal] is not null)
-        {
-            extensionScopeId = Convert.ToInt64(extensionRow[collectionKeyOrdinal]);
-        }
-
-        EmitChildScopes(
-            projectObject,
-            documentId,
-            extensionScopeId,
-            childTablePlan,
-            reconstitutionContext,
-            compiledPlan,
-            descriptorUriLookup
-        );
-
-        if (!HasMeaningfulContent(projectObject))
-        {
-            return;
-        }
-
-        if (parentObject[extPropertyName] is not JsonObject extObject)
-        {
-            extObject = new JsonObject();
-            parentObject[extPropertyName] = extObject;
-        }
-
-        extObject[projectName] = projectObject;
     }
 
     private static void EmitExtensionScope(
@@ -987,228 +549,6 @@ public static class DocumentReconstituter
 
         extObject[projectName] = projectObject;
     }
-
-    /// <summary>
-    /// Filters child rows to those matching the given parent scope.
-    /// </summary>
-    private static IReadOnlyList<object?[]> FilterChildRows(
-        long documentId,
-        long? parentCollectionItemId,
-        DbTableModel parentTableModel,
-        HydratedTableRows childTableRows,
-        ReconstitutionContext reconstitutionContext
-    )
-    {
-        // For root children, the parent scope locator is DocumentId
-        // For nested children, the parent scope locator is the parent's CollectionItemId
-        long matchValue;
-
-        if (
-            parentCollectionItemId.HasValue
-            && parentTableModel.IdentityMetadata.TableKind != DbTableKind.Root
-        )
-        {
-            matchValue = parentCollectionItemId.Value;
-        }
-        else
-        {
-            matchValue = documentId;
-        }
-
-        return reconstitutionContext.GetRowsByParentLocator(childTableRows, matchValue);
-    }
-
-    /// <summary>
-    /// Finds immediate child tables of the given parent table in the dependency-ordered list.
-    /// </summary>
-    internal static IReadOnlyList<HydratedTableRows> FindImmediateChildTables(
-        DbTableModel parentTableModel,
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
-    )
-    {
-        List<HydratedTableRows> children = [];
-        var parentScope = parentTableModel.JsonScope;
-
-        foreach (var tableRows in tableRowsInDependencyOrder)
-        {
-            var childTableModel = tableRows.TableModel;
-            if (childTableModel.Table.Equals(parentTableModel.Table))
-            {
-                continue;
-            }
-
-            var childScope = childTableModel.JsonScope;
-
-            if (!IsImmediateChild(parentScope, childScope, childTableModel.IdentityMetadata.TableKind))
-            {
-                continue;
-            }
-
-            children.Add(tableRows);
-        }
-
-        return children;
-    }
-
-    /// <summary>
-    /// Determines whether a child scope is an immediate child of the parent scope.
-    /// </summary>
-    private static bool IsImmediateChild(
-        JsonPathExpression parentScope,
-        JsonPathExpression childScope,
-        DbTableKind childKind
-    )
-    {
-        if (
-            !JsonScopeAttachmentResolver.TryResolveRelativeAttachmentSegments(
-                parentScope,
-                childScope,
-                childKind,
-                out var relativeSegments
-            )
-        )
-        {
-            return false;
-        }
-
-        return childKind switch
-        {
-            // Collections: one [*] deeper than parent
-            // e.g., parent "$" -> child "$.addresses[*]"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*].periods[*]"
-            DbTableKind.Collection => IsOneArrayLevelDeeper(relativeSegments),
-
-            // Extension collections must recurse through their owning _ext.projectName scope.
-            // Without this guard, a base scope like "$.addresses[*]" incorrectly sees
-            // "$.addresses[*]._ext.sample.deliveryNotes[*]" as a direct child.
-            DbTableKind.ExtensionCollection => !StartsWithExtensionScope(relativeSegments)
-                && IsOneArrayLevelDeeper(relativeSegments),
-
-            // Extensions: _ext.projectName at same array depth
-            // e.g., parent "$" -> child "$._ext.sample"
-            // e.g., parent "$.addresses[*]" -> child "$.addresses[*]._ext.sample"
-            DbTableKind.RootExtension or DbTableKind.CollectionExtensionScope => IsExtensionScope(
-                relativeSegments
-            ),
-
-            _ => false,
-        };
-    }
-
-    /// <summary>
-    /// Returns true if the suffix represents exactly one array level deeper.
-    /// Allows intermediate property segments from inlined object paths
-    /// (e.g., "$" -> "$.contentStandard.authors[*]").
-    /// </summary>
-    private static bool IsOneArrayLevelDeeper(IReadOnlyList<JsonPathSegment> relativeSegments)
-    {
-        if (relativeSegments.Count == 0 || relativeSegments[^1] is not JsonPathSegment.AnyArrayElement)
-        {
-            return false;
-        }
-
-        var count = 0;
-        foreach (var segment in relativeSegments)
-        {
-            if (segment is JsonPathSegment.AnyArrayElement)
-            {
-                count++;
-            }
-        }
-
-        return count == 1;
-    }
-
-    /// <summary>
-    /// Returns true if the suffix represents an extension scope (_ext.projectName).
-    /// </summary>
-    private static bool IsExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments)
-    {
-        return relativeSegments.Count == 2
-            && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
-            && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
-    }
-
-    private static bool StartsWithExtensionScope(IReadOnlyList<JsonPathSegment> relativeSegments) =>
-        relativeSegments.Count >= 2
-        && relativeSegments[0] is JsonPathSegment.Property { Name: "_ext" }
-        && relativeSegments[1] is JsonPathSegment.Property { Name.Length: > 0 };
-
-    private static IReadOnlyList<JsonPathSegment> GetRestrictedSegments(JsonPathExpression path)
-    {
-        if (path.Canonical == "$")
-        {
-            return [];
-        }
-
-        if (path.Segments.Count > 0)
-        {
-            return path.Segments;
-        }
-
-        return ParseRestrictedCanonical(path.Canonical);
-    }
-
-    private static JsonPathSegment[] ParseRestrictedCanonical(string canonicalPath)
-    {
-        if (string.IsNullOrWhiteSpace(canonicalPath) || canonicalPath[0] != '$')
-        {
-            throw new InvalidOperationException(
-                $"Restricted JSONPath '{canonicalPath}' must start with '$'."
-            );
-        }
-
-        List<JsonPathSegment> segments = [];
-        var index = 1;
-
-        while (index < canonicalPath.Length)
-        {
-            switch (canonicalPath[index])
-            {
-                case '.':
-                    index = AppendProperty(canonicalPath, index, segments);
-                    break;
-                case '[' when IsArrayWildcard(canonicalPath, index):
-                    segments.Add(new JsonPathSegment.AnyArrayElement());
-                    index += 3;
-                    break;
-                default:
-                    throw new InvalidOperationException(
-                        $"Restricted JSONPath '{canonicalPath}' contains an unsupported segment."
-                    );
-            }
-        }
-
-        return [.. segments];
-    }
-
-    private static int AppendProperty(string path, int dotIndex, ICollection<JsonPathSegment> segments)
-    {
-        var startIndex = dotIndex + 1;
-        var index = startIndex;
-
-        while (index < path.Length && path[index] is not ('.' or '['))
-        {
-            index++;
-        }
-
-        if (index == startIndex)
-        {
-            throw new InvalidOperationException(
-                $"Restricted JSONPath '{path}' contains an empty property segment."
-            );
-        }
-
-        segments.Add(new JsonPathSegment.Property(path[startIndex..index]));
-
-        return index;
-    }
-
-    private static bool IsArrayWildcard(string path, int openBracketIndex) =>
-        openBracketIndex + 2 < path.Length
-        && path[openBracketIndex] == '['
-        && path[openBracketIndex + 1] == '*'
-        && path[openBracketIndex + 2] == ']';
 
     /// <summary>
     /// Resolves the target JSON object and property name for a collection array, navigating
@@ -1333,85 +673,6 @@ public static class DocumentReconstituter
         }
 
         return (target, lastProp.Name);
-    }
-
-    /// <summary>
-    /// Builds a deterministic member-order tree from the compiled JSON paths that participate in
-    /// scalar, reference, descriptor, collection, and extension reconstitution.
-    /// </summary>
-    private static PropertyOrderNode BuildPropertyOrderTree(
-        IReadOnlyList<DbTableModel> tableModelsInDependencyOrder,
-        IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
-        IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources
-    )
-    {
-        List<JsonPathExpression> orderedPaths = [];
-
-        foreach (var tableModel in tableModelsInDependencyOrder)
-        {
-            if (!string.Equals(tableModel.JsonScope.Canonical, "$", StringComparison.Ordinal))
-            {
-                orderedPaths.Add(tableModel.JsonScope);
-            }
-
-            foreach (var column in tableModel.Columns)
-            {
-                if (column.SourceJsonPath is JsonPathExpression sourcePath)
-                {
-                    orderedPaths.Add(sourcePath);
-                }
-            }
-        }
-
-        foreach (var plan in referenceProjectionPlans)
-        {
-            foreach (var binding in plan.BindingsInOrder)
-            {
-                orderedPaths.Add(binding.ReferenceObjectPath);
-
-                foreach (var field in binding.IdentityFieldOrdinalsInOrder)
-                {
-                    orderedPaths.Add(field.ReferenceJsonPath);
-                }
-            }
-        }
-
-        foreach (var descriptorSource in descriptorProjectionSources)
-        {
-            orderedPaths.Add(descriptorSource.DescriptorValuePath);
-        }
-
-        orderedPaths.Sort(
-            static (left, right) => string.Compare(left.Canonical, right.Canonical, StringComparison.Ordinal)
-        );
-
-        var root = new PropertyOrderNode();
-        HashSet<string> seenPaths = new(StringComparer.Ordinal);
-
-        foreach (var path in orderedPaths)
-        {
-            if (!seenPaths.Add(path.Canonical))
-            {
-                continue;
-            }
-
-            AddPath(root, path);
-        }
-
-        return root;
-    }
-
-    private static void AddPath(PropertyOrderNode root, JsonPathExpression path)
-    {
-        var current = root;
-
-        foreach (var segment in path.Segments)
-        {
-            if (segment is JsonPathSegment.Property property)
-            {
-                current = current.GetOrAddChild(property.Name);
-            }
-        }
     }
 
     private static JsonNode ReorderNode(JsonNode node, PropertyOrderNode propertyOrder)
@@ -1576,23 +837,6 @@ public static class DocumentReconstituter
         );
     }
 
-    /// <summary>
-    /// Finds the ordinal of the first column with the given kind.
-    /// Returns -1 if not found.
-    /// </summary>
-    private static int FindColumnOrdinalByKind(DbTableModel tableModel, ColumnKind kind)
-    {
-        for (var i = 0; i < tableModel.Columns.Count; i++)
-        {
-            if (tableModel.Columns[i].Kind == kind)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
     private static DocumentMetadataRow CreatePlaceholderDocumentMetadataRow(long documentId) =>
         new(
             DocumentId: documentId,
@@ -1602,132 +846,4 @@ public static class DocumentReconstituter
             ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
             IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
         );
-
-    private sealed class ReconstitutionContext(
-        IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
-        CompiledReconstitutionPlan? compiledPlan = null
-    )
-    {
-        private readonly Dictionary<DbTableName, ChildRowIndex> _childRowIndexesByTable = [];
-        private readonly PageOrderedChildRows? _pageOrderedChildRows = compiledPlan is not null
-            ? PageOrderedChildRowsCache.GetOrBuild(compiledPlan, tableRowsInDependencyOrder)
-            : null;
-        private readonly Dictionary<DbTableName, HydratedTableRows> _tableRowsByTable = BuildTableRowsByTable(
-            tableRowsInDependencyOrder
-        );
-
-        public IReadOnlyList<HydratedTableRows> TableRowsInDependencyOrder => tableRowsInDependencyOrder;
-
-        public HydratedTableRows GetTableRowsOrThrow(DbTableName table)
-        {
-            if (_tableRowsByTable.TryGetValue(table, out var tableRows))
-            {
-                return tableRows;
-            }
-
-            throw new InvalidOperationException(
-                $"Cannot reconstitute document: hydrated table rows for table '{table}' were not found."
-            );
-        }
-
-        public IReadOnlyList<object?[]> GetRowsByParentLocator(
-            HydratedTableRows childTableRows,
-            long parentLocatorValue
-        )
-        {
-            if (_pageOrderedChildRows is not null)
-            {
-                return _pageOrderedChildRows.GetRowsByParentLocator(
-                    childTableRows.TableModel.Table,
-                    parentLocatorValue
-                );
-            }
-
-            if (!_childRowIndexesByTable.TryGetValue(childTableRows.TableModel.Table, out var childRowIndex))
-            {
-                childRowIndex = ChildRowIndex.Create(childTableRows);
-                _childRowIndexesByTable[childTableRows.TableModel.Table] = childRowIndex;
-            }
-
-            return childRowIndex.GetRows(parentLocatorValue);
-        }
-
-        private static Dictionary<DbTableName, HydratedTableRows> BuildTableRowsByTable(
-            IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder
-        )
-        {
-            Dictionary<DbTableName, HydratedTableRows> tableRowsByTable = [];
-
-            foreach (var tableRows in tableRowsInDependencyOrder)
-            {
-                if (!tableRowsByTable.TryAdd(tableRows.TableModel.Table, tableRows))
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot reconstitute document: duplicate hydrated rows were provided for table '{tableRows.TableModel.Table}'."
-                    );
-                }
-            }
-
-            return tableRowsByTable;
-        }
-    }
-
-    private sealed class ChildRowIndex(
-        IReadOnlyDictionary<long, IReadOnlyList<object?[]>> rowsByParentLocator
-    )
-    {
-        public IReadOnlyList<object?[]> GetRows(long parentLocatorValue) =>
-            rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows)
-                ? rows
-                : Array.Empty<object?[]>();
-
-        public static ChildRowIndex Create(HydratedTableRows childTableRows)
-        {
-            var childTableModel = childTableRows.TableModel;
-            var parentScopeColumns = childTableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns;
-
-            if (parentScopeColumns.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot filter child rows for table '{childTableModel.Table}': "
-                        + $"expected exactly one ImmediateParentScopeLocatorColumn, but found {parentScopeColumns.Count}."
-                );
-            }
-
-            var parentLocatorOrdinal = FindColumnOrdinalByName(childTableModel, parentScopeColumns[0]);
-            var ordinalColumnOrdinal = FindColumnOrdinalByKind(childTableModel, ColumnKind.Ordinal);
-            Dictionary<long, List<object?[]>> rowsByParentLocator = [];
-
-            foreach (var row in childTableRows.Rows)
-            {
-                var parentLocatorValue = Convert.ToInt64(row[parentLocatorOrdinal]);
-
-                if (!rowsByParentLocator.TryGetValue(parentLocatorValue, out var rows))
-                {
-                    rows = [];
-                    rowsByParentLocator[parentLocatorValue] = rows;
-                }
-
-                rows.Add(row);
-            }
-
-            if (ordinalColumnOrdinal >= 0)
-            {
-                foreach (var rows in rowsByParentLocator.Values)
-                {
-                    HydratedRowOrdering.EnsureOrdinalOrder(
-                        rows,
-                        row => Convert.ToInt32(row[ordinalColumnOrdinal])
-                    );
-                }
-            }
-
-            return new ChildRowIndex(
-                rowsByParentLocator.ToDictionary(
-                    static entry => entry.Key,
-                    static entry => (IReadOnlyList<object?[]>)entry.Value
-                )
-            );
-        }
-    }
 }
