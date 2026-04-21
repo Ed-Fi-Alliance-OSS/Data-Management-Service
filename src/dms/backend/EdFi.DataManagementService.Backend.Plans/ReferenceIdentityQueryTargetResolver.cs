@@ -119,7 +119,15 @@ internal sealed class ReferenceIdentityQueryTargetResolver
             return new ReferenceIdentityQueryCandidateResolution.NoMatch();
         }
 
-        return CreateResolution(guardedMatches);
+        var uniqueIdFallbackMatches = guardedMatches
+            .Select(match => new ReferenceIdentityQueryCandidateGroupMatch(
+                match.CandidateGroup,
+                match.MatchedCandidatesInOrder.Where(IsUniqueIdCandidate).ToArray()
+            ))
+            .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
+            .ToArray();
+
+        return CreateResolution(uniqueIdFallbackMatches);
     }
 
     public RelationalQueryFieldTarget ResolveTargetOrThrow(
@@ -449,6 +457,18 @@ internal sealed class ReferenceIdentityQueryTargetResolver
                     StringComparison.OrdinalIgnoreCase
                 )
             );
+    }
+
+    private static bool IsUniqueIdCandidate(ReferenceIdentityQueryCandidate candidate)
+    {
+        return PathLeafEndsWithUniqueId(candidate.IdentityJsonPath)
+            || PathLeafEndsWithUniqueId(candidate.ReferenceJsonPath);
+    }
+
+    private static bool PathLeafEndsWithUniqueId(JsonPathExpression candidatePath)
+    {
+        return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
+            && candidateLeaf.EndsWith("UniqueId", StringComparison.Ordinal);
     }
 
     private static bool MatchesTargetResourceUniqueIdAlias(

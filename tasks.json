@@ -160,7 +160,7 @@
       "Add unit coverage for target-resource-prefix misses, generic `*UniqueId` fallback success, generic fallback ambiguity, same-site duplicate collapse, cross-site ambiguity, array-crossing preservation, and non-root preservation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests|ReferenceIdentityQueryTargetResolverTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Capability Compiler Flow",
