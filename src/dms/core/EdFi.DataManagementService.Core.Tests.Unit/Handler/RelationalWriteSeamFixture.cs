@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -502,19 +503,14 @@ internal sealed record RelationalWriteSeamFixture(
 
     private ResourceReadPlan CreateReadPlan(SqlDialect dialect)
     {
-        return new ResourceReadPlan(
-            Model: WritePlan.Model,
-            KeysetTable: KeysetTableConventions.GetKeysetTableContract(dialect),
-            TablePlansInDependencyOrder:
-            [
-                new TableReadPlan(
-                    WritePlan.Model.Root,
-                    $"SELECT * FROM {WritePlan.Model.Root.Table.Schema.Value}.\"{WritePlan.Model.Root.Table.Name}\";"
-                ),
-            ],
-            ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
-        );
+        var existingDocumentReadModel = WritePlan.Model with
+        {
+            TablesInDependencyOrder = [WritePlan.Model.Root],
+            DocumentReferenceBindings = [],
+            DescriptorEdgeSources = [],
+        };
+
+        return new ReadPlanCompiler(dialect).Compile(existingDocumentReadModel);
     }
 
     private static TableWritePlan CreateRootPlan()
