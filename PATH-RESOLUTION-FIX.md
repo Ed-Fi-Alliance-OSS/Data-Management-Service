@@ -52,9 +52,9 @@ Concrete failure:
 
 ## Proposed Design
 
-Add a small reference-identity target resolver to `RelationalQueryCapabilityCompiler`.
+Add a narrow reference-identity query alias resolver to `RelationalQueryCapabilityCompiler`.
 
-The existing exact path lookup should remain for normal scalar and descriptor fields. When exact lookup does not produce a deterministic root target, the compiler should ask this resolver whether the query field is a reference identity alias that can bind to a root-table reference identity column.
+The existing exact path lookup should remain for normal scalar and descriptor fields. When exact lookup does not produce a deterministic root target, the compiler should ask this resolver whether the query field can bind through root-table `DocumentReferenceBinding.IdentityBindings`.
 
 ### New Helper
 
@@ -64,7 +64,7 @@ Add an internal helper in `EdFi.DataManagementService.Backend.Plans`, for exampl
 internal sealed class ReferenceIdentityQueryTargetResolver
 ```
 
-Keep this helper narrow. It is not a general JSONPath resolver. Its only job is to inspect root-table `DocumentReferenceBindings`, map one single-path `queryFieldMapping` to one local binding column, and report no match or ambiguity when it cannot do that deterministically.
+Keep this helper narrow. It is not a general JSONPath resolver and should not introduce reference joins or column-name parsing. Its only job is to inspect root-table `DocumentReferenceBindings`, map one single-path `queryFieldMapping` to one local binding column, and report no match or ambiguity when it cannot do that deterministically.
 
 Inputs:
 
@@ -114,8 +114,9 @@ For a single-path query field, a reference candidate matches when one of these i
 
 3. **Virtual query alias match**
    - the query path does not cross an array,
+   - the query path parent reference-object leaf is the same as, or ordinal-ignore-case ends with, the candidate target identity parent reference-object leaf,
    - the query path leaf starts with `lowerCamel(DocumentReferenceBinding.TargetResource.ResourceName)` under ordinal-ignore-case comparison, and
-   - the public query field name ends with the candidate target identity leaf name under ordinal-ignore-case comparison.
+   - the public query field name is the candidate target identity leaf, or ordinal-ignore-case ends with the candidate target identity leaf.
    - Example: `CourseTranscript.studentUniqueId`
      - query field name: `studentUniqueId`
      - query path: `$.studentReference.studentAcademicRecordUniqueId`
@@ -128,7 +129,7 @@ For a single-path query field, a reference candidate matches when one of these i
      - candidate target identity path: `$.studentReference.studentUniqueId`
      - candidate target resource: `StudentEducationOrganizationAssessmentAccommodation`
 
-This virtual rule is a fallback after exact local/target path matching. It keeps the match semantic: it uses ApiSchema query metadata plus `DocumentReferenceBinding.IdentityBindings`, not physical column prefixes.
+This virtual rule is a fallback after exact local/target path matching. The parent-reference guard keeps the rule narrow while still covering generated aliases such as `studentReference.studentAcademicRecordUniqueId` and `scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId`.
 
 If more than one candidate matches:
 
@@ -144,6 +145,8 @@ The matched candidate target should be:
 
 The target column must be the API-bound binding column. If it is a `UnifiedAlias`, leave it as the target. `RelationalQueryPageKeysetPlanner` already builds `UnifiedAliasMappingsByColumn`, and `PageDocumentIdSqlCompiler` already rewrites alias predicates to canonical storage columns with the required presence gate.
 
+Apply this target selection for both exact root ambiguity collapse and virtual alias fallback. Do not return `AmbiguousRootTarget` for duplicate root scalar or descriptor matches until the resolver has had a chance to prove that all matches are one same-site logical field group.
+
 For CourseTranscript, the resulting supported field should keep:
 
 - query field: `studentUniqueId`
@@ -152,22 +155,23 @@ For CourseTranscript, the resulting supported field should keep:
 
 ## Compiler Flow
 
-Update `CompileQueryField` in `RelationalQueryCapabilityCompiler`:
+Update `CompileQueryField` in `RelationalQueryCapabilityCompiler` with the smallest flow change possible:
 
 1. Reject multi-path mappings as today.
 2. Preserve the `$.id` special case.
-3. Try exact root descriptor target resolution.
-4. Try exact root scalar path resolution when it is unique.
-5. Try reference-aware resolution:
-   - this handles no exact root match,
-   - this handles exact root ambiguity caused by same-site duplicate reference identity bindings.
-6. Apply existing unsupported classifications:
+3. Try exact root descriptor target resolution:
+   - if unique, return the descriptor target;
+   - if ambiguous, try reference-aware resolution before returning `AmbiguousRootTarget`.
+4. Try exact root scalar path resolution:
+   - if unique, return the root-column target;
+   - if ambiguous, try reference-aware resolution before returning `AmbiguousRootTarget`.
+5. Apply unsupported classifications that should not be overridden by virtual alias fallback:
    - `ArrayCrossing`
    - `NonRootTable`
-   - `UnmappedPath`
-   - `AmbiguousRootTarget`
+6. Try reference-aware virtual alias resolution for otherwise unmapped root-reference aliases.
+7. Return `UnmappedPath`.
 
-The exact root scalar path should not immediately return `AmbiguousRootTarget` when multiple root columns match. Give the reference-aware resolver a chance to prove the matches are one same-site logical endpoint group.
+The exact root scalar or descriptor path should not immediately return `AmbiguousRootTarget` when multiple root columns match. Give the resolver a chance to prove the matches are one same-site logical endpoint group.
 
 ## Diagnostics
 
@@ -205,6 +209,7 @@ Add focused unit coverage in `MappingSetCompilerTests` or a dedicated `Relationa
 - Same-site duplicate group:
   - one `DocumentReferenceBinding` has duplicate `ReferenceJsonPath` members that converge through key unification.
   - expected target is the representative API-bound alias column, and the resource remains supported.
+  - include an exact-path ambiguity case such as `Section.schoolId` and a duplicated descriptor/string-style case such as survey section response `namespace` or `surveyIdentifier`.
 
 - Ambiguous duplicate guard:
   - duplicates across different reference sites or different non-converging storage columns classify as `AmbiguousRootTarget`.
@@ -215,7 +220,7 @@ Add focused unit coverage in `MappingSetCompilerTests` or a dedicated `Relationa
 
 Golden/regression coverage:
 
-- Regenerate authoritative sample mapping-set manifests.
+- Regenerate authoritative sample and full `ds-5.2` mapping-set manifests.
 - Verify `CourseTranscript.studentUniqueId` is supported and the resource is no longer omitted for `unmapped_path`.
 - Search for resources omitted only because of reference identity aliases and confirm deterministic aliases move to supported.
 
@@ -223,7 +228,7 @@ Provider coverage:
 
 - Add at least one real relational GET-many test on PostgreSQL and SQL Server:
   - seed/write a CourseTranscript-like resource,
-  - call `GET /courseTranscripts?studentUniqueId=...`,
+  - call `GET /courseTranscripts?studentUniqueId=...` through a backend integration request with empty/no-op authorization, or configure E2E authorization as `NoFurtherAuthorizationRequired`,
   - assert 200 and returned results,
   - assert the previous failure mode is not 501.
 
@@ -242,7 +247,7 @@ Provider coverage:
 ## Acceptance Criteria
 
 - `CourseTranscript.studentUniqueId` compiles to the local root-table reference binding column.
-- Same-site duplicate/key-unified reference identity fields compile deterministically without choosing by physical column-name convention.
+- Same-site duplicate/key-unified scalar and descriptor-valued reference identity fields compile deterministically without choosing by physical column-name convention.
 - Original query paths remain visible in supported query metadata.
 - Page SQL still targets root-table predicates only, with `UnifiedAlias` rewrite and presence gates handled by `PageDocumentIdSqlCompiler`.
 - Resources are no longer omitted solely because deterministic reference identity query aliases do not exact-match `DbColumnModel.SourceJsonPath`.
