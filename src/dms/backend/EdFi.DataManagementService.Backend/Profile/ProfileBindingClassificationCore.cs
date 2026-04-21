@@ -115,7 +115,12 @@ internal static class ProfileBindingClassificationCore
         // upstream Core / write-plan contract drift, not silent under-preservation.
         if (profileAppliedContext is not null)
         {
-            ValidateStoredScopeMetadata(profileAppliedContext, bindingsByContainingScope, tableWritePlan);
+            ValidateStoredScopeMetadata(
+                writePlan,
+                profileAppliedContext,
+                bindingsByContainingScope,
+                tableWritePlan
+            );
         }
 
         return dispositions.ToImmutableArray();
@@ -192,11 +197,22 @@ internal static class ProfileBindingClassificationCore
             case WriteValueSource.DocumentId:
                 return RootBindingDisposition.StorageManaged;
             case WriteValueSource.ParentKeyPart:
+                // Root-attached separate tables legitimately carry ParentKeyPart bindings
+                // (how the row aligns to its parent root row). The no-profile persister
+                // already handles parent-key rewriting in a separate step, not via
+                // key-unification. Classify as StorageManaged so the synthesizer skips it
+                // during profile overlay; Task 5 will add a ParentKeyPart rewrite step
+                // for separate-table rows mirroring the no-profile path.
+                return RootBindingDisposition.StorageManaged;
             case WriteValueSource.Ordinal:
+                // Ordinal implies collection-shaped behavior. Slice 3 is root-attached
+                // only; collections (and their Ordinal columns) are fenced for slice 4/5.
+                // Reaching this arm means upstream fencing failed.
                 throw new InvalidOperationException(
                     $"Table '{FormatTable(tableWritePlan)}' contains a "
-                        + $"{binding.Source.GetType().Name} binding at index {bindingIndex}, "
-                        + "which the profile-aware binding classifier does not support."
+                        + $"{nameof(WriteValueSource.Ordinal)} binding at index {bindingIndex}, "
+                        + "which the profile-aware binding classifier does not support in slice 3. "
+                        + "Collection-shaped scopes must be fenced upstream."
                 );
         }
 
@@ -265,22 +281,63 @@ internal static class ProfileBindingClassificationCore
     }
 
     /// <summary>
-    /// Verifies that every stored scope in the profile context resolves to at least one
-    /// ordinary binding on this table, and that every <c>HiddenMemberPath</c> within each
-    /// stored scope is matched (per its binding's <see cref="ProfileMemberGovernanceRules.HiddenPathMatchKind"/>)
-    /// by at least one binding under that scope. Throws <see cref="InvalidOperationException"/>
-    /// otherwise. This converts upstream Core / write-plan contract drift into a deterministic
-    /// invariant failure rather than silent under-preservation.
+    /// Verifies that every stored scope in the profile context <em>relevant to this table</em>
+    /// resolves to at least one ordinary binding on this table, and that every
+    /// <c>HiddenMemberPath</c> within each such stored scope is matched (per its binding's
+    /// <see cref="ProfileMemberGovernanceRules.HiddenPathMatchKind"/>) by at least one binding
+    /// under that scope. Throws <see cref="InvalidOperationException"/> otherwise. This
+    /// converts upstream Core / write-plan contract drift into a deterministic invariant
+    /// failure rather than silent under-preservation.
     /// </summary>
+    /// <remarks>
+    /// Slice 3 scope-relevance filter: a stored scope is "relevant to this table" only when
+    /// the stored scope is <em>owned by</em> this table — that is, when the longest
+    /// table-backed JSON-scope prefix of the stored scope's address equals this table's
+    /// own <see cref="DbTableModel.JsonScope"/>. The profile context carries stored scope
+    /// states for every scope on the resource (root + extensions); each per-table
+    /// classification invocation only owns bindings within scopes rooted at its table, so
+    /// stored scopes owned by sibling/parent tables (for example, root <c>$</c> when
+    /// classifying the extension table <c>$._ext.sample</c>, or extension
+    /// <c>$._ext.sample</c> when classifying the root) must be ignored here — those scopes
+    /// are validated by the classifier invocation that owns the table they belong to.
+    /// Without this filter, a realistic existing-document context would false-fail on
+    /// every cross-table classification because scopes owned by another table don't
+    /// resolve to a binding here. Note: a plain descendant filter is incorrect for the
+    /// root (<c>$</c>) direction — every scope on the resource is a descendant of
+    /// <c>$</c>, which would readmit extension-owned scopes when classifying the root
+    /// table. Ownership (longest-table-prefix-equals-this-table) is the correct rule in
+    /// both directions.
+    /// </remarks>
     private static void ValidateStoredScopeMetadata(
+        ResourceWritePlan writePlan,
         ProfileAppliedWriteContext profileAppliedContext,
         Dictionary<string, List<GovernedBindingEntry>> bindingsByContainingScope,
         TableWritePlan tableWritePlan
     )
     {
+        var tableScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+
+        // Precompute all table-backed JSON scopes on this resource, longest-first, so
+        // ownership resolution for each stored scope picks the longest table-backed
+        // prefix (segment-boundary match).
+        var tableBackedScopes = writePlan
+            .TablePlansInDependencyOrder.Select(tp => tp.TableModel.JsonScope.Canonical)
+            .OrderByDescending(s => s.Length)
+            .ToImmutableArray();
+
         foreach (var storedScope in profileAppliedContext.StoredScopeStates)
         {
             var scopeCanonical = storedScope.Address.JsonScope;
+
+            // Table-ownership filter: the stored scope is relevant to this table only when
+            // the longest table-backed prefix (segment-boundary) of its address equals this
+            // table's own scope. Stored scopes owned by another table must be ignored here.
+            var ownerTableScope = ResolveOwnerTableScope(scopeCanonical, tableBackedScopes);
+            if (!string.Equals(ownerTableScope, tableScopeCanonical, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (
                 !bindingsByContainingScope.TryGetValue(scopeCanonical, out var bindingsUnderScope)
                 || bindingsUnderScope.Count == 0
@@ -314,6 +371,43 @@ internal static class ProfileBindingClassificationCore
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Returns the longest table-backed JSON-scope prefix of <paramref name="scopeAddress"/>
+    /// from <paramref name="tableBackedScopesLongestFirst"/>, or <c>null</c> if no
+    /// table-backed scope is a segment-boundary prefix of <paramref name="scopeAddress"/>.
+    /// Prefix semantics match <see cref="TryMatchLongestScope"/>: a prefix must equal
+    /// <paramref name="scopeAddress"/>, or be followed by a <c>.</c> separator. This is the
+    /// "which table owns this scope?" resolver — the returned value is the JSON scope of
+    /// the table that owns a binding at <paramref name="scopeAddress"/>. The caller treats
+    /// a stored scope as relevant to the current table only when this value equals the
+    /// current table's scope.
+    /// </summary>
+    private static string? ResolveOwnerTableScope(
+        string scopeAddress,
+        ImmutableArray<string> tableBackedScopesLongestFirst
+    ) =>
+        tableBackedScopesLongestFirst.FirstOrDefault(tableScope =>
+            IsEqualOrSegmentPrefix(tableScope, scopeAddress)
+        );
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="maybePrefix"/> is equal to
+    /// <paramref name="scopeAddress"/>, or is a segment-boundary prefix (i.e., followed by
+    /// a <c>.</c> separator). Mirrors the segment-boundary rule used by
+    /// <see cref="TryMatchLongestScope"/> so table-ownership resolution and binding-to-
+    /// scope matching share identical prefix semantics.
+    /// </summary>
+    private static bool IsEqualOrSegmentPrefix(string maybePrefix, string scopeAddress)
+    {
+        if (string.Equals(maybePrefix, scopeAddress, StringComparison.Ordinal))
+        {
+            return true;
+        }
+        return scopeAddress.StartsWith(maybePrefix, StringComparison.Ordinal)
+            && scopeAddress.Length > maybePrefix.Length
+            && scopeAddress[maybePrefix.Length] == '.';
     }
 
     private static string ResolveBindingRootRelativePath(

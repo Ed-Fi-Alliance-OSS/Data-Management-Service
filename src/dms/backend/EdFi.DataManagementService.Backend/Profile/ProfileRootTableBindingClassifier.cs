@@ -74,6 +74,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         ArgumentNullException.ThrowIfNull(profileRequest);
 
         var rootTable = writePlan.TablePlansInDependencyOrder[0];
+        GuardAgainstRootParentKeyPart(rootTable);
         var resolverOwnedBindingIndices = ProfileBindingClassificationCore.CollectResolverOwnedIndices(
             rootTable
         );
@@ -86,4 +87,33 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
         );
         return new ProfileRootTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
     }
+
+    /// <summary>
+    /// Root-table plan-shape guard: root tables must never carry
+    /// <see cref="WriteValueSource.ParentKeyPart"/> bindings — ParentKeyPart is how a
+    /// separate-table row aligns to its parent root row, so it is only legitimate on
+    /// non-root tables. The shared core treats ParentKeyPart as
+    /// <see cref="RootBindingDisposition.StorageManaged"/> so the separate-table classifier
+    /// can consume it; this wrapper reinstates the fail-closed guard for root tables, which
+    /// is a plan-shape invariant rather than a classification-time decision.
+    /// </summary>
+    private static void GuardAgainstRootParentKeyPart(TableWritePlan rootTableWritePlan)
+    {
+        for (var bindingIndex = 0; bindingIndex < rootTableWritePlan.ColumnBindings.Length; bindingIndex++)
+        {
+            var binding = rootTableWritePlan.ColumnBindings[bindingIndex];
+            if (binding.Source is WriteValueSource.ParentKeyPart)
+            {
+                throw new InvalidOperationException(
+                    $"Table '{FormatTable(rootTableWritePlan)}' contains a "
+                        + $"{nameof(WriteValueSource.ParentKeyPart)} binding at index {bindingIndex}, "
+                        + "which the profile-aware binding classifier does not support on a root table. "
+                        + "ParentKeyPart bindings are legitimate only on non-root tables."
+                );
+            }
+        }
+    }
+
+    private static string FormatTable(TableWritePlan tableWritePlan) =>
+        $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 }

@@ -374,6 +374,215 @@ internal static class ProfileTestDoubles
         return WrapPlan(rootModel, [rootPlan], documentReferenceBindings: []);
     }
 
+    /// <summary>
+    /// Binding spec for <see cref="BuildRootPlusRootExtensionPlan"/>. Describes one
+    /// column/binding to place on the <see cref="DbTableKind.RootExtension"/> child
+    /// table in addition to the mandatory <c>DocumentId</c> parent-key binding.
+    /// </summary>
+    internal sealed record RootExtensionBindingSpec(
+        string ColumnName,
+        RootExtensionBindingKind Kind,
+        string? RelativePath = null
+    );
+
+    internal enum RootExtensionBindingKind
+    {
+        Scalar,
+        Precomputed,
+        DocumentId,
+    }
+
+    /// <summary>
+    /// Build a two-table plan: [0] = root ($), [1] = RootExtension child table at
+    /// <paramref name="extensionJsonScope"/> carrying a ParentKeyPart DocumentId binding
+    /// plus the supplied <paramref name="extensionBindings"/>. The extension table lives
+    /// in its own <paramref name="extensionSchema"/> schema. Intended for
+    /// <see cref="ProfileSeparateTableBindingClassifier"/> fixtures.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusRootExtensionPlan(
+        string extensionJsonScope = "$._ext.sample",
+        string extensionSchema = "sample",
+        params RootExtensionBindingSpec[] extensionBindings
+    )
+    {
+        // Root table: single scalar so the root classifier has something to chew on if called.
+        var rootScalar = Column("FirstName", ColumnKind.Scalar, StringType());
+        var rootModel = RootTable("Host", [rootScalar]);
+        var rootBinding = new WriteColumnBinding(
+            rootScalar,
+            new WriteValueSource.Scalar(Path("$.firstName"), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [rootBinding]);
+
+        // Extension table: mandatory ParentKeyPart DocumentId column + caller-supplied bindings.
+        var extensionSchemaName = new DbSchemaName(extensionSchema);
+        var extensionTableName = new DbTableName(extensionSchemaName, "HostExtension");
+        var parentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+
+        var extensionColumns = new List<DbColumnModel> { parentKeyColumn };
+        var extensionWriteBindings = new List<WriteColumnBinding>
+        {
+            new(parentKeyColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+        };
+
+        foreach (var spec in extensionBindings)
+        {
+            (DbColumnModel column, WriteValueSource source) = spec.Kind switch
+            {
+                RootExtensionBindingKind.Scalar => (
+                    Column(spec.ColumnName, ColumnKind.Scalar, StringType()),
+                    (WriteValueSource)
+                        new WriteValueSource.Scalar(
+                            Path(
+                                spec.RelativePath
+                                    ?? throw new ArgumentException(
+                                        "Scalar binding spec must supply a RelativePath.",
+                                        nameof(extensionBindings)
+                                    )
+                            ),
+                            StringType()
+                        )
+                ),
+                RootExtensionBindingKind.Precomputed => (
+                    Column(spec.ColumnName, ColumnKind.Scalar, Int32Type()),
+                    new WriteValueSource.Precomputed()
+                ),
+                RootExtensionBindingKind.DocumentId => (
+                    Column(spec.ColumnName, ColumnKind.ParentKeyPart, Int64Type()),
+                    new WriteValueSource.DocumentId()
+                ),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(extensionBindings),
+                    $"Unsupported RootExtensionBindingKind '{spec.Kind}'."
+                ),
+            };
+            extensionColumns.Add(column);
+            extensionWriteBindings.Add(new WriteColumnBinding(column, source, spec.ColumnName));
+        }
+
+        var extensionTableModel = new DbTableModel(
+            Table: extensionTableName,
+            JsonScope: Path(extensionJsonScope),
+            Key: new TableKey(
+                "PK_HostExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: extensionColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.RootExtension,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var extensionPlan = new TableWritePlan(
+            TableModel: extensionTableModel,
+            InsertSql: $"INSERT INTO {extensionSchema}.\"HostExtension\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(
+                1000,
+                Math.Max(1, extensionWriteBindings.Count),
+                65535
+            ),
+            ColumnBindings: extensionWriteBindings,
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, extensionTableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan]
+        );
+    }
+
+    /// <summary>
+    /// Build a two-table plan whose RootExtension table is incorrectly tagged as a
+    /// non-<see cref="DbTableKind.RootExtension"/> kind (default: <see cref="DbTableKind.CollectionExtensionScope"/>).
+    /// Used to verify the separate-table classifier rejects collection-aligned kinds.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusSeparateTablePlanWithNonRootExtensionKind(
+        DbTableKind nonRootExtensionKind = DbTableKind.CollectionExtensionScope
+    )
+    {
+        var rootScalar = Column("FirstName", ColumnKind.Scalar, StringType());
+        var rootModel = RootTable("Host", [rootScalar]);
+        var rootBinding = new WriteColumnBinding(
+            rootScalar,
+            new WriteValueSource.Scalar(Path("$.firstName"), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [rootBinding]);
+
+        var extensionSchemaName = new DbSchemaName("sample");
+        var parentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var scalarColumn = Column("FavoriteColor", ColumnKind.Scalar, StringType());
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(extensionSchemaName, "HostExtension"),
+            JsonScope: Path("$._ext.sample"),
+            Key: new TableKey(
+                "PK_HostExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [parentKeyColumn, scalarColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: nonRootExtensionKind,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var extensionPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"HostExtension\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 2, 65535),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(parentKeyColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+                new WriteColumnBinding(
+                    scalarColumn,
+                    new WriteValueSource.Scalar(Path("$._ext.sample.favoriteColor"), StringType()),
+                    "FavoriteColor"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, tableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan]
+        );
+    }
+
     // ── Resolver-context builders ─────────────────────────────────────────
 
     /// <summary>
