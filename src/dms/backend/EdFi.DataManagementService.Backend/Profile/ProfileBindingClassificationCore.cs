@@ -502,7 +502,7 @@ internal static class ProfileBindingClassificationCore
         return bindingPath[(scope.Length + 1)..];
     }
 
-    private static string FormatTable(TableWritePlan tableWritePlan) =>
+    internal static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
     private readonly record struct GovernedBindingEntry(

@@ -583,6 +583,203 @@ internal static class ProfileTestDoubles
         );
     }
 
+    /// <summary>
+    /// Build a two-table plan: [0] = root ($), [1] = RootExtension child table at
+    /// <paramref name="extensionJsonScope"/> with a key-unification plan whose members
+    /// live under the extension scope. Mirrors
+    /// <see cref="BuildRootPlanWithKeyUnificationMembers"/> for separate-table resolver
+    /// fixtures. Bindings on the extension table: [0] = ParentKeyPart DocumentId, then
+    /// [1] = canonical (Precomputed), followed by per-member synthetic presence
+    /// (Precomputed, when requested) and member value (Scalar / Descriptor) bindings
+    /// in the same order the root builder produces.
+    /// </summary>
+    internal static (
+        ResourceWritePlan Plan,
+        int ExtensionCanonicalBindingIndex,
+        IReadOnlyDictionary<string, int> ExtensionPresenceBindingIndicesByRelativePath
+    ) BuildRootPlusRootExtensionPlanWithKeyUnification(
+        IReadOnlyList<KeyUnificationMemberSpec> members,
+        string extensionJsonScope = "$._ext.sample",
+        string extensionSchema = "sample",
+        bool canonicalIsNullable = true
+    )
+    {
+        if (members is null || members.Count == 0)
+        {
+            throw new ArgumentException("At least one member spec is required.", nameof(members));
+        }
+
+        // Root table: trivial scalar to populate the root plan. Not touched by the
+        // separate-table resolver — the resolver only operates on the extension plan.
+        var rootScalar = Column("FirstName", ColumnKind.Scalar, StringType());
+        var rootModel = RootTable("Host", [rootScalar]);
+        var rootBinding = new WriteColumnBinding(
+            rootScalar,
+            new WriteValueSource.Scalar(Path("$.firstName"), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [rootBinding]);
+
+        // Extension table: ParentKeyPart DocumentId column at [0], then canonical +
+        // per-member (optional synthetic presence + value) columns in order.
+        var extensionSchemaName = new DbSchemaName(extensionSchema);
+        var extensionTableName = new DbTableName(extensionSchemaName, "HostExtension");
+        var parentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var canonicalColumn = Column(
+            CanonicalColumnFor().Value,
+            ColumnKind.Scalar,
+            Int32Type(),
+            isNullable: canonicalIsNullable
+        );
+
+        var extensionColumns = new List<DbColumnModel> { parentKeyColumn, canonicalColumn };
+        var extensionBindings = new List<WriteColumnBinding>
+        {
+            new(parentKeyColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+            new(canonicalColumn, new WriteValueSource.Precomputed(), canonicalColumn.ColumnName.Value),
+        };
+        var canonicalBindingIndex = 1;
+
+        var presenceBindingIndicesByRelativePath = new Dictionary<string, int>(StringComparer.Ordinal);
+        var memberColumnsByRelativePath = new Dictionary<string, DbColumnModel>(StringComparer.Ordinal);
+        var presenceColumnsByRelativePath = new Dictionary<string, DbColumnModel>(StringComparer.Ordinal);
+
+        foreach (var spec in members)
+        {
+            var memberColumn = Column(
+                spec.MemberColumnName ?? MemberPathColumnFor(spec.RelativePath).Value,
+                ColumnKind.Scalar,
+                spec.SourceKind == KeyUnificationMemberSourceKind.Scalar ? Int32Type() : Int64Type(),
+                sourceJsonPath: Path(spec.RelativePath)
+            );
+            memberColumnsByRelativePath[spec.RelativePath] = memberColumn;
+            extensionColumns.Add(memberColumn);
+
+            if (spec.PresenceSynthetic)
+            {
+                var presenceColumn = Column(
+                    spec.PresenceColumnName ?? PresenceColumnFor(spec.RelativePath).Value,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean)
+                );
+                presenceColumnsByRelativePath[spec.RelativePath] = presenceColumn;
+                extensionColumns.Add(presenceColumn);
+
+                extensionBindings.Add(
+                    new WriteColumnBinding(
+                        presenceColumn,
+                        new WriteValueSource.Precomputed(),
+                        presenceColumn.ColumnName.Value
+                    )
+                );
+                presenceBindingIndicesByRelativePath[spec.RelativePath] = extensionBindings.Count - 1;
+            }
+
+            WriteValueSource memberSource = spec.SourceKind switch
+            {
+                KeyUnificationMemberSourceKind.Scalar => new WriteValueSource.Scalar(
+                    Path(spec.RelativePath),
+                    Int32Type()
+                ),
+                KeyUnificationMemberSourceKind.Descriptor => new WriteValueSource.DescriptorReference(
+                    new QualifiedResourceName("Ed-Fi", "SampleDescriptor"),
+                    Path(spec.RelativePath),
+                    DescriptorValuePath: null
+                ),
+                _ => throw new InvalidOperationException($"Unsupported source kind '{spec.SourceKind}'."),
+            };
+            extensionBindings.Add(
+                new WriteColumnBinding(memberColumn, memberSource, memberColumn.ColumnName.Value)
+            );
+        }
+
+        var memberWritePlans = members
+            .Select<KeyUnificationMemberSpec, KeyUnificationMemberWritePlan>(spec =>
+            {
+                var memberColumn = memberColumnsByRelativePath[spec.RelativePath];
+                presenceColumnsByRelativePath.TryGetValue(spec.RelativePath, out var presenceColumn);
+                presenceBindingIndicesByRelativePath.TryGetValue(
+                    spec.RelativePath,
+                    out var presenceBindingIndex
+                );
+                int? presenceBindingIndexOrNull = spec.PresenceSynthetic ? presenceBindingIndex : null;
+
+                return spec.SourceKind switch
+                {
+                    KeyUnificationMemberSourceKind.Scalar => new KeyUnificationMemberWritePlan.ScalarMember(
+                        MemberPathColumn: memberColumn.ColumnName,
+                        RelativePath: Path(spec.RelativePath),
+                        ScalarType: Int32Type(),
+                        PresenceColumn: presenceColumn?.ColumnName,
+                        PresenceBindingIndex: presenceBindingIndexOrNull,
+                        PresenceIsSynthetic: spec.PresenceSynthetic
+                    ),
+                    KeyUnificationMemberSourceKind.Descriptor =>
+                        new KeyUnificationMemberWritePlan.DescriptorMember(
+                            MemberPathColumn: memberColumn.ColumnName,
+                            RelativePath: Path(spec.RelativePath),
+                            DescriptorResource: new QualifiedResourceName("Ed-Fi", "SampleDescriptor"),
+                            PresenceColumn: presenceColumn?.ColumnName,
+                            PresenceBindingIndex: presenceBindingIndexOrNull,
+                            PresenceIsSynthetic: spec.PresenceSynthetic
+                        ),
+                    _ => throw new InvalidOperationException($"Unsupported source kind '{spec.SourceKind}'."),
+                };
+            })
+            .ToList();
+
+        var keyUnificationPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: canonicalBindingIndex,
+            MembersInOrder: memberWritePlans
+        );
+
+        var extensionTableModel = new DbTableModel(
+            Table: extensionTableName,
+            JsonScope: Path(extensionJsonScope),
+            Key: new TableKey(
+                "PK_HostExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: extensionColumns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.RootExtension,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var extensionPlan = new TableWritePlan(
+            TableModel: extensionTableModel,
+            InsertSql: $"INSERT INTO {extensionSchema}.\"HostExtension\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, Math.Max(1, extensionBindings.Count), 65535),
+            ColumnBindings: extensionBindings,
+            KeyUnificationPlans: [keyUnificationPlan]
+        );
+
+        var plan = new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, extensionTableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan]
+        );
+
+        return (plan, canonicalBindingIndex, presenceBindingIndicesByRelativePath);
+    }
+
     // ── Resolver-context builders ─────────────────────────────────────────
 
     /// <summary>
@@ -765,6 +962,129 @@ internal static class ProfileTestDoubles
             presenceBindingIndicesByRelativePath
         );
     }
+
+    /// <summary>
+    /// Build a two-table plan whose separate table has a key-unification plan but is
+    /// tagged with a non-<see cref="DbTableKind.RootExtension"/> kind (default:
+    /// <see cref="DbTableKind.CollectionExtensionScope"/>). Used to verify the
+    /// separate-table resolver rejects collection-aligned kinds.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusSeparateTableWithKeyUnificationNonRootExtensionKind(
+        string memberRelativePath = "$._ext.sample.memberA",
+        DbTableKind nonRootExtensionKind = DbTableKind.CollectionExtensionScope
+    )
+    {
+        var rootScalar = Column("FirstName", ColumnKind.Scalar, StringType());
+        var rootModel = RootTable("Host", [rootScalar]);
+        var rootBinding = new WriteColumnBinding(
+            rootScalar,
+            new WriteValueSource.Scalar(Path("$.firstName"), StringType()),
+            "FirstName"
+        );
+        var rootPlan = RootPlan(rootModel, [rootBinding]);
+
+        var extensionSchemaName = new DbSchemaName("sample");
+        var parentKeyColumn = Column("DocumentId", ColumnKind.ParentKeyPart, null, isNullable: false);
+        var canonicalColumn = Column(CanonicalColumnFor().Value, ColumnKind.Scalar, Int32Type());
+        var memberColumn = Column(
+            MemberPathColumnFor(memberRelativePath).Value,
+            ColumnKind.Scalar,
+            Int32Type(),
+            sourceJsonPath: Path(memberRelativePath)
+        );
+
+        var bindings = new[]
+        {
+            new WriteColumnBinding(parentKeyColumn, new WriteValueSource.ParentKeyPart(0), "DocumentId"),
+            new WriteColumnBinding(
+                canonicalColumn,
+                new WriteValueSource.Precomputed(),
+                canonicalColumn.ColumnName.Value
+            ),
+            new WriteColumnBinding(
+                memberColumn,
+                new WriteValueSource.Scalar(Path(memberRelativePath), Int32Type()),
+                memberColumn.ColumnName.Value
+            ),
+        };
+
+        var keyUnificationPlan = new KeyUnificationWritePlan(
+            CanonicalColumn: canonicalColumn.ColumnName,
+            CanonicalBindingIndex: 1,
+            MembersInOrder:
+            [
+                new KeyUnificationMemberWritePlan.ScalarMember(
+                    MemberPathColumn: memberColumn.ColumnName,
+                    RelativePath: Path(memberRelativePath),
+                    ScalarType: Int32Type(),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                ),
+            ]
+        );
+
+        var tableModel = new DbTableModel(
+            Table: new DbTableName(extensionSchemaName, "HostExtension"),
+            JsonScope: Path("$._ext.sample"),
+            Key: new TableKey(
+                "PK_HostExtension",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: [parentKeyColumn, canonicalColumn, memberColumn],
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: nonRootExtensionKind,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        var extensionPlan = new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT INTO sample.\"HostExtension\" DEFAULT VALUES",
+            UpdateSql: null,
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(1000, 3, 65535),
+            ColumnBindings: bindings,
+            KeyUnificationPlans: [keyUnificationPlan]
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                Resource: _defaultResource,
+                PhysicalSchema: _defaultSchema,
+                StorageKind: ResourceStorageKind.RelationalTables,
+                Root: rootModel,
+                TablesInDependencyOrder: [rootModel, tableModel],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            [rootPlan, extensionPlan]
+        );
+    }
+
+    internal static ProfileSeparateTableKeyUnificationContext BuildSeparateTableResolverContext(
+        ResourceWritePlan writePlan,
+        JsonNode? writableBody = null,
+        RelationalWriteCurrentState? currentState = null,
+        IReadOnlyDictionary<DbColumnName, object?>? currentRowByColumnName = null,
+        FlatteningResolvedReferenceLookupSet? resolvedReferenceLookups = null,
+        ProfileAppliedWriteRequest? profileRequest = null,
+        ProfileAppliedWriteContext? profileAppliedContext = null
+    ) =>
+        new(
+            WritableRequestBody: writableBody ?? new JsonObject(),
+            CurrentState: currentState,
+            CurrentRowByColumnName: currentRowByColumnName ?? new Dictionary<DbColumnName, object?>(),
+            ResolvedReferenceLookups: resolvedReferenceLookups ?? EmptyResolvedReferenceLookups(writePlan),
+            ProfileRequest: profileRequest ?? CreateRequest(),
+            ProfileAppliedContext: profileAppliedContext
+        );
 
     internal static ProfileRootKeyUnificationContext BuildResolverContext(
         ResourceWritePlan writePlan,

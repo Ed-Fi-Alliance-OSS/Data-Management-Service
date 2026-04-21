@@ -105,7 +105,7 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             if (binding.Source is WriteValueSource.ParentKeyPart)
             {
                 throw new InvalidOperationException(
-                    $"Table '{FormatTable(rootTableWritePlan)}' contains a "
+                    $"Table '{ProfileBindingClassificationCore.FormatTable(rootTableWritePlan)}' contains a "
                         + $"{nameof(WriteValueSource.ParentKeyPart)} binding at index {bindingIndex}, "
                         + "which the profile-aware binding classifier does not support on a root table. "
                         + "ParentKeyPart bindings are legitimate only on non-root tables."
@@ -113,7 +113,4 @@ internal sealed class ProfileRootTableBindingClassifier : IProfileRootTableBindi
             }
         }
     }
-
-    private static string FormatTable(TableWritePlan tableWritePlan) =>
-        $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 }

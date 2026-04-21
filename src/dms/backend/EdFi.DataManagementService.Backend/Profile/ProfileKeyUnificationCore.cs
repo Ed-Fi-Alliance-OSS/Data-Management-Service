@@ -140,7 +140,7 @@ internal static class ProfileKeyUnificationCore
                 {
                     throw new InvalidOperationException(
                         $"Resolver cannot write synthetic presence binding index {presenceBindingIndex} on table "
-                            + $"'{FormatTable(tableWritePlan)}' because the classifier did not mark it resolver-owned."
+                            + $"'{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' because the classifier did not mark it resolver-owned."
                     );
                 }
 
@@ -170,7 +170,7 @@ internal static class ProfileKeyUnificationCore
                         member.RelativePath
                     ),
                     $"Key-unification conflict for canonical column '{keyUnificationPlan.CanonicalColumn.Value}' "
-                        + $"on table '{FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
+                        + $"on table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}': member '{firstPresentMember.MemberPathColumn.Value}' "
                         + $"resolved to {FormatLiteral(canonicalValue)} but member '{member.MemberPathColumn.Value}' "
                         + $"resolved to {FormatLiteral(evaluation.Value)}."
                 );
@@ -181,7 +181,7 @@ internal static class ProfileKeyUnificationCore
         {
             throw new InvalidOperationException(
                 $"Resolver cannot write canonical binding index {keyUnificationPlan.CanonicalBindingIndex} on table "
-                    + $"'{FormatTable(tableWritePlan)}' because the classifier did not mark it resolver-owned."
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' because the classifier did not mark it resolver-owned."
             );
         }
 
@@ -280,7 +280,7 @@ internal static class ProfileKeyUnificationCore
                 ReadOnlySpan<int>.Empty
             ),
             _ => throw new InvalidOperationException(
-                $"Unhandled member visibility '{visibility}' on table '{FormatTable(tableWritePlan)}'."
+                $"Unhandled member visibility '{visibility}' on table '{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}'."
             ),
         };
 
@@ -294,7 +294,7 @@ internal static class ProfileKeyUnificationCore
         {
             throw new InvalidOperationException(
                 $"Hidden key-unification member '{member.MemberPathColumn.Value}' on table "
-                    + $"'{FormatTable(tableWritePlan)}' requires stored column "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' requires stored column "
                     + $"'{member.MemberPathColumn.Value}' in the current-state row projection, "
                     + "but it was not present."
             );
@@ -307,7 +307,7 @@ internal static class ProfileKeyUnificationCore
             {
                 throw new InvalidOperationException(
                     $"Hidden key-unification member '{member.MemberPathColumn.Value}' on table "
-                        + $"'{FormatTable(tableWritePlan)}' requires presence column "
+                        + $"'{ProfileBindingClassificationCore.FormatTable(tableWritePlan)}' requires presence column "
                         + $"'{presenceColumn.Value}' in the current-state row projection, "
                         + "but it was not present."
                 );
@@ -355,9 +355,6 @@ internal static class ProfileKeyUnificationCore
         }
         return bindingPath[(scope.Length + 1)..];
     }
-
-    private static string FormatTable(TableWritePlan tableWritePlan) =>
-        $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 
     private static string FormatLiteral(object? value) =>
         value switch

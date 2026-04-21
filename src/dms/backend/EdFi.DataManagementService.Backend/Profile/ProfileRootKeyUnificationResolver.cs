@@ -79,7 +79,7 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
         {
             throw new InvalidOperationException(
                 $"Merged row value buffer length {mergedRowValuesMutable.Length} does not match "
-                    + $"root table '{FormatTable(rootTableWritePlan)}' binding count "
+                    + $"root table '{ProfileBindingClassificationCore.FormatTable(rootTableWritePlan)}' binding count "
                     + $"{rootTableWritePlan.ColumnBindings.Length}."
             );
         }
@@ -101,7 +101,4 @@ internal sealed class ProfileRootKeyUnificationResolver : IProfileRootKeyUnifica
             resolverOwnedBindingIndices
         );
     }
-
-    private static string FormatTable(TableWritePlan tableWritePlan) =>
-        $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
 }

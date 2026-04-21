@@ -144,7 +144,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             if (hydrated.Rows.Count != 1)
             {
                 throw new InvalidOperationException(
-                    $"Root table '{FormatTable(rootTable)}' has {hydrated.Rows.Count} current rows "
+                    $"Root table '{ProfileBindingClassificationCore.FormatTable(rootTable)}' has {hydrated.Rows.Count} current rows "
                         + "for profiled existing-document merge; expected exactly one."
                 );
             }
@@ -185,7 +185,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     if (projectedCurrentRootRow is null)
                     {
                         throw new InvalidOperationException(
-                            $"Root-table binding at index {bindingIndex} on table '{FormatTable(rootTable)}' "
+                            $"Root-table binding at index {bindingIndex} on table '{ProfileBindingClassificationCore.FormatTable(rootTable)}' "
                                 + "classified HiddenPreserved, but no current row is available. "
                                 + "Upstream contract violation between classifier and synthesizer."
                         );
@@ -198,7 +198,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 default:
                     throw new InvalidOperationException(
                         $"Unexpected RootBindingDisposition '{classification.BindingsByIndex[bindingIndex]}' "
-                            + $"at index {bindingIndex} on table '{FormatTable(rootTable)}'."
+                            + $"at index {bindingIndex} on table '{ProfileBindingClassificationCore.FormatTable(rootTable)}'."
                     );
             }
         }
@@ -235,7 +235,4 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var tableState = new RelationalWriteMergedTableState(rootTable, currentRows, [mergedRow]);
         return new RelationalWriteMergeResult([tableState], supportsGuardedNoOp: false);
     }
-
-    private static string FormatTable(TableWritePlan rootTable) =>
-        $"{rootTable.TableModel.Table.Schema.Value}.{rootTable.TableModel.Table.Name}";
 }

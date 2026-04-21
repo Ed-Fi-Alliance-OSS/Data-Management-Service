@@ -58,7 +58,7 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
             throw new ArgumentException(
                 $"{nameof(ProfileSeparateTableBindingClassifier)} supports only "
                     + $"{nameof(DbTableKind.RootExtension)} tables in slice 3; "
-                    + $"got {tableKind} for table '{FormatTable(separateTablePlan)}'. "
+                    + $"got {tableKind} for table '{ProfileBindingClassificationCore.FormatTable(separateTablePlan)}'. "
                     + "Collection-aligned separate-table scopes belong to slice 5.",
                 nameof(separateTablePlan)
             );
@@ -76,7 +76,4 @@ internal sealed class ProfileSeparateTableBindingClassifier : IProfileSeparateTa
         );
         return new ProfileSeparateTableBindingClassification(bindingsByIndex, resolverOwnedBindingIndices);
     }
-
-    private static string FormatTable(TableWritePlan plan) =>
-        $"{plan.TableModel.Table.Schema.Value}.{plan.TableModel.Table.Name}";
 }
