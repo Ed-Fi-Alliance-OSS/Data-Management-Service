@@ -133,7 +133,7 @@
       "Extend `ReferenceIdentityQueryTargetResolverTests.cs` with scalar target, descriptor target, `UnifiedAlias` target, descriptor-resource mismatch, missing descriptor metadata, and invalid representative-column cases.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReferenceIdentityQueryTargetResolverTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Exact Root Ambiguity Collapse",
