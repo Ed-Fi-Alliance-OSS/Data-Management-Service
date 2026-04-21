@@ -151,7 +151,7 @@
       "Add focused unit cases in `RelationalQueryCapabilityCompilerTests.cs` or `MappingSetCompilerTests.cs` for CourseTranscript, StudentAssessmentRegistration, scheduled StudentAssessmentRegistration, StudentCTEProgramAssociation, and BusRoute-style virtual aliases.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Virtual Alias Ambiguity Guards",

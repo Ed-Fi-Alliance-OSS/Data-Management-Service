@@ -77,6 +77,107 @@ public class Given_RelationalQueryCapabilityCompiler
             );
     }
 
+    [TestCase(
+        "CourseTranscript",
+        "studentUniqueId",
+        "$.studentReference.studentAcademicRecordUniqueId",
+        "StudentAcademicRecord",
+        "$.studentAcademicRecordReference",
+        "$.studentReference.studentUniqueId",
+        "$.studentAcademicRecordReference.studentUniqueId",
+        "StudentAcademicRecord_DocumentId",
+        "StudentAcademicRecord_StudentUniqueId"
+    )]
+    [TestCase(
+        "StudentAssessmentRegistration",
+        "studentUniqueId",
+        "$.studentReference.studentEducationOrganizationAssociationUniqueId",
+        "StudentEducationOrganizationAssociation",
+        "$.studentEducationOrganizationAssociationReference",
+        "$.studentReference.studentUniqueId",
+        "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+        "StudentEducationOrganizationAssociation_DocumentId",
+        "StudentEducationOrganizationAssociation_StudentUniqueId"
+    )]
+    [TestCase(
+        "StudentAssessmentRegistration",
+        "scheduledStudentUniqueId",
+        "$.scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId",
+        "StudentEducationOrganizationAssessmentAccommodation",
+        "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
+        "$.studentReference.studentUniqueId",
+        "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.studentUniqueId",
+        "ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId",
+        "ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId"
+    )]
+    [TestCase(
+        "StudentCTEProgramAssociation",
+        "studentUniqueId",
+        "$.studentReference.generalStudentProgramAssociationUniqueId",
+        "Student",
+        "$.studentReference",
+        "$.studentReference.studentUniqueId",
+        "$.studentReference.studentUniqueId",
+        "Student_DocumentId",
+        "Student_StudentUniqueId"
+    )]
+    [TestCase(
+        "BusRoute",
+        "staffUniqueId",
+        "$.staffReference.staffEducationOrganizationAssignmentAssociationUniqueId",
+        "StaffEducationOrganizationAssignmentAssociation",
+        "$.staffEducationOrganizationAssignmentAssociationReference",
+        "$.staffReference.staffUniqueId",
+        "$.staffEducationOrganizationAssignmentAssociationReference.staffUniqueId",
+        "StaffEducationOrganizationAssignmentAssociation_DocumentId",
+        "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId"
+    )]
+    public void It_should_resolve_virtual_reference_identity_aliases_to_local_root_binding_columns(
+        string rootTableName,
+        string queryFieldName,
+        string queryPath,
+        string targetResourceName,
+        string referenceObjectPath,
+        string identityPath,
+        string referencePath,
+        string fkColumn,
+        string expectedColumn
+    )
+    {
+        var targetResource = new QualifiedResourceName("Ed-Fi", targetResourceName);
+        var rootTable = CreateRootTable(
+            rootTableName,
+            [
+                DocumentFkColumn(fkColumn, referenceObjectPath, targetResource),
+                ScalarColumn(expectedColumn, referencePath),
+            ]
+        );
+        var binding = CreateBinding(
+            referenceObjectPath,
+            rootTable.Table,
+            fkColumn,
+            targetResource,
+            identityPath,
+            referencePath,
+            expectedColumn
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(new QualifiedResourceName("Ed-Fi", rootTableName), rootTable, [binding], []),
+            (queryFieldName, [(queryPath, "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+        capability.UnsupportedFieldsByQueryField.Should().BeEmpty();
+
+        var supportedField = capability.SupportedFieldsByQueryField[queryFieldName];
+        supportedField.Path.Path.Canonical.Should().Be(queryPath);
+        supportedField
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName(expectedColumn)));
+    }
+
     [Test]
     public void It_should_collapse_same_site_exact_root_scalar_duplicates_to_representative_binding_column()
     {
@@ -301,8 +402,23 @@ public class Given_RelationalQueryCapabilityCompiler
         IReadOnlyList<DescriptorEdgeSource> descriptorEdgeSources
     )
     {
+        return CreateModel(
+            _studentAssociationResource,
+            rootTable,
+            documentReferenceBindings,
+            descriptorEdgeSources
+        );
+    }
+
+    private static RelationalResourceModel CreateModel(
+        QualifiedResourceName resource,
+        DbTableModel rootTable,
+        IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings,
+        IReadOnlyList<DescriptorEdgeSource> descriptorEdgeSources
+    )
+    {
         return new RelationalResourceModel(
-            Resource: _studentAssociationResource,
+            Resource: resource,
             PhysicalSchema: _edfiSchema,
             StorageKind: ResourceStorageKind.RelationalTables,
             Root: rootTable,
@@ -432,12 +548,33 @@ public class Given_RelationalQueryCapabilityCompiler
         string column
     )
     {
+        return CreateBinding(
+            referenceObjectPath,
+            table,
+            fkColumn,
+            _studentResource,
+            identityPath,
+            referencePath,
+            column
+        );
+    }
+
+    private static DocumentReferenceBinding CreateBinding(
+        string referenceObjectPath,
+        DbTableName table,
+        string fkColumn,
+        QualifiedResourceName targetResource,
+        string identityPath,
+        string referencePath,
+        string column
+    )
+    {
         return new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: Path(referenceObjectPath),
             Table: table,
             FkColumn: new DbColumnName(fkColumn),
-            TargetResource: _studentResource,
+            TargetResource: targetResource,
             IdentityBindings: [ReferenceIdentity(identityPath, referencePath, column)]
         );
     }

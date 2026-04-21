@@ -55,17 +55,71 @@ internal sealed class ReferenceIdentityQueryTargetResolver
             .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
             .ToArray();
 
-        return matchedGroups.Length switch
+        return CreateResolution(matchedGroups);
+    }
+
+    public ReferenceIdentityQueryCandidateResolution ResolveReferenceAlias(
+        string queryFieldName,
+        JsonPathExpression queryPath
+    )
+    {
+        ArgumentException.ThrowIfNullOrEmpty(queryFieldName);
+
+        var exactResolution = ResolveExactPath(queryPath);
+        if (exactResolution is not ReferenceIdentityQueryCandidateResolution.NoMatch)
         {
-            0 => new ReferenceIdentityQueryCandidateResolution.NoMatch(),
-            1 => new ReferenceIdentityQueryCandidateResolution.Match(
-                matchedGroups[0].CandidateGroup,
-                matchedGroups[0].MatchedCandidatesInOrder
-            ),
-            _ => new ReferenceIdentityQueryCandidateResolution.Ambiguous(
-                matchedGroups.Select(static match => match.CandidateGroup).ToArray()
-            ),
-        };
+            return exactResolution;
+        }
+
+        if (
+            !TryGetPropertyLeaf(queryPath, out var queryPathLeaf)
+            || !TryGetParentPropertyLeaf(queryPath, out var queryPathParentReferenceLeaf)
+        )
+        {
+            return new ReferenceIdentityQueryCandidateResolution.NoMatch();
+        }
+
+        var guardedMatches = CandidateGroupsInOrder
+            .Select(group => new ReferenceIdentityQueryCandidateGroupMatch(
+                group,
+                group
+                    .CandidatesInOrder.Where(candidate =>
+                        MatchesQueryFieldName(queryFieldName, candidate)
+                        && MatchesQueryParentReferenceLeaf(queryPathParentReferenceLeaf, candidate)
+                    )
+                    .ToArray()
+            ))
+            .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
+            .ToArray();
+
+        if (guardedMatches.Length == 0)
+        {
+            return new ReferenceIdentityQueryCandidateResolution.NoMatch();
+        }
+
+        var targetResourceMatches = guardedMatches
+            .Select(match => new ReferenceIdentityQueryCandidateGroupMatch(
+                match.CandidateGroup,
+                match
+                    .MatchedCandidatesInOrder.Where(candidate =>
+                        MatchesTargetResourceUniqueIdAlias(queryPathLeaf, candidate.TargetResource)
+                    )
+                    .ToArray()
+            ))
+            .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
+            .ToArray();
+
+        if (targetResourceMatches.Length > 0)
+        {
+            return CreateResolution(targetResourceMatches);
+        }
+
+        if (!queryPathLeaf.EndsWith("UniqueId", StringComparison.Ordinal))
+        {
+            return new ReferenceIdentityQueryCandidateResolution.NoMatch();
+        }
+
+        return CreateResolution(guardedMatches);
     }
 
     public RelationalQueryFieldTarget ResolveTargetOrThrow(
@@ -338,6 +392,100 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     private static DbColumnName[] OrderDistinctColumns(IEnumerable<DbColumnName> columns)
     {
         return columns.Distinct().OrderBy(static column => column.Value, StringComparer.Ordinal).ToArray();
+    }
+
+    private static ReferenceIdentityQueryCandidateResolution CreateResolution(
+        IReadOnlyList<ReferenceIdentityQueryCandidateGroupMatch> matchedGroups
+    )
+    {
+        return matchedGroups.Count switch
+        {
+            0 => new ReferenceIdentityQueryCandidateResolution.NoMatch(),
+            1 => new ReferenceIdentityQueryCandidateResolution.Match(
+                matchedGroups[0].CandidateGroup,
+                matchedGroups[0].MatchedCandidatesInOrder
+            ),
+            _ => new ReferenceIdentityQueryCandidateResolution.Ambiguous(
+                matchedGroups.Select(static match => match.CandidateGroup).ToArray()
+            ),
+        };
+    }
+
+    private static bool MatchesQueryFieldName(
+        string queryFieldName,
+        ReferenceIdentityQueryCandidate candidate
+    )
+    {
+        return PathLeafMatchesQueryFieldName(queryFieldName, candidate.IdentityJsonPath)
+            || PathLeafMatchesQueryFieldName(queryFieldName, candidate.ReferenceJsonPath);
+    }
+
+    private static bool PathLeafMatchesQueryFieldName(string queryFieldName, JsonPathExpression candidatePath)
+    {
+        return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
+            && (
+                string.Equals(queryFieldName, candidateLeaf, StringComparison.OrdinalIgnoreCase)
+                || queryFieldName.EndsWith(candidateLeaf, StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
+    private static bool MatchesQueryParentReferenceLeaf(
+        string queryPathParentReferenceLeaf,
+        ReferenceIdentityQueryCandidate candidate
+    )
+    {
+        return TryGetParentPropertyLeaf(
+                candidate.IdentityJsonPath,
+                out var candidateIdentityParentReferenceLeaf
+            )
+            && (
+                string.Equals(
+                    candidateIdentityParentReferenceLeaf,
+                    queryPathParentReferenceLeaf,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || queryPathParentReferenceLeaf.EndsWith(
+                    candidateIdentityParentReferenceLeaf,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+    }
+
+    private static bool MatchesTargetResourceUniqueIdAlias(
+        string queryPathLeaf,
+        QualifiedResourceName targetResource
+    )
+    {
+        var expectedAliasLeaf =
+            $"{PlanNamingConventions.CamelCaseFirstCharacter(targetResource.ResourceName)}UniqueId";
+
+        return string.Equals(queryPathLeaf, expectedAliasLeaf, StringComparison.Ordinal);
+    }
+
+    private static bool TryGetPropertyLeaf(JsonPathExpression path, out string leaf)
+    {
+        leaf = string.Empty;
+
+        if (path.Segments.Count == 0 || path.Segments[^1] is not JsonPathSegment.Property property)
+        {
+            return false;
+        }
+
+        leaf = property.Name;
+        return true;
+    }
+
+    private static bool TryGetParentPropertyLeaf(JsonPathExpression path, out string parentLeaf)
+    {
+        parentLeaf = string.Empty;
+
+        if (path.Segments.Count < 2 || path.Segments[^2] is not JsonPathSegment.Property property)
+        {
+            return false;
+        }
+
+        parentLeaf = property.Name;
+        return true;
     }
 
     private sealed record ReferenceIdentityQueryCandidateGroupMatch(
