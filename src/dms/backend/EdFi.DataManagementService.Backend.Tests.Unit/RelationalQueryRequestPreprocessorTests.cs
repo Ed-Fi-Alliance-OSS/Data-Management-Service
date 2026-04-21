@@ -126,6 +126,48 @@ public class Given_RelationalQueryRequestPreprocessor
     }
 
     [Test]
+    public async Task It_preserves_reference_alias_public_path_while_binding_to_local_root_column()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        const string queryPath = "$.studentReference.studentAcademicRecordUniqueId";
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+            [CreateQueryElement("StudentUniqueId", queryPath, "800000001", "string")],
+            CreateSupportedQueryCapability(
+                CreateSupportedField(
+                    "studentUniqueId",
+                    queryPath,
+                    "string",
+                    new RelationalQueryFieldTarget.RootColumn(
+                        new DbColumnName("StudentAcademicRecord_StudentUniqueId")
+                    )
+                )
+            ),
+            referenceResolver
+        );
+
+        result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
+        result.QueryElementsInOrder.Should().ContainSingle();
+
+        var preprocessedElement = result.QueryElementsInOrder[0];
+        preprocessedElement.QueryElement.DocumentPaths.Should().ContainSingle();
+        preprocessedElement.QueryElement.DocumentPaths[0].Value.Should().Be(queryPath);
+        preprocessedElement.SupportedField.QueryFieldName.Should().Be("studentUniqueId");
+        preprocessedElement.SupportedField.Path.Path.Canonical.Should().Be(queryPath);
+        preprocessedElement
+            .SupportedField.Target.Should()
+            .Be(
+                new RelationalQueryFieldTarget.RootColumn(
+                    new DbColumnName("StudentAcademicRecord_StudentUniqueId")
+                )
+            );
+        preprocessedElement.Value.Should().Be(new PreprocessedRelationalQueryValue.Raw("800000001"));
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_resolves_mixed_case_descriptor_query_values_in_one_batched_lookup_without_relookup()
     {
         var referenceResolver = A.Fake<IReferenceResolver>();

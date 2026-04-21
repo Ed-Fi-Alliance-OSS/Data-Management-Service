@@ -127,6 +127,50 @@ public class Given_RelationalQueryPageKeysetPlanner
         keyset.ParameterValues["schoolCategoryDescriptor"].Should().Be(800L);
     }
 
+    [Test]
+    public void It_should_plan_reference_alias_predicates_against_local_root_binding_columns()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        const string queryPath = "$.studentReference.studentAcademicRecordUniqueId";
+        var queryElement = CreateElement(
+            "studentUniqueId",
+            queryPath,
+            "string",
+            new RelationalQueryFieldTarget.RootColumn(
+                new DbColumnName("StudentAcademicRecord_StudentUniqueId")
+            ),
+            "800000001",
+            new PreprocessedRelationalQueryValue.Raw("800000001")
+        );
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [queryElement]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+        );
+
+        queryElement.QueryElement.DocumentPaths.Should().ContainSingle();
+        queryElement.QueryElement.DocumentPaths[0].Value.Should().Be(queryPath);
+        queryElement.SupportedField.Path.Path.Canonical.Should().Be(queryPath);
+        queryElement
+            .SupportedField.Target.Should()
+            .Be(
+                new RelationalQueryFieldTarget.RootColumn(
+                    new DbColumnName("StudentAcademicRecord_StudentUniqueId")
+                )
+            );
+        keyset
+            .Plan.PageDocumentIdSql.Should()
+            .Contain("r.\"StudentAcademicRecord_StudentUniqueId\" = @studentUniqueId");
+        keyset
+            .Plan.TotalCountSql.Should()
+            .Contain("r.\"StudentAcademicRecord_StudentUniqueId\" = @studentUniqueId");
+        keyset.ParameterValues["studentUniqueId"].Should().Be("800000001");
+    }
+
     [TestCase("1.5")]
     [TestCase("2147483648")]
     public void It_should_signal_empty_page_when_integer_number_query_values_cannot_be_represented(
@@ -447,6 +491,11 @@ public class Given_RelationalQueryPageKeysetPlanner
                     "NameOfInstitution",
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75)
+                ),
+                CreateColumn(
+                    "StudentAcademicRecord_StudentUniqueId",
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32)
                 ),
                 CreateColumn(
                     "SchoolCategoryDescriptorId",

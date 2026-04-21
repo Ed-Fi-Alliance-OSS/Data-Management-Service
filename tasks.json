@@ -170,7 +170,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests|PageDocumentIdSqlCompilerTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalQueryRequestPreprocessorTests|RelationalQueryPageKeysetPlannerTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Capability Manifest Regression",
