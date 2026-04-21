@@ -80,6 +80,11 @@ A document’s served representation changes when any of the following occur:
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
+Rare exception: a startup-bound plan-shape input can alter the hashed caller-agnostic document
+without mutating persisted source rows. These cases require an owning feature document and an
+alternate invalidation mechanism. V1 link injection's `DataManagement:ResourceLinks:Enabled` flag is
+such a carve-out; see [link-injection.md](link-injection.md#cache-and-etag-interaction).
+
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
 case, `ContentVersion`, `ContentLastModifiedAt`, and `dms.DocumentChangeEvent` MUST remain unchanged.
 
@@ -134,14 +139,18 @@ For a document `P`:
 
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
-- `_etag(P)` is a deterministic hash of the canonical JSON form of the served response document:
-  - recommended: remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object properties using ordinal string ordering while preserving array order, serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode the hash as base64.
-  - readable-profile responses recompute `_etag` from the projected document using the same rule.
-  - responses whose `link.href` values require request-scoped routed-prefix assembly recompute `_etag` after that assembly, because the routed href is part of the final served document.
+- `_etag(P)` is a deterministic hash of the canonical JSON form of the caller-agnostic cached document:
+  - remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object properties using ordinal string ordering while preserving array order, serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode the hash as base64.
+  - `link.href` values in the hashed document carry the canonical suffix form; routed-prefix assembly is a transport concern and does not participate in the hash.
+  - readable-profile responses recompute `_etag` from the projected document using the same rule, still before routed-prefix assembly.
 
-This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the final response semantics rather than exact transport serializer bytes.
+This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the canonical cached document rather than exact transport serializer bytes.
 
-Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile / pre-prefix-assembly document and its `_etag`/`_lastModifiedDate` for that intermediate shape (see [data-model.md](data-model.md) §`dms.DocumentCache`). On a profile-scoped read the serving path retrieves the cached JSON, applies readable-profile projection, performs any request-scoped href-prefix assembly, and recomputes `_etag` from the final served document before returning the response — the cache is not keyed by profile or routed prefix. For the cache-validity inputs that *do* participate in cache keys (including `ResourceLinksFlag`) see [link-injection.md](link-injection.md) §Cache and Etag Interaction.
+Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
+document and its `_etag`/`_lastModifiedDate` for that intermediate shape. Profile-scoped reads apply
+readable-profile projection after cache retrieval and recompute `_etag` from the projected document.
+For cache freshness inputs and the startup plan-shape invalidation that covers flag flips, see
+[link-injection.md](link-injection.md#cache-and-etag-interaction).
 
 ## Journaling for Change Queries
 

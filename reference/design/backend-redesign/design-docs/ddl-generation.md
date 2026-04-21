@@ -53,17 +53,20 @@ The DDL generation utility is responsible for database objects derived from the 
 - Abstract identity tables (e.g., `{schema}.{AbstractResource}Identity`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)), plus union views for diagnostics/integrations.
 
 Explicitly out of scope for this redesign phase:
+
 - authorization *configuration* and admin/security metadata stores (claim sets, clients, vendors, etc.)
 - implementer-defined custom authorization views (for `{BasisResource}With{SomeDescription}` strategies) and their indexes (these are created/managed outside of DMS schema provisioning)
 
 ## Inputs and Outputs
 
 **Inputs**
+
 - Core + extension `ApiSchema.json` files (same configuration as DMS).
 - Target engine: PostgreSQL or SQL Server.
   - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 **Outputs**
+
 - A deterministic SQL script (recommended even when provisioning directly)
   - All schemas, tables, views, sequences, triggers
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
@@ -79,6 +82,7 @@ Explicitly out of scope for this redesign phase:
 ## SQL Text Canonicalization (Determinism Contract)
 
 This redesign requires deterministic SQL text output for:
+
 - repeatable schema provisioning (golden-file DDL diffs),
 - stable AOT mapping pack contents (compiled SQL plans are serialized as strings), and
 - stable plan-cache keys and diagnostics.
@@ -91,6 +95,7 @@ Therefore, the DDL generator (and the plan compiler used for AOT packs) MUST app
 - **Stable ordering**: emit objects and clauses in a deterministic order (see “Deterministic output ordering (DDL + packs)” below).
 
 Implementation guidance:
+
 - Prefer a single dialect-specific SQL writer/formatter shared by:
   - DDL generation (this document), and
   - compiled plan generation (`flattening-reconstitution.md`),
@@ -113,6 +118,7 @@ Determinism requirements differ by artifact:
 SQL snippets in design documents are explanatory and may omit dialect details (e.g., always-quoted identifiers) for readability.
 
 The DDL generator is the authoritative source of dialect-specific SQL text for provisioning, including:
+
 - schemas/tables/sequences/constraints/indexes,
 - abstract identity tables and union views,
 - trigger/function definitions (update tracking stamping, journaling, and identity maintenance),
@@ -135,27 +141,32 @@ This inventory is the explicit “what exists in the database” contract that t
 ### 2) Core objects (`dms` schema)
 
 **Tables**
+
 - `dms.ResourceKey`
 - `dms.Document`
 - `dms.ReferentialIdentity`
 - `dms.Descriptor`
 - Optional projections:
   - `dms.DocumentCache`
+  - `dms.DocumentCachePlanFingerprint`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
   - `dms.DocumentChangeEvent`
 
 **Sequence**
+
 - `dms.ChangeVersionSequence`
 - `dms.CollectionItemIdSequence`
 
 **Triggers (required)**
+
 - Journal emission triggers on `dms.Document`:
   - PostgreSQL: trigger function + trigger (as defined in [update-tracking.md](update-tracking.md))
   - SQL Server: `AFTER INSERT, UPDATE` trigger (as defined in [update-tracking.md](update-tracking.md))
 
 **Indexes**
+
 - All PK/UK indexes implied by constraints
 - Additional explicit indexes called out in the design docs (e.g., `IX_Document_ResourceKeyId_DocumentId`)
 - Supporting indexes for all FKs (see “FK index policy” below)
@@ -165,6 +176,7 @@ This inventory is the explicit “what exists in the database” contract that t
 Authorization is enforced at the SQL layer using companion tables/views in the `auth` schema (see [auth.md](auth.md)).
 
 **Schema + tables/views**
+
 - `auth.EducationOrganizationIdToEducationOrganizationId` (table)
 - Baseline relationship-based authorization views (hard-coded definitions; output person `DocumentId`s):
   - `auth.EducationOrganizationIdToStudentDocumentId`
@@ -173,12 +185,14 @@ Authorization is enforced at the SQL layer using companion tables/views in the `
   - `auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility`
 
 **Indexes**
+
 - Provision the indexes required for authorization query performance, including:
   - `dms.Document.CreatedByOwnershipTokenId`,
   - `auth.EducationOrganizationIdToEducationOrganizationId` source/target lookup indexes, and
   - per-resource indexes on `Namespace`, EducationOrganizationId columns, and join columns used to reach person `DocumentId`s (see `auth.md`).
 
 **Triggers / functions**
+
 - EdOrg hierarchy maintenance is provisioned as database logic (initially triggers, aligned with ODS) to keep `auth.EducationOrganizationIdToEducationOrganizationId` current.
 - Dialect-specific helper constructs used by batched authorization checks (e.g., a PostgreSQL `throw_error` function) are provisioned as part of schema setup.
 
@@ -194,12 +208,14 @@ For each concrete resource in the effective schema (core + extensions):
 - Tables for `_ext` sites (in extension project schemas), aligned to the base scope keys (see [extensions.md](extensions.md))
 
 For each abstract resource in `projectSchema.abstractResources`:
+
 - Identity table `{schema}.{AbstractResource}Identity` maintained from participating concrete root tables (see [data-model.md](data-model.md))
 - Union view `{schema}.{AbstractResource}_View` for diagnostics/integrations (emitted for every abstract resource; not required for API correctness)
 
 **Reference constraints (required)**
 
 The DDL generator must emit document-reference columns and constraints that enable identity propagation:
+
 - For every document reference site, persist:
   - `..._DocumentId` (stored/writable), and
   - `{RefBaseName}_{IdentityPart}` per-site identity-part **binding columns** (API-bound path columns).
@@ -221,16 +237,12 @@ The DDL generator must emit document-reference columns and constraints that enab
 
 **Link injection and DDL (V1 note)**
 
-V1 link injection adds no DDL. The per-page `dms.Document` auxiliary lookup that resolves `DocumentUuid`
-at read time reuses the existing `..._DocumentId` FK columns defined above; no new columns are required.
-The `Discriminator` used for abstract reference resolution is already present in the
-`{schema}.{AbstractResource}Identity` tables defined in this document; it adds no new DDL either. See
-[link-injection.md §Abstract Reference Resolution](link-injection.md#abstract-reference-resolution) for
-the normative description of how `Discriminator` is read at query time. The opt-in future optimization
-described in
-[link-injection.md §Future Optimization: Write-Time Stamping](link-injection.md#future-optimization-write-time-stamping)
-would add a `..._DocumentUuid uuid NULL` column per reference site, but this column is **not emitted by
-default** and is out of scope for V1 DDL generation.
+V1 link injection adds no per-reference DDL. It reuses the existing `..._DocumentId` columns and
+the `Discriminator` already provisioned on `{schema}.{AbstractResource}Identity`. When
+`dms.DocumentCache` is provisioned, also provision the singleton
+`dms.DocumentCachePlanFingerprint` table for startup plan-shape reconciliation; see
+[data-model.md](data-model.md) §`dms.DocumentCachePlanFingerprint` and
+[link-injection.md](link-injection.md#cache-and-etag-interaction).
 
 **Descriptor foreign keys (required)**
 
@@ -257,11 +269,13 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 **Triggers (required)**
 
 In addition to `dms.Document` journal triggers, emit per-table triggers derived from ApiSchema that:
+
 - stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `dms.ReferentialIdentity` rows transactionally on identity projection changes, and
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 **Indexes**
+
 - All PK/UK indexes implied by constraints
 - Supporting indexes for all FKs (no query indexes derived from `queryFieldMapping`)
 - Authorization-required indexes derived from `securableElements` and hard-coded authorization companion objects (see [auth.md](auth.md))
@@ -284,9 +298,11 @@ The emitted SQL must include deterministic DML that establishes the runtime cont
 In addition to the explicit indexes called out in the design docs, the DDL generator must ensure every foreign key has a supporting index on the referencing columns (to avoid accidental table scans on deletes, joins, and existence checks).
 
 Rule:
+
 - For each FK `(A.Col1, A.Col2, ...) → B(...)`, create a non-unique index on `(Col1, Col2, ...)` unless an existing PK/UK/index already has `(Col1, Col2, ...)` as a **leftmost prefix**.
 
 This policy applies to:
+
 - parent/child table FKs (including composite key FKs),
 - document-reference FKs (`..._DocumentId`),
 - descriptor-reference FKs (`..._DescriptorId`),
@@ -313,6 +329,7 @@ The DDL generation utility is a **provisioning** tool, not a schema migration en
 - The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
 
 This design **does** require provisioning to be robust and operationally repeatable:
+
 - The emitted SQL should be safe to re-run to completion on an empty database, and resilient to partial/failed runs (guardrails).
 - If the target database is already provisioned for a *different* effective schema hash, the tool must fail fast rather than attempting “in-place change”.
 
@@ -379,6 +396,7 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 Because `ResourceKeyId` is persisted in core tables and indexes, `ResourceKeyId` assignments must be deterministic for a given `EffectiveSchemaHash`.
 
 Recommended derivation:
+
 - Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
   - include all concrete `resourceSchemas[*].resourceName` where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
   - exclude `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows,
@@ -389,6 +407,7 @@ Recommended derivation:
 - Fail fast if `N` exceeds the maximum representable `ResourceKeyId` (`smallint`).
 
 Recommended additional fingerprinting:
+
 - Compute `ResourceKeySeedHash` as raw `SHA-256` bytes (32 bytes) over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion`).
 - Record `ResourceKeyCount=N` and `ResourceKeySeedHash` alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` so DMS can validate the `ResourceKeyId` mapping with a single-row read (full table diff only on mismatch). `ResourceKeyCount` uses the same `smallint` ceiling as `ResourceKeyId`, so the generator must reject `N > 32767` before writing the singleton row.
 

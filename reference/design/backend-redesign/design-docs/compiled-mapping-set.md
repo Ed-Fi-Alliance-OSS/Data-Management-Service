@@ -453,18 +453,6 @@ For a read request targeting resource `R`:
    - During reconstitution, if the FK column is null, omit the reference object; otherwise emit the reference object by reading the bound binding/path columns from the *same row* (no joins).
    - This avoids joining to referenced resource tables (including abstract/unions) during reads; under key unification, composite reference FKs are derived via storage-column mapping (`DbColumnModel.Storage`) even though read-time projection continues to bind to per-path columns.
 
-   Link injection extensions: for abstract references, link injection adds a `Discriminator` projected
-   field sourced via an auxiliary left-join against `{schema}.{AbstractResource}Identity` per page —
-   this field is not covered by the identity-projection description above. The compiled plan gains
-   additional binding fields (`IsAbstractTarget`, `DiscriminatorBinding`, `DocumentUuidBinding`,
-   `LinkEndpointTemplate`) populated at plan compile time. See
-   [link-injection.md §Compiled Read-Plan Extensions](link-injection.md#compiled-read-plan-extensions)
-   and [link-injection.md §Abstract Reference Resolution](link-injection.md#abstract-reference-resolution)
-   for the normative definitions; [link-injection.md](link-injection.md) is the single source of truth for
-   these extensions and their projection shape. Readers exploring the opt-in `..._DocumentUuid`
-   stamped-column path (not emitted in V1) should see
-   [link-injection.md §Future Optimization: Write-Time Stamping](link-injection.md#future-optimization-write-time-stamping).
-
 6. **Descriptor URI projection (batched)**
    - Use `RelationalResourceModel.DescriptorEdgeSources` to identify descriptor FK columns (`..._DescriptorId`) that require URI projection.
    - Include descriptor projection as an additional result set in the same multi-result hydration command (still page-sized and batched, no N+1), returning `(DescriptorId, Uri)` for all descriptor ids referenced by the page.
