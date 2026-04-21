@@ -116,5 +116,80 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalQueryExecutionTests`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Query Candidate Resolver",
+    "description": "Add a narrow `ReferenceIdentityQueryTargetResolver` in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans` to inventory root-table reference identity candidates for query compilation. Acceptance: the helper scans only `RelationalResourceModel.DocumentReferenceBindings` whose `Table` equals the resource root table; builds candidate records that retain `IdentityJsonPath`, `ReferenceJsonPath`, bound `Column`, owning `TargetResource`, owning `ReferenceObjectPath`, and owning `FkColumn`; calls `ReferenceIdentityProjectionLogicalFieldResolver.ResolveOrThrow(...)` for each root binding and attaches each raw candidate to that logical field's representative binding column; validates candidate member columns exist on the root table and have matching `DbColumnModel.SourceJsonPath`; never parses physical column names; and exposes deterministic no-match, ambiguous, and fail-fast outcomes for `RelationalQueryCapabilityCompiler` to consume.",
+    "steps-to-verify": [
+      "Add `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReferenceIdentityQueryTargetResolverTests.cs` covering candidate inventory, root-table filtering, same-site duplicate `ReferenceJsonPath` grouping, representative binding-column selection, and missing or mismatched member-column failures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReferenceIdentityQueryTargetResolverTests`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reference Query Target Validation",
+    "description": "Teach the reference query resolver to convert a matched candidate into the correct `RelationalQueryFieldTarget` while preserving binding-vs-storage semantics. Acceptance: scalar reference identity candidates return `RootColumn(representativeBindingColumn)` only when the representative root column is `ColumnKind.Scalar` with scalar type metadata; descriptor-valued candidates return `DescriptorIdColumn(representativeBindingColumn, descriptorResource)` by resolving root `DescriptorEdgeSource` metadata by `(Table, FkColumn)`; descriptor duplicates collapse only when every candidate resolves to the same descriptor resource; invalid column kind, missing scalar metadata, missing descriptor metadata, or divergent descriptor resources fail fast as model/plan compilation errors instead of becoming unsupported fields; and `UnifiedAlias` binding columns are returned as aliases so canonical rewrite and presence gates remain owned by `PageDocumentIdSqlCompiler`.",
+    "steps-to-verify": [
+      "Extend `ReferenceIdentityQueryTargetResolverTests.cs` with scalar target, descriptor target, `UnifiedAlias` target, descriptor-resource mismatch, missing descriptor metadata, and invalid representative-column cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReferenceIdentityQueryTargetResolverTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Exact Root Ambiguity Collapse",
+    "description": "Update `RelationalQueryCapabilityCompiler` exact root-path resolution to collapse supported same-site duplicate targets before returning `AmbiguousRootTarget`. Acceptance: unique exact descriptor and scalar path matches continue compiling unchanged; multiple exact root scalar matches collapse only when all candidates belong to one same-site logical reference field group and resolve to the group's representative API-bound binding column; multiple exact descriptor matches collapse only when they are one same-site logical field group and resolve to the same descriptor resource; duplicates across different reference sites or non-converging storage columns still classify as `AmbiguousRootTarget`; and exact ambiguity collapse does not use virtual alias heuristics.",
+    "steps-to-verify": [
+      "Add or update compiler tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs` or a dedicated `RelationalQueryCapabilityCompilerTests.cs` for same-site scalar collapse, same-site descriptor collapse, unique exact matches, and cross-site ambiguous duplicates.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Virtual Reference Alias Matching",
+    "description": "Implement the virtual reference identity alias matcher used only after a single-path query field has passed the no-array and root-table checks and would otherwise be `UnmappedPath`. Acceptance: the matcher maps CourseTranscript-style `studentUniqueId` with path `$.studentReference.studentAcademicRecordUniqueId` to `RootColumn(StudentAcademicRecord_StudentUniqueId)` while preserving the public query path; maps StudentAssessmentRegistration-style `studentUniqueId` and `scheduledStudentUniqueId` aliases to their generated local binding columns; maps one general student-program association alias such as `$.studentReference.generalStudentProgramAssociationUniqueId` to the local student binding column when the guards leave exactly one candidate; maps one non-student alias such as `BusRoute.staffUniqueId` to the local staff binding column; matches only through query-field leaf/suffix guards, query parent-reference leaf/suffix guards, and `<lowerCamel(TargetResource.ResourceName)>UniqueId` preference; and does not add edit-distance, token-search, reference-resource join, or column-name fallback behavior.",
+    "steps-to-verify": [
+      "Add focused unit cases in `RelationalQueryCapabilityCompilerTests.cs` or `MappingSetCompilerTests.cs` for CourseTranscript, StudentAssessmentRegistration, scheduled StudentAssessmentRegistration, StudentCTEProgramAssociation, and BusRoute-style virtual aliases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Virtual Alias Ambiguity Guards",
+    "description": "Complete deterministic unsupported/ambiguous classifications for virtual reference alias resolution. Acceptance: `ArrayCrossing` and `NonRootTable` classifications are not overridden by virtual alias fallback; a query path leaf that does not match `<lowerCamel(TargetResource.ResourceName)>UniqueId` remains unsupported unless the field-name and parent-reference guards leave exactly one `*UniqueId` candidate; multiple remaining candidates that do not converge to one same-site logical field classify as `AmbiguousRootTarget`; same-site duplicates that converge through key unification collapse to the representative binding column; virtual alias matching never picks a target by physical column-name convention; and existing `RelationalQueryFieldFailureKind` values remain sufficient for manifest diagnostics.",
+    "steps-to-verify": [
+      "Add unit coverage for target-resource-prefix misses, generic `*UniqueId` fallback success, generic fallback ambiguity, same-site duplicate collapse, cross-site ambiguity, array-crossing preservation, and non-root preservation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests|ReferenceIdentityQueryTargetResolverTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Capability Compiler Flow",
+    "description": "Wire the reference-aware resolver into `RelationalQueryCapabilityCompiler.CompileQueryField` with the smallest flow change that matches `PATH-RESOLUTION-FIX.md`. Acceptance: multi-path mappings and the `$.id` special case behave exactly as today; exact root descriptor resolution runs before exact root scalar resolution; exact ambiguous descriptor and scalar matches call the same-site collapse path before returning `AmbiguousRootTarget`; `ArrayCrossing` and `NonRootTable` are classified before virtual fallback; virtual fallback is tried only for otherwise unmapped root-reference aliases; `SupportedRelationalQueryField.Path` remains the original ApiSchema query path even when the predicate target is a different local binding column; supported and unsupported dictionaries remain case-insensitive by query field name; and `PageDocumentIdSqlCompiler` is unchanged unless a planner test exposes a missing alias-rewrite behavior.",
+    "steps-to-verify": [
+      "Add a planner/preprocessor contract test proving a CourseTranscript-style supported field keeps `$.studentReference.studentAcademicRecordUniqueId` in `SupportedRelationalQueryField.Path` and in `QueryElement.DocumentPaths[0]` while targeting `RootColumn(StudentAcademicRecord_StudentUniqueId)`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests|PageDocumentIdSqlCompilerTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"RelationalQueryRequestPreprocessorTests|RelationalQueryPageKeysetPlannerTests\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Capability Manifest Regression",
+    "description": "Update mapping-set manifest and authoritative-schema regression coverage for reference identity query aliases. Acceptance: regenerated query capability diagnostics show deterministic reference identity aliases such as `CourseTranscript.studentUniqueId` in `supported_fields_in_query_field_order` with their original ApiSchema query paths and root-column targets; those aliases no longer appear in `unsupported_fields_in_query_field_order` as `unmapped_path`; resources omitted solely because of deterministic reference identity aliases become `RelationalQuerySupport.Supported`; genuinely unsupported multi-path, array-crossing, non-root, and ambiguous cases remain unsupported; and authoritative `sample` and `ds-5.2` schema compilation is covered without changing ApiSchema fixture query paths.",
+    "steps-to-verify": [
+      "Add or update manifest/golden coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitterTests.cs`, `MappingSetManifestGoldenFixtureTests.cs`, or a new authoritative query-capability regression fixture.",
+      "When golden files are intentionally updated, run the existing golden update workflow with `UPDATE_GOLDENS=1` for the affected mapping-set manifest tests.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetManifest|QueryCapability\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Reference Alias Query Regression",
+    "description": "Add real PostgreSQL and SQL Server relational GET-many regression coverage for reference identity query aliases. Acceptance: each provider test seeds or writes a CourseTranscript-like resource graph with a local reference identity binding column; executes a relational query equivalent to `GET /courseTranscripts?studentUniqueId=...` with empty/no-op authorization or `NoFurtherAuthorizationRequired`; returns success/HTTP 200 with the expected document rather than `QueryUnsupported`/501; verifies the query path uses one page keyset and one page materialization, not get-by-id lookup; and asserts the generated page-selection SQL predicates on the local root-table binding column or its canonical alias rewrite without joining to the referenced resource table.",
+    "steps-to-verify": [
+      "Add or update provider coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlRelationalQueryExecutionTests.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlRelationalQueryExecutionTests.cs`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter RelationalQueryExecutionTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter RelationalQueryExecutionTests`"
+    ],
+    "completed": false
   }
 ]
