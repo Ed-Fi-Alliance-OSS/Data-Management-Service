@@ -356,6 +356,26 @@ public class PipelineOrderingTests
                     "ValidateRouteSemanticsMiddleware must run after ValidateEndpointMiddleware"
                 );
         }
+
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        public void It_places_validate_route_semantics_before_body_parsing_on_body_write_pipelines(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
+            var parseBodyIndex = stepTypes.IndexOf(typeof(ParseBodyMiddleware));
+
+            validateRouteSemanticsIndex.Should().BeGreaterThanOrEqualTo(0);
+            parseBodyIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateRouteSemanticsIndex
+                .Should()
+                .BeLessThan(
+                    parseBodyIndex,
+                    "ValidateRouteSemanticsMiddleware must reject invalid write route semantics before request body parsing"
+                );
+        }
     }
 
     [TestFixture]
