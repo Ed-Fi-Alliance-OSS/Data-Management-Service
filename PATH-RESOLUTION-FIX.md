@@ -114,22 +114,26 @@ For a single-path query field, a reference candidate matches when one of these i
 
 3. **Virtual query alias match**
    - the query path does not cross an array,
-   - the query path parent reference-object leaf is the same as, or ordinal-ignore-case ends with, the candidate target identity parent reference-object leaf,
-   - the query path leaf starts with `lowerCamel(DocumentReferenceBinding.TargetResource.ResourceName)` under ordinal-ignore-case comparison, and
-   - the public query field name is the candidate target identity leaf, or ordinal-ignore-case ends with the candidate target identity leaf.
+   - the query path parent reference-object leaf is the same as, or ordinal-ignore-case ends with, the candidate local `ReferenceJsonPath` parent leaf, and
+   - the public query field name equals the candidate identity/reference leaf, or ordinal-ignore-case ends with that leaf.
    - Example: `CourseTranscript.studentUniqueId`
      - query field name: `studentUniqueId`
      - query path: `$.studentReference.studentAcademicRecordUniqueId`
-     - candidate target identity path: `$.studentReference.studentUniqueId`
+     - candidate local reference path: `$.studentAcademicRecordReference.studentUniqueId`
      - candidate target resource: `StudentAcademicRecord`
      - local column: `StudentAcademicRecord_StudentUniqueId`
    - Example: `StudentAssessmentRegistration.scheduledStudentUniqueId`
      - query field name: `scheduledStudentUniqueId`
      - query path: `$.scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId`
-     - candidate target identity path: `$.studentReference.studentUniqueId`
+     - candidate local reference path: `$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.studentUniqueId`
      - candidate target resource: `StudentEducationOrganizationAssessmentAccommodation`
+   - Example: `StudentCTEProgramAssociation.studentUniqueId`
+     - query field name: `studentUniqueId`
+     - query path: `$.studentReference.generalStudentProgramAssociationUniqueId`
+     - candidate local reference path: `$.studentReference.studentUniqueId`
+     - candidate target resource: `Student`
 
-This virtual rule is a fallback after exact local/target path matching. The parent-reference guard keeps the rule narrow while still covering generated aliases such as `studentReference.studentAcademicRecordUniqueId` and `scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId`.
+This virtual rule is a fallback after exact local/target path matching. The parent-reference and query-field-name guards keep the rule narrow while still covering generated aliases such as `studentReference.studentAcademicRecordUniqueId`, `scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId`, and superclass-shaped aliases such as `studentReference.generalStudentProgramAssociationUniqueId`. Do not require the query path leaf to start with `DocumentReferenceBinding.TargetResource.ResourceName`; some public aliases are shaped by superclass identity names even when the local binding is a direct `Student` reference.
 
 If more than one candidate matches:
 
@@ -216,7 +220,7 @@ Add focused unit coverage in `MappingSetCompilerTests` or a dedicated `Relationa
 
 - One general student-program association virtual alias:
   - query path uses `$.studentReference.generalStudentProgramAssociationUniqueId`
-  - expected target is the local `GeneralStudentProgramAssociation` student binding column for that resource.
+  - expected target is the local student binding column for that resource, for example `RootColumn(Student_StudentUniqueId)`.
 
 Golden/regression coverage:
 
