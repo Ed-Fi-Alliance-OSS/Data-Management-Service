@@ -336,15 +336,27 @@ public sealed class RelationalDocumentStoreRepository(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        PageKeysetSpec.Query plannedQuery;
+        PageKeysetSpec.Query? plannedQuery;
 
         try
         {
-            plannedQuery = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect).Plan(
-                readPlan.Model.Root,
-                preprocessingResult,
-                relationalQueryRequest.PaginationParameters
-            );
+            var planner = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect);
+
+            if (
+                !planner.TryPlan(
+                    readPlan.Model.Root,
+                    preprocessingResult,
+                    relationalQueryRequest.PaginationParameters,
+                    out plannedQuery,
+                    out _
+                ) || plannedQuery is null
+            )
+            {
+                return new QueryResult.QuerySuccess(
+                    [],
+                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                );
+            }
         }
         catch (NotSupportedException ex)
         {

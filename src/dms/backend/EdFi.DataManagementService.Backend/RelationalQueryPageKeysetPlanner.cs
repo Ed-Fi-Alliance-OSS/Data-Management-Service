@@ -24,8 +24,51 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
     )
     {
+        var plannedQuery = PlanOrEmptyPage(
+            rootTable,
+            preprocessingResult,
+            paginationParameters,
+            out var emptyPageReason,
+            comparisonOperatorResolver
+        );
+
+        return plannedQuery
+            ?? throw new InvalidOperationException(
+                emptyPageReason ?? "Relational query planning could not produce a page keyset for this query."
+            );
+    }
+
+    public bool TryPlan(
+        DbTableModel rootTable,
+        RelationalQueryPreprocessingResult preprocessingResult,
+        PaginationParameters paginationParameters,
+        out PageKeysetSpec.Query? plannedQuery,
+        out string? emptyPageReason,
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
+    )
+    {
+        plannedQuery = PlanOrEmptyPage(
+            rootTable,
+            preprocessingResult,
+            paginationParameters,
+            out emptyPageReason,
+            comparisonOperatorResolver
+        );
+
+        return plannedQuery is not null;
+    }
+
+    private PageKeysetSpec.Query? PlanOrEmptyPage(
+        DbTableModel rootTable,
+        RelationalQueryPreprocessingResult preprocessingResult,
+        PaginationParameters paginationParameters,
+        out string? emptyPageReason,
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null
+    )
+    {
         ArgumentNullException.ThrowIfNull(rootTable);
         ArgumentNullException.ThrowIfNull(preprocessingResult);
+        emptyPageReason = null;
 
         if (preprocessingResult.Outcome is not RelationalQueryPreprocessingOutcome.Continue)
         {
@@ -59,16 +102,25 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 );
             var comparisonOperator = comparisonOperatorResolver(queryElement);
             var parameterName = parameterNamesByIndex[index];
-            var (predicate, parameterValue) = PlanPredicate(
+            var plannedPredicate = PlanPredicate(
                 rootTable,
                 rootColumnsByName,
                 queryElement,
                 parameterName,
-                comparisonOperator
+                comparisonOperator,
+                out var predicateEmptyPageReason
             );
 
-            predicates[index] = predicate;
-            parameterValues[parameterName] = parameterValue;
+            if (plannedPredicate is null)
+            {
+                emptyPageReason =
+                    predicateEmptyPageReason
+                    ?? "Relational query planning determined this query has no matches.";
+                return null;
+            }
+
+            predicates[index] = plannedPredicate.Predicate;
+            parameterValues[parameterName] = plannedPredicate.ParameterValue;
         }
 
         var querySpec = new PageDocumentIdQuerySpec(
@@ -84,14 +136,17 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         return new PageKeysetSpec.Query(sqlPlan, parameterValues);
     }
 
-    private static (QueryValuePredicate Predicate, object ParameterValue) PlanPredicate(
+    private static PlannedPredicate? PlanPredicate(
         DbTableModel rootTable,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         PreprocessedRelationalQueryElement queryElement,
         string parameterName,
-        QueryComparisonOperator comparisonOperator
+        QueryComparisonOperator comparisonOperator,
+        out string? emptyPageReason
     )
     {
+        emptyPageReason = null;
+
         if (comparisonOperator is not QueryComparisonOperator.Equal)
         {
             throw new NotSupportedException(
@@ -110,7 +165,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 queryElement,
                 column,
                 parameterName,
-                comparisonOperator
+                comparisonOperator,
+                out emptyPageReason
             ),
             RelationalQueryFieldTarget.DocumentUuid => PlanDocumentUuidPredicate(
                 queryElement,
@@ -133,15 +189,18 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         };
     }
 
-    private static (QueryValuePredicate Predicate, object ParameterValue) PlanRootColumnPredicate(
+    private static PlannedPredicate? PlanRootColumnPredicate(
         DbTableModel rootTable,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         PreprocessedRelationalQueryElement queryElement,
         DbColumnName column,
         string parameterName,
-        QueryComparisonOperator comparisonOperator
+        QueryComparisonOperator comparisonOperator,
+        out string? emptyPageReason
     )
     {
+        emptyPageReason = null;
+
         if (queryElement.Value is not PreprocessedRelationalQueryValue.Raw(var rawValue))
         {
             throw new InvalidOperationException(
@@ -164,13 +223,26 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             scalarType
         );
 
-        return (
+        if (
+            !TryConvertRawValue(
+                queryElement.SupportedField.QueryFieldName,
+                rawValue,
+                scalarType,
+                out var convertedValue,
+                out emptyPageReason
+            )
+        )
+        {
+            return null;
+        }
+
+        return new PlannedPredicate(
             new QueryValuePredicate(column, comparisonOperator, parameterName, scalarType.Kind),
-            ConvertRawValue(queryElement.SupportedField.QueryFieldName, rawValue, scalarType)
+            convertedValue!
         );
     }
 
-    private static (QueryValuePredicate Predicate, object ParameterValue) PlanDocumentUuidPredicate(
+    private static PlannedPredicate PlanDocumentUuidPredicate(
         PreprocessedRelationalQueryElement queryElement,
         string parameterName,
         QueryComparisonOperator comparisonOperator
@@ -184,7 +256,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             );
         }
 
-        return (
+        return new PlannedPredicate(
             new QueryValuePredicate(
                 new QueryPredicateTarget.DocumentUuid(),
                 comparisonOperator,
@@ -194,7 +266,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         );
     }
 
-    private static (QueryValuePredicate Predicate, object ParameterValue) PlanDescriptorIdPredicate(
+    private static PlannedPredicate PlanDescriptorIdPredicate(
         DbTableModel rootTable,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         PreprocessedRelationalQueryElement queryElement,
@@ -214,7 +286,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         var rootColumn = GetRootColumnOrThrow(rootTable, rootColumnsByName, column);
         var scalarKind = rootColumn.ScalarType?.Kind ?? ScalarKind.Int64;
 
-        return (new QueryValuePredicate(column, comparisonOperator, parameterName, scalarKind), descriptorId);
+        return new PlannedPredicate(
+            new QueryValuePredicate(column, comparisonOperator, parameterName, scalarKind),
+            descriptorId
+        );
     }
 
     private static IReadOnlyList<string> DeriveParameterNames(
@@ -383,22 +458,28 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         );
     }
 
-    private static object ConvertRawValue(
+    private static bool TryConvertRawValue(
         string queryFieldName,
         string rawValue,
-        RelationalScalarType scalarType
+        RelationalScalarType scalarType,
+        out object? convertedValue,
+        out string? emptyPageReason
     )
     {
-        if (RelationalScalarLiteralParser.TryParse(rawValue, scalarType, out var convertedValue))
+        if (RelationalScalarLiteralParser.TryParse(rawValue, scalarType, out convertedValue))
         {
-            return convertedValue!;
+            emptyPageReason = null;
+            return true;
         }
 
-        throw new InvalidOperationException(
-            $"Relational query planning could not convert validated query field '{queryFieldName}' value "
-                + $"'{rawValue}' to relational scalar kind '{scalarType.Kind}'."
-        );
+        emptyPageReason =
+            $"Relational query planning determined query field '{queryFieldName}' value "
+            + $"'{rawValue}' cannot be represented as relational scalar kind '{scalarType.Kind}', "
+            + "so the query has no matches.";
+        return false;
     }
+
+    private sealed record PlannedPredicate(QueryValuePredicate Predicate, object ParameterValue);
 
     private sealed record ParameterNameSeed(int Index, string BaseName, string QueryFieldName, string Path);
 }

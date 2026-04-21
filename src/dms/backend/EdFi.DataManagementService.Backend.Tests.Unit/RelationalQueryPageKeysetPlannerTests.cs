@@ -127,6 +127,43 @@ public class Given_RelationalQueryPageKeysetPlanner
         keyset.ParameterValues["schoolCategoryDescriptor"].Should().Be(800L);
     }
 
+    [TestCase("1.5")]
+    [TestCase("2147483648")]
+    public void It_should_signal_empty_page_when_integer_number_query_values_cannot_be_represented(
+        string rawValue
+    )
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var result = planner.TryPlan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "schoolId",
+                        "$.schoolId",
+                        "number",
+                        new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                        rawValue,
+                        new PreprocessedRelationalQueryValue.Raw(rawValue)
+                    ),
+                ]
+            ),
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            out var plannedQuery,
+            out var emptyPageReason
+        );
+
+        result.Should().BeFalse();
+        plannedQuery.Should().BeNull();
+        emptyPageReason
+            .Should()
+            .Be(
+                $"Relational query planning determined query field 'schoolId' value '{rawValue}' cannot be represented as relational scalar kind 'Int32', so the query has no matches."
+            );
+    }
+
     [Test]
     public void It_should_emit_identical_query_plans_and_parameter_bindings_across_query_element_order_permutations()
     {

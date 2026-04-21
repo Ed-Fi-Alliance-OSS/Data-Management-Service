@@ -608,6 +608,48 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    [TestCase("1.5")]
+    [TestCase("2147483648")]
+    public async Task It_returns_an_empty_query_success_when_integer_number_filter_values_cannot_match(
+        string rawSchoolId
+    )
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            CreateProfileProjectionOrderSensitiveMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolId",
+                "$.schoolId",
+                "number",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId"))
+            )
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [CreateQueryElement("schoolId", "$.schoolId", rawSchoolId, "number")],
+            totalCount: true
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+
+        var success = (QueryResult.QuerySuccess)result;
+
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_applies_readable_profile_projection_to_each_query_result_and_refreshes_etags()
     {
@@ -2295,12 +2337,25 @@ public class Given_RelationalDocumentStoreRepositoryTests
         params SupportedRelationalQueryField[] supportedFields
     )
     {
+        return CreateQuerySupportedMappingSet(
+            CreateSupportedMappingSet(resourceInfo),
+            resourceInfo,
+            supportedFields
+        );
+    }
+
+    private static MappingSet CreateQuerySupportedMappingSet(
+        MappingSet mappingSet,
+        ResourceInfo resourceInfo,
+        params SupportedRelationalQueryField[] supportedFields
+    )
+    {
         var resource = new QualifiedResourceName(
             resourceInfo.ProjectName.Value,
             resourceInfo.ResourceName.Value
         );
 
-        return CreateSupportedMappingSet(resourceInfo) with
+        return mappingSet with
         {
             QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
             {
