@@ -151,7 +151,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             var projected = RelationalWriteMergeSupport.ProjectCurrentRows(rootTable, hydrated.Rows);
             projectedCurrentRootRow = projected[0];
-            currentRootRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRootRowByColumnName(
+            currentRootRowByColumnName = RelationalWriteMergeSupport.BuildCurrentRowByColumnName(
                 rootTable.TableModel,
                 hydrated.Rows[0]
             );

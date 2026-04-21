@@ -92,7 +92,9 @@ public class Given_Classifier_with_ParentKeyPart_source_on_root_table
     [Test]
     public void It_throws_InvalidOperationException_for_plan_shape_violation()
     {
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*plan-shape violation*");
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*profile-aware binding classifier does not support*");
     }
 }
 
@@ -344,7 +346,7 @@ public class Given_Classifier_for_ExistingDocument_with_stored_scope_unresolvabl
     {
         _act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Stored scope*does not resolve to any root-table binding*");
+            .WithMessage("*Stored scope*does not resolve to any binding*");
     }
 }
 
@@ -374,7 +376,7 @@ public class Given_Classifier_for_ExistingDocument_with_hidden_member_path_unres
     {
         _act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Hidden member path*does not resolve to any root-table binding under that scope*");
+            .WithMessage("*Hidden member path*does not resolve to any binding under that scope*");
     }
 }
 
