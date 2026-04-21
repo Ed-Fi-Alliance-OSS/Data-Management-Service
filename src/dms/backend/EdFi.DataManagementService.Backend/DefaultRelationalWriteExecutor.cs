@@ -259,10 +259,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                 }
 
                 // Slice-2 classification passed: flatten + profile synthesize. The profile merge
-                // synthesizer itself is root-only; non-root tables absent from its merge result are
-                // left untouched by the persister, which is the correct behavior for Slice 2 shapes
-                // whose runtime semantics are confined to the root table (e.g. hidden separate-table
-                // scopes on an existing document).
+                // synthesizer itself is root-only, but the compiled write plan may still carry
+                // multiple tables — those remain valid Slice 2 inputs as long as the flattened
+                // handoff is root-only. Non-root flattened buffers on the root row (root-extension
+                // rows, collection candidates) must fail closed; the synthesizer's input contract
+                // enforces that invariant so upstream fencing bugs surface here rather than
+                // silently producing a partial merge result.
                 var profileFlattenedWriteSet = _writeFlattener.Flatten(
                     new FlatteningInput(
                         executionRequest.OperationKind,

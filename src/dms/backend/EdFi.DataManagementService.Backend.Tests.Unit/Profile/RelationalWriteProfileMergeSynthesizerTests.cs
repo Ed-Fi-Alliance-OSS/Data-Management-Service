@@ -266,6 +266,107 @@ public class Given_ProfileSynthesizer_request_with_inconsistent_current_state_an
 }
 
 [TestFixture]
+public class Given_ProfileMergeRequest_with_root_extension_rows_present
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var extensionTableModel = AdapterFactoryTestFixtures.BuildRootExtensionTableModel();
+        var extensionPlan = AdapterFactoryTestFixtures.BuildRootExtensionTableWritePlan(extensionTableModel);
+        var extensionRow = new RootExtensionWriteRowBuffer(
+            extensionPlan,
+            [new FlattenedWriteValue.Literal(null), new FlattenedWriteValue.Literal("Blue")]
+        );
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                rootExtensionRows: [extensionRow]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_root_only_shape()
+    {
+        _act.Should().Throw<ArgumentException>().WithMessage("*root-only*fenced upstream*");
+    }
+}
+
+[TestFixture]
+public class Given_ProfileMergeRequest_with_root_collection_candidates_present
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildSingleScalarBindingRootPlan();
+        var body = new JsonObject();
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var collectionTableModel = AdapterFactoryTestFixtures.BuildCollectionTableModel();
+        var collectionPlan = AdapterFactoryTestFixtures.BuildCollectionTableWritePlan(collectionTableModel);
+        var collectionCandidate = new CollectionWriteCandidate(
+            tableWritePlan: collectionPlan,
+            ordinalPath: [0],
+            requestOrder: 0,
+            values:
+            [
+                FlattenedWriteValue.UnresolvedCollectionItemId.Create(),
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Physical"),
+            ],
+            semanticIdentityValues: ["Physical"]
+        );
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                rootPlan,
+                [new FlattenedWriteValue.Literal("Ada")],
+                collectionCandidates: [collectionCandidate]
+            )
+        );
+
+        _act = () =>
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: flattenedWriteSet,
+                writableRequestBody: body,
+                currentState: null,
+                profileRequest: request,
+                profileAppliedContext: null,
+                resolvedReferences: EmptyResolvedReferenceSet()
+            );
+    }
+
+    [Test]
+    public void It_throws_ArgumentException_about_root_only_shape()
+    {
+        _act.Should().Throw<ArgumentException>().WithMessage("*root-only*fenced upstream*");
+    }
+}
+
+[TestFixture]
 public class Given_ProfileSynthesizer_with_key_unification_plan_visible_member
 {
     private RelationalWriteMergeResult _result = null!;

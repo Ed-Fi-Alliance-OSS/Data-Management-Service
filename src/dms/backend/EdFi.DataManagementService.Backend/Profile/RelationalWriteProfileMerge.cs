@@ -15,7 +15,10 @@ namespace EdFi.DataManagementService.Backend.Profile;
 /// Input contract for the profile merge synthesizer. Slice 2 merge itself is root-table-only,
 /// but the input write plan may carry additional tables (e.g. a separate-table extension scope
 /// that the profile renders hidden or request-absent). Those non-root tables are intentionally
-/// excluded from the produced merge result; the persister then leaves them untouched.
+/// excluded from the produced merge result; the persister then leaves them untouched. The
+/// handed-off <see cref="FlattenedWriteSet"/>, however, must itself be root-only: non-root
+/// flattened buffers (root-extension rows or collection candidates on the root row) must be
+/// fenced upstream and are rejected fail-closed here.
 /// </summary>
 internal sealed record RelationalWriteProfileMergeRequest
 {
@@ -48,6 +51,17 @@ internal sealed record RelationalWriteProfileMergeRequest
         {
             throw new ArgumentException(
                 $"{nameof(flattenedWriteSet)} must use the root table from the supplied {nameof(writePlan)}.",
+                nameof(flattenedWriteSet)
+            );
+        }
+        if (
+            !FlattenedWriteSet.RootRow.RootExtensionRows.IsDefaultOrEmpty
+            || !FlattenedWriteSet.RootRow.CollectionCandidates.IsDefaultOrEmpty
+        )
+        {
+            throw new ArgumentException(
+                "Slice 2 profile merge requires a root-only flattened shape; non-root flattened "
+                    + "buffers (root-extension rows or collection candidates) must be fenced upstream.",
                 nameof(flattenedWriteSet)
             );
         }
