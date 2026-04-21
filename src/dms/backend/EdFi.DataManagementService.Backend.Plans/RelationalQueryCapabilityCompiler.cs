@@ -66,6 +66,14 @@ internal sealed class RelationalQueryCapabilityCompiler
                 descriptorEdgeSource.Table == rootTable.Table
             )
         );
+        ReferenceIdentityQueryTargetResolver? referenceIdentityQueryTargetResolver = null;
+
+        ReferenceIdentityQueryTargetResolver GetReferenceIdentityQueryTargetResolver() =>
+            referenceIdentityQueryTargetResolver ??= new ReferenceIdentityQueryTargetResolver(
+                resourceModel,
+                rootTable
+            );
+
         Dictionary<string, SupportedRelationalQueryField> supportedFieldsByQueryField = new(
             QueryFieldNameComparer
         );
@@ -85,6 +93,7 @@ internal sealed class RelationalQueryCapabilityCompiler
                 rootColumnsByPath,
                 nonRootColumnsByPath,
                 rootDescriptorTargetsByPath,
+                GetReferenceIdentityQueryTargetResolver,
                 supportedFieldsByQueryField,
                 unsupportedFieldsByQueryField
             );
@@ -135,6 +144,7 @@ internal sealed class RelationalQueryCapabilityCompiler
         FrozenDictionary<string, DbColumnName[]> rootColumnsByPath,
         FrozenDictionary<string, DbColumnName[]> nonRootColumnsByPath,
         FrozenDictionary<string, DescriptorTarget[]> rootDescriptorTargetsByPath,
+        Func<ReferenceIdentityQueryTargetResolver> getReferenceIdentityQueryTargetResolver,
         IDictionary<string, SupportedRelationalQueryField> supportedFieldsByQueryField,
         IDictionary<string, UnsupportedRelationalQueryField> unsupportedFieldsByQueryField
     )
@@ -178,6 +188,23 @@ internal sealed class RelationalQueryCapabilityCompiler
                 return;
             }
 
+            var collapsedDescriptorTarget = TryCollapseExactDescriptorAmbiguity(
+                queryPath.Path,
+                rootDescriptorTargets,
+                getReferenceIdentityQueryTargetResolver
+            );
+
+            if (collapsedDescriptorTarget is not null)
+            {
+                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
+                    new SupportedRelationalQueryField(
+                        queryFieldMapping.QueryFieldName,
+                        queryPath,
+                        collapsedDescriptorTarget
+                    );
+                return;
+            }
+
             unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
                 new UnsupportedRelationalQueryField(
                     queryFieldMapping.QueryFieldName,
@@ -196,6 +223,20 @@ internal sealed class RelationalQueryCapabilityCompiler
                         queryFieldMapping.QueryFieldName,
                         queryPath,
                         new RelationalQueryFieldTarget.RootColumn(rootColumns[0])
+                    );
+                return;
+            }
+
+            var collapsedRootColumnTarget = getReferenceIdentityQueryTargetResolver()
+                .TryCollapseExactAmbiguity(queryPath.Path, rootColumns);
+
+            if (collapsedRootColumnTarget is not null)
+            {
+                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
+                    new SupportedRelationalQueryField(
+                        queryFieldMapping.QueryFieldName,
+                        queryPath,
+                        collapsedRootColumnTarget
                     );
                 return;
             }
@@ -260,6 +301,29 @@ internal sealed class RelationalQueryCapabilityCompiler
                 $"queryFieldMapping contains unsupported relational GET-many fields: {unsupportedFieldSummary}."
             )
         );
+    }
+
+    private static RelationalQueryFieldTarget? TryCollapseExactDescriptorAmbiguity(
+        JsonPathExpression queryPath,
+        IReadOnlyCollection<DescriptorTarget> rootDescriptorTargets,
+        Func<ReferenceIdentityQueryTargetResolver> getReferenceIdentityQueryTargetResolver
+    )
+    {
+        var descriptorResources = rootDescriptorTargets
+            .Select(static target => target.DescriptorResource)
+            .Distinct()
+            .ToArray();
+
+        if (descriptorResources.Length != 1)
+        {
+            return null;
+        }
+
+        return getReferenceIdentityQueryTargetResolver()
+            .TryCollapseExactAmbiguity(
+                queryPath,
+                rootDescriptorTargets.Select(static target => target.Column).ToArray()
+            );
     }
 
     private static string DescribeFailureKind(RelationalQueryFieldFailureKind failureKind)

@@ -95,6 +95,33 @@ internal sealed class ReferenceIdentityQueryTargetResolver
         };
     }
 
+    public RelationalQueryFieldTarget? TryCollapseExactAmbiguity(
+        JsonPathExpression queryPath,
+        IReadOnlyCollection<DbColumnName> exactTargetColumns
+    )
+    {
+        ArgumentNullException.ThrowIfNull(exactTargetColumns);
+
+        var resolution = ResolveExactPath(queryPath);
+
+        if (resolution is not ReferenceIdentityQueryCandidateResolution.Match match)
+        {
+            return null;
+        }
+
+        var exactColumns = OrderDistinctColumns(exactTargetColumns);
+        var matchedColumns = OrderDistinctColumns(
+            match.MatchedCandidatesInOrder.Select(static candidate => candidate.Column)
+        );
+
+        if (!exactColumns.SequenceEqual(matchedColumns))
+        {
+            return null;
+        }
+
+        return ResolveTargetOrThrow(match);
+    }
+
     private RelationalQueryFieldTarget.RootColumn ResolveScalarTargetOrThrow(
         DbColumnModel representativeColumn,
         ReferenceIdentityQueryCandidateResolution.Match match
@@ -307,6 +334,11 @@ internal sealed class ReferenceIdentityQueryTargetResolver
 
     private static string FormatResource(QualifiedResourceName resource) =>
         $"'{resource.ProjectName}.{resource.ResourceName}'";
+
+    private static DbColumnName[] OrderDistinctColumns(IEnumerable<DbColumnName> columns)
+    {
+        return columns.Distinct().OrderBy(static column => column.Value, StringComparer.Ordinal).ToArray();
+    }
 
     private sealed record ReferenceIdentityQueryCandidateGroupMatch(
         ReferenceIdentityQueryCandidateGroup CandidateGroup,

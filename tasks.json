@@ -142,7 +142,7 @@
       "Add or update compiler tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs` or a dedicated `RelationalQueryCapabilityCompilerTests.cs` for same-site scalar collapse, same-site descriptor collapse, unique exact matches, and cross-site ambiguous duplicates.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetCompilerTests|RelationalQueryCapabilityCompilerTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Virtual Reference Alias Matching",
