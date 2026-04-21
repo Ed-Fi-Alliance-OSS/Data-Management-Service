@@ -73,10 +73,10 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
 
         var resolver = new ReferenceIdentityQueryTargetResolver(model, rootTable);
 
-        resolver.CandidateGroupsInOrder.Should().ContainSingle();
-        resolver.CandidatesInOrder.Should().ContainSingle();
+        var group = resolver.CandidateGroupsInOrder.Should().ContainSingle().Subject;
+        group.CandidatesInOrder.Should().ContainSingle();
 
-        var candidate = resolver.CandidatesInOrder.Single();
+        var candidate = group.CandidatesInOrder.Single();
         candidate.IdentityJsonPath.Canonical.Should().Be("$.studentReference.studentUniqueId");
         candidate.ReferenceJsonPath.Canonical.Should().Be("$.studentAcademicRecordReference.studentUniqueId");
         candidate.Column.Should().Be(new DbColumnName("StudentAcademicRecord_StudentUniqueId"));

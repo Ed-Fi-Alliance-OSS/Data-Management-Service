@@ -58,6 +58,7 @@ internal sealed class RelationalQueryCapabilityCompiler
         );
 
         var rootColumnsByPath = CreateColumnsByPathLookup([rootTable]);
+        var rootColumnsByName = rootTable.Columns.ToFrozenDictionary(static column => column.ColumnName);
         var nonRootColumnsByPath = CreateColumnsByPathLookup(
             resourceModel.TablesInDependencyOrder.Where(tableModel => tableModel.Table != rootTable.Table)
         );
@@ -91,6 +92,7 @@ internal sealed class RelationalQueryCapabilityCompiler
             CompileQueryField(
                 queryFieldMapping,
                 rootColumnsByPath,
+                rootColumnsByName,
                 nonRootColumnsByPath,
                 rootDescriptorTargetsByPath,
                 GetReferenceIdentityQueryTargetResolver,
@@ -142,6 +144,7 @@ internal sealed class RelationalQueryCapabilityCompiler
     private static void CompileQueryField(
         RelationalQueryFieldMapping queryFieldMapping,
         FrozenDictionary<string, DbColumnName[]> rootColumnsByPath,
+        FrozenDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         FrozenDictionary<string, DbColumnName[]> nonRootColumnsByPath,
         FrozenDictionary<string, DescriptorTarget[]> rootDescriptorTargetsByPath,
         Func<ReferenceIdentityQueryTargetResolver> getReferenceIdentityQueryTargetResolver,
@@ -164,10 +167,13 @@ internal sealed class RelationalQueryCapabilityCompiler
 
         if (string.Equals(queryPath.Path.Canonical, ResourceIdJsonPath, StringComparison.Ordinal))
         {
-            supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new SupportedRelationalQueryField(
-                queryFieldMapping.QueryFieldName,
+            AddSupportedQueryFieldOrUnsupportedType(
+                queryFieldMapping,
                 queryPath,
-                new RelationalQueryFieldTarget.DocumentUuid()
+                new RelationalQueryFieldTarget.DocumentUuid(),
+                rootColumnsByName,
+                supportedFieldsByQueryField,
+                unsupportedFieldsByQueryField
             );
             return;
         }
@@ -176,15 +182,17 @@ internal sealed class RelationalQueryCapabilityCompiler
         {
             if (rootDescriptorTargets.Length == 1)
             {
-                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                    new SupportedRelationalQueryField(
-                        queryFieldMapping.QueryFieldName,
-                        queryPath,
-                        new RelationalQueryFieldTarget.DescriptorIdColumn(
-                            rootDescriptorTargets[0].Column,
-                            rootDescriptorTargets[0].DescriptorResource
-                        )
-                    );
+                AddSupportedQueryFieldOrUnsupportedType(
+                    queryFieldMapping,
+                    queryPath,
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        rootDescriptorTargets[0].Column,
+                        rootDescriptorTargets[0].DescriptorResource
+                    ),
+                    rootColumnsByName,
+                    supportedFieldsByQueryField,
+                    unsupportedFieldsByQueryField
+                );
                 return;
             }
 
@@ -196,12 +204,14 @@ internal sealed class RelationalQueryCapabilityCompiler
 
             if (collapsedDescriptorTarget is not null)
             {
-                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                    new SupportedRelationalQueryField(
-                        queryFieldMapping.QueryFieldName,
-                        queryPath,
-                        collapsedDescriptorTarget
-                    );
+                AddSupportedQueryFieldOrUnsupportedType(
+                    queryFieldMapping,
+                    queryPath,
+                    collapsedDescriptorTarget,
+                    rootColumnsByName,
+                    supportedFieldsByQueryField,
+                    unsupportedFieldsByQueryField
+                );
                 return;
             }
 
@@ -218,12 +228,14 @@ internal sealed class RelationalQueryCapabilityCompiler
         {
             if (rootColumns.Length == 1)
             {
-                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                    new SupportedRelationalQueryField(
-                        queryFieldMapping.QueryFieldName,
-                        queryPath,
-                        new RelationalQueryFieldTarget.RootColumn(rootColumns[0])
-                    );
+                AddSupportedQueryFieldOrUnsupportedType(
+                    queryFieldMapping,
+                    queryPath,
+                    new RelationalQueryFieldTarget.RootColumn(rootColumns[0]),
+                    rootColumnsByName,
+                    supportedFieldsByQueryField,
+                    unsupportedFieldsByQueryField
+                );
                 return;
             }
 
@@ -232,12 +244,14 @@ internal sealed class RelationalQueryCapabilityCompiler
 
             if (collapsedRootColumnTarget is not null)
             {
-                supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                    new SupportedRelationalQueryField(
-                        queryFieldMapping.QueryFieldName,
-                        queryPath,
-                        collapsedRootColumnTarget
-                    );
+                AddSupportedQueryFieldOrUnsupportedType(
+                    queryFieldMapping,
+                    queryPath,
+                    collapsedRootColumnTarget,
+                    rootColumnsByName,
+                    supportedFieldsByQueryField,
+                    unsupportedFieldsByQueryField
+                );
                 return;
             }
 
@@ -277,10 +291,13 @@ internal sealed class RelationalQueryCapabilityCompiler
 
         if (referenceAliasResolution is ReferenceIdentityQueryCandidateResolution.Match referenceAliasMatch)
         {
-            supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new SupportedRelationalQueryField(
-                queryFieldMapping.QueryFieldName,
+            AddSupportedQueryFieldOrUnsupportedType(
+                queryFieldMapping,
                 queryPath,
-                getReferenceIdentityQueryTargetResolver().ResolveTargetOrThrow(referenceAliasMatch)
+                getReferenceIdentityQueryTargetResolver().ResolveTargetOrThrow(referenceAliasMatch),
+                rootColumnsByName,
+                supportedFieldsByQueryField,
+                unsupportedFieldsByQueryField
             );
             return;
         }
@@ -301,6 +318,73 @@ internal sealed class RelationalQueryCapabilityCompiler
             queryFieldMapping.Paths,
             RelationalQueryFieldFailureKind.UnmappedPath
         );
+    }
+
+    private static void AddSupportedQueryFieldOrUnsupportedType(
+        RelationalQueryFieldMapping queryFieldMapping,
+        RelationalQueryFieldPath queryPath,
+        RelationalQueryFieldTarget target,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
+        IDictionary<string, SupportedRelationalQueryField> supportedFieldsByQueryField,
+        IDictionary<string, UnsupportedRelationalQueryField> unsupportedFieldsByQueryField
+    )
+    {
+        if (!IsCompatibleTargetQueryType(queryPath, target, rootColumnsByName))
+        {
+            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
+                new UnsupportedRelationalQueryField(
+                    queryFieldMapping.QueryFieldName,
+                    queryFieldMapping.Paths,
+                    RelationalQueryFieldFailureKind.UnmappedPath
+                );
+            return;
+        }
+
+        supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new SupportedRelationalQueryField(
+            queryFieldMapping.QueryFieldName,
+            queryPath,
+            target
+        );
+    }
+
+    private static bool IsCompatibleTargetQueryType(
+        RelationalQueryFieldPath queryPath,
+        RelationalQueryFieldTarget target,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName
+    )
+    {
+        return target switch
+        {
+            RelationalQueryFieldTarget.DocumentUuid => IsStringQueryType(queryPath),
+            RelationalQueryFieldTarget.DescriptorIdColumn => IsStringQueryType(queryPath),
+            RelationalQueryFieldTarget.RootColumn(var column) => rootColumnsByName.TryGetValue(
+                column,
+                out var rootColumn
+            )
+                && rootColumn.ScalarType is not null
+                && IsCompatibleScalarQueryType(queryPath, rootColumn.ScalarType),
+            _ => false,
+        };
+    }
+
+    private static bool IsStringQueryType(RelationalQueryFieldPath queryPath) =>
+        string.Equals(queryPath.Type, "string", StringComparison.Ordinal);
+
+    private static bool IsCompatibleScalarQueryType(
+        RelationalQueryFieldPath queryPath,
+        RelationalScalarType scalarType
+    )
+    {
+        return queryPath.Type switch
+        {
+            "boolean" => scalarType.Kind == ScalarKind.Boolean,
+            "date" => scalarType.Kind == ScalarKind.Date,
+            "date-time" => scalarType.Kind == ScalarKind.DateTime,
+            "number" => scalarType.Kind is ScalarKind.Int32 or ScalarKind.Int64 or ScalarKind.Decimal,
+            "string" => scalarType.Kind == ScalarKind.String,
+            "time" => scalarType.Kind == ScalarKind.Time,
+            _ => false,
+        };
     }
 
     private static RelationalQuerySupport CreateSupport(

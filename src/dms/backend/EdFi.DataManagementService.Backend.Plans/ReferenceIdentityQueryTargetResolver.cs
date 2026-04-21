@@ -25,12 +25,9 @@ internal sealed class ReferenceIdentityQueryTargetResolver
         _resourceModel = resourceModel;
         _rootTable = rootTable;
         CandidateGroupsInOrder = CreateCandidateGroups(resourceModel, rootTable);
-        CandidatesInOrder = [.. CandidateGroupsInOrder.SelectMany(static group => group.CandidatesInOrder)];
     }
 
     public IReadOnlyList<ReferenceIdentityQueryCandidateGroup> CandidateGroupsInOrder { get; }
-
-    public IReadOnlyList<ReferenceIdentityQueryCandidate> CandidatesInOrder { get; }
 
     public ReferenceIdentityQueryCandidateResolution ResolveExactPath(JsonPathExpression queryPath)
     {
@@ -84,8 +81,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
                 group,
                 group
                     .CandidatesInOrder.Where(candidate =>
-                        MatchesQueryFieldName(queryFieldName, candidate)
-                        && MatchesQueryParentReferenceLeaf(queryPathParentReferenceLeaf, candidate)
+                        MatchesQueryAliasGuard(queryFieldName, queryPathParentReferenceLeaf, candidate)
                     )
                     .ToArray()
             ))
@@ -114,15 +110,14 @@ internal sealed class ReferenceIdentityQueryTargetResolver
             return CreateResolution(targetResourceMatches);
         }
 
-        if (!queryPathLeaf.EndsWith("UniqueId", StringComparison.Ordinal))
-        {
-            return new ReferenceIdentityQueryCandidateResolution.NoMatch();
-        }
-
         var uniqueIdFallbackMatches = guardedMatches
             .Select(match => new ReferenceIdentityQueryCandidateGroupMatch(
                 match.CandidateGroup,
-                match.MatchedCandidatesInOrder.Where(IsUniqueIdCandidate).ToArray()
+                match
+                    .MatchedCandidatesInOrder.Where(candidate =>
+                        IsGenericUniqueIdFallbackMatch(queryPathLeaf, candidate)
+                    )
+                    .ToArray()
             ))
             .Where(static match => match.MatchedCandidatesInOrder.Count > 0)
             .ToArray();
@@ -419,43 +414,72 @@ internal sealed class ReferenceIdentityQueryTargetResolver
         };
     }
 
-    private static bool MatchesQueryFieldName(
+    private static bool MatchesQueryAliasGuard(
         string queryFieldName,
-        ReferenceIdentityQueryCandidate candidate
-    )
-    {
-        return PathLeafMatchesQueryFieldName(queryFieldName, candidate.IdentityJsonPath)
-            || PathLeafMatchesQueryFieldName(queryFieldName, candidate.ReferenceJsonPath);
-    }
-
-    private static bool PathLeafMatchesQueryFieldName(string queryFieldName, JsonPathExpression candidatePath)
-    {
-        return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
-            && (
-                string.Equals(queryFieldName, candidateLeaf, StringComparison.OrdinalIgnoreCase)
-                || queryFieldName.EndsWith(candidateLeaf, StringComparison.OrdinalIgnoreCase)
-            );
-    }
-
-    private static bool MatchesQueryParentReferenceLeaf(
         string queryPathParentReferenceLeaf,
         ReferenceIdentityQueryCandidate candidate
     )
     {
-        return TryGetParentPropertyLeaf(
-                candidate.IdentityJsonPath,
-                out var candidateIdentityParentReferenceLeaf
+        if (!TryGetParentPropertyLeaf(candidate.IdentityJsonPath, out var candidateIdentityParentLeaf))
+        {
+            return false;
+        }
+
+        return (
+                TryGetAliasPrefix(queryFieldName, candidate.IdentityJsonPath, out var queryFieldPrefix)
+                || TryGetAliasPrefix(queryFieldName, candidate.ReferenceJsonPath, out queryFieldPrefix)
             )
+            && TryGetAliasPrefix(
+                queryPathParentReferenceLeaf,
+                candidateIdentityParentLeaf,
+                out var parentReferencePrefix
+            )
+            && string.Equals(queryFieldPrefix, parentReferencePrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetAliasPrefix(string value, JsonPathExpression candidatePath, out string prefix)
+    {
+        prefix = string.Empty;
+
+        return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
+            && TryGetAliasPrefix(value, candidateLeaf, out prefix);
+    }
+
+    private static bool TryGetAliasPrefix(string value, string suffix, out string prefix)
+    {
+        prefix = string.Empty;
+
+        if (string.Equals(value, suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        prefix = value[..^suffix.Length];
+        return prefix.Length > 0;
+    }
+
+    private static bool IsGenericUniqueIdFallbackMatch(
+        string queryPathLeaf,
+        ReferenceIdentityQueryCandidate candidate
+    )
+    {
+        return queryPathLeaf.EndsWith("UniqueId", StringComparison.Ordinal)
+            && IsUniqueIdCandidate(candidate)
+            && !PathLeafMatches(queryPathLeaf, candidate.IdentityJsonPath)
+            && !PathLeafMatches(queryPathLeaf, candidate.ReferenceJsonPath);
+    }
+
+    private static bool PathLeafMatches(string queryPathLeaf, JsonPathExpression candidatePath)
+    {
+        return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
             && (
-                string.Equals(
-                    candidateIdentityParentReferenceLeaf,
-                    queryPathParentReferenceLeaf,
-                    StringComparison.OrdinalIgnoreCase
-                )
-                || queryPathParentReferenceLeaf.EndsWith(
-                    candidateIdentityParentReferenceLeaf,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                string.Equals(queryPathLeaf, candidateLeaf, StringComparison.OrdinalIgnoreCase)
+                || queryPathLeaf.EndsWith(candidateLeaf, StringComparison.OrdinalIgnoreCase)
             );
     }
 

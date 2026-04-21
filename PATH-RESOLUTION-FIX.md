@@ -52,9 +52,9 @@ Concrete failure:
 
 ## Proposed Design
 
-Add a narrow reference-identity query alias resolver to `RelationalQueryCapabilityCompiler`.
+Add narrow reference-identity resolution support to `RelationalQueryCapabilityCompiler`.
 
-The existing exact path lookup should remain for normal scalar and descriptor fields. When exact lookup does not produce a deterministic root target, the compiler should ask this resolver whether the query field can bind through root-table `DocumentReferenceBinding.IdentityBindings`.
+The existing exact path lookup should remain for normal scalar and descriptor fields. Keep exact-match behavior exact, and only use virtual alias matching for paths that otherwise classify as `UnmappedPath`.
 
 ### New Helper
 
@@ -64,15 +64,20 @@ Add an internal helper in `EdFi.DataManagementService.Backend.Plans`, for exampl
 internal sealed class ReferenceIdentityQueryTargetResolver
 ```
 
-Keep this helper narrow. It is not a general JSONPath resolver and should not introduce reference joins or column-name parsing. Its only job is to inspect root-table `DocumentReferenceBindings`, map one single-path `queryFieldMapping` to one local binding column, and report no match or ambiguity when it cannot do that deterministically.
+Keep this helper narrow. It is not a general JSONPath resolver and should not introduce reference joins or column-name parsing. Its only job is to inspect root-table `DocumentReferenceBindings`, collapse same-site duplicate reference identity targets, resolve the known virtual alias shape, and report no match or ambiguity when it cannot do that deterministically.
 
-Inputs:
+Expose two methods, or equivalent private compiler routines:
 
-- `RelationalResourceModel`
-- root `DbTableModel`
-- the `RelationalQueryFieldMapping` being compiled
+```csharp
+TryCollapseExactAmbiguity(...)
+TryResolveReferenceAlias(...)
+```
 
-Output:
+`TryCollapseExactAmbiguity(...)` is used only when exact root scalar or descriptor path lookup found multiple root targets. It receives the exact candidate columns/descriptor targets from that lookup and may collapse them only when every exact target belongs to one same-site logical field group.
+
+`TryResolveReferenceAlias(...)` is used only after the path has passed the no-array and root-table checks and would otherwise be `UnmappedPath`. It maps one single-path `queryFieldMapping` to one local binding column when the path matches the known ApiSchema virtual alias shape.
+
+Both paths return:
 
 - a deterministic `RelationalQueryFieldTarget`, or
 - a failure classification compatible with the existing `RelationalQueryFieldFailureKind`.
@@ -113,12 +118,13 @@ For a single-path query field, a reference candidate matches when one of these i
    - Example: `$.studentReference.studentUniqueId`
 
 3. **Virtual query alias match**
+   - this rule is used only by `TryResolveReferenceAlias(...)`, never by exact ambiguity collapse,
    - the query path does not cross an array,
-   - the public query field name equals the candidate identity/reference leaf, or ordinal-ignore-case ends with that leaf,
-   - the query path parent reference-object leaf is the same as, or ordinal-ignore-case ends with, either:
-     - the candidate `IdentityJsonPath` parent leaf, or
-     - the candidate local `ReferenceJsonPath` parent leaf, and
-   - for non-exact aliases, the query path leaf identifies the candidate target resource by starting with the lower-camel `TargetResource.ResourceName` and ending with the generated identity suffix, such as `UniqueId`.
+   - start with candidates whose candidate identity/reference leaf equals the public query field name, or whose candidate identity/reference leaf is an ordinal-ignore-case suffix of the public query field name,
+   - then keep only candidates whose candidate identity parent reference leaf equals the query path parent reference-object leaf, or whose candidate identity parent reference leaf is an ordinal-ignore-case suffix of the query path parent reference-object leaf,
+   - prefer candidates whose query path leaf is exactly `<lowerCamel(TargetResource.ResourceName)>UniqueId`,
+   - if no exact target-resource alias candidate remains, allow a generic `*UniqueId` fallback only when the field-name and parent-reference guards leave exactly one candidate,
+   - otherwise leave the field unsupported or classify it as `AmbiguousRootTarget` when multiple candidates remain.
    - Example: `CourseTranscript.studentUniqueId`
      - query field name: `studentUniqueId`
      - query path: `$.studentReference.studentAcademicRecordUniqueId`
@@ -147,7 +153,7 @@ For a single-path query field, a reference candidate matches when one of these i
      - candidate local reference path: `$.studentReference.studentUniqueId`
      - candidate target resource: `Student`
 
-This virtual rule is a fallback after exact local/target path matching. Apply it by filtering candidates with the identity/reference leaf and parent-reference guards first, then using the query path leaf's lower-camel target-resource prefix to disambiguate aliases such as `studentReference.studentAcademicRecordUniqueId`, `studentReference.studentEducationOrganizationAssociationUniqueId`, and `scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId`. If the query path leaf is superclass-shaped, such as `studentReference.generalStudentProgramAssociationUniqueId`, allow the match only when the candidate set is already deterministic after the field-name and parent-reference guards; do not invent a column-name convention fallback.
+This virtual rule is intentionally not fuzzy. Do not add edit-distance matching, token searches, or column-name fallbacks. If the query path leaf does not match the target-resource `UniqueId` shape and the field-name/parent-reference guards do not leave exactly one `UniqueId` candidate, leave the field unsupported or classify it as `AmbiguousRootTarget` when multiple candidates remain.
 
 If more than one candidate matches:
 
@@ -159,13 +165,15 @@ If more than one candidate matches:
 The matched candidate target should be:
 
 - `RelationalQueryFieldTarget.RootColumn(representativeBindingColumn)` for scalar reference identity bindings.
-- `RelationalQueryFieldTarget.DescriptorIdColumn(representativeBindingColumn, descriptorResource)` for descriptor-valued reference identity bindings, using `DbColumnModel.TargetResource` or the matching root `DescriptorEdgeSource`.
+- `RelationalQueryFieldTarget.DescriptorIdColumn(representativeBindingColumn, descriptorResource)` for descriptor-valued reference identity bindings.
 
-Validate the representative binding column before returning a target: it must be a root-table `ColumnKind.Scalar` column with scalar type metadata, or a root-table `ColumnKind.DescriptorFk` column with resolvable descriptor resource metadata. Any other kind or missing metadata is a model/plan compilation error.
+Validate the representative binding column before returning a target: it must be a root-table `ColumnKind.Scalar` column with scalar type metadata, or a root-table `ColumnKind.DescriptorFk` column with resolvable descriptor resource metadata. Resolve descriptor metadata from the matching root `DescriptorEdgeSource` by `(Table, FkColumn)`. Use `DbColumnModel.TargetResource` only if the model already guarantees it is populated for descriptor FK columns. Any other kind or missing metadata is a model/plan compilation error.
+
+When collapsing descriptor-valued candidates, all candidates must resolve through root `DescriptorEdgeSource` metadata to the same `DescriptorResource`; otherwise classify the query field as `AmbiguousRootTarget`.
 
 The target column must be the API-bound binding column. If it is a `UnifiedAlias`, leave it as the target. `RelationalQueryPageKeysetPlanner` already builds `UnifiedAliasMappingsByColumn`, and `PageDocumentIdSqlCompiler` already rewrites alias predicates to canonical storage columns with the required presence gate.
 
-Apply this target selection for both exact root ambiguity collapse and virtual alias fallback. Do not return `AmbiguousRootTarget` for duplicate root scalar or descriptor matches until the resolver has had a chance to prove that all matches are one same-site logical field group.
+Apply this target selection for both exact root ambiguity collapse and virtual alias fallback. Do not return `AmbiguousRootTarget` for duplicate root scalar or descriptor matches until exact ambiguity collapse has had a chance to prove that all exact matches are one same-site logical endpoint group.
 
 For CourseTranscript, the resulting supported field should keep:
 
@@ -181,17 +189,17 @@ Update `CompileQueryField` in `RelationalQueryCapabilityCompiler` with the small
 2. Preserve the `$.id` special case.
 3. Try exact root descriptor target resolution:
    - if unique, return the descriptor target;
-   - if ambiguous, try reference-aware resolution before returning `AmbiguousRootTarget`.
+   - if ambiguous, try exact ambiguity collapse with those exact descriptor targets before returning `AmbiguousRootTarget`.
 4. Try exact root scalar path resolution:
    - if unique, return the root-column target;
-   - if ambiguous, try reference-aware resolution before returning `AmbiguousRootTarget`.
+   - if ambiguous, try exact ambiguity collapse with those exact scalar columns before returning `AmbiguousRootTarget`.
 5. Apply unsupported classifications that should not be overridden by virtual alias fallback:
    - `ArrayCrossing`
    - `NonRootTable`
 6. Try reference-aware virtual alias resolution for otherwise unmapped root-reference aliases.
 7. Return `UnmappedPath`.
 
-The exact root scalar or descriptor path should not immediately return `AmbiguousRootTarget` when multiple root columns match. Give the resolver a chance to prove the matches are one same-site logical endpoint group.
+The exact root scalar or descriptor path should not immediately return `AmbiguousRootTarget` when multiple root targets match. Give exact ambiguity collapse a chance to prove the matches are one same-site logical endpoint group. Do not apply virtual alias heuristics in this branch.
 
 ## Diagnostics
 
@@ -216,6 +224,11 @@ Add focused unit coverage in `MappingSetCompilerTests` or a dedicated `Relationa
   - binding reference path `$.studentAcademicRecordReference.studentUniqueId`
   - expected target `RootColumn(StudentAcademicRecord_StudentUniqueId)`
 
+- Planner contract for CourseTranscript-style virtual alias:
+  - `SupportedRelationalQueryField.Path` remains `$.studentReference.studentAcademicRecordUniqueId`
+  - `QueryElement.DocumentPaths[0]` uses the same ApiSchema query path
+  - planner accepts that original path while targeting `RootColumn(StudentAcademicRecord_StudentUniqueId)`
+
 - StudentAssessmentRegistration virtual alias:
   - query field `studentUniqueId`
   - query path `$.studentReference.studentEducationOrganizationAssociationUniqueId`
@@ -234,9 +247,20 @@ Add focused unit coverage in `MappingSetCompilerTests` or a dedicated `Relationa
 - Ambiguous duplicate guard:
   - duplicates across different reference sites or different non-converging storage columns classify as `AmbiguousRootTarget`.
 
+- Virtual alias target-resource-prefix guard:
+  - a query path leaf that does not match `<lowerCamel(TargetResource.ResourceName)>UniqueId` and does not leave exactly one candidate after the field-name and parent-reference guards stays unsupported.
+
+- UniqueId fallback ambiguity guard:
+  - a non-target-resource alias such as `generalStudentProgramAssociationUniqueId` with more than one candidate after field-name and parent-reference filtering classifies as `AmbiguousRootTarget`.
+
 - One general student-program association virtual alias:
   - query path uses `$.studentReference.generalStudentProgramAssociationUniqueId`
   - expected target is the local student binding column for that resource, for example `RootColumn(Student_StudentUniqueId)`.
+
+- One non-student virtual alias:
+  - `BusRoute.staffUniqueId`
+  - query path uses `$.staffReference.staffEducationOrganizationAssignmentAssociationUniqueId`
+  - expected target is `RootColumn(StaffEducationOrganizationAssignmentAssociation_StaffUniqueId)`.
 
 Golden/regression coverage:
 

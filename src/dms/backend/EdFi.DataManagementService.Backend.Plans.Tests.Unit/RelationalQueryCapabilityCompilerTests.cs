@@ -81,6 +81,28 @@ public class Given_RelationalQueryCapabilityCompiler
             );
     }
 
+    [Test]
+    public void It_should_omit_root_scalar_query_fields_when_api_schema_type_does_not_match_column_type()
+    {
+        var rootTable = CreateRootTable(
+            "StudentAssociation",
+            [ScalarColumn("SchoolYear", "$.schoolYear", ScalarKind.Int32)]
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(rootTable, [], []),
+            ("schoolYear", [("$.schoolYear", "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability
+            .UnsupportedFieldsByQueryField["schoolYear"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+    }
+
     [TestCase(
         "CourseTranscript",
         "studentUniqueId",
@@ -180,6 +202,31 @@ public class Given_RelationalQueryCapabilityCompiler
         supportedField
             .Target.Should()
             .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName(expectedColumn)));
+    }
+
+    [TestCase("$.studentReference.notStudentUniqueId")]
+    [TestCase("$.notStudentReference.studentAcademicRecordUniqueId")]
+    public void It_should_not_resolve_virtual_reference_identity_aliases_for_near_miss_paths(string queryPath)
+    {
+        var rootTable = CreateCourseTranscriptRootTable();
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+                rootTable,
+                [CreateStudentAcademicRecordBinding(rootTable.Table)],
+                []
+            ),
+            ("studentUniqueId", [(queryPath, "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability
+            .UnsupportedFieldsByQueryField["studentUniqueId"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
     }
 
     [Test]
