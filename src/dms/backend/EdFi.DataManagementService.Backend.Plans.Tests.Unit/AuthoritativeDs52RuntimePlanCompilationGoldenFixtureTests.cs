@@ -139,6 +139,64 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
     }
 
     [Test]
+    public void It_should_emit_reference_identity_alias_query_capabilities_for_authoritative_resources()
+    {
+        AuthoritativeManifestQueryCapabilityAssertions.AssertRootColumnFields(
+            _manifest,
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "CourseTranscript",
+                "studentUniqueId",
+                "$.studentReference.studentAcademicRecordUniqueId",
+                "StudentAcademicRecord_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "Section",
+                "schoolId",
+                "$.courseOfferingReference.schoolId",
+                "CourseOffering_SchoolReferenceSchoolId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentEducationOrganizationAssociation",
+                "studentUniqueId",
+                "$.studentReference.studentAssessmentUniqueId",
+                "StudentAssessment_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentRegistration",
+                "studentUniqueId",
+                "$.studentReference.studentEducationOrganizationAssociationUniqueId",
+                "StudentEducationOrganizationAssociation_StudentUniqueId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "StudentAssessmentRegistration",
+                "scheduledStudentUniqueId",
+                "$.scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId",
+                "ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId",
+                "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "SurveySectionResponseEducationOrganizationTargetAssociation",
+                "namespace",
+                "$.surveySectionResponseReference.namespace",
+                "SurveySectionResponse_SurveyResponseReferenceNamespace"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "SurveySectionResponseEducationOrganizationTargetAssociation",
+                "surveyIdentifier",
+                "$.surveySectionResponseReference.surveyIdentifier",
+                "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"
+            )
+        );
+    }
+
+    [Test]
     public void It_should_emit_projection_metadata_for_assessment()
     {
         foreach (var mappingSet in ParseMappingSets(_manifest))

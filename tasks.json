@@ -180,7 +180,7 @@
       "When golden files are intentionally updated, run the existing golden update workflow with `UPDATE_GOLDENS=1` for the affected mapping-set manifest tests.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"MappingSetManifest|QueryCapability\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Provider Reference Alias Query Regression",
