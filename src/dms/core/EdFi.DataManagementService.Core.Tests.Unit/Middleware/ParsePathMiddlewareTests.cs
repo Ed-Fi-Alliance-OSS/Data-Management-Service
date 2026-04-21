@@ -274,6 +274,7 @@ public class ParsePathMiddlewareTests
 
             _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
+            _requestInfo?.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
         }
     }
 
@@ -314,6 +315,7 @@ public class ParsePathMiddlewareTests
             _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
             _requestInfo?.PathComponents.DocumentUuid.Value.Should().Be(documentUuid);
+            _requestInfo?.PathComponents.HasDocumentUuidSegment.Should().BeTrue();
         }
     }
 
@@ -385,23 +387,15 @@ public class ParsePathMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_provides_no_response()
         {
-            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_status_405()
+        public void It_marks_the_path_as_an_item_route()
         {
-            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
-        }
-
-        [Test]
-        public void It_returns_method_not_allowed_message()
-        {
-            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
-
-            response.Should().Contain("Method Not Allowed");
+            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeTrue();
         }
     }
 
@@ -428,23 +422,15 @@ public class ParsePathMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_provides_no_response()
         {
-            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_status_405()
+        public void It_marks_the_path_as_a_collection_route()
         {
-            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
-        }
-
-        [Test]
-        public void It_returns_method_not_allowed_message()
-        {
-            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
-
-            response.Should().Contain("Method Not Allowed");
+            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
         }
     }
 
@@ -471,23 +457,15 @@ public class ParsePathMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_provides_no_response()
         {
-            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_status_405()
+        public void It_marks_the_path_as_a_collection_route()
         {
-            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
-        }
-
-        [Test]
-        public void It_returns_method_not_allowed_message()
-        {
-            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
-
-            response.Should().Contain("Method Not Allowed");
+            _requestInfo.PathComponents.HasDocumentUuidSegment.Should().BeFalse();
         }
     }
 
