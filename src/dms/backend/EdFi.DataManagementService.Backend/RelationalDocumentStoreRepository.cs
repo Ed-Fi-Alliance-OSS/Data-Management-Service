@@ -139,7 +139,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            readPlan = GetReadPlanOrThrow(mappingSet, resource);
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
         }
         catch (NotSupportedException ex)
         {
@@ -321,7 +321,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            readPlan = GetReadPlanOrThrow(mappingSet, resource);
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
         }
         catch (NotSupportedException ex)
         {
@@ -520,7 +520,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            return new ExistingDocumentReadPlanPreparation(GetReadPlanOrThrow(mappingSet, resource), null);
+            return new ExistingDocumentReadPlanPreparation(mappingSet.GetReadPlanOrThrow(resource), null);
         }
         catch (NotSupportedException ex)
         {
@@ -530,50 +530,6 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return new ExistingDocumentReadPlanPreparation(null, ex.Message);
         }
-    }
-
-    private static ResourceReadPlan GetReadPlanOrThrow(MappingSet mappingSet, QualifiedResourceName resource)
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
-        {
-            return readPlan;
-        }
-
-        var concreteResourceModel =
-            mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(model =>
-                model.RelationalModel.Resource == resource
-            )
-            ?? throw new KeyNotFoundException(
-                $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}' does not contain resource "
-                    + $"'{RelationalWriteSupport.FormatResource(resource)}' in ConcreteResourcesInNameOrder."
-            );
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
-        {
-            throw new NotSupportedException(
-                $"Read plan for resource '{RelationalWriteSupport.FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
-            );
-        }
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
-        {
-            throw new InvalidOperationException(
-                $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
-                    + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
-                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
-                    + "was found. This indicates an internal compilation/selection bug."
-            );
-        }
-
-        throw new InvalidOperationException(
-            $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
-                + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
-                + "is not recognized."
-        );
     }
 
     private sealed record ExistingDocumentReadPlanPreparation(
