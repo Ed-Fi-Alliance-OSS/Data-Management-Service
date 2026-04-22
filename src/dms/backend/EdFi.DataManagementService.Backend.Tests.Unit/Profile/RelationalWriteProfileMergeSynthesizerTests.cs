@@ -781,6 +781,169 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_Stored_Matched_Updat
     }
 }
 
+// Empty visible scope — the flattener's emitEmptyRootExtensionBuffers contract produces a
+// buffer with no scope-bound scalar data (all JSON-bound values default to Literal(null)).
+// The synthesizer must honor the Slice 3 decision-matrix rule that separate-table outcomes
+// derive from scope metadata, not buffer content, and should route Insert / Update
+// normally. These two fixtures pin that behavior.
+
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_EmptyBuffer_Inserts_With_Null_Scalar
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        // Writable body carries an explicitly empty visible extension scope: _ext.sample = {}.
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject() },
+        };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample", creatable: true)
+        );
+        // Emulates the flattener with EmitEmptyRootExtensionBuffers=true producing a buffer
+        // whose scope-bound scalar is null.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, null]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: null,
+                    profileRequest: request,
+                    profileAppliedContext: null,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_no_current_extension_rows() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Should().BeEmpty();
+
+    [Test]
+    public void It_emits_one_merged_extension_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_carries_null_scalar_on_merged_extension_row()
+    {
+        (
+            (FlattenedWriteValue.Literal)
+                _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1]
+        )
+            .Value.Should()
+            .BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_VisiblePresent_Stored_Matched_EmptyBuffer_Clears_Visible_Scalar
+{
+    private ProfileMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        // Writable body carries an explicitly empty visible extension scope for an update.
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject() },
+        };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample", creatable: true)
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope("$._ext.sample")
+        );
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, null]
+        );
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, "Red"]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_has_one_current_extension_row() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_emits_one_merged_extension_row_not_a_delete() =>
+        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_overlays_null_onto_merged_extension_row_visible_scalar()
+    {
+        (
+            (FlattenedWriteValue.Literal)
+                _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[1]
+        )
+            .Value.Should()
+            .BeNull();
+    }
+}
+
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_VisibleAbsent_Stored_Matched_Deletes
 {
@@ -1372,4 +1535,105 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*ProfileSeparateTableMergeDecider*$._ext.sample*no actionable*");
+}
+
+/// <summary>
+/// Regression for the Slice 3 separate-table key-unification scope bug: the
+/// synthesizer's matched-update path used to hand the root request body directly
+/// to the key-unification resolver context. Production compiles separate-table
+/// member paths as scope-relative (<c>$.memberA</c>, not <c>$._ext.sample.memberA</c>),
+/// so the resolver could not find the visible member on the root body and wrote
+/// <c>null</c> for canonical. The fix resolves the scope-scoped request node from
+/// the root body using the table plan's <c>JsonScope</c> before building the
+/// resolver context, so scope-relative member paths evaluate against the right node.
+/// </summary>
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_Update_With_ScopeRelative_KeyUnification_Member_Path_Uses_Scoped_Request_Node
+{
+    private ProfileMergeOutcome _outcome;
+    private int _canonicalIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Production-shaped: member RelativePath is scope-relative ("$.memberA"); the
+        // extension table's JsonScope ("$._ext.sample") is the node against which the
+        // member must be evaluated.
+        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
+            new KeyUnificationMemberSpec(
+                RelativePath: "$.memberA",
+                SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                PresenceSynthetic: false
+            ),
+        ]);
+        _canonicalIndex = canonicalIdx;
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+
+        // Full root request body, as the synthesizer receives it in production.
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
+        };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample")
+        );
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredVisiblePresentScope("$._ext.sample")
+        );
+
+        // Extension bindings: [0] DocumentId, [1] canonical (resolver-owned), [2] memberA.
+        // The flattened buffer's member value (42) is what flattening the scoped node for
+        // the visible-present member would produce in production.
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [345L, null, 42]
+        );
+
+        // Matched stored extension row with a stored canonical (99) and absent stored
+        // memberA; the request-side visible member should win and canonical resolves to 42.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, 99, null]
+        );
+
+        _outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_writes_canonical_from_request_body_via_scope_navigation()
+    {
+        // Before the fix, the resolver evaluated "$.memberA" against the root body and
+        // could not find it, so the canonical was written as null. After the fix, the
+        // synthesizer navigates to "$._ext.sample" first and the resolver finds 42.
+        (
+            (FlattenedWriteValue.Literal)
+                _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows[0].Values[_canonicalIndex]
+        )
+            .Value.Should()
+            .Be(42);
+    }
 }

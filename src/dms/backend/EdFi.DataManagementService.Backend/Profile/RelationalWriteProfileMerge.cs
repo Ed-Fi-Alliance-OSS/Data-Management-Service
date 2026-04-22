@@ -410,8 +410,14 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             classification.ResolverOwnedBindingIndices
         );
 
+        // Separate-table key-unification member paths are production-compiled
+        // scope-relative (e.g. "$.memberA" under scope "$._ext.sample"), so the
+        // resolver must evaluate them against the table-scoped sub-node of the
+        // request body, not the root body.
+        var scopedRequestNode = ResolveScopedRequestNode(request.WritableRequestBody, tablePlan);
+
         var resolverContext = new ProfileSeparateTableKeyUnificationContext(
-            WritableRequestBody: request.WritableRequestBody,
+            WritableRequestBody: scopedRequestNode,
             CurrentState: request.CurrentState,
             CurrentRowByColumnName: currentRowByColumnName,
             ResolvedReferenceLookups: resolvedReferenceLookups,
@@ -541,6 +547,35 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     + $"'{tablePlan.TableModel.JsonScope.Canonical}'. The decider selected Insert/Update "
                     + "but the flattener produced no matching buffer — upstream contract violation."
             );
+    }
+
+    /// <summary>
+    /// Navigate the root writable request body down to the separate-table plan's JSON
+    /// scope so key-unification member paths — which are scope-relative in production —
+    /// evaluate against the right node. The decider only routes Update when the request
+    /// view classifies the scope as VisiblePresent, so the scope is always expected to
+    /// exist in the body; a missing scope is treated as an upstream contract violation.
+    /// </summary>
+    private static JsonNode ResolveScopedRequestNode(JsonNode rootBody, TableWritePlan tablePlan)
+    {
+        if (
+            !RelationalWriteFlattener.TryGetRelativeLeafNode(
+                rootBody,
+                tablePlan.TableModel.JsonScope,
+                out var scopeNode
+            ) || scopeNode is null
+        )
+        {
+            throw new InvalidOperationException(
+                $"Separate-table Update path could not navigate the request body to scope "
+                    + $"'{tablePlan.TableModel.JsonScope.Canonical}' on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}'. "
+                    + "The decider selected Update but the request body does not contain the "
+                    + "scope — upstream contract violation between the projected request and "
+                    + "the decider."
+            );
+        }
+        return scopeNode;
     }
 
     private static IReadOnlyList<object?[]>? TryFindHydratedRowsForTable(

@@ -471,3 +471,169 @@ public class Given_SeparateTableResolver_with_stored_context_containing_unrelate
         return row;
     }
 }
+
+/// <summary>
+/// Regression for the Slice 3 scope-navigation contract: production key-unification
+/// member paths on a root-extension plan are compiled as scope-relative
+/// (<c>$.memberA</c>, not <c>$._ext.sample.memberA</c>). After the synthesizer fix,
+/// the caller hands the scope-scoped sub-node of the root request body to the
+/// resolver; the resolver then finds the member by navigating the scope-relative
+/// path against that scoped node.
+/// </summary>
+[TestFixture]
+public class Given_SeparateTableResolver_with_scope_relative_member_path_evaluates_against_scoped_request_node
+{
+    private FlattenedWriteValue[] _row = null!;
+    private int _canonicalIndex;
+    private int _presenceIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Production-shaped: member path is scope-relative; the scope is $._ext.sample.
+        var (plan, canonicalIdx, presenceByPath) = BuildRootPlusRootExtensionPlanWithKeyUnification([
+            new KeyUnificationMemberSpec(
+                RelativePath: "$.memberA",
+                SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                PresenceSynthetic: true
+            ),
+        ]);
+        _canonicalIndex = canonicalIdx;
+        _presenceIndex = presenceByPath["$.memberA"];
+
+        // Full root request body contains _ext.sample.memberA — matches production shape.
+        // The fixed caller extracts the $._ext.sample sub-node and passes THAT to the
+        // resolver context, so scope-relative member paths navigate correctly.
+        var rootBody = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 42 } },
+        };
+        var scopedRequestNode = rootBody["_ext"]!["sample"]!;
+
+        var request = CreateRequest(
+            writableBody: rootBody,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample")
+        );
+
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            writableBody: scopedRequestNode,
+            profileRequest: request
+        );
+
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        _row = NewInitialRow(extensionPlan);
+        var resolverOwned = ImmutableHashSet.Create(canonicalIdx, _presenceIndex);
+
+        new ProfileSeparateTableKeyUnificationResolver().Resolve(extensionPlan, context, _row, resolverOwned);
+    }
+
+    [Test]
+    public void It_writes_canonical_from_scope_relative_member_path() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(42);
+
+    [Test]
+    public void It_writes_synthetic_presence_true_for_visible_present_member() =>
+        ((FlattenedWriteValue.Literal)_row[_presenceIndex]).Value.Should().Be(true);
+
+    private static FlattenedWriteValue[] NewInitialRow(TableWritePlan tablePlan)
+    {
+        var row = new FlattenedWriteValue[tablePlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+        return row;
+    }
+}
+
+/// <summary>
+/// Regression for the Slice 3 scope-navigation contract: when two key-unification
+/// members are scope-relative (<c>$.memberA</c> and <c>$.memberB</c>) and the request
+/// provides a visible value that disagrees with the stored value governed as hidden
+/// under the same scope, the resolver must fail closed with a request-shape validation
+/// exception. Pins that scope-relative member paths interact correctly with
+/// per-scope <c>HiddenMemberPaths</c> governance during key-unification.
+/// </summary>
+[TestFixture]
+public class Given_SeparateTableResolver_with_scope_relative_visible_hidden_disagreement_fails_closed
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _) = BuildRootPlusRootExtensionPlanWithKeyUnification([
+            new KeyUnificationMemberSpec(
+                RelativePath: "$.memberA",
+                SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                PresenceSynthetic: false
+            ),
+            new KeyUnificationMemberSpec(
+                RelativePath: "$.memberB",
+                SourceKind: KeyUnificationMemberSourceKind.Scalar,
+                PresenceSynthetic: false
+            ),
+        ]);
+
+        // Visible memberA = 1 (from scoped request); hidden memberB (stored) = 2 — disagree.
+        var rootBody = new JsonObject
+        {
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["memberA"] = 1 } },
+        };
+        var scopedRequestNode = rootBody["_ext"]!["sample"]!;
+        var request = CreateRequest(
+            writableBody: rootBody,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample")
+        );
+        // Hidden-member path on the stored scope is scope-relative ("memberB"), matching
+        // the way the classifier derives the member's governing path from its scope.
+        var appliedContext = CreateContext(
+            request,
+            storedScopeStates: StoredVisiblePresentScope("$._ext.sample", "memberB")
+        );
+
+        var currentRow = new Dictionary<DbColumnName, object?>
+        {
+            [MemberPathColumnFor("$.memberA")] = null,
+            [MemberPathColumnFor("$.memberB")] = 2,
+        };
+
+        var context = BuildSeparateTableResolverContext(
+            plan,
+            writableBody: scopedRequestNode,
+            currentRowByColumnName: currentRow,
+            profileRequest: request,
+            profileAppliedContext: appliedContext
+        );
+
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        var row = new FlattenedWriteValue[extensionPlan.ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+        var resolverOwned = ImmutableHashSet.Create(canonicalIdx);
+
+        _act = () =>
+            new ProfileSeparateTableKeyUnificationResolver().Resolve(
+                extensionPlan,
+                context,
+                row,
+                resolverOwned
+            );
+    }
+
+    [Test]
+    public void It_throws_validation_exception_with_key_unification_conflict_message()
+    {
+        _act.Should()
+            .Throw<RelationalWriteRequestValidationException>()
+            .Where(e => e.ValidationFailures[0].Message.Contains("Key-unification conflict"));
+    }
+}
