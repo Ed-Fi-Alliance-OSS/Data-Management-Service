@@ -148,13 +148,6 @@ internal sealed record PersistedQuerySchool(
     string NameOfInstitution
 );
 
-internal sealed record PersistedCourseTranscript(
-    long DocumentId,
-    Guid DocumentUuid,
-    string StudentUniqueId,
-    string CourseCode
-);
-
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -163,14 +156,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
     private const int MaximumPageSize = 500;
-    private const int CourseTranscriptSchoolYear = 2026;
-    private const string CourseTranscriptStudentUniqueId = "CT-STUDENT-001";
-    private const string CourseTranscriptCourseCode = "ALG-1";
-    private const string TermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Fall Semester";
-    private const string CourseAttemptResultDescriptorUri =
-        "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass";
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-    private static readonly QualifiedResourceName CourseTranscriptResource = new("Ed-Fi", "CourseTranscript");
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(
@@ -196,17 +182,13 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private ServiceProvider _serviceProvider = null!;
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private ResourceInfo _resourceInfo = null!;
-    private ResourceInfo _courseTranscriptResourceInfo = null!;
     private IReadOnlyList<PersistedQuerySchool> _persistedSchoolsInDocumentOrder = null!;
-    private PersistedCourseTranscript _persistedCourseTranscript = null!;
     private long _physicalAddressTypeDescriptorId;
     private long _mailingAddressTypeDescriptorId;
     private long _stateAbbreviationDescriptorId;
     private long _educationOrganizationCategoryDescriptorId;
     private long _ninthGradeLevelDescriptorId;
     private long _tenthGradeLevelDescriptorId;
-    private long _termDescriptorId;
-    private long _courseAttemptResultDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -232,16 +214,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         _resourceInfo = CreateResourceInfo(projectSchema, resourceSchema);
 
-        var (courseTranscriptProjectSchema, courseTranscriptResourceSchema) = GetResourceSchema(
-            _fixture.EffectiveSchemaSet,
-            "ed-fi",
-            "CourseTranscript"
-        );
-        _courseTranscriptResourceInfo = CreateResourceInfo(
-            courseTranscriptProjectSchema,
-            courseTranscriptResourceSchema
-        );
-
         await SeedReferenceDataAsync();
 
         foreach (var schoolSeed in _schoolSeeds)
@@ -251,9 +223,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         _persistedSchoolsInDocumentOrder = await ReadPersistedSchoolsInDocumentOrderAsync();
         _persistedSchoolsInDocumentOrder.Should().HaveCount(3);
-        _persistedCourseTranscript = await SeedCourseTranscriptGraphAsync(
-            _persistedSchoolsInDocumentOrder[0]
-        );
         _recorder.Reset();
     }
 
@@ -391,36 +360,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     }
 
     [Test]
-    public async Task It_filters_course_transcripts_by_virtual_student_unique_id_reference_alias_without_reference_join()
-    {
-        var result = await ExecuteQueryAsync(
-            [
-                CreateQueryElement(
-                    "studentUniqueId",
-                    "$.studentReference.studentAcademicRecordUniqueId",
-                    CourseTranscriptStudentUniqueId
-                ),
-            ],
-            limit: 25,
-            offset: 0,
-            totalCount: true,
-            traceId: "mssql-query-course-transcript-student-alias",
-            resourceInfo: _courseTranscriptResourceInfo
-        );
-
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-
-        success.TotalCount.Should().Be(1);
-        success.EdfiDocs.Should().HaveCount(1);
-        AssertCourseTranscriptQueryDocument(success.EdfiDocs[0], _persistedCourseTranscript);
-
-        var keyset = AssertSingleQueryHydration();
-        AssertCourseTranscriptReferenceAliasSql(keyset);
-        keyset.ParameterValues["studentUniqueId"].Should().Be(CourseTranscriptStudentUniqueId);
-        AssertPageMaterialization(_persistedCourseTranscript.DocumentId);
-    }
-
-    [Test]
     public async Task It_enforces_case_sensitive_string_filtering_for_sql_server()
     {
         var expectedSchool = _persistedSchoolsInDocumentOrder[0];
@@ -527,19 +466,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         int? limit,
         int? offset,
         bool totalCount,
-        string traceId,
-        ResourceInfo? resourceInfo = null
+        string traceId
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
-        var effectiveResourceInfo = resourceInfo ?? _resourceInfo;
         var request = new RelationalQueryRequest(
-            ResourceInfo: effectiveResourceInfo,
+            ResourceInfo: _resourceInfo,
             MappingSet: _mappingSet,
             QueryElements: queryElements,
-            AuthorizationSecurableInfo: effectiveResourceInfo.AuthorizationSecurableInfo,
+            AuthorizationSecurableInfo: _resourceInfo.AuthorizationSecurableInfo,
             AuthorizationStrategyEvaluators: [],
             PaginationParameters: new PaginationParameters(
                 Limit: limit,
@@ -584,97 +521,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 NameOfInstitution: GetRequiredString(row, "NameOfInstitution")
             )),
         ];
-    }
-
-    private async Task<PersistedCourseTranscript> SeedCourseTranscriptGraphAsync(PersistedQuerySchool school)
-    {
-        var educationOrganizationId = Convert.ToInt64(school.SchoolId, CultureInfo.InvariantCulture);
-        await InsertEducationOrganizationIdentityAsync(school.DocumentId, educationOrganizationId);
-
-        var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
-        var studentDocumentId = await InsertDocumentAsync(
-            Guid.Parse("eeeeeeee-0000-0000-0000-000000000101"),
-            studentResourceKeyId
-        );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
-            "edfi",
-            "Student",
-            async () => await InsertStudentAsync(studentDocumentId, CourseTranscriptStudentUniqueId)
-        );
-
-        var schoolYearResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var schoolYearDocumentId = await InsertDocumentAsync(
-            Guid.Parse("eeeeeeee-0000-0000-0000-000000000102"),
-            schoolYearResourceKeyId
-        );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
-            "edfi",
-            "SchoolYearType",
-            async () => await InsertSchoolYearTypeAsync(schoolYearDocumentId, CourseTranscriptSchoolYear)
-        );
-
-        var courseResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Course");
-        var courseDocumentId = await InsertDocumentAsync(
-            Guid.Parse("eeeeeeee-0000-0000-0000-000000000103"),
-            courseResourceKeyId
-        );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
-            "edfi",
-            "Course",
-            async () =>
-                await InsertCourseAsync(
-                    courseDocumentId,
-                    school.DocumentId,
-                    educationOrganizationId,
-                    CourseTranscriptCourseCode
-                )
-        );
-
-        var studentAcademicRecordResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "StudentAcademicRecord"
-        );
-        var studentAcademicRecordDocumentId = await InsertDocumentAsync(
-            Guid.Parse("eeeeeeee-0000-0000-0000-000000000104"),
-            studentAcademicRecordResourceKeyId
-        );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
-            "edfi",
-            "StudentAcademicRecord",
-            async () =>
-                await InsertStudentAcademicRecordAsync(
-                    studentAcademicRecordDocumentId,
-                    school.DocumentId,
-                    educationOrganizationId,
-                    schoolYearDocumentId,
-                    studentDocumentId
-                )
-        );
-
-        var courseTranscriptResourceKeyId = _mappingSet.ResourceKeyIdByResource[CourseTranscriptResource];
-        var courseTranscriptDocumentUuid = Guid.Parse("eeeeeeee-0000-0000-0000-000000000105");
-        var courseTranscriptDocumentId = await InsertDocumentAsync(
-            courseTranscriptDocumentUuid,
-            courseTranscriptResourceKeyId
-        );
-        await ExecuteWithTriggersTemporarilyDisabledAsync(
-            "edfi",
-            "CourseTranscript",
-            async () =>
-                await InsertCourseTranscriptAsync(
-                    courseTranscriptDocumentId,
-                    courseDocumentId,
-                    studentAcademicRecordDocumentId,
-                    educationOrganizationId
-                )
-        );
-
-        return new PersistedCourseTranscript(
-            courseTranscriptDocumentId,
-            courseTranscriptDocumentUuid,
-            CourseTranscriptStudentUniqueId,
-            CourseTranscriptCourseCode
-        );
     }
 
     private async Task SeedReferenceDataAsync()
@@ -732,24 +578,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
             "Tenth grade"
-        );
-        _termDescriptorId = await SeedDescriptorAsync(
-            Guid.Parse("70777777-7777-7777-7777-777777777777"),
-            "TermDescriptor",
-            "Ed-Fi:TermDescriptor",
-            TermDescriptorUri,
-            "uri://ed-fi.org/TermDescriptor",
-            "Fall Semester",
-            "Fall Semester"
-        );
-        _courseAttemptResultDescriptorId = await SeedDescriptorAsync(
-            Guid.Parse("80888888-8888-8888-8888-888888888888"),
-            "CourseAttemptResultDescriptor",
-            "Ed-Fi:CourseAttemptResultDescriptor",
-            CourseAttemptResultDescriptorUri,
-            "uri://ed-fi.org/CourseAttemptResultDescriptor",
-            "Pass",
-            "Pass"
         );
     }
 
@@ -835,40 +663,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _recorder.PageMaterializationCallCount.Should().Be(1);
         _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
         _recorder.PageMaterializedDocumentIds.Should().Equal(expectedDocumentIds);
-    }
-
-    private static void AssertCourseTranscriptReferenceAliasSql(PageKeysetSpec.Query keyset)
-    {
-        keyset.Plan.PageDocumentIdSql.Should().Contain("FROM [edfi].[CourseTranscript] r");
-        keyset
-            .Plan.PageDocumentIdSql.Should()
-            .Contain(
-                "r.[StudentAcademicRecord_StudentUniqueId] COLLATE Latin1_General_100_BIN2 = @studentUniqueId"
-            );
-        keyset.Plan.PageDocumentIdSql.Should().NotContain("JOIN [edfi].[Student]");
-        keyset.Plan.PageDocumentIdSql.Should().NotContain("JOIN [edfi].[StudentAcademicRecord]");
-        keyset.Plan.PageDocumentIdSql.Should().NotContain("JOIN [dms].[Document]");
-    }
-
-    private static void AssertCourseTranscriptQueryDocument(
-        JsonNode? document,
-        PersistedCourseTranscript expectedCourseTranscript
-    )
-    {
-        document.Should().NotBeNull();
-        document!["id"]!.GetValue<string>().Should().Be(expectedCourseTranscript.DocumentUuid.ToString());
-        document["courseAttemptResultDescriptor"]!
-            .GetValue<string>()
-            .Should()
-            .Be(CourseAttemptResultDescriptorUri);
-        document["courseReference"]!["courseCode"]!
-            .GetValue<string>()
-            .Should()
-            .Be(expectedCourseTranscript.CourseCode);
-        document["studentAcademicRecordReference"]!["studentUniqueId"]!
-            .GetValue<string>()
-            .Should()
-            .Be(expectedCourseTranscript.StudentUniqueId);
     }
 
     private static void AssertSchoolQueryDocument(JsonNode? document, PersistedQuerySchool expectedSchool)
@@ -967,194 +761,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private async Task InsertEducationOrganizationIdentityAsync(long documentId, long educationOrganizationId)
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1
-                FROM [edfi].[EducationOrganizationIdentity]
-                WHERE [DocumentId] = @documentId
-                  AND [EducationOrganizationId] = @educationOrganizationId
-            )
-            BEGIN
-                INSERT INTO [edfi].[EducationOrganizationIdentity] (
-                    [DocumentId],
-                    [EducationOrganizationId],
-                    [Discriminator]
-                )
-                VALUES (@documentId, @educationOrganizationId, @discriminator);
-            END
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@educationOrganizationId", educationOrganizationId),
-            new SqlParameter("@discriminator", "Ed-Fi:School")
-        );
-    }
-
-    private async Task InsertStudentAsync(long documentId, string studentUniqueId)
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[Student] (
-                [DocumentId],
-                [BirthDate],
-                [FirstName],
-                [LastSurname],
-                [StudentUniqueId]
-            )
-            VALUES (@documentId, @birthDate, @firstName, @lastSurname, @studentUniqueId);
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@birthDate", new DateOnly(2010, 1, 1)),
-            new SqlParameter("@firstName", "Query"),
-            new SqlParameter("@lastSurname", "Student"),
-            new SqlParameter("@studentUniqueId", studentUniqueId)
-        );
-    }
-
-    private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear)
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[SchoolYearType] (
-                [DocumentId],
-                [CurrentSchoolYear],
-                [SchoolYear],
-                [SchoolYearDescription]
-            )
-            VALUES (@documentId, @currentSchoolYear, @schoolYear, @schoolYearDescription);
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@currentSchoolYear", true),
-            new SqlParameter("@schoolYear", schoolYear),
-            new SqlParameter("@schoolYearDescription", $"{schoolYear} School Year")
-        );
-    }
-
-    private async Task InsertCourseAsync(
-        long documentId,
-        long educationOrganizationDocumentId,
-        long educationOrganizationId,
-        string courseCode
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[Course] (
-                [DocumentId],
-                [EducationOrganization_DocumentId],
-                [EducationOrganization_EducationOrganizationId],
-                [CourseCode],
-                [CourseTitle],
-                [NumberOfParts]
-            )
-            VALUES (
-                @documentId,
-                @educationOrganizationDocumentId,
-                @educationOrganizationId,
-                @courseCode,
-                @courseTitle,
-                @numberOfParts
-            );
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
-            new SqlParameter("@educationOrganizationId", educationOrganizationId),
-            new SqlParameter("@courseCode", courseCode),
-            new SqlParameter("@courseTitle", "Algebra I"),
-            new SqlParameter("@numberOfParts", 1)
-        );
-    }
-
-    private async Task InsertStudentAcademicRecordAsync(
-        long documentId,
-        long educationOrganizationDocumentId,
-        long educationOrganizationId,
-        long schoolYearDocumentId,
-        long studentDocumentId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[StudentAcademicRecord] (
-                [DocumentId],
-                [EducationOrganization_DocumentId],
-                [EducationOrganization_EducationOrganizationId],
-                [SchoolYear_DocumentId],
-                [SchoolYear_SchoolYear],
-                [Student_DocumentId],
-                [Student_StudentUniqueId],
-                [TermDescriptor_DescriptorId]
-            )
-            VALUES (
-                @documentId,
-                @educationOrganizationDocumentId,
-                @educationOrganizationId,
-                @schoolYearDocumentId,
-                @schoolYear,
-                @studentDocumentId,
-                @studentUniqueId,
-                @termDescriptorId
-            );
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@educationOrganizationDocumentId", educationOrganizationDocumentId),
-            new SqlParameter("@educationOrganizationId", educationOrganizationId),
-            new SqlParameter("@schoolYearDocumentId", schoolYearDocumentId),
-            new SqlParameter("@schoolYear", CourseTranscriptSchoolYear),
-            new SqlParameter("@studentDocumentId", studentDocumentId),
-            new SqlParameter("@studentUniqueId", CourseTranscriptStudentUniqueId),
-            new SqlParameter("@termDescriptorId", _termDescriptorId)
-        );
-    }
-
-    private async Task InsertCourseTranscriptAsync(
-        long documentId,
-        long courseDocumentId,
-        long studentAcademicRecordDocumentId,
-        long educationOrganizationId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [edfi].[CourseTranscript] (
-                [DocumentId],
-                [CourseCourse_DocumentId],
-                [CourseCourse_CourseCode],
-                [CourseCourse_EducationOrganizationId],
-                [StudentAcademicRecord_DocumentId],
-                [StudentAcademicRecord_EducationOrganizationId],
-                [StudentAcademicRecord_SchoolYear],
-                [StudentAcademicRecord_StudentUniqueId],
-                [StudentAcademicRecord_TermDescriptor_DescriptorId],
-                [CourseAttemptResultDescriptor_DescriptorId]
-            )
-            VALUES (
-                @documentId,
-                @courseDocumentId,
-                @courseCode,
-                @educationOrganizationId,
-                @studentAcademicRecordDocumentId,
-                @educationOrganizationId,
-                @schoolYear,
-                @studentUniqueId,
-                @termDescriptorId,
-                @courseAttemptResultDescriptorId
-            );
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@courseDocumentId", courseDocumentId),
-            new SqlParameter("@courseCode", CourseTranscriptCourseCode),
-            new SqlParameter("@educationOrganizationId", educationOrganizationId),
-            new SqlParameter("@studentAcademicRecordDocumentId", studentAcademicRecordDocumentId),
-            new SqlParameter("@schoolYear", CourseTranscriptSchoolYear),
-            new SqlParameter("@studentUniqueId", CourseTranscriptStudentUniqueId),
-            new SqlParameter("@termDescriptorId", _termDescriptorId),
-            new SqlParameter("@courseAttemptResultDescriptorId", _courseAttemptResultDescriptorId)
         );
     }
 

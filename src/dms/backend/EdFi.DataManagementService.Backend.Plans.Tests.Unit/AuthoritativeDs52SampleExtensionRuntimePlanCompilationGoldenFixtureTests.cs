@@ -192,21 +192,6 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
         }
     }
 
-    [Test]
-    public void It_should_emit_reference_identity_alias_query_capabilities_for_sample_extension_resources()
-    {
-        AuthoritativeManifestQueryCapabilityAssertions.AssertRootColumnFields(
-            _manifest,
-            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
-                "Sample",
-                "BusRoute",
-                "staffUniqueId",
-                "$.staffReference.staffEducationOrganizationAssignmentAssociationUniqueId",
-                "StaffEducationOrganizationAssignmentAssociation_StaffUniqueId"
-            )
-        );
-    }
-
     private static string BuildManifest()
     {
         var authoritativeInputs = new (string FixtureRelativePath, bool IsExtensionProject)[]

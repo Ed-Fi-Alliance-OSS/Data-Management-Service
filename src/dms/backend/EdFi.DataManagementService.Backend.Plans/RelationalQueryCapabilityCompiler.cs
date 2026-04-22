@@ -277,32 +277,6 @@ internal sealed class RelationalQueryCapabilityCompiler
             return;
         }
 
-        var referenceAliasResolution = getReferenceIdentityQueryTargetResolver()
-            .ResolveReferenceAlias(queryFieldMapping.QueryFieldName, queryPath.Path);
-
-        if (referenceAliasResolution is ReferenceIdentityQueryCandidateResolution.Match referenceAliasMatch)
-        {
-            AddSupportedQueryFieldOrUnsupportedType(
-                queryFieldMapping,
-                queryPath,
-                getReferenceIdentityQueryTargetResolver().ResolveTargetOrThrow(referenceAliasMatch),
-                rootColumnsByName,
-                supportedFieldsByQueryField,
-                unsupportedFieldsByQueryField
-            );
-            return;
-        }
-
-        if (referenceAliasResolution is ReferenceIdentityQueryCandidateResolution.Ambiguous)
-        {
-            MarkUnsupported(
-                queryFieldMapping,
-                RelationalQueryFieldFailureKind.AmbiguousRootTarget,
-                unsupportedFieldsByQueryField
-            );
-            return;
-        }
-
         MarkUnsupported(
             queryFieldMapping,
             RelationalQueryFieldFailureKind.UnmappedPath,

@@ -145,39 +145,10 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
             _manifest,
             AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
                 "Ed-Fi",
-                "CourseTranscript",
-                "studentUniqueId",
-                "$.studentReference.studentAcademicRecordUniqueId",
-                "StudentAcademicRecord_StudentUniqueId"
-            ),
-            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
-                "Ed-Fi",
                 "Section",
                 "schoolId",
                 "$.courseOfferingReference.schoolId",
                 "CourseOffering_SchoolReferenceSchoolId"
-            ),
-            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
-                "Ed-Fi",
-                "StudentAssessmentEducationOrganizationAssociation",
-                "studentUniqueId",
-                "$.studentReference.studentAssessmentUniqueId",
-                "StudentAssessment_StudentUniqueId"
-            ),
-            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
-                "Ed-Fi",
-                "StudentAssessmentRegistration",
-                "studentUniqueId",
-                "$.studentReference.studentEducationOrganizationAssociationUniqueId",
-                "StudentEducationOrganizationAssociation_StudentUniqueId"
-            ),
-            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
-                "Ed-Fi",
-                "StudentAssessmentRegistration",
-                "scheduledStudentUniqueId",
-                "$.scheduledStudentReference.studentEducationOrganizationAssessmentAccommodationUniqueId",
-                "ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId",
-                "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
             ),
             AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
                 "Ed-Fi",
