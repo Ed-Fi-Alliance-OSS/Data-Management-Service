@@ -83,7 +83,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         }
         """;
 
-    private static readonly ResourceInfo SchoolResourceInfo = new(
+    private static readonly ResourceInfo _schoolResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("School"),
         IsDescriptor: false,
@@ -93,7 +93,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         AuthorizationSecurableInfo: []
     );
 
-    private static readonly ResourceInfo UnrelatedResourceInfo = new(
+    private static readonly ResourceInfo _unrelatedResourceInfo = new(
         ProjectName: new ProjectName("Ed-Fi"),
         ResourceName: new ResourceName("Program"),
         IsDescriptor: false,
@@ -170,18 +170,36 @@ public class Given_A_Mssql_Relational_Delete_By_Id
             repository.UpsertDocument(CreateUpsertRequest(documentUuid))
         );
         upsert.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        // Capture DocumentId before delete; counting cascaded rows by DocumentId (rather than
+        // joining child tables back to dms.Document on DocumentUuid) guarantees the post-delete
+        // assertions are not trivially satisfied by the Document row already being gone.
+        var documentId = await GetDocumentIdAsync(documentUuid);
+        documentId.Should().NotBeNull();
         (await CountDocumentsAsync(documentUuid)).Should().Be(1);
-        (await CountSchoolChildRowsAsync(documentUuid)).Should().BeGreaterThan(0);
+        (await CountSchoolRootRowsAsync(documentId!.Value)).Should().Be(1);
+        (await CountSchoolAddressRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
+        (await CountSchoolAddressPeriodRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
+        (await CountReferentialIdentityRowsAsync(documentId.Value)).Should().Be(1);
 
         var delete = await InvokeAsync(repository =>
-            repository.DeleteDocumentById(CreateDeleteRequest(SchoolResourceInfo, documentUuid))
+            repository.DeleteDocumentById(CreateDeleteRequest(_schoolResourceInfo, documentUuid))
         );
 
         delete.Should().BeOfType<DeleteResult.DeleteSuccess>();
         (await CountDocumentsAsync(documentUuid)).Should().Be(0);
-        (await CountSchoolChildRowsAsync(documentUuid))
+        (await CountSchoolRootRowsAsync(documentId.Value))
             .Should()
-            .Be(0, "child rows must cascade when the parent document row is removed");
+            .Be(0, "the School root row must cascade when the Document row is removed");
+        (await CountSchoolAddressRowsAsync(documentId.Value))
+            .Should()
+            .Be(0, "SchoolAddress child rows must cascade when the Document row is removed");
+        (await CountSchoolAddressPeriodRowsAsync(documentId.Value))
+            .Should()
+            .Be(0, "SchoolAddressPeriod child rows must cascade when the Document row is removed");
+        (await CountReferentialIdentityRowsAsync(documentId.Value))
+            .Should()
+            .Be(0, "dms.ReferentialIdentity rows must cascade when the Document row is removed");
     }
 
     [Test]
@@ -189,7 +207,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
     {
         var delete = await InvokeAsync(repository =>
             repository.DeleteDocumentById(
-                CreateDeleteRequest(SchoolResourceInfo, new DocumentUuid(Guid.NewGuid()))
+                CreateDeleteRequest(_schoolResourceInfo, new DocumentUuid(Guid.NewGuid()))
             )
         );
 
@@ -206,7 +224,7 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         upsert.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         var delete = await InvokeAsync(repository =>
-            repository.DeleteDocumentById(CreateDeleteRequest(UnrelatedResourceInfo, documentUuid))
+            repository.DeleteDocumentById(CreateDeleteRequest(_unrelatedResourceInfo, documentUuid))
         );
 
         delete.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
@@ -244,10 +262,10 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         ]);
 
         return new UpsertRequest(
-            ResourceInfo: SchoolResourceInfo,
+            ResourceInfo: _schoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: identity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
+                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(_schoolResourceInfo, identity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -293,24 +311,71 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         return Convert.ToInt64(rows[0]["Count"]);
     }
 
-    private async Task<long> CountSchoolChildRowsAsync(DocumentUuid documentUuid)
+    private async Task<long?> GetDocumentIdAsync(DocumentUuid documentUuid)
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT
-                (SELECT COUNT_BIG(*) FROM [edfi].[School] s
-                 INNER JOIN [dms].[Document] d ON d.[DocumentId] = s.[DocumentId]
-                 WHERE d.[DocumentUuid] = @documentUuid)
-              + (SELECT COUNT_BIG(*) FROM [edfi].[SchoolAddress] sa
-                 INNER JOIN [dms].[Document] d ON d.[DocumentId] = sa.[School_DocumentId]
-                 WHERE d.[DocumentUuid] = @documentUuid)
-              + (SELECT COUNT_BIG(*) FROM [edfi].[SchoolAddressPeriod] sap
-                 INNER JOIN [dms].[Document] d ON d.[DocumentId] = sap.[School_DocumentId]
-                 WHERE d.[DocumentUuid] = @documentUuid)
-              AS [Count];
+            SELECT [DocumentId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
             """,
             new SqlParameter("@documentUuid", documentUuid.Value)
         );
+
+        return rows.Count == 0 ? null : Convert.ToInt64(rows[0]["DocumentId"]);
+    }
+
+    private async Task<long> CountSchoolRootRowsAsync(long documentId)
+    {
+        return await CountByDocumentIdAsync(
+            """
+            SELECT COUNT_BIG(*) AS [Count]
+            FROM [edfi].[School]
+            WHERE [DocumentId] = @documentId;
+            """,
+            documentId
+        );
+    }
+
+    private async Task<long> CountSchoolAddressRowsAsync(long documentId)
+    {
+        return await CountByDocumentIdAsync(
+            """
+            SELECT COUNT_BIG(*) AS [Count]
+            FROM [edfi].[SchoolAddress]
+            WHERE [School_DocumentId] = @documentId;
+            """,
+            documentId
+        );
+    }
+
+    private async Task<long> CountSchoolAddressPeriodRowsAsync(long documentId)
+    {
+        return await CountByDocumentIdAsync(
+            """
+            SELECT COUNT_BIG(*) AS [Count]
+            FROM [edfi].[SchoolAddressPeriod]
+            WHERE [School_DocumentId] = @documentId;
+            """,
+            documentId
+        );
+    }
+
+    private async Task<long> CountReferentialIdentityRowsAsync(long documentId)
+    {
+        return await CountByDocumentIdAsync(
+            """
+            SELECT COUNT_BIG(*) AS [Count]
+            FROM [dms].[ReferentialIdentity]
+            WHERE [DocumentId] = @documentId;
+            """,
+            documentId
+        );
+    }
+
+    private async Task<long> CountByDocumentIdAsync(string sql, long documentId)
+    {
+        var rows = await _database.QueryRowsAsync(sql, new SqlParameter("@documentId", documentId));
 
         return Convert.ToInt64(rows[0]["Count"]);
     }

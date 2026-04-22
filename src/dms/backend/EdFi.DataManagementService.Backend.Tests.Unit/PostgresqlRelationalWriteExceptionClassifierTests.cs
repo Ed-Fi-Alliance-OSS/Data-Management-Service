@@ -174,6 +174,45 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
         _sut.IsForeignKeyViolation(new FakeDbException()).Should().BeFalse();
     }
 
+    [Test]
+    public void It_reports_unique_constraint_violation_for_sql_state_23505_with_constraint_name()
+    {
+        var exception = CreatePostgresException(
+            PostgresErrorCodes.UniqueViolation,
+            constraintName: "uq_edfi_student_root_identity"
+        );
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unique_constraint_violation_for_sql_state_23505_without_constraint_name()
+    {
+        var exception = CreatePostgresException(
+            PostgresErrorCodes.UniqueViolation,
+            constraintName: string.Empty
+        );
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [TestCase(PostgresErrorCodes.ForeignKeyViolation)]
+    [TestCase(PostgresErrorCodes.CheckViolation)]
+    [TestCase(PostgresErrorCodes.DeadlockDetected)]
+    [TestCase(PostgresErrorCodes.SerializationFailure)]
+    public void It_does_not_report_unique_constraint_violation_for_other_sql_states(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_report_unique_constraint_violation_for_non_postgresql_db_exceptions()
+    {
+        _sut.IsUniqueConstraintViolation(new FakeDbException()).Should().BeFalse();
+    }
+
     private static PostgresException CreatePostgresException(string sqlState, string? constraintName = null)
     {
         return new PostgresException(

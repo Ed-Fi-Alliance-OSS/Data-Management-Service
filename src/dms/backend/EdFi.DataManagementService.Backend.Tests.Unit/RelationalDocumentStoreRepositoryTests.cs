@@ -2642,6 +2642,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             return IsForeignKeyViolationToReturn;
         }
 
+        // RelationalDocumentStoreRepository does not consume unique-violation classification today
+        // (descriptor POST runs through DescriptorWriteHandler). The interface method stays a
+        // fixed-false stub until a non-descriptor path exercises it.
+        public bool IsUniqueConstraintViolation(DbException exception) => false;
+
         public bool IsTransientFailure(DbException exception)
         {
             IsTransientFailureCallCount++;

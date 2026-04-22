@@ -241,6 +241,56 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         _sut.IsForeignKeyViolation(new FakeNonSqlDbException("not sql server")).Should().BeFalse();
     }
 
+    [Test]
+    public void It_reports_unique_constraint_violation_for_error_2627_with_parseable_constraint_name()
+    {
+        var exception = CreateSqlException(
+            2627,
+            "Violation of UNIQUE KEY constraint 'UX_Student_SchoolId_StudentUniqueId_1a2b3c4d5e'."
+        );
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unique_constraint_violation_for_error_2627_when_constraint_name_cannot_be_parsed()
+    {
+        var exception = CreateSqlException(
+            2627,
+            "Localized or reworded server message without a quoted constraint name."
+        );
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unique_constraint_violation_for_error_2601_when_unique_index_name_cannot_be_parsed()
+    {
+        var exception = CreateSqlException(
+            2601,
+            "Localized or reworded server message without a quoted index name."
+        );
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeTrue();
+    }
+
+    [TestCase(547)]
+    [TestCase(1205)]
+    [TestCase(1222)]
+    [TestCase(8152)]
+    public void It_does_not_report_unique_constraint_violation_for_other_error_numbers(int errorNumber)
+    {
+        var exception = CreateSqlException(errorNumber, "Non-unique SQL Server error.");
+
+        _sut.IsUniqueConstraintViolation(exception).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_does_not_report_unique_constraint_violation_for_non_sql_server_db_exceptions()
+    {
+        _sut.IsUniqueConstraintViolation(new FakeNonSqlDbException("not sql server")).Should().BeFalse();
+    }
+
     /// <summary>
     /// Creates a real <see cref="SqlException"/> for testing.
     /// <see cref="SqlException"/> has no public constructor; instances are built via

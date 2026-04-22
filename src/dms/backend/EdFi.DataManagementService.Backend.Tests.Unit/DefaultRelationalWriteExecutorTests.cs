@@ -3937,6 +3937,8 @@ public class Given_Default_Relational_Write_Executor
 
         public bool IsForeignKeyViolation(DbException exception) => false;
 
+        public bool IsUniqueConstraintViolation(DbException exception) => false;
+
         public bool IsTransientFailure(DbException exception) => false;
     }
 

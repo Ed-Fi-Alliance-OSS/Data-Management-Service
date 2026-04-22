@@ -27,6 +27,16 @@ public interface IRelationalWriteExceptionClassifier
     bool IsForeignKeyViolation(DbException exception);
 
     /// <summary>
+    /// Reports whether the exception represents a unique-constraint violation, independent of
+    /// whether the constraint name can be extracted. Callers that need a 409 write-conflict
+    /// response for duplicates (e.g., descriptor POST) should prefer this over
+    /// <see cref="TryClassify"/>, which returns
+    /// <see cref="RelationalWriteExceptionClassification.UnrecognizedWriteFailure"/> when the
+    /// constraint name is missing (e.g., localized SQL Server error messages).
+    /// </summary>
+    bool IsUniqueConstraintViolation(DbException exception);
+
+    /// <summary>
     /// Reports whether the exception represents a transient, retry-eligible database failure
     /// (deadlock victim, serialization failure, lock-request timeout).
     /// </summary>

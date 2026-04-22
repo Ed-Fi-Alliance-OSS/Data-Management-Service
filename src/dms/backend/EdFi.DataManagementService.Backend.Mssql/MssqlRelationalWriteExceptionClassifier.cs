@@ -73,6 +73,17 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
             && sqlException.Number == ForeignKeyConstraintViolationNumber;
     }
 
+    public bool IsUniqueConstraintViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // SQL Server surfaces unique-constraint violations as 2627 (UNIQUE KEY) and unique-index
+        // violations as 2601; rely on the numeric codes so localized or reworded server messages
+        // still produce a 409 write-conflict.
+        return exception is SqlException sqlException
+            && sqlException.Number is UniqueConstraintViolationNumber or UniqueIndexViolationNumber;
+    }
+
     public bool IsTransientFailure(DbException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

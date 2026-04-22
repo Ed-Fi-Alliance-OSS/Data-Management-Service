@@ -55,6 +55,15 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
         return exception is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation };
     }
 
+    public bool IsUniqueConstraintViolation(DbException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // Rely on SqlState 23505 directly so unique-violation failures still map to a 409
+        // write-conflict even if the constraint name is absent.
+        return exception is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+    }
+
     public bool IsTransientFailure(DbException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

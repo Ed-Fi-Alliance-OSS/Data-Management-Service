@@ -22,5 +22,7 @@ public sealed class NoOpRelationalWriteExceptionClassifier : IRelationalWriteExc
 
     public bool IsForeignKeyViolation(DbException exception) => false;
 
+    public bool IsUniqueConstraintViolation(DbException exception) => false;
+
     public bool IsTransientFailure(DbException exception) => false;
 }

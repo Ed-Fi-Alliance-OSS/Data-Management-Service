@@ -104,10 +104,7 @@ internal sealed class DescriptorWriteHandler(
                 ),
             };
         }
-        catch (DbException ex)
-            when (_writeExceptionClassifier.TryClassify(ex, out var classification)
-                && classification is RelationalWriteExceptionClassification.UniqueConstraintViolation
-            )
+        catch (DbException ex) when (_writeExceptionClassifier.IsUniqueConstraintViolation(ex))
         {
             _logger.LogDebug(
                 ex,
