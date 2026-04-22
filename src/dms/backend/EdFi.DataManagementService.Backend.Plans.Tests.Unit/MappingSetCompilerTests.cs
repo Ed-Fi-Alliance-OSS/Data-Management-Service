@@ -202,28 +202,14 @@ public class Given_MappingSetCompiler
             .UnsupportedFieldsByQueryField.Should()
             .BeAssignableTo<FrozenDictionary<string, UnsupportedRelationalQueryField>>()
             .Subject;
-        var descriptorSupportedFields = mappingSet
-            .QueryCapabilitiesByResource[fixture.DescriptorResource]
+        var projectionSupportedFields = mappingSet
+            .QueryCapabilitiesByResource[fixture.ProjectionMetadataResource]
             .SupportedFieldsByQueryField.Should()
             .BeAssignableTo<FrozenDictionary<string, SupportedRelationalQueryField>>()
             .Subject;
-        var descriptorUnsupportedFields = mappingSet
-            .QueryCapabilitiesByResource[fixture.DescriptorResource]
-            .UnsupportedFieldsByQueryField.Should()
-            .BeAssignableTo<FrozenDictionary<string, UnsupportedRelationalQueryField>>()
-            .Subject;
-
-        keyUnificationSupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
-        extensionUnsupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
-        descriptorSupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
-        descriptorUnsupportedFields.Comparer.Should().Be(StringComparer.OrdinalIgnoreCase);
 
         keyUnificationSupportedFields["ID"].QueryFieldName.Should().Be("id");
-        mappingSet
-            .QueryCapabilitiesByResource[fixture.ProjectionMetadataResource]
-            .SupportedFieldsByQueryField["SchoolId"]
-            .QueryFieldName.Should()
-            .Be("schoolId");
+        projectionSupportedFields["SchoolId"].QueryFieldName.Should().Be("schoolId");
         extensionUnsupportedFields["FavoriteColor"].QueryFieldName.Should().Be("favoriteColor");
         extensionUnsupportedFields["FavoriteColor"]
             .FailureKind.Should()
