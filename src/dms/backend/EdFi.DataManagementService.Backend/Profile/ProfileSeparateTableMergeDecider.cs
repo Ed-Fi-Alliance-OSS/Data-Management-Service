@@ -80,7 +80,11 @@ internal interface IProfileSeparateTableMergeDecider
 /// <summary>
 /// Stateless implementation of <see cref="IProfileSeparateTableMergeDecider"/>.
 /// Implements the Slice 3 decision matrix as a clear if-chain with no dead
-/// branches; Hidden-stored-with-row dominates all other cases.
+/// branches. Hidden-stored-with-row dominates all non-VisiblePresent request
+/// shapes; a VisiblePresent request paired with a Hidden stored scope is an
+/// inconsistent tuple under a consistent writable profile and falls through
+/// to the throw so it fails closed rather than silently discarding the
+/// request's visible values.
 /// </summary>
 internal sealed class ProfileSeparateTableMergeDecider : IProfileSeparateTableMergeDecider
 {
@@ -91,19 +95,27 @@ internal sealed class ProfileSeparateTableMergeDecider : IProfileSeparateTableMe
         bool storedRowExists
     )
     {
-        // Preserve dominates: any Hidden stored scope with a row must emit
-        // the current row unchanged so the persister does not delete it.
-        if (storedScopeState is { Visibility: ProfileVisibilityKind.Hidden } && storedRowExists)
+        bool requestVisiblePresent =
+            requestScopeState is { Visibility: ProfileVisibilityKind.VisiblePresent };
+        bool storedHiddenWithRow =
+            storedScopeState is { Visibility: ProfileVisibilityKind.Hidden } && storedRowExists;
+
+        // Preserve dominates for any non-VisiblePresent request against a Hidden stored
+        // scope with a row: the persister must emit the current row unchanged so the row
+        // is not deleted. A VisiblePresent request against a Hidden stored scope cannot
+        // occur under a consistent writable profile (Hidden is profile-level and applied
+        // uniformly to both sides), so it falls through to the throw below rather than
+        // silently preserving (which would discard the request's visible values) or
+        // routing to Insert (which would collide with the existing row).
+        if (storedHiddenWithRow && !requestVisiblePresent)
         {
             return ProfileSeparateTableMergeOutcome.Preserve;
         }
 
-        bool requestVisiblePresent =
-            requestScopeState is { Visibility: ProfileVisibilityKind.VisiblePresent };
         bool storedVisibleMatched =
             storedScopeState is { Visibility: ProfileVisibilityKind.VisiblePresent } && storedRowExists;
 
-        if (requestVisiblePresent)
+        if (requestVisiblePresent && !storedHiddenWithRow)
         {
             if (storedVisibleMatched)
             {

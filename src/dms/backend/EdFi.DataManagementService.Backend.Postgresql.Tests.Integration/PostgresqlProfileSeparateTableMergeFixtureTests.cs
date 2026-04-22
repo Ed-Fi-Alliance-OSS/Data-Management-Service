@@ -720,20 +720,24 @@ public class Given_A_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable_Prese
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 6: Hidden whole-scope preservation — distinct from Fixture 2.
+//  Fixture 6: Hidden whole-scope preservation with a request-side Hidden entry —
+//  distinct from Fixture 2 only in the request-scope catalog shape.
 //
-//  Fixture 2 exercises a scope the profile did not expose at all (no request scope, stored
-//  scope Hidden). Fixture 6 exercises a scope that IS in the request catalog but whose
-//  stored-side visibility is Hidden — the decider's "preserve dominates any other tuple"
-//  rule must fire and the row is left untouched.
+//  Fixture 2 omits the RequestScopeState entry entirely (tolerant back-compat for a
+//  writable profile that did not surface the sub-object at all). Fixture 6 emits the
+//  RequestScopeState with Visibility=Hidden, matching C3's shared visibility
+//  classification for a scope hidden on both sides. Both must preserve the stored row
+//  unchanged. Under a consistent writable profile Hidden is profile-level, so request
+//  and stored classifications agree; a VisiblePresent request paired with a Hidden
+//  stored row is an inconsistent tuple and fails closed in the decider (see unit tests
+//  Given_SeparateTableDecider_for_visible_present_request_with_hidden_stored_fails_closed).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// Seed a ProfileSeparateTableMergeItem with both <c>$._ext.sample</c> scalars populated.
-/// The request scope for <c>$._ext.sample</c> is VisiblePresent (i.e. the profile exposes
-/// the scope on the writable side), but the stored scope state classifies it as Hidden. The
-/// decider must return Preserve regardless — per the Slice 3 decision matrix's dominance
-/// rule — so the stored row stays untouched. The profiled PUT updates root displayName.
+/// The writable profile hides the sub-object, so both request-side and stored-side
+/// classifications are Hidden (emitted in the context). The decider's Preserve rule
+/// fires and the stored row stays untouched. The profiled PUT updates root displayName.
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -795,15 +799,17 @@ public class Given_A_ProfiledUpdate_WithHiddenWholeSeparateTableScope_PreservesR
         var writePlan = _mappingSet.WritePlansByResource[
             PostgresqlProfileSeparateTableMergeSupport.ItemResource
         ];
-        // Request scope VisiblePresent but stored scope Hidden: decider Preserve case.
+        // Hidden on both sides: the writable profile hides the sub-object, so C3/C6 emit
+        // matching Hidden entries for the extension scope. The decider's Preserve rule
+        // fires and the stored row is left untouched.
         var profileContext = PostgresqlProfileSeparateTableMergeSupport.CreateProfileContext(
             writePlan,
             writeBody.DeepClone(),
             rootVisibility: ProfileVisibilityKind.VisiblePresent,
             rootHiddenMemberPaths: [],
             emitExtRequestScope: true,
-            extRequestVisibility: ProfileVisibilityKind.VisiblePresent,
-            extCreatable: true,
+            extRequestVisibility: ProfileVisibilityKind.Hidden,
+            extCreatable: false,
             emitExtStoredScope: true,
             extStoredVisibility: ProfileVisibilityKind.Hidden,
             extStoredHiddenMemberPaths: []

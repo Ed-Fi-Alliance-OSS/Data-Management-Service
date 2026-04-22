@@ -1030,12 +1030,14 @@ public class Given_Synthesizer_SeparateTable_HiddenStored_Preserves_With_Identic
             )
         );
         var extensionPlan = plan.TablePlansInDependencyOrder[1];
-        // Request has no visible scope for $._ext.sample because the profile hides it.
+        // Profile hides $._ext.sample, so both sides classify it as Hidden — C3 emits a
+        // Hidden request-scope entry alongside the stored Hidden classification.
         var body = new JsonObject { ["firstName"] = "Ada" };
         var request = CreateRequest(
             writableBody: body,
             rootResourceCreatable: true,
-            RequestVisiblePresentScope("$")
+            RequestVisiblePresentScope("$"),
+            RequestHiddenScope("$._ext.sample")
         );
         var appliedContext = CreateContext(
             request,
@@ -1129,12 +1131,16 @@ public class Given_Synthesizer_With_Multi_Table_Plan_And_Unused_Collection_Scope
         var extensionPlan = plan.TablePlansInDependencyOrder[1];
 
         // Request exercises only the root scope; the extension and collection-extension-scope
-        // are never referenced. Create-new path (no currentState, no profileAppliedContext).
+        // are never referenced. Per C3, Core still emits a RequestScopeState for every
+        // compiled non-collection scope — here the extension classifies as VisibleAbsent
+        // because the request omits it. Create-new path (no currentState, no
+        // profileAppliedContext).
         var body = new JsonObject { ["firstName"] = "Ada" };
         var request = CreateRequest(
             writableBody: body,
             rootResourceCreatable: true,
-            RequestVisiblePresentScope("$")
+            RequestVisiblePresentScope("$"),
+            RequestVisibleAbsentScope("$._ext.sample")
         );
         // Flattened set carries the extension row (shape invariant) but NOT the unused
         // collection-extension-scope table — the synthesizer must iterate the plan (which
@@ -1346,11 +1352,14 @@ public class Given_Synthesizer_SeparateTable_NoRequest_NoStoredRow_SkipsSilently
         );
         var extensionPlan = plan.TablePlansInDependencyOrder[1];
         var body = new JsonObject { ["firstName"] = "Ada" };
-        // No request-side or stored-side scope for $._ext.sample at all.
+        // Request side classifies the extension as VisibleAbsent (per C3 Core emits a
+        // RequestScopeState for every compiled non-collection scope); stored side is
+        // absent for the create-new path (no profileAppliedContext, no stored row).
         var request = CreateRequest(
             writableBody: body,
             rootResourceCreatable: true,
-            RequestVisiblePresentScope("$")
+            RequestVisiblePresentScope("$"),
+            RequestVisibleAbsentScope("$._ext.sample")
         );
         var flattened = BuildFlattenedWriteSetWithExtensionRow(
             plan,
@@ -1462,13 +1471,13 @@ public class Given_Synthesizer_SeparateTable_HiddenRequest_With_Visible_Stored_A
 }
 
 /// <summary>
-/// Regression pin for the Task 5 fail-closed contract: a request with NO scope state for
-/// the separate-table scope (null request) paired with a matched visible stored row is a
-/// caller-contract violation (the request-view must classify every scope referenced by
-/// the profile). Task 4's decider throws <see cref="InvalidOperationException"/> on this
-/// tuple. The synthesizer's pre-decider skip predicate must NOT swallow this case — it
-/// must route it to the decider so the contract violation surfaces instead of silently
-/// preserving drifted profile state.
+/// Regression pin for the fail-closed contract on missing request-side scope metadata:
+/// per C3 (01a-c3-request-visibility-and-writable-shaping.md), every compiled non-collection
+/// scope must have a <see cref="RequestScopeState"/> entry. A null request-scope entry
+/// paired with a matched visible stored row is a Core contract violation, and the
+/// synthesizer's pre-decider contract check catches this and fails closed with a
+/// synthesizer-level message identifying the offending scope instead of deferring the
+/// throw to the decider's generic "no actionable" message.
 /// </summary>
 [TestFixture]
 public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And_Row_FailsClosed
@@ -1488,7 +1497,7 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
         var extensionPlan = plan.TablePlansInDependencyOrder[1];
         var body = new JsonObject { ["firstName"] = "Ada" };
         // Request has NO scope state for $._ext.sample (omit from RequestScopeStates) —
-        // null-request case.
+        // null-request case; a flattened buffer is still emitted per the shape invariant.
         var request = CreateRequest(
             writableBody: body,
             rootResourceCreatable: true,
@@ -1506,8 +1515,153 @@ public class Given_Synthesizer_SeparateTable_NullRequest_With_Visible_Stored_And
             rootLiteralsByBindingIndex: ["Ada"],
             extensionLiteralsByBindingIndex: [null, null]
         );
-        // Matched visible stored row: storedRowExists must be true for the decider to see
-        // the inconsistent (null request, VisiblePresent stored, row) tuple.
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, "Red"]
+        );
+
+        var synthesizer = BuildProfileSynthesizer();
+        _synthesizeAction = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_with_synthesizer_contract_violation_message() =>
+        _synthesizeAction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*$._ext.sample*RequestScopeStates has no entry*");
+}
+
+/// <summary>
+/// Regression pin for the fail-closed contract on missing stored-side scope metadata:
+/// per C6 (01a-c6-stored-state-projection-and-hidden-member-paths.md), every compiled
+/// non-collection scope must have a <see cref="StoredScopeState"/> entry when a profile
+/// applies. A current stored separate-table row with no StoredScopeState entry would
+/// otherwise silently preserve the row on a VisibleAbsent request instead of deleting or
+/// failing closed. The synthesizer's pre-decider contract check surfaces this as a
+/// Core contract violation.
+/// </summary>
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_StoredRow_Without_StoredScopeState_FailsClosed
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        // Request intentionally omits the extension scope (VisibleAbsent); the scope is
+        // well-formed on the request side.
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisibleAbsentScope("$._ext.sample")
+        );
+        // Stored context omits the extension scope from StoredScopeStates even though a
+        // stored extension row exists — this is the contract violation the synthesizer
+        // must fail closed on rather than silently preserve the row.
+        var appliedContext = CreateContext(request, visibleStoredBody: null, StoredVisiblePresentScope("$"));
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, null]
+        );
+        var currentState = BuildCurrentStateWithRootAndExtensionRow(
+            plan,
+            rootRowValues: ["AdaStored"],
+            extensionRowValues: [345L, "Red"]
+        );
+
+        var synthesizer = BuildProfileSynthesizer();
+        _synthesizeAction = () =>
+            synthesizer.Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    writePlan: plan,
+                    flattenedWriteSet: flattened,
+                    writableRequestBody: body,
+                    currentState: currentState,
+                    profileRequest: request,
+                    profileAppliedContext: appliedContext,
+                    resolvedReferences: EmptyResolvedReferenceSet()
+                )
+            );
+    }
+
+    [Test]
+    public void It_throws_with_synthesizer_contract_violation_message() =>
+        _synthesizeAction
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*$._ext.sample*StoredScopeStates has no entry*");
+}
+
+/// <summary>
+/// Regression pin for the narrowed Preserve-dominates rule: a VisiblePresent request
+/// paired with a Hidden stored scope and a stored row is an inconsistent tuple (Hidden
+/// classification is profile-level and applied uniformly on both sides of a consistent
+/// writable profile). The synthesizer must route this through the decider, which throws
+/// fail closed instead of returning Preserve and silently discarding the request's
+/// visible values.
+/// </summary>
+[TestFixture]
+public class Given_Synthesizer_SeparateTable_VisiblePresentRequest_With_Hidden_Stored_And_Row_FailsClosed
+{
+    private Action _synthesizeAction = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var extensionPlan = plan.TablePlansInDependencyOrder[1];
+        var body = new JsonObject { ["firstName"] = "Ada" };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample", creatable: true)
+        );
+        // Stored side classifies the extension scope as Hidden with a matched row — the
+        // inconsistent tuple the narrowed decider must fail closed on.
+        var appliedContext = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            StoredHiddenScope("$._ext.sample")
+        );
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            extensionPlan,
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, "Blue"]
+        );
         var currentState = BuildCurrentStateWithRootAndExtensionRow(
             plan,
             rootRowValues: ["AdaStored"],

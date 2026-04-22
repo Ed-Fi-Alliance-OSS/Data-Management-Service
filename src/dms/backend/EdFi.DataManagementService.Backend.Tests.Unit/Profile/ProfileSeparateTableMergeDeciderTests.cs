@@ -195,3 +195,83 @@ public class Given_SeparateTableDecider_for_null_request_with_visible_stored_fai
             .Throw<InvalidOperationException>()
             .WithMessage("*ProfileSeparateTableMergeDecider*$._ext.sample*no actionable*");
 }
+
+[TestFixture]
+public class Given_SeparateTableDecider_for_visible_present_request_with_hidden_stored_fails_closed
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // A scope cannot simultaneously be VisiblePresent on the request side and Hidden
+        // on the stored side under the same writable profile — Hidden classification is
+        // profile-level and applied uniformly to both sides. The decider narrows the
+        // "Preserve dominates" rule so this inconsistent tuple falls through to the throw
+        // rather than silently discarding the request's visible values (which the previous
+        // unconditional Preserve would have done) or routing to Insert (which would
+        // collide with the existing stored row).
+        var decider = new ProfileSeparateTableMergeDecider();
+        var requestScope = RequestVisiblePresentScope("$._ext.sample", creatable: true);
+        var storedScope = StoredHiddenScope("$._ext.sample");
+        _act = () => decider.Decide("$._ext.sample", requestScope, storedScope, storedRowExists: true);
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException_for_inconsistent_tuple() =>
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*ProfileSeparateTableMergeDecider*$._ext.sample*no actionable*");
+}
+
+[TestFixture]
+public class Given_SeparateTableDecider_for_visible_absent_request_with_hidden_stored_returns_Preserve
+{
+    private ProfileSeparateTableMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // VisibleAbsent request paired with a Hidden stored row is the legitimate
+        // preservation case: the requester omits the scope, the profile hides the
+        // stored side, and the decider must emit the current row unchanged so the
+        // persister does not interpret the omission as a delete.
+        var decider = new ProfileSeparateTableMergeDecider();
+        var requestScope = RequestVisibleAbsentScope("$._ext.sample", creatable: true);
+        var storedScope = StoredHiddenScope("$._ext.sample");
+        _outcome = decider.Decide("$._ext.sample", requestScope, storedScope, storedRowExists: true);
+    }
+
+    [Test]
+    public void It_returns_Preserve() => _outcome.Should().Be(ProfileSeparateTableMergeOutcome.Preserve);
+}
+
+[TestFixture]
+public class Given_SeparateTableDecider_for_null_request_with_hidden_stored_returns_Preserve
+{
+    private ProfileSeparateTableMergeOutcome _outcome;
+
+    [SetUp]
+    public void Setup()
+    {
+        // The narrowed "Preserve dominates" rule returns Preserve for a null
+        // request-side scope state paired with a Hidden stored row. This case is
+        // still reachable end-to-end: the synthesizer's request-scope contract
+        // gate only fires when a flattened root-extension buffer is present, so
+        // when Core omits the RequestScopeState entry AND the writable profile
+        // hides the scope (so the flattener emits no buffer), the tuple flows
+        // from production into the decider (see Fixture 2 in the PG/MSSQL
+        // separate-table integration suites).
+        var decider = new ProfileSeparateTableMergeDecider();
+        var storedScope = StoredHiddenScope("$._ext.sample");
+        _outcome = decider.Decide(
+            "$._ext.sample",
+            requestScopeState: null,
+            storedScope,
+            storedRowExists: true
+        );
+    }
+
+    [Test]
+    public void It_returns_Preserve() => _outcome.Should().Be(ProfileSeparateTableMergeOutcome.Preserve);
+}

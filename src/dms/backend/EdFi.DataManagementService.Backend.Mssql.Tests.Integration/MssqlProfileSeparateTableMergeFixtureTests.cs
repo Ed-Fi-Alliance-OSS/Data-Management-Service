@@ -680,7 +680,9 @@ public class Given_A_Mssql_ProfiledUpdate_WithHiddenDescriptorFKOn_SeparateTable
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Fixture 6: Hidden whole-scope preservation (MSSQL).
+//  Fixture 6: Hidden whole-scope preservation (MSSQL). Consistent Hidden on both
+//  request and stored sides; see the PostgreSQL peer for the full rationale and
+//  the Fixture 2 distinction.
 // ─────────────────────────────────────────────────────────────────────────────
 
 [TestFixture]
@@ -748,14 +750,16 @@ public class Given_A_Mssql_ProfiledUpdate_WithHiddenWholeSeparateTableScope_Pres
             ["displayName"] = "UpdatedDisplay",
         };
         var writePlan = _mappingSet.WritePlansByResource[MssqlProfileSeparateTableMergeSupport.ItemResource];
+        // Hidden on both sides: C3/C6 emit matching Hidden entries; decider returns
+        // Preserve and the stored row is left untouched.
         var profileContext = MssqlProfileSeparateTableMergeSupport.CreateProfileContext(
             writePlan,
             writeBody.DeepClone(),
             rootVisibility: ProfileVisibilityKind.VisiblePresent,
             rootHiddenMemberPaths: [],
             emitExtRequestScope: true,
-            extRequestVisibility: ProfileVisibilityKind.VisiblePresent,
-            extCreatable: true,
+            extRequestVisibility: ProfileVisibilityKind.Hidden,
+            extCreatable: false,
             emitExtStoredScope: true,
             extStoredVisibility: ProfileVisibilityKind.Hidden,
             extStoredHiddenMemberPaths: []

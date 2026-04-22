@@ -301,6 +301,42 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         var hydratedRows = TryFindHydratedRowsForTable(request.CurrentState, tablePlan);
         var storedRowExists = hydratedRows is { Count: > 0 };
+        var bufferExists = request.FlattenedWriteSet.RootRow.RootExtensionRows.Any(row =>
+            ReferenceEquals(row.TableWritePlan, tablePlan)
+        );
+
+        // Contract validation: Core must emit a RequestScopeState entry for every compiled
+        // non-collection scope (per C3 `01a-c3-request-visibility-and-writable-shaping.md`).
+        // If the flattener produced a root-extension buffer for this scope but
+        // RequestScopeStates has no entry, we cannot classify the scope at all — fail closed
+        // rather than silently treating the authoritative metadata absence as a no-op.
+        if (bufferExists && requestScope is null)
+        {
+            throw new InvalidOperationException(
+                $"Profile separate-table merge for scope '{scope}' on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}': a flattened root-extension "
+                    + "buffer exists but ProfileAppliedWriteRequest.RequestScopeStates has no entry for this scope. "
+                    + "Every compiled non-collection scope must have a RequestScopeState entry — upstream Core "
+                    + "contract violation."
+            );
+        }
+
+        // Contract validation: Core must emit a StoredScopeState entry for every compiled
+        // non-collection scope when a profile applies (per C6
+        // `01a-c6-stored-state-projection-and-hidden-member-paths.md`). If a current
+        // separate-table row exists but StoredScopeStates has no entry, silently skipping
+        // would preserve the row on a VisibleAbsent request instead of deleting or failing
+        // closed — stored scope metadata is authoritative, so fail closed here.
+        if (storedRowExists && storedScope is null)
+        {
+            throw new InvalidOperationException(
+                $"Profile separate-table merge for scope '{scope}' on table "
+                    + $"'{ProfileBindingClassificationCore.FormatTable(tablePlan)}': a current stored row exists "
+                    + "but ProfileAppliedWriteContext.StoredScopeStates has no entry for this scope. "
+                    + "Every compiled non-collection scope must have a StoredScopeState entry when a profile "
+                    + "applies — upstream Core contract violation."
+            );
+        }
 
         // Express the Slice 3 decision matrix's "actionable" conditions directly so genuine
         // no-ops never reach the decider. Skip covers only the matrix cells that have no
@@ -310,9 +346,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         //   - Both sides absent entirely (trivially nothing to do).
         // Skip does NOT cover any matched visible stored row: those cases are routed to the
         // decider so VisiblePresent request → Update and VisibleAbsent request → Delete take
-        // effect. Inconsistent request-side tuples (Hidden or null request paired with a
-        // matched visible stored row) must ALSO reach the decider so they fail closed per
-        // Task 4's contract rather than being silently preserved.
+        // effect. Inconsistent request-side tuples must ALSO reach the decider so they fail
+        // closed rather than being silently preserved:
+        //   - Hidden/null request paired with a matched visible stored row.
+        //   - VisiblePresent request paired with a Hidden stored scope + row (impossible
+        //     under a consistent writable profile; the decider narrows "Preserve dominates"
+        //     so this tuple throws instead of silently discarding the request's values).
         bool preserveActionable =
             storedScope is { Visibility: ProfileVisibilityKind.Hidden } && storedRowExists;
         bool visiblePresentActionable = requestScope is { Visibility: ProfileVisibilityKind.VisiblePresent };
