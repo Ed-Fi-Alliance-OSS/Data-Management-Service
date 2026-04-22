@@ -87,16 +87,6 @@ internal sealed record RelationalWriteProfileMergeRequest
                 );
             }
         }
-        if (
-            ProfileAppliedContext is not null
-            && !ReferenceEquals(ProfileAppliedContext.Request, ProfileRequest)
-        )
-        {
-            throw new ArgumentException(
-                $"{nameof(profileAppliedContext)}.Request must be the same instance as {nameof(profileRequest)}.",
-                nameof(profileAppliedContext)
-            );
-        }
         if ((CurrentState is null) != (ProfileAppliedContext is null))
         {
             throw new ArgumentException(

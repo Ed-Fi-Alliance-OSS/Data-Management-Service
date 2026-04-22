@@ -198,6 +198,12 @@ internal sealed class DefaultRelationalWriteExecutor(
                         );
                 }
 
+                // After projection, the projected request/context pair is authoritative for the
+                // remainder of the profile-aware executor path.
+                var effectiveProfileRequest =
+                    profileAppliedWriteContext?.Request ?? profileWriteContext.Request;
+                var profileWritableBody = effectiveProfileRequest.WritableRequestBody;
+
                 // Step 3: Contract validation
                 var httpMethod = request.OperationKind == RelationalWriteOperationKind.Post ? "POST" : "PUT";
                 var contractValidationFailures = profileAppliedWriteContext is not null
@@ -248,7 +254,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         topologyIndex
                     )
                     : ProfileSliceFenceClassifier.ClassifyForCreateNew(
-                        profileWriteContext.Request,
+                        effectiveProfileRequest,
                         topologyIndex
                     );
 
@@ -269,7 +275,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     RequiredSliceFamily.SeparateTableNonCollection =>
                         !RequestExercisesCollectionAlignedSeparateTableScope(
                             request.WritePlan,
-                            profileWriteContext.Request,
+                            effectiveProfileRequest,
                             profileAppliedWriteContext
                         ),
                     RequiredSliceFamily.TopLevelCollection => false,
@@ -298,7 +304,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.OperationKind,
                         executionRequest.TargetContext,
                         executionRequest.WritePlan,
-                        executionRequest.SelectedBody,
+                        profileWritableBody,
                         resolvedReferences
                     )
                 );
@@ -307,9 +313,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                     new RelationalWriteProfileMergeRequest(
                         executionRequest.WritePlan,
                         profileFlattenedWriteSet,
-                        executionRequest.SelectedBody,
+                        profileWritableBody,
                         currentState,
-                        profileWriteContext.Request,
+                        effectiveProfileRequest,
                         profileAppliedWriteContext,
                         resolvedReferences
                     )

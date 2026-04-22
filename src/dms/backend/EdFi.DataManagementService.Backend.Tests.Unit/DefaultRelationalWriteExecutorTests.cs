@@ -2198,8 +2198,27 @@ public class Given_Default_Relational_Write_Executor
             ],
             VisibleRequestCollectionItems: []
         );
+        var projectedWritableBody = writableBody.DeepClone();
+        var projectedProfileRequest = new ProfileAppliedWriteRequest(
+            WritableRequestBody: projectedWritableBody,
+            RootResourceCreatable: true,
+            RequestScopeStates:
+            [
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+                new RequestScopeState(
+                    Address: new ScopeInstanceAddress("$._ext.sample", []),
+                    Visibility: ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            VisibleRequestCollectionItems: []
+        );
         var expectedAppliedWriteContext = new ProfileAppliedWriteContext(
-            Request: profileRequest,
+            Request: projectedProfileRequest,
             VisibleStoredBody: JsonNode.Parse("""{"schoolId":255901}""")!,
             StoredScopeStates:
             [
@@ -2303,6 +2322,14 @@ public class Given_Default_Relational_Write_Executor
         _profileMergeSynthesizer
             .SynthesizeCallCount.Should()
             .Be(1, "profile merge must run for root-attached SeparateTableNonCollection updates");
+        profileRequest.Should().NotBeSameAs(projectedProfileRequest);
+        profileRequest.WritableRequestBody.Should().NotBeSameAs(projectedWritableBody);
+        _writeFlattener.CapturedInput.Should().NotBeNull();
+        _writeFlattener.CapturedInput!.SelectedBody.Should().BeSameAs(projectedWritableBody);
+        _profileMergeSynthesizer
+            .CapturedRequest!.WritableRequestBody.Should()
+            .BeSameAs(projectedWritableBody);
+        _profileMergeSynthesizer.CapturedRequest!.ProfileRequest.Should().BeSameAs(projectedProfileRequest);
         _profileMergeSynthesizer.CapturedRequest!.ProfileAppliedContext.Should().NotBeNull();
         _noProfilePersister
             .TryPersistCallCount.Should()

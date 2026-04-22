@@ -236,9 +236,9 @@ public class Given_ProfileSynthesizer_request_with_mismatched_applied_context_re
     }
 
     [Test]
-    public void It_throws_ArgumentException_about_same_instance()
+    public void It_does_not_require_same_instance()
     {
-        _act.Should().Throw<ArgumentException>().WithMessage("*same instance*");
+        _act.Should().NotThrow();
     }
 }
 
