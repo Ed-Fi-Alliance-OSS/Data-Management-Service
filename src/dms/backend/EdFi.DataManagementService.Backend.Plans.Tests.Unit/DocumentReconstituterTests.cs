@@ -231,6 +231,90 @@ public class Given_DocumentReconstituter_With_Null_Scalar
 }
 
 [TestFixture]
+public class Given_DocumentReconstituter_With_Unsupported_Scalar_Value
+{
+    private InvalidOperationException _exception = null!;
+
+    private static readonly DbSchemaName _schema = new("edfi");
+    private static readonly DbTableName _tableName = new(_schema, "School");
+
+    private static readonly JsonPathExpression _rootScope = new("$", []);
+
+    private static readonly JsonPathExpression _webSitePath = new(
+        "$.webSite",
+        [new JsonPathSegment.Property("webSite")]
+    );
+
+    [SetUp]
+    public void SetUp()
+    {
+        var columns = new List<DbColumnModel>
+        {
+            new(
+                ColumnName: new DbColumnName("DocumentId"),
+                Kind: ColumnKind.ParentKeyPart,
+                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                ColumnName: new DbColumnName("WebSite"),
+                Kind: ColumnKind.Scalar,
+                ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 255),
+                IsNullable: false,
+                SourceJsonPath: _webSitePath,
+                TargetResource: null
+            ),
+        };
+
+        var tableModel = new DbTableModel(
+            Table: _tableName,
+            JsonScope: _rootScope,
+            Key: new TableKey(
+                "PK_School",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                TableKind: DbTableKind.Root,
+                PhysicalRowIdentityColumns: [new DbColumnName("DocumentId")],
+                RootScopeLocatorColumns: [new DbColumnName("DocumentId")],
+                ImmediateParentScopeLocatorColumns: [],
+                SemanticIdentityBindings: []
+            ),
+        };
+
+        object?[] row = [1L, new Uri("https://example.org/unsupported")];
+        var tableRows = new HydratedTableRows(tableModel, [row]);
+
+        var act = () =>
+            DocumentReconstituter.Reconstitute(
+                documentId: 1L,
+                tableRowsInDependencyOrder: [tableRows],
+                referenceProjectionPlans: [],
+                descriptorProjectionSources: [],
+                descriptorUriLookup: new Dictionary<long, string>()
+            );
+
+        _exception = act.Should().Throw<InvalidOperationException>().Which;
+    }
+
+    [Test]
+    public void It_should_throw_a_diagnostic_exception()
+    {
+        _exception
+            .Message.Should()
+            .Contain("Cannot reconstitute scalar value")
+            .And.Contain("System.Uri")
+            .And.Contain("String");
+    }
+}
+
+[TestFixture]
 public class Given_DocumentReconstituter_With_A_Date_Scalar_Read_As_DateTime
 {
     private JsonNode _result = null!;

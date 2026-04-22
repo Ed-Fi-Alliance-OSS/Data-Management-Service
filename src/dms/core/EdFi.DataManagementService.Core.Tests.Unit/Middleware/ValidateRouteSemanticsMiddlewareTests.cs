@@ -55,6 +55,12 @@ public class ValidateRouteSemanticsMiddlewareTests
         }
 
         [Test]
+        public void It_returns_problem_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+
+        [Test]
         public void It_returns_the_existing_method_not_allowed_message()
         {
             string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);

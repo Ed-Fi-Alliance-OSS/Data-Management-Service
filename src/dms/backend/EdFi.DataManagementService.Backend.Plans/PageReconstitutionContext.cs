@@ -415,22 +415,20 @@ internal sealed class PageReconstitutionContext
 
             foreach (var row in descriptorRows.Rows)
             {
-                if (!descriptorUrisById.TryAdd(row.DescriptorId, row.Uri))
+                if (descriptorUrisById.TryGetValue(row.DescriptorId, out var existingUri))
                 {
-                    if (
-                        !string.Equals(
-                            descriptorUrisById[row.DescriptorId],
-                            row.Uri,
-                            StringComparison.Ordinal
-                        )
-                    )
+                    if (!string.Equals(existingUri, row.Uri, StringComparison.Ordinal))
                     {
                         throw new InvalidOperationException(
                             "Cannot build page reconstitution context: descriptor hydration returned conflicting "
                                 + $"URIs for descriptor ID {row.DescriptorId}."
                         );
                     }
+
+                    continue;
                 }
+
+                descriptorUrisById.Add(row.DescriptorId, row.Uri);
             }
         }
 

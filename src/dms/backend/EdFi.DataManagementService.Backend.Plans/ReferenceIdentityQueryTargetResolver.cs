@@ -188,7 +188,11 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     {
         ValidateScalarTargetColumnOrThrow(representativeColumn, match.CandidateGroup);
 
-        foreach (var candidate in match.MatchedCandidatesInOrder)
+        foreach (
+            var candidate in match.MatchedCandidatesInOrder.Where(candidate =>
+                !candidate.Column.Equals(representativeColumn.ColumnName)
+            )
+        )
         {
             var candidateColumn = ResolveRootColumnOrThrow(candidate.Column, match.CandidateGroup);
             ValidateScalarTargetColumnOrThrow(candidateColumn, match.CandidateGroup);
@@ -207,7 +211,11 @@ internal sealed class ReferenceIdentityQueryTargetResolver
             ResolveDescriptorTargetResourceOrThrow(representativeColumn, match.CandidateGroup)
         );
 
-        foreach (var candidate in match.MatchedCandidatesInOrder)
+        foreach (
+            var candidate in match.MatchedCandidatesInOrder.Where(candidate =>
+                !candidate.Column.Equals(representativeColumn.ColumnName)
+            )
+        )
         {
             var candidateColumn = ResolveRootColumnOrThrow(candidate.Column, match.CandidateGroup);
             descriptorResources.Add(
@@ -226,6 +234,14 @@ internal sealed class ReferenceIdentityQueryTargetResolver
             throw CreateQueryCapabilityException(
                 _resourceModel,
                 $"reference identity query candidate group '{match.CandidateGroup.ReferenceJsonPath.Canonical}' on table '{_rootTable.Table}' resolves descriptor candidates to multiple descriptor resources: {string.Join(", ", distinctDescriptorResources.Select(FormatResource))}"
+            );
+        }
+
+        if (distinctDescriptorResources.Length == 0)
+        {
+            throw CreateQueryCapabilityException(
+                _resourceModel,
+                $"reference identity query candidate group '{match.CandidateGroup.ReferenceJsonPath.Canonical}' on table '{_rootTable.Table}' does not resolve any descriptor resource"
             );
         }
 

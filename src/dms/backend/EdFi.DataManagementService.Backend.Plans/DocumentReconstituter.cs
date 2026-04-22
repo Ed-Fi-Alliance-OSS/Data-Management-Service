@@ -834,30 +834,51 @@ public static class DocumentReconstituter
     /// </summary>
     private static JsonNode ConvertToJsonValue(object value, RelationalScalarType? scalarType = null)
     {
-        if (scalarType?.Kind == ScalarKind.Date)
+        if (scalarType is not null)
         {
-            return value switch
+            return scalarType.Kind switch
             {
-                DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
-                DateTime dateTime => JsonValue.Create(DateOnly.FromDateTime(dateTime).ToString("yyyy-MM-dd")),
-                DateTimeOffset dateTimeOffset => JsonValue.Create(
-                    DateOnly.FromDateTime(dateTimeOffset.DateTime).ToString("yyyy-MM-dd")
+                ScalarKind.String => value switch
+                {
+                    string str => JsonValue.Create(str),
+                    Guid g => JsonValue.Create(g.ToString()),
+                    _ => ThrowUnsupportedScalarValue(value, scalarType),
+                },
+                ScalarKind.Int32 => value switch
+                {
+                    int i => JsonValue.Create(i),
+                    long l => JsonValue.Create(l),
+                    short s => JsonValue.Create(s),
+                    _ => ThrowUnsupportedScalarValue(value, scalarType),
+                },
+                ScalarKind.Int64 => value switch
+                {
+                    long l => JsonValue.Create(l),
+                    int i => JsonValue.Create(i),
+                    short s => JsonValue.Create(s),
+                    _ => ThrowUnsupportedScalarValue(value, scalarType),
+                },
+                ScalarKind.Decimal => value switch
+                {
+                    decimal d => JsonValue.Create(d),
+                    double dbl => JsonValue.Create(dbl),
+                    float f => JsonValue.Create(f),
+                    int i => JsonValue.Create(i),
+                    long l => JsonValue.Create(l),
+                    short s => JsonValue.Create(s),
+                    _ => ThrowUnsupportedScalarValue(value, scalarType),
+                },
+                ScalarKind.Boolean => value switch
+                {
+                    bool b => JsonValue.Create(b),
+                    _ => ThrowUnsupportedScalarValue(value, scalarType),
+                },
+                ScalarKind.Date => ConvertDateValue(value, scalarType),
+                ScalarKind.DateTime => ConvertDateTimeValue(value, scalarType),
+                ScalarKind.Time => ConvertTimeValue(value, scalarType),
+                _ => throw new InvalidOperationException(
+                    $"Cannot reconstitute scalar value: unsupported relational scalar kind '{scalarType.Kind}'."
                 ),
-                _ => JsonValue.Create(value.ToString() ?? string.Empty),
-            };
-        }
-
-        if (scalarType?.Kind == ScalarKind.Time)
-        {
-            return value switch
-            {
-                TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
-                TimeSpan timeSpan => JsonValue.Create(TimeOnly.FromTimeSpan(timeSpan).ToString("HH:mm:ss")),
-                DateTime dateTime => JsonValue.Create(TimeOnly.FromDateTime(dateTime).ToString("HH:mm:ss")),
-                DateTimeOffset dateTimeOffset => JsonValue.Create(
-                    TimeOnly.FromDateTime(dateTimeOffset.DateTime).ToString("HH:mm:ss")
-                ),
-                _ => JsonValue.Create(value.ToString() ?? string.Empty),
             };
         }
 
@@ -884,8 +905,58 @@ public static class DocumentReconstituter
             DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
             TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
             Guid g => JsonValue.Create(g.ToString()),
-            _ => JsonValue.Create(value.ToString() ?? string.Empty),
+            _ => ThrowUnsupportedScalarValue(value, scalarType),
         };
+    }
+
+    private static JsonNode ConvertDateValue(object value, RelationalScalarType scalarType)
+    {
+        return value switch
+        {
+            DateOnly dateOnly => JsonValue.Create(dateOnly.ToString("yyyy-MM-dd")),
+            DateTime dateTime => JsonValue.Create(DateOnly.FromDateTime(dateTime).ToString("yyyy-MM-dd")),
+            DateTimeOffset dateTimeOffset => JsonValue.Create(
+                DateOnly.FromDateTime(dateTimeOffset.DateTime).ToString("yyyy-MM-dd")
+            ),
+            _ => ThrowUnsupportedScalarValue(value, scalarType),
+        };
+    }
+
+    private static JsonNode ConvertDateTimeValue(object value, RelationalScalarType scalarType)
+    {
+        return value switch
+        {
+            DateTime dateTime => JsonValue.Create(
+                NormalizeUtcDateTime(dateTime).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+            ),
+            DateTimeOffset dateTimeOffset => JsonValue.Create(
+                dateTimeOffset.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+            ),
+            _ => ThrowUnsupportedScalarValue(value, scalarType),
+        };
+    }
+
+    private static JsonNode ConvertTimeValue(object value, RelationalScalarType scalarType)
+    {
+        return value switch
+        {
+            TimeOnly timeOnly => JsonValue.Create(timeOnly.ToString("HH:mm:ss")),
+            TimeSpan timeSpan => JsonValue.Create(TimeOnly.FromTimeSpan(timeSpan).ToString("HH:mm:ss")),
+            DateTime dateTime => JsonValue.Create(TimeOnly.FromDateTime(dateTime).ToString("HH:mm:ss")),
+            DateTimeOffset dateTimeOffset => JsonValue.Create(
+                TimeOnly.FromDateTime(dateTimeOffset.DateTime).ToString("HH:mm:ss")
+            ),
+            _ => ThrowUnsupportedScalarValue(value, scalarType),
+        };
+    }
+
+    private static JsonNode ThrowUnsupportedScalarValue(object value, RelationalScalarType? scalarType)
+    {
+        var scalarKind = scalarType is null ? "<unspecified>" : scalarType.Kind.ToString();
+
+        throw new InvalidOperationException(
+            $"Cannot reconstitute scalar value of CLR type '{value.GetType().FullName}' as relational scalar kind '{scalarKind}'."
+        );
     }
 
     private static DateTime NormalizeUtcDateTime(DateTime dateTime) =>

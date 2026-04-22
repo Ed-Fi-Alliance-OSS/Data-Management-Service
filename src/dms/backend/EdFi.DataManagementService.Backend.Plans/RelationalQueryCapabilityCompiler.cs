@@ -34,12 +34,8 @@ internal sealed class RelationalQueryCapabilityCompiler
                             + $"Next story: {DescriptorEndpointQueryStoryRef}."
                     )
                 ),
-                new Dictionary<string, SupportedRelationalQueryField>(
-                    QueryFieldNameComparer
-                ).ToFrozenDictionary(QueryFieldNameComparer),
-                new Dictionary<string, UnsupportedRelationalQueryField>(
-                    QueryFieldNameComparer
-                ).ToFrozenDictionary(QueryFieldNameComparer)
+                FrozenDictionary<string, SupportedRelationalQueryField>.Empty,
+                FrozenDictionary<string, UnsupportedRelationalQueryField>.Empty
             );
         }
 
@@ -154,12 +150,11 @@ internal sealed class RelationalQueryCapabilityCompiler
     {
         if (queryFieldMapping.Paths.Count != 1)
         {
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.MultiPath
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.MultiPath,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
@@ -215,12 +210,11 @@ internal sealed class RelationalQueryCapabilityCompiler
                 return;
             }
 
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.AmbiguousRootTarget
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.AmbiguousRootTarget,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
@@ -255,34 +249,31 @@ internal sealed class RelationalQueryCapabilityCompiler
                 return;
             }
 
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.AmbiguousRootTarget
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.AmbiguousRootTarget,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
         if (queryPath.Path.Segments.Any(static segment => segment is JsonPathSegment.AnyArrayElement))
         {
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.ArrayCrossing
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.ArrayCrossing,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
         if (nonRootColumnsByPath.ContainsKey(queryPath.Path.Canonical))
         {
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.NonRootTable
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.NonRootTable,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
@@ -304,19 +295,18 @@ internal sealed class RelationalQueryCapabilityCompiler
 
         if (referenceAliasResolution is ReferenceIdentityQueryCandidateResolution.Ambiguous)
         {
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.AmbiguousRootTarget
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.AmbiguousRootTarget,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
-        unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new UnsupportedRelationalQueryField(
-            queryFieldMapping.QueryFieldName,
-            queryFieldMapping.Paths,
-            RelationalQueryFieldFailureKind.UnmappedPath
+        MarkUnsupported(
+            queryFieldMapping,
+            RelationalQueryFieldFailureKind.UnmappedPath,
+            unsupportedFieldsByQueryField
         );
     }
 
@@ -331,12 +321,11 @@ internal sealed class RelationalQueryCapabilityCompiler
     {
         if (!IsCompatibleTargetQueryType(queryPath, target, rootColumnsByName))
         {
-            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
-                new UnsupportedRelationalQueryField(
-                    queryFieldMapping.QueryFieldName,
-                    queryFieldMapping.Paths,
-                    RelationalQueryFieldFailureKind.UnmappedPath
-                );
+            MarkUnsupported(
+                queryFieldMapping,
+                RelationalQueryFieldFailureKind.UnmappedPath,
+                unsupportedFieldsByQueryField
+            );
             return;
         }
 
@@ -344,6 +333,19 @@ internal sealed class RelationalQueryCapabilityCompiler
             queryFieldMapping.QueryFieldName,
             queryPath,
             target
+        );
+    }
+
+    private static void MarkUnsupported(
+        RelationalQueryFieldMapping queryFieldMapping,
+        RelationalQueryFieldFailureKind failureKind,
+        IDictionary<string, UnsupportedRelationalQueryField> unsupportedFieldsByQueryField
+    )
+    {
+        unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new UnsupportedRelationalQueryField(
+            queryFieldMapping.QueryFieldName,
+            queryFieldMapping.Paths,
+            failureKind
         );
     }
 

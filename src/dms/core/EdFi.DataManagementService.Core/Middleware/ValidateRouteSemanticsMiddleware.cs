@@ -50,7 +50,7 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
             StatusCode: 405,
             Body: FailureResponse.ForMethodNotAllowed([error], requestInfo.FrontendRequest.TraceId),
             Headers: [],
-            ContentType: "application/json; charset=utf-8"
+            ContentType: "application/problem+json"
         );
     }
 }

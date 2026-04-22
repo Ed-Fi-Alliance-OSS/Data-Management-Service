@@ -348,6 +348,8 @@ internal static class CompiledReconstitutionPlanBuilder
         Dictionary<DbTableName, int> originalOrderByTable = tablePlansInDependencyOrder
             .Select((tablePlan, index) => new KeyValuePair<DbTableName, int>(tablePlan.Table, index))
             .ToDictionary();
+        Dictionary<DbTableName, TableReconstitutionPlan> tablePlanByTable =
+            tablePlansInDependencyOrder.ToDictionary(static tablePlan => tablePlan.Table);
         Dictionary<DbTableName, DbTableName?> immediateParentByTable = [];
         Dictionary<DbTableName, List<DbTableName>> immediateChildrenByTable =
             tablePlansInDependencyOrder.ToDictionary(
@@ -371,15 +373,15 @@ internal static class CompiledReconstitutionPlanBuilder
             }
         }
 
-        var rootTablePlans = tablePlansInDependencyOrder.Where(tablePlan =>
-            immediateParentByTable[tablePlan.Table] is null
-        );
+        var rootTablePlans = tablePlansInDependencyOrder
+            .Where(tablePlan => immediateParentByTable[tablePlan.Table] is null)
+            .ToArray();
 
-        if (rootTablePlans.Count() != 1)
+        if (rootTablePlans.Length != 1)
         {
             throw new InvalidOperationException(
                 $"Cannot build compiled reconstitution plan for '{GetResourceDisplayName(readPlan)}': "
-                    + $"expected exactly one root table in page topology, but found {rootTablePlans.Count()}."
+                    + $"expected exactly one root table in page topology, but found {rootTablePlans.Length}."
             );
         }
 
@@ -394,13 +396,11 @@ internal static class CompiledReconstitutionPlanBuilder
                     .OrderBy(childTable => originalOrderByTable[childTable])
             )
             {
-                AppendSubtree(
-                    tablePlansInDependencyOrder.Single(candidate => candidate.Table.Equals(childTable))
-                );
+                AppendSubtree(tablePlanByTable[childTable]);
             }
         }
 
-        AppendSubtree(rootTablePlans.Single());
+        AppendSubtree(rootTablePlans[0]);
 
         if (reorderedTablePlans.Count != tablePlansInDependencyOrder.Length)
         {
