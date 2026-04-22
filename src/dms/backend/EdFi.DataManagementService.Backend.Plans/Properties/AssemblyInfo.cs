@@ -6,3 +6,6 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Plans.Tests.Unit")]
+[assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Tests.Unit")]
+[assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Postgresql.Tests.Integration")]
+[assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Mssql.Tests.Integration")]

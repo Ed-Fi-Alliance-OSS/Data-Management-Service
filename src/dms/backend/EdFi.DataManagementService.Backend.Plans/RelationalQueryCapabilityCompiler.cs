@@ -240,7 +240,7 @@ internal sealed class RelationalQueryCapabilityCompiler
             }
 
             var collapsedRootColumnTarget = getReferenceIdentityQueryTargetResolver()
-                .TryCollapseExactAmbiguity(queryPath.Path, rootColumns);
+                .CollapseExactAmbiguityOrThrow(queryPath.Path, rootColumns);
 
             if (collapsedRootColumnTarget is not null)
             {
@@ -428,7 +428,7 @@ internal sealed class RelationalQueryCapabilityCompiler
         }
 
         return getReferenceIdentityQueryTargetResolver()
-            .TryCollapseExactAmbiguity(
+            .CollapseExactAmbiguityOrThrow(
                 queryPath,
                 rootDescriptorTargets.Select(static target => target.Column).ToArray()
             );

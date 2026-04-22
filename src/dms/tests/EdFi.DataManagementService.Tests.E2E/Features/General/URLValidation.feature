@@ -604,3 +604,31 @@ Feature: Validation of the structure of the URLs
                         "Content-Type": "application/problem+json"
                     }
                   """
+
+        @DMS-993 @relational-backend
+        Scenario: 22 Ensure clients get 404 for PUT on unknown Ed-Fi resource collection
+             When a PUT request is made to "/ed-fi/unknownResource" with
+                  """
+                  {
+                      "test": "value"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """

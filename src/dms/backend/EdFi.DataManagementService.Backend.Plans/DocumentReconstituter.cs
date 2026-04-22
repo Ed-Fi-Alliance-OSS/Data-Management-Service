@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -94,7 +95,9 @@ public static class DocumentReconstituter
     }
 
     /// <summary>
-    /// Reconstitutes a single JSON document from hydrated row data.
+    /// Test-only adapter for legacy tests that predate full <see cref="ResourceReadPlan"/>
+    /// construction. Production callers should use the read-plan overload or
+    /// <see cref="ReconstitutePage(ResourceReadPlan, HydratedPage)"/>.
     /// </summary>
     /// <param name="documentId">The root document identity to reconstitute.</param>
     /// <param name="tableRowsInDependencyOrder">
@@ -110,7 +113,7 @@ public static class DocumentReconstituter
     /// Resolved <c>DescriptorId → URI</c> lookup for descriptor reconstitution.
     /// </param>
     /// <returns>A <see cref="JsonNode"/> representing the reconstituted JSON document.</returns>
-    public static JsonNode Reconstitute(
+    internal static JsonNode Reconstitute(
         long documentId,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
@@ -273,6 +276,7 @@ public static class DocumentReconstituter
         {
             var tablePlan = compiledPlan.GetTablePlanOrThrow(tableRows.TableModel.Table);
             var rootScopeLocatorOrdinal = tablePlan.ResolveSingleRootScopeLocatorOrdinalOrThrow();
+            var rootScopeLocatorColumn = tablePlan.TableModel.Columns[rootScopeLocatorOrdinal].ColumnName;
 
             singleDocumentRows.Add(
                 tableRows with
@@ -283,6 +287,7 @@ public static class DocumentReconstituter
                             RowBelongsToDocument(
                                 row,
                                 tableRows.TableModel.Table,
+                                rootScopeLocatorColumn,
                                 rootScopeLocatorOrdinal,
                                 documentId
                             )
@@ -298,17 +303,27 @@ public static class DocumentReconstituter
     private static bool RowBelongsToDocument(
         object?[] row,
         DbTableName table,
+        DbColumnName rootScopeLocatorColumn,
         int rootScopeLocatorOrdinal,
         long documentId
     )
     {
-        var rootScopeLocatorValue =
-            row[rootScopeLocatorOrdinal]
-            ?? throw new InvalidOperationException(
-                $"Cannot reconstitute document: table '{table}' has a null root-scope locator value."
-            );
+        return ConvertRootScopeLocatorToInt64OrThrow(
+                row[rootScopeLocatorOrdinal],
+                table,
+                rootScopeLocatorColumn,
+                rootScopeLocatorOrdinal
+            ) == documentId;
+    }
 
-        return Convert.ToInt64(rootScopeLocatorValue) == documentId;
+    private static long ConvertRootScopeLocatorToInt64OrThrow(
+        object? value,
+        DbTableName table,
+        DbColumnName column,
+        int columnOrdinal
+    )
+    {
+        return ConvertToInt64OrThrow(value, table, column, columnOrdinal, "root-scope locator");
     }
 
     /// <summary>
@@ -402,17 +417,20 @@ public static class DocumentReconstituter
                 continue;
             }
 
-            var descriptorId = Convert.ToInt64(descriptorIdValue);
+            var descriptorIdColumn = tablePlan
+                .TableModel
+                .Columns[binding.DescriptorIdColumnOrdinal]
+                .ColumnName;
+            var descriptorId = ConvertDescriptorIdToInt64OrThrow(
+                descriptorIdValue,
+                tablePlan.Table,
+                descriptorIdColumn,
+                binding.DescriptorIdColumnOrdinal
+            );
             if (!descriptorUriLookup.TryGetValue(descriptorId, out var uri))
             {
-                var descriptorIdColumnName = tablePlan
-                    .TableModel
-                    .Columns[binding.DescriptorIdColumnOrdinal]
-                    .ColumnName
-                    .Value;
-
                 throw new InvalidOperationException(
-                    $"Descriptor ID {descriptorId} in column '{descriptorIdColumnName}' at ordinal '{binding.DescriptorIdColumnOrdinal}' of table '{tablePlan.Table}' "
+                    $"Descriptor ID {descriptorId} in column '{descriptorIdColumn.Value}' at ordinal '{binding.DescriptorIdColumnOrdinal}' of table '{tablePlan.Table}' "
                         + "has no resolved URI in the descriptor lookup. "
                         + "This indicates a descriptor projection plan or executor defect."
                 );
@@ -426,6 +444,56 @@ public static class DocumentReconstituter
             targetObject[propertyName] = JsonValue.Create(uri);
         }
     }
+
+    private static long ConvertDescriptorIdToInt64OrThrow(
+        object? value,
+        DbTableName table,
+        DbColumnName column,
+        int columnOrdinal
+    )
+    {
+        return ConvertToInt64OrThrow(value, table, column, columnOrdinal, "descriptor ID");
+    }
+
+    private static long ConvertToInt64OrThrow(
+        object? value,
+        DbTableName table,
+        DbColumnName column,
+        int columnOrdinal,
+        string valueDescription
+    )
+    {
+        try
+        {
+            return value is null
+                ? throw new InvalidOperationException(
+                    CreateConversionFailureMessage(valueDescription, table, column, columnOrdinal, value)
+                )
+                : Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                CreateConversionFailureMessage(valueDescription, table, column, columnOrdinal, value),
+                ex
+            );
+        }
+    }
+
+    private static string CreateConversionFailureMessage(
+        string valueDescription,
+        DbTableName table,
+        DbColumnName column,
+        int columnOrdinal,
+        object? value
+    )
+    {
+        return $"Cannot reconstitute document: table '{table}' column '{column.Value}' at ordinal '{columnOrdinal}' "
+            + $"contains {FormatValueAndType(value)} that cannot be converted to {valueDescription}.";
+    }
+
+    private static string FormatValueAndType(object? value) =>
+        value is null ? "<null> (type: <null>)" : $"'{value}' (type: {value.GetType().FullName})";
 
     private static void EmitChildScopes(
         JsonObject parentObject,
@@ -523,6 +591,15 @@ public static class DocumentReconstituter
             parentRow.TablePlan.TableModel.JsonScope,
             childTableModel.IdentityMetadata.TableKind
         );
+        if (childRows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot reconstitute extension scope: expected exactly one row from child table '{childTablePlan.Table}' "
+                    + $"for parent table '{parentRow.Table}', but found {childRows.Count}. "
+                    + $"Parent row identity: {PageReconstitutionContext.FormatScopeKey(parentRow.PhysicalRowIdentity)}."
+            );
+        }
+
         var extensionRow = childRows[0];
         var projectObject = new JsonObject();
 

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -73,9 +74,55 @@ internal sealed class RowNode
 
         HydratedRowOrdering.EnsureOrdinalOrder(
             children,
-            child => Convert.ToInt32(child.Row[ordinalColumnOrdinal])
+            child => ConvertOrdinalToInt32OrThrow(child, ordinalColumnOrdinal)
         );
     }
+
+    private static int ConvertOrdinalToInt32OrThrow(RowNode child, int ordinalColumnOrdinal)
+    {
+        var ordinalColumn = child.TablePlan.TableModel.Columns[ordinalColumnOrdinal].ColumnName;
+        var ordinalValue = child.Row[ordinalColumnOrdinal];
+
+        try
+        {
+            return ordinalValue is null
+                ? throw new InvalidOperationException(
+                    CreateOrdinalConversionFailureMessage(
+                        child.Table,
+                        ordinalColumn,
+                        ordinalColumnOrdinal,
+                        ordinalValue
+                    )
+                )
+                : Convert.ToInt32(ordinalValue, CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new InvalidOperationException(
+                CreateOrdinalConversionFailureMessage(
+                    child.Table,
+                    ordinalColumn,
+                    ordinalColumnOrdinal,
+                    ordinalValue
+                ),
+                ex
+            );
+        }
+    }
+
+    private static string CreateOrdinalConversionFailureMessage(
+        DbTableName table,
+        DbColumnName column,
+        int columnOrdinal,
+        object? value
+    )
+    {
+        return $"Cannot order hydrated child rows: table '{table}' column '{column.Value}' at ordinal '{columnOrdinal}' "
+            + $"contains {FormatValueAndType(value)} that cannot be converted to an ordinal.";
+    }
+
+    private static string FormatValueAndType(object? value) =>
+        value is null ? "<null> (type: <null>)" : $"'{value}' (type: {value.GetType().FullName})";
 
     internal void AttachChild(RowNode child)
     {

@@ -16,6 +16,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     private const string QueryCapabilityPlanKind = "query capability";
     private readonly RelationalResourceModel _resourceModel;
     private readonly DbTableModel _rootTable;
+    private readonly IReadOnlyDictionary<DbColumnName, DbColumnModel> _rootColumnsByName;
 
     public ReferenceIdentityQueryTargetResolver(RelationalResourceModel resourceModel, DbTableModel rootTable)
     {
@@ -24,6 +25,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
 
         _resourceModel = resourceModel;
         _rootTable = rootTable;
+        _rootColumnsByName = rootTable.Columns.ToDictionary(static column => column.ColumnName);
         CandidateGroupsInOrder = CreateCandidateGroups(resourceModel, rootTable);
     }
 
@@ -152,7 +154,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
         };
     }
 
-    public RelationalQueryFieldTarget? TryCollapseExactAmbiguity(
+    public RelationalQueryFieldTarget? CollapseExactAmbiguityOrThrow(
         JsonPathExpression queryPath,
         IReadOnlyCollection<DbColumnName> exactTargetColumns
     )
@@ -238,9 +240,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
         ReferenceIdentityQueryCandidateGroup candidateGroup
     )
     {
-        var column = _rootTable.Columns.FirstOrDefault(column => column.ColumnName.Equals(columnName));
-
-        if (column is not null)
+        if (_rootColumnsByName.TryGetValue(columnName, out var column))
         {
             return column;
         }
@@ -477,10 +477,7 @@ internal sealed class ReferenceIdentityQueryTargetResolver
     private static bool PathLeafMatches(string queryPathLeaf, JsonPathExpression candidatePath)
     {
         return TryGetPropertyLeaf(candidatePath, out var candidateLeaf)
-            && (
-                string.Equals(queryPathLeaf, candidateLeaf, StringComparison.OrdinalIgnoreCase)
-                || queryPathLeaf.EndsWith(candidateLeaf, StringComparison.OrdinalIgnoreCase)
-            );
+            && queryPathLeaf.EndsWith(candidateLeaf, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsUniqueIdCandidate(ReferenceIdentityQueryCandidate candidate)
