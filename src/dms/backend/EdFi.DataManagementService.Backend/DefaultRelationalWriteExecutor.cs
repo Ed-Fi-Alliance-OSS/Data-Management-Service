@@ -305,7 +305,15 @@ internal sealed class DefaultRelationalWriteExecutor(
                         executionRequest.TargetContext,
                         executionRequest.WritePlan,
                         profileWritableBody,
-                        resolvedReferences
+                        resolvedReferences,
+                        // Profile Slice 3 decision matrix: separate-table outcome comes from
+                        // scope metadata (RequestScopeState/StoredScopeState), not inferred
+                        // buffer presence. The shaper may emit a visible-present scope with
+                        // no bound scalar data (e.g. _ext: { sample: {} } when all members
+                        // are absent under the profile); the synthesizer must still see a
+                        // buffer so Insert/Update overlay can run. See
+                        // reference/design/backend-redesign/epics/07-relational-write-path/03b-profile-aware-persist-executor/03-separate-table-profile-merge.md:60.
+                        emitEmptyRootExtensionBuffers: true
                     )
                 );
 

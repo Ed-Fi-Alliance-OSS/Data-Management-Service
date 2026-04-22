@@ -120,7 +120,8 @@ public sealed record FlatteningInput
         RelationalWriteTargetContext targetContext,
         ResourceWritePlan writePlan,
         JsonNode selectedBody,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool emitEmptyRootExtensionBuffers = false
     )
     {
         OperationKind = operationKind;
@@ -129,6 +130,7 @@ public sealed record FlatteningInput
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
+        EmitEmptyRootExtensionBuffers = emitEmptyRootExtensionBuffers;
     }
 
     /// <summary>
@@ -155,6 +157,18 @@ public sealed record FlatteningInput
     /// The request-local resolved references used for FK population.
     /// </summary>
     public ResolvedReferenceSet ResolvedReferences { get; init; }
+
+    /// <summary>
+    /// When true, the flattener emits a <see cref="RootExtensionWriteRowBuffer"/> for every
+    /// root-extension scope whose node is present as a JSON object in the selected body, even
+    /// when the object carries no bound scalar data and no collection candidates. The
+    /// profile-aware executor sets this so a profile-shaped body like <c>_ext: { sample: {} }</c>
+    /// (e.g. an explicitly empty visible scope) still produces a buffer for the Slice 3 merge
+    /// synthesizer to overlay, rather than being silently dropped under the default
+    /// "no bound data" heuristic. Non-profile callers leave it off to preserve the historical
+    /// drop-empty behavior.
+    /// </summary>
+    public bool EmitEmptyRootExtensionBuffers { get; init; }
 }
 
 /// <summary>

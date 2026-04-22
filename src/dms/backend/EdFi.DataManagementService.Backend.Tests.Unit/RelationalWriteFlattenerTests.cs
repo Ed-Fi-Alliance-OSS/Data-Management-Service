@@ -848,6 +848,38 @@ public class Given_RelationalWriteFlattener
     }
 
     [Test]
+    public void It_emits_root_extension_row_for_empty_extension_site_when_emit_empty_buffers_flag_is_set()
+    {
+        // Profile Slice 3: a profile-shaped body may carry a visible scope with no bound data
+        // (e.g. _ext: { sample: {} } after the writable request shaper filters its members).
+        // The flattener must emit the buffer so the synthesizer's Insert/Update overlay has
+        // something to work with instead of treating scope visibility as inferable from
+        // buffer presence. Non-profile callers keep the drop-empty default.
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: JsonNode.Parse(
+                """
+                {
+                  "_ext": {
+                    "sample": {}
+                  }
+                }
+                """
+            )!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            emitEmptyRootExtensionBuffers: true
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result.RootRow.RootExtensionRows.Should().ContainSingle();
+        result
+            .RootRow.RootExtensionRows[0]
+            .TableWritePlan.TableModel.JsonScope.Canonical.Should()
+            .Be("$._ext.sample");
+    }
+
+    [Test]
     public void It_rejects_scalar_values_that_do_not_match_the_compiled_type()
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
@@ -3267,7 +3299,8 @@ public class Given_RelationalWriteFlattener
         public FlatteningInput CreateFlatteningInput(
             JsonNode selectedBody,
             RelationalWriteTargetContext targetContext,
-            ResolvedReferenceSet? resolvedReferences = null
+            ResolvedReferenceSet? resolvedReferences = null,
+            bool emitEmptyRootExtensionBuffers = false
         )
         {
             return new FlatteningInput(
@@ -3275,7 +3308,8 @@ public class Given_RelationalWriteFlattener
                 targetContext,
                 WritePlan,
                 selectedBody,
-                resolvedReferences ?? ResolvedReferences
+                resolvedReferences ?? ResolvedReferences,
+                emitEmptyRootExtensionBuffers
             );
         }
 
