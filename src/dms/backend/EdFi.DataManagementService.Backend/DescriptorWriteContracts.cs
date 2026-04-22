@@ -86,9 +86,14 @@ public interface IDescriptorWriteHandler
     );
 
     /// <summary>
-    /// Executes a descriptor DELETE by document UUID.
+    /// Executes a descriptor DELETE scoped to the descriptor resource identified by
+    /// <paramref name="resource"/>. Scoping by <c>ResourceKeyId</c> prevents a UUID from
+    /// one descriptor resource from being used to delete a different descriptor type or a
+    /// non-descriptor document.
     /// </summary>
     Task<DeleteResult> HandleDeleteAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
         CancellationToken cancellationToken = default

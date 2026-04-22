@@ -246,7 +246,12 @@ public class Given_PostgresqlDescriptorWriteHandler
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // Delete
-        var result = await handler.HandleDeleteAsync(documentUuid, new TraceId("test-trace"));
+        var result = await handler.HandleDeleteAsync(
+            _database.MappingSet,
+            _database.Fixture.SchoolTypeDescriptorResource,
+            documentUuid,
+            new TraceId("test-trace")
+        );
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
     }
@@ -257,11 +262,53 @@ public class Given_PostgresqlDescriptorWriteHandler
         var handler = ResolveHandler();
 
         var result = await handler.HandleDeleteAsync(
+            _database.MappingSet,
+            _database.Fixture.SchoolTypeDescriptorResource,
             new DocumentUuid(Guid.NewGuid()),
             new TraceId("test-trace")
         );
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+    }
+
+    [Test]
+    public async Task It_returns_not_exists_when_deleting_descriptor_with_uuid_from_a_different_descriptor_resource()
+    {
+        var handler = ResolveHandler();
+
+        // Create a SchoolTypeDescriptor
+        var createRequest = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "Regular",
+                "shortDescription": "Regular"
+            }
+            """
+        );
+        var insertResult = await handler.HandlePostAsync(createRequest);
+        var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
+
+        // Attempt to delete it via the AcademicSubjectDescriptor resource endpoint —
+        // must not delete cross-resource.
+        var result = await handler.HandleDeleteAsync(
+            _database.MappingSet,
+            _database.Fixture.AcademicSubjectDescriptorResource,
+            documentUuid,
+            new TraceId("test-trace-cross-descriptor")
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+
+        // And the original document is still present.
+        await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var probe = connection.CreateCommand();
+        probe.CommandText = "SELECT 1 FROM dms.\"Document\" WHERE \"DocumentUuid\" = @documentUuid";
+        probe.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
+        var stillThere = await probe.ExecuteScalarAsync();
+        stillThere.Should().NotBeNull("cross-resource DELETE must not remove the target row");
     }
 
     [Test]

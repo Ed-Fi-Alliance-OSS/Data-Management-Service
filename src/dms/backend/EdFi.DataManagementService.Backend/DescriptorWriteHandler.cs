@@ -276,18 +276,26 @@ internal sealed class DescriptorWriteHandler(
     }
 
     public async Task<DeleteResult> HandleDeleteAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
         DocumentUuid documentUuid,
         TraceId traceId,
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(mappingSet);
         cancellationToken.ThrowIfCancellationRequested();
 
         _logger.LogDebug(
-            "Deleting descriptor document {DocumentUuid} - {TraceId}",
+            "Deleting descriptor document {DocumentUuid} for {Resource} - {TraceId}",
             documentUuid.Value,
+            RelationalWriteSupport.FormatResource(resource),
             LoggingSanitizer.SanitizeForLogging(traceId.Value)
         );
+
+        // Scope the DELETE by ResourceKeyId so a UUID belonging to a different descriptor
+        // (or a non-descriptor document) cannot be deleted through this resource endpoint.
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
 
         var dialect = _commandExecutor.Dialect;
 
@@ -297,17 +305,25 @@ internal sealed class DescriptorWriteHandler(
                 """
                 DELETE FROM dms."Document"
                 WHERE "DocumentUuid" = @documentUuid
+                  AND "ResourceKeyId" = @resourceKeyId
                 RETURNING "DocumentId";
                 """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+                [
+                    new RelationalParameter("@documentUuid", documentUuid.Value),
+                    new RelationalParameter("@resourceKeyId", resourceKeyId),
+                ]
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
                 DELETE FROM [dms].[Document]
                 OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentUuid] = @documentUuid;
+                WHERE [DocumentUuid] = @documentUuid
+                  AND [ResourceKeyId] = @resourceKeyId;
                 """,
-                [new RelationalParameter("@documentUuid", documentUuid.Value)]
+                [
+                    new RelationalParameter("@documentUuid", documentUuid.Value),
+                    new RelationalParameter("@resourceKeyId", resourceKeyId),
+                ]
             ),
             _ => throw new NotSupportedException(
                 $"Descriptor delete does not support SQL dialect '{dialect}'."

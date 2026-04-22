@@ -217,8 +217,6 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
 
         public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
 
-        public IRelationalCommandExecutor CommandExecutor => throw new NotSupportedException();
-
         public Task CommitAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 

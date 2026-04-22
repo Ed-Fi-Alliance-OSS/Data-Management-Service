@@ -239,16 +239,20 @@ public sealed class RelationalDocumentStoreRepository(
             LoggingSanitizer.SanitizeForLogging(relationalDeleteRequest.TraceId.Value)
         );
 
+        var mappingSet = relationalDeleteRequest.MappingSet;
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
+
         if (relationalDeleteRequest.ResourceInfo.IsDescriptor)
         {
             return _descriptorWriteHandler.HandleDeleteAsync(
+                mappingSet,
+                resource,
                 relationalDeleteRequest.DocumentUuid,
                 relationalDeleteRequest.TraceId
             );
         }
-
-        var mappingSet = relationalDeleteRequest.MappingSet;
-        ArgumentNullException.ThrowIfNull(mappingSet);
 
         return DeleteDocumentByIdAsync(relationalDeleteRequest, mappingSet);
     }
@@ -261,7 +265,7 @@ public sealed class RelationalDocumentStoreRepository(
         var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalDeleteRequest.ResourceInfo);
 
         await using var writeSession = await _writeSessionFactory.CreateAsync().ConfigureAwait(false);
-        var sessionCommandExecutor = writeSession.CommandExecutor;
+        var sessionCommandExecutor = writeSession.CreateCommandExecutor();
 
         DeleteResult outcome;
 

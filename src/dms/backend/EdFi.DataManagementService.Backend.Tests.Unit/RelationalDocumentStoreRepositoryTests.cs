@@ -1842,6 +1842,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     {
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet)
+            .Returns(CreateDescriptorOnlyMappingSet(_descriptorResourceInfo));
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
         A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("test-trace"));
 
@@ -1855,21 +1857,36 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_forwards_document_uuid_and_trace_id_to_the_descriptor_delete_handler()
+    public async Task It_forwards_resource_document_uuid_and_trace_id_to_the_descriptor_delete_handler()
     {
         var descriptorHandler = A.Fake<IDescriptorWriteHandler>();
         var expectedDocumentUuid = new DocumentUuid(Guid.NewGuid());
         var expectedTraceId = new TraceId("descriptor-delete-forwarding");
+        var expectedMappingSet = CreateDescriptorOnlyMappingSet(_descriptorResourceInfo);
+        var expectedResource = new QualifiedResourceName(
+            _descriptorResourceInfo.ProjectName.Value,
+            _descriptorResourceInfo.ResourceName.Value
+        );
+        MappingSet? capturedMappingSet = null;
+        QualifiedResourceName capturedResource = default;
         DocumentUuid capturedUuid = default;
         TraceId capturedTraceId = default!;
 
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(A<DocumentUuid>._, A<TraceId>._, A<CancellationToken>._)
+                descriptorHandler.HandleDeleteAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<TraceId>._,
+                    A<CancellationToken>._
+                )
             )
             .Invokes(call =>
             {
-                capturedUuid = call.GetArgument<DocumentUuid>(0);
-                capturedTraceId = call.GetArgument<TraceId>(1)!;
+                capturedMappingSet = call.GetArgument<MappingSet>(0);
+                capturedResource = call.GetArgument<QualifiedResourceName>(1);
+                capturedUuid = call.GetArgument<DocumentUuid>(2);
+                capturedTraceId = call.GetArgument<TraceId>(3)!;
             })
             .Returns(Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess()));
 
@@ -1888,19 +1905,42 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var deleteRequest = A.Fake<IRelationalDeleteRequest>();
         A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet).Returns(expectedMappingSet);
         A.CallTo(() => deleteRequest.DocumentUuid).Returns(expectedDocumentUuid);
         A.CallTo(() => deleteRequest.TraceId).Returns(expectedTraceId);
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        capturedMappingSet.Should().BeSameAs(expectedMappingSet);
+        capturedResource.Should().Be(expectedResource);
         capturedUuid.Should().Be(expectedDocumentUuid);
         capturedTraceId.Value.Should().Be(expectedTraceId.Value);
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(A<DocumentUuid>._, A<TraceId>._, A<CancellationToken>._)
+                descriptorHandler.HandleDeleteAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<TraceId>._,
+                    A<CancellationToken>._
+                )
             )
             .MustHaveHappenedOnceExactly();
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_throws_when_a_descriptor_delete_request_has_no_mapping_set()
+    {
+        var deleteRequest = A.Fake<IRelationalDeleteRequest>();
+        A.CallTo(() => deleteRequest.ResourceInfo).Returns(_descriptorResourceInfo);
+        A.CallTo(() => deleteRequest.MappingSet).Returns(null);
+        A.CallTo(() => deleteRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => deleteRequest.TraceId).Returns(new TraceId("descriptor-delete-no-mapping"));
+
+        Func<Task> act = async () => _ = await _sut.DeleteDocumentById(deleteRequest);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Test]
@@ -1949,7 +1989,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         result.Should().BeOfType<DeleteResult.DeleteSuccess>();
         A.CallTo(() =>
-                descriptorHandler.HandleDeleteAsync(A<DocumentUuid>._, A<TraceId>._, A<CancellationToken>._)
+                descriptorHandler.HandleDeleteAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<TraceId>._,
+                    A<CancellationToken>._
+                )
             )
             .MustNotHaveHappened();
     }
@@ -2519,16 +2565,18 @@ public class Given_RelationalDocumentStoreRepositoryTests
     private sealed class RecordingWriteSession(IRelationalCommandExecutor commandExecutor)
         : IRelationalWriteSession
     {
-        public IRelationalCommandExecutor CommandExecutor { get; } = commandExecutor;
+        private readonly IRelationalCommandExecutor _commandExecutor = commandExecutor;
+
+        public IRelationalCommandExecutor CreateCommandExecutor() => _commandExecutor;
 
         public DbConnection Connection =>
             throw new InvalidOperationException(
-                "RecordingWriteSession exposes CommandExecutor directly; Connection is not used in tests."
+                "RecordingWriteSession exposes the executor via CreateCommandExecutor; Connection is not used in tests."
             );
 
         public DbTransaction Transaction =>
             throw new InvalidOperationException(
-                "RecordingWriteSession exposes CommandExecutor directly; Transaction is not used in tests."
+                "RecordingWriteSession exposes the executor via CreateCommandExecutor; Transaction is not used in tests."
             );
 
         public int CommitCallCount { get; private set; }
@@ -2541,7 +2589,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         public DbCommand CreateCommand(RelationalCommand command) =>
             throw new InvalidOperationException(
-                "RecordingWriteSession does not expose DbCommand; callers should use CommandExecutor."
+                "RecordingWriteSession does not expose DbCommand; callers should use CreateCommandExecutor."
             );
 
         public Task CommitAsync(CancellationToken cancellationToken = default)

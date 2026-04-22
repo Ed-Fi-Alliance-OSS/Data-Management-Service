@@ -552,8 +552,6 @@ public class Given_Relational_Write_Current_State_Loader
 
         public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
 
-        public IRelationalCommandExecutor CommandExecutor => throw new NotSupportedException();
-
         public Task CommitAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
