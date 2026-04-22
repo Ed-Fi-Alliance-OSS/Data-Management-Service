@@ -403,6 +403,41 @@ internal static class ProfileTestDoubles
         string extensionJsonScope = "$._ext.sample",
         string extensionSchema = "sample",
         params RootExtensionBindingSpec[] extensionBindings
+    ) =>
+        BuildRootPlusRootExtensionPlanCore(
+            extensionJsonScope,
+            extensionSchema,
+            useScopeRelativeBindingPaths: false,
+            extensionBindings
+        );
+
+    /// <summary>
+    /// Variant of <see cref="BuildRootPlusRootExtensionPlan(string, string, RootExtensionBindingSpec[])"/>
+    /// that emits binding <c>RelativePath</c> values in true scope-relative form (matching
+    /// production <see cref="WritePlanCompiler"/> output via
+    /// <c>WritePlanJsonPathConventions.DeriveScopeRelativePath</c>). The caller still supplies
+    /// <see cref="RootExtensionBindingSpec.RelativePath"/> as the absolute path (so existing
+    /// fixtures stay readable); the helper strips the extension scope prefix before stamping
+    /// the binding source. Use this variant to exercise the non-root path-domain join in
+    /// <see cref="ProfileBindingClassificationCore"/>.
+    /// </summary>
+    internal static ResourceWritePlan BuildRootPlusRootExtensionPlanWithScopeRelativeBindingPaths(
+        string extensionJsonScope = "$._ext.sample",
+        string extensionSchema = "sample",
+        params RootExtensionBindingSpec[] extensionBindings
+    ) =>
+        BuildRootPlusRootExtensionPlanCore(
+            extensionJsonScope,
+            extensionSchema,
+            useScopeRelativeBindingPaths: true,
+            extensionBindings
+        );
+
+    private static ResourceWritePlan BuildRootPlusRootExtensionPlanCore(
+        string extensionJsonScope,
+        string extensionSchema,
+        bool useScopeRelativeBindingPaths,
+        RootExtensionBindingSpec[] extensionBindings
     )
     {
         // Root table: single scalar so the root classifier has something to chew on if called.
@@ -435,11 +470,15 @@ internal static class ProfileTestDoubles
                     (WriteValueSource)
                         new WriteValueSource.Scalar(
                             Path(
-                                spec.RelativePath
-                                    ?? throw new ArgumentException(
-                                        "Scalar binding spec must supply a RelativePath.",
-                                        nameof(extensionBindings)
-                                    )
+                                ConformBindingRelativePath(
+                                    spec.RelativePath
+                                        ?? throw new ArgumentException(
+                                            "Scalar binding spec must supply a RelativePath.",
+                                            nameof(extensionBindings)
+                                        ),
+                                    extensionJsonScope,
+                                    useScopeRelativeBindingPaths
+                                )
                             ),
                             StringType()
                         )
@@ -1383,6 +1422,47 @@ internal static class ProfileTestDoubles
     private static RelationalScalarType Int64Type() => new(ScalarKind.Int64);
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
+
+    /// <summary>
+    /// Optionally strips <paramref name="scopeAddress"/> off the front of
+    /// <paramref name="absoluteRelativePath"/> to produce a scope-relative path that matches
+    /// production <see cref="WritePlanJsonPathConventions.DeriveScopeRelativePath"/> output.
+    /// When <paramref name="useScopeRelative"/> is false, the path is returned unchanged (the
+    /// historical test-double behaviour where "relative" paths are actually absolute).
+    /// </summary>
+    private static string ConformBindingRelativePath(
+        string absoluteRelativePath,
+        string scopeAddress,
+        bool useScopeRelative
+    )
+    {
+        if (!useScopeRelative)
+        {
+            return absoluteRelativePath;
+        }
+        if (string.Equals(scopeAddress, "$", StringComparison.Ordinal))
+        {
+            // Root scope: absolute and scope-relative forms coincide.
+            return absoluteRelativePath;
+        }
+        if (string.Equals(absoluteRelativePath, scopeAddress, StringComparison.Ordinal))
+        {
+            return "$";
+        }
+        if (
+            absoluteRelativePath.StartsWith(scopeAddress, StringComparison.Ordinal)
+            && absoluteRelativePath.Length > scopeAddress.Length
+            && absoluteRelativePath[scopeAddress.Length] == '.'
+        )
+        {
+            // Drop the scope prefix and replace with "$" so the path remains canonical.
+            return "$" + absoluteRelativePath[scopeAddress.Length..];
+        }
+        throw new ArgumentException(
+            $"Binding relative path '{absoluteRelativePath}' is not a descendant of scope '{scopeAddress}'.",
+            nameof(absoluteRelativePath)
+        );
+    }
 
     private static DbColumnModel Column(
         string columnName,

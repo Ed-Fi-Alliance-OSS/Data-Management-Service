@@ -75,11 +75,18 @@ internal static class ProfileBindingClassificationCore
         // resolver evaluates them in ProfileKeyUnificationCore. Without this registration,
         // ValidateStoredScopeMetadata would reject hidden paths targeting k-u members as
         // upstream contract drift, which is wrong.
+        var tableScopeCanonicalForKeyUnification = tableWritePlan.TableModel.JsonScope.Canonical;
         foreach (var keyUnificationPlan in tableWritePlan.KeyUnificationPlans)
         {
             foreach (var member in keyUnificationPlan.MembersInOrder)
             {
-                var memberPathAbsolute = member.RelativePath.Canonical;
+                // K-u member.RelativePath is scope-relative per WritePlanContracts; lift it to
+                // absolute before scope matching so non-root tables match correctly. See
+                // ToAbsoluteBindingPath for path-domain normalisation details.
+                var memberPathAbsolute = ToAbsoluteBindingPath(
+                    tableScopeCanonicalForKeyUnification,
+                    member.RelativePath.Canonical
+                );
                 var containingScope = TryMatchLongestScope(memberPathAbsolute, candidateScopes);
 
                 if (containingScope is null)
@@ -223,6 +230,19 @@ internal static class ProfileBindingClassificationCore
             bindingIndex,
             tableWritePlan
         );
+
+        // Scalar/DescriptorReference bindings carry scope-relative paths per WritePlanContracts
+        // (see WritePlanJsonPathConventions.DeriveScopeRelativePath); document-reference and
+        // reference-derived bindings carry absolute paths (DocumentReferenceBinding.ReferenceObjectPath
+        // / ReferenceDerivedValueSourceMetadata.ReferenceObjectPath|ReferenceJsonPath). Lift the
+        // scope-relative forms to absolute here so TryMatchLongestScope matches against the
+        // candidateScopes (which are absolute RequestScopeState/StoredScopeState addresses).
+        // Without this, a binding at scope "$._ext.sample" with a scope-relative path
+        // "$.extVisibleScalar" would mis-resolve to "$" and the downstream metadata-drift
+        // check would fail "Stored scope '$._ext.sample' does not resolve to any binding".
+        var tableScopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        bindingPath = ToAbsoluteBindingPath(tableScopeCanonical, bindingPath);
+        governingPathAbsolute = ToAbsoluteBindingPath(tableScopeCanonical, governingPathAbsolute);
 
         // Longest-prefix scope match. If no profile scope matches, the binding is ungoverned.
         var containingScope = TryMatchLongestScope(bindingPath, candidateScopes);
@@ -531,6 +551,62 @@ internal static class ProfileBindingClassificationCore
 
     internal static string FormatTable(TableWritePlan tableWritePlan) =>
         $"{tableWritePlan.TableModel.Table.Schema.Value}.{tableWritePlan.TableModel.Table.Name}";
+
+    /// <summary>
+    /// Lifts a binding's path to the absolute document domain used by candidate scopes. The
+    /// write-plan contract specifies <c>WriteValueSource.Scalar.RelativePath</c>,
+    /// <c>WriteValueSource.DescriptorReference.RelativePath</c>, and
+    /// <c>KeyUnificationMemberWritePlan.RelativePath</c> as scope-relative (see
+    /// <c>WritePlanJsonPathConventions.DeriveScopeRelativePath</c>); reference-derived and
+    /// document-reference paths are already absolute. The classifier matches against absolute
+    /// <c>RequestScopeState</c>/<c>StoredScopeState</c> addresses, so this helper normalises
+    /// both shapes into the absolute domain. Tolerates paths that are already absolute
+    /// (detected by <paramref name="tableScope"/>-prefix match) so test doubles and future
+    /// upstream refactors that materialise absolute paths stay working.
+    /// </summary>
+    internal static string ToAbsoluteBindingPath(string tableScope, string bindingPath)
+    {
+        // Root table scope is "$"; relative paths start with "$.", so after stripping the "$"
+        // prefix the concatenation is already correct without any special-case. But a
+        // scope-relative path coincident with the root scope ("$" and "$") would produce an
+        // empty tail; handle the exact-match case up front.
+        if (string.Equals(bindingPath, tableScope, StringComparison.Ordinal))
+        {
+            return bindingPath;
+        }
+
+        // Already-absolute forms: bindingPath is tableScope followed by a "." segment boundary.
+        // This covers production emissions for reference-derived/document-reference paths and
+        // test doubles that stamp the absolute form directly.
+        if (
+            bindingPath.StartsWith(tableScope, StringComparison.Ordinal)
+            && bindingPath.Length > tableScope.Length
+            && bindingPath[tableScope.Length] == '.'
+        )
+        {
+            return bindingPath;
+        }
+
+        // Scope-relative form: canonical scope-relative paths start with "$" per
+        // JsonPathExpression canonicalisation. Drop the leading "$" and concat onto
+        // tableScope so that "$.extVisibleScalar" under scope "$._ext.sample" becomes
+        // "$._ext.sample.extVisibleScalar" (the "." separator is carried by the tail).
+        if (bindingPath.Length == 0 || bindingPath[0] != '$')
+        {
+            throw new InvalidOperationException(
+                $"Unexpected binding path '{bindingPath}' for table scope '{tableScope}': "
+                    + "expected a canonical JSON path beginning with '$'."
+            );
+        }
+
+        if (string.Equals(tableScope, "$", StringComparison.Ordinal))
+        {
+            // Root scope: the scope-relative path "$.foo" is already absolute against "$".
+            return bindingPath;
+        }
+
+        return tableScope + bindingPath.AsSpan(1).ToString();
+    }
 
     private readonly record struct GovernedBindingEntry(
         string MemberPath,

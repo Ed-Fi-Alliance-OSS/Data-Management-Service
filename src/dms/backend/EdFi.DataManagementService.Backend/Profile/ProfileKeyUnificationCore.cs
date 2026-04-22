@@ -120,6 +120,7 @@ internal static class ProfileKeyUnificationCore
         foreach (var member in keyUnificationPlan.MembersInOrder)
         {
             var visibility = ClassifyMemberVisibility(
+                tableWritePlan,
                 member,
                 profileRequest,
                 profileAppliedContext,
@@ -200,13 +201,21 @@ internal static class ProfileKeyUnificationCore
     }
 
     private static MemberVisibility ClassifyMemberVisibility(
+        TableWritePlan tableWritePlan,
         KeyUnificationMemberWritePlan member,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
         ImmutableArray<string> candidateScopes
     )
     {
-        var memberPath = member.RelativePath.Canonical;
+        // Member relative paths are scope-relative per the write-plan contract; candidate
+        // scopes are absolute addresses. Lift to absolute before matching so a k-u member on
+        // a non-root table cannot mis-resolve to the root scope and silently acquire
+        // another table's governance (see ProfileBindingClassificationCore.ToAbsoluteBindingPath).
+        var memberPath = ProfileBindingClassificationCore.ToAbsoluteBindingPath(
+            tableWritePlan.TableModel.JsonScope.Canonical,
+            member.RelativePath.Canonical
+        );
         var containingScope = TryMatchLongestScope(memberPath, candidateScopes);
 
         if (containingScope is null)

@@ -339,6 +339,82 @@ public class Given_SeparateTableClassifier_with_stored_context_containing_unrela
 }
 
 [TestFixture]
+public class Given_SeparateTableClassifier_with_scope_relative_binding_path_resolves_owning_scope_correctly
+{
+    // Pins Blocker-1: ProfileBindingClassificationCore must compare bindings to candidate
+    // scopes in the absolute document-path domain. Production WritePlanCompiler emits
+    // scope-relative paths (e.g. "$.extVisibleScalar" on a table at "$._ext.sample"); the
+    // prior implementation matched that relative path directly against absolute scope
+    // addresses, so the binding mis-resolved to the root "$" scope and the downstream
+    // stored-scope metadata-drift check then false-threw with "Stored scope '$._ext.sample'
+    // on table ... does not resolve to any binding." This fixture builds a non-root
+    // extension plan using true scope-relative binding paths (matching production
+    // semantics) and asserts that a hidden-member-path on the extension scope correctly
+    // classifies the binding as HiddenPreserved — which is only reachable if the binding's
+    // path resolves to the extension scope, not the root.
+    private ProfileSeparateTableBindingClassification _result = null!;
+    private Exception? _thrown;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Scope-relative binding path: the spec's RelativePath is absolute for readability,
+        // but the helper strips the extension scope prefix before stamping the binding so
+        // the resulting WriteValueSource.Scalar carries "$.extVisibleScalar" — the shape
+        // WritePlanCompiler emits in production.
+        var plan = ProfileTestDoubles.BuildRootPlusRootExtensionPlanWithScopeRelativeBindingPaths(
+            extensionBindings: new ProfileTestDoubles.RootExtensionBindingSpec(
+                "ExtVisibleScalar",
+                ProfileTestDoubles.RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.extVisibleScalar"
+            )
+        );
+        var request = ProfileTestDoubles.CreateRequest(
+            writableBody: null,
+            rootResourceCreatable: true,
+            ProfileTestDoubles.RequestVisiblePresentScope("$"),
+            ProfileTestDoubles.RequestVisiblePresentScope("$._ext.sample")
+        );
+        // Stored side: $._ext.sample scope has HiddenMemberPaths containing "extVisibleScalar".
+        // After the path-domain fix, the binding's scope-relative path "$.extVisibleScalar"
+        // lifts to "$._ext.sample.extVisibleScalar", matches the extension scope, and the
+        // hidden-path check picks it up as HiddenPreserved.
+        var context = ProfileTestDoubles.CreateContext(
+            request,
+            storedScopeStates: ProfileTestDoubles.StoredVisiblePresentScope(
+                "$._ext.sample",
+                "extVisibleScalar"
+            )
+        );
+        var extensionTable = plan.TablePlansInDependencyOrder[1];
+        try
+        {
+            _result = new ProfileSeparateTableBindingClassifier().Classify(
+                plan,
+                extensionTable,
+                request,
+                context
+            );
+        }
+        catch (Exception ex)
+        {
+            _thrown = ex;
+        }
+    }
+
+    [Test]
+    public void It_does_not_throw_on_scope_relative_binding_path() => _thrown.Should().BeNull();
+
+    [Test]
+    public void It_classifies_the_ParentKeyPart_binding_as_StorageManaged() =>
+        _result.BindingsByIndex[0].Should().Be(RootBindingDisposition.StorageManaged);
+
+    [Test]
+    public void It_classifies_the_extension_scope_relative_scalar_binding_as_HiddenPreserved() =>
+        _result.BindingsByIndex[1].Should().Be(RootBindingDisposition.HiddenPreserved);
+}
+
+[TestFixture]
 public class Given_SeparateTableClassifier_rejects_non_RootExtension_table_kind
 {
     private Action _act = null!;
