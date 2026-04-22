@@ -114,6 +114,24 @@ public class Given_A_Mssql_Relational_Delete_By_Id
         _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _mappingSet = _fixture.MappingSet;
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+
+        // SQL Server's "DBCC CHECKIDENT(..., RESEED, 0)" (used by MssqlDatabaseResetSql) makes the
+        // next INSERT use 0 on a table that has never been populated — but RESEED N + 1 on a table
+        // that has ever been populated. Issue a single insert-then-delete against dms.Document so
+        // the identity counter is "activated"; subsequent ResetAsync() calls then correctly yield
+        // next-value = 1 on an empty table instead of 0 (which would otherwise fail
+        // DefaultRelationalWriteExecutor.ValidatePersistedTargetIdentity with DocumentId == 0).
+        var resourceKeyId = _mappingSet.ResourceKeyIdByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            VALUES (@documentUuid, @resourceKeyId);
+
+            DELETE FROM [dms].[Document] WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("@documentUuid", Guid.NewGuid()),
+            new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
     }
 
     [SetUp]
