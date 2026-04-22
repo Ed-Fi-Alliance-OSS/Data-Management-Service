@@ -55,9 +55,9 @@ public class ValidateRouteSemanticsMiddlewareTests
         }
 
         [Test]
-        public void It_returns_problem_json_content_type()
+        public void It_returns_json_content_type()
         {
-            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
         }
 
         [Test]
@@ -94,6 +94,12 @@ public class ValidateRouteSemanticsMiddlewareTests
         }
 
         [Test]
+        public void It_returns_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
+        }
+
+        [Test]
         public void It_returns_the_existing_method_not_allowed_message()
         {
             string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
@@ -124,6 +130,12 @@ public class ValidateRouteSemanticsMiddlewareTests
         public void It_returns_status_405()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(405);
+        }
+
+        [Test]
+        public void It_returns_json_content_type()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json; charset=utf-8");
         }
 
         [Test]
