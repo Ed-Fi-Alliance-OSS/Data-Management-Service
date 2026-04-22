@@ -88,6 +88,9 @@ internal static class MappingSetManifestJsonEmitter
             writer.WritePropertyName("read_plan");
             WriteReadPlanOrNull(writer, readPlan);
 
+            writer.WritePropertyName("query_capability");
+            WriteQueryCapabilityDiagnosticSummary(writer, GetQueryCapabilityOrThrow(mappingSet, resource));
+
             writer.WriteEndObject();
         }
 
@@ -286,6 +289,85 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
+    private static RelationalQueryCapability GetQueryCapabilityOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        if (mappingSet.QueryCapabilitiesByResource.TryGetValue(resource, out var queryCapability))
+        {
+            return queryCapability;
+        }
+
+        throw new InvalidOperationException(
+            $"Mapping set manifest emission failed for resource '{resource.ProjectName}.{resource.ResourceName}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational GET-many capability metadata is required for "
+                + "every concrete resource, but no entry was found. This indicates an internal compilation/selection bug."
+        );
+    }
+
+    private static void WriteQueryCapabilityDiagnosticSummary(
+        Utf8JsonWriter writer,
+        RelationalQueryCapability queryCapability
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("support");
+        WriteQuerySupport(writer, queryCapability.Support);
+
+        writer.WritePropertyName("supported_fields_in_query_field_order");
+        writer.WriteStartArray();
+
+        foreach (
+            var supportedField in queryCapability.SupportedFieldsByQueryField.Values.OrderBy(
+                static field => field.QueryFieldName,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            writer.WriteStartObject();
+            writer.WriteString("query_field_name", supportedField.QueryFieldName);
+            writer.WriteString("json_path", supportedField.Path.Path.Canonical);
+            writer.WriteString("api_schema_type", supportedField.Path.Type);
+            writer.WritePropertyName("target");
+            WriteQueryFieldTarget(writer, supportedField.Target);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+
+        writer.WritePropertyName("unsupported_fields_in_query_field_order");
+        writer.WriteStartArray();
+
+        foreach (
+            var unsupportedField in queryCapability.UnsupportedFieldsByQueryField.Values.OrderBy(
+                static field => field.QueryFieldName,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            writer.WriteStartObject();
+            writer.WriteString("query_field_name", unsupportedField.QueryFieldName);
+            writer.WriteString("failure_kind", ToQueryFieldFailureKindToken(unsupportedField.FailureKind));
+            writer.WritePropertyName("paths_in_order");
+            writer.WriteStartArray();
+
+            foreach (var path in unsupportedField.Paths)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("json_path", path.Path.Canonical);
+                writer.WriteString("api_schema_type", path.Type);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
     private static void WriteReadTablePlanDiagnosticSummary(Utf8JsonWriter writer, TableReadPlan tablePlan)
     {
         writer.WriteStartObject();
@@ -318,6 +400,69 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
+    private static void WriteQuerySupport(Utf8JsonWriter writer, RelationalQuerySupport support)
+    {
+        writer.WriteStartObject();
+
+        switch (support)
+        {
+            case RelationalQuerySupport.Supported:
+                writer.WriteString("kind", "supported");
+                writer.WriteNull("omission_kind");
+                writer.WriteNull("reason");
+                break;
+
+            case RelationalQuerySupport.Omitted omitted:
+                writer.WriteString("kind", "omitted");
+                writer.WriteString("omission_kind", ToOmissionKindToken(omitted.Omission.Kind));
+                writer.WriteString("reason", omitted.Omission.Reason);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(support),
+                    support.GetType().Name,
+                    "Unsupported relational query support state."
+                );
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteQueryFieldTarget(Utf8JsonWriter writer, RelationalQueryFieldTarget target)
+    {
+        writer.WriteStartObject();
+
+        switch (target)
+        {
+            case RelationalQueryFieldTarget.RootColumn rootColumn:
+                writer.WriteString("kind", "root_column");
+                writer.WriteString("column_name", rootColumn.Column.Value);
+                break;
+
+            case RelationalQueryFieldTarget.DocumentUuid:
+                writer.WriteString("kind", "document_uuid");
+                writer.WriteNull("column_name");
+                break;
+
+            case RelationalQueryFieldTarget.DescriptorIdColumn descriptorIdColumn:
+                writer.WriteString("kind", "descriptor_id_column");
+                writer.WriteString("column_name", descriptorIdColumn.Column.Value);
+                writer.WritePropertyName("descriptor_resource");
+                WriteQualifiedResourceName(writer, descriptorIdColumn.DescriptorResource);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(target),
+                    target.GetType().Name,
+                    "Unsupported relational query field target."
+                );
+        }
+
+        writer.WriteEndObject();
+    }
+
     private static void WriteQualifiedResourceName(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WriteStartObject();
@@ -332,6 +477,37 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteString("schema", tableName.Schema.Value);
         writer.WriteString("name", tableName.Name);
         writer.WriteEndObject();
+    }
+
+    private static string ToOmissionKindToken(RelationalQueryCapabilityOmissionKind omissionKind)
+    {
+        return omissionKind switch
+        {
+            RelationalQueryCapabilityOmissionKind.DescriptorResource => "descriptor_resource",
+            RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields => "unsupported_query_fields",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(omissionKind),
+                omissionKind,
+                "Unsupported relational query omission kind."
+            ),
+        };
+    }
+
+    private static string ToQueryFieldFailureKindToken(RelationalQueryFieldFailureKind failureKind)
+    {
+        return failureKind switch
+        {
+            RelationalQueryFieldFailureKind.MultiPath => "multi_path",
+            RelationalQueryFieldFailureKind.ArrayCrossing => "array_crossing",
+            RelationalQueryFieldFailureKind.NonRootTable => "non_root_table",
+            RelationalQueryFieldFailureKind.UnmappedPath => "unmapped_path",
+            RelationalQueryFieldFailureKind.AmbiguousRootTarget => "ambiguous_root_target",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(failureKind),
+                failureKind,
+                "Unsupported relational query field failure kind."
+            ),
+        };
     }
 
     private static IReadOnlyList<string> GetDiagnosticSelectListColumnsInOrder(TableReadPlan tablePlan)
@@ -538,6 +714,11 @@ internal static class MappingSetManifestJsonEmitter
         }
 
         writer.WriteEndObject();
+    }
+
+    private static string FormatMappingSetKey(MappingSetKey key)
+    {
+        return $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
     }
 
     private static void WriteNullableInt(Utf8JsonWriter writer, string propertyName, int? value)

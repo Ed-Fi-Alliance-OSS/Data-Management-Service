@@ -75,6 +75,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -768,6 +777,15 @@
               }
             ],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         }
       ]
@@ -847,6 +865,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -1540,6 +1567,15 @@
               }
             ],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         }
       ]

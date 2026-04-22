@@ -1,9 +1,8 @@
+@reset-data-before-scenario
 Feature: TotalCount Response Header for GET Requests
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        Scenario: 00 Background
-            Given the system has these "schools"
+              And the system has these "schools"
                   | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
                   | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
                   | 6         | UT Austin College of Education Under Graduate | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
@@ -57,7 +56,7 @@ Feature: TotalCount Response Header for GET Requests
              Then it should respond with 200
               And the response headers does not include total-count
 
-        @API-143
+        @API-143 @relational-backend
         Scenario: 08 Ensure results can be limited and totalCount matches the actual number of existing records
              When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
              Then getting less schools than the total-count

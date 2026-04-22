@@ -1,10 +1,9 @@
+@reset-data-before-scenario
 Feature: Validation of the structure of the URLs
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-
-        Scenario: 00 Background
-            Given the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade               |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -397,7 +396,7 @@ Feature: Validation of the structure of the URLs
                   ]
                   """
 
-        @API-250
+        @API-250 @relational-backend
         Scenario: 13 Ensure client can retrieve information through a case insensitive query parameter
              When a GET request is made to "/ed-fi/classPeriods?CLaSSperIODName=Class+Period+Test"
              Then it should respond with 200
@@ -436,7 +435,7 @@ Feature: Validation of the structure of the URLs
                   }
                   """
 
-        @API-252
+        @API-252 @relational-backend
         # DMS-397
         Scenario: 15 Ensure client can retrieve information through case insensitive LIMIT parameter
              When a GET request is made to "/ed-fi/schools?liMIt=2"
@@ -468,7 +467,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @API-253
+        @API-253 @relational-backend
         # DMS-397
         Scenario: 16 Ensure client can retrieve information through case insensitive OFFSET parameter
              # There is only one item, and offset=1 skips that one item.
@@ -479,7 +478,7 @@ Feature: Validation of the structure of the URLs
                   []
                   """
 
-        @API-254
+        @API-254 @relational-backend
         # DMS-397
         Scenario: 17 Ensure client can retrieve information through case insensitive TOTALCOUNT parameter
              When a GET request is made to "/ed-fi/SCHOOLS?tOtAlCoUnT=trUE"
@@ -583,6 +582,34 @@ Feature: Validation of the structure of the URLs
                   """
                   {
                       "id": "00000000-0000-4000-a000-000000000000",
+                      "test": "value"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+
+        @DMS-993 @relational-backend
+        Scenario: 22 Ensure clients get 404 for PUT on unknown Ed-Fi resource collection
+             When a PUT request is made to "/ed-fi/unknownResource" with
+                  """
+                  {
                       "test": "value"
                   }
                   """

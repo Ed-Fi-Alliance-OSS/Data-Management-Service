@@ -149,19 +149,12 @@ public static class HydrationBatchBuilder
                     .AppendLine(");");
                 break;
 
+            case PageKeysetSpec.Query query when HasZeroLimit(query):
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol);
+                break;
+
             case PageKeysetSpec.Query query:
-                writer
-                    .AppendLine("WITH page_ids AS (")
-                    .AppendLine(StripTrailingSemicolon(query.Plan.PageDocumentIdSql))
-                    .AppendLine(")")
-                    .Append("INSERT INTO ")
-                    .AppendRelation(keyset.Table)
-                    .Append(" (")
-                    .Append(quotedDocIdCol)
-                    .AppendLine(")")
-                    .Append("SELECT ")
-                    .Append(quotedDocIdCol)
-                    .AppendLine(" FROM page_ids;");
+                AppendQueryKeysetMaterialization(writer, keyset, query, quotedDocIdCol);
                 break;
 
             default:
@@ -171,6 +164,76 @@ public static class HydrationBatchBuilder
                     "Unexpected PageKeysetSpec variant."
                 );
         }
+    }
+
+    private static void AppendQueryKeysetMaterialization(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        PageKeysetSpec.Query query,
+        string quotedDocIdCol
+    )
+    {
+        writer
+            .AppendLine("WITH page_ids AS (")
+            .AppendLine(StripTrailingSemicolon(query.Plan.PageDocumentIdSql))
+            .AppendLine(")")
+            .Append("INSERT INTO ")
+            .AppendRelation(keyset.Table)
+            .Append(" (")
+            .Append(quotedDocIdCol)
+            .AppendLine(")")
+            .Append("SELECT ")
+            .Append(quotedDocIdCol)
+            .AppendLine(" FROM page_ids;");
+    }
+
+    private static void AppendEmptyKeysetMaterialization(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        string quotedDocIdCol
+    )
+    {
+        writer
+            .Append("INSERT INTO ")
+            .AppendRelation(keyset.Table)
+            .Append(" (")
+            .Append(quotedDocIdCol)
+            .AppendLine(")")
+            .Append("SELECT CAST(NULL AS bigint) AS ")
+            .Append(quotedDocIdCol)
+            .AppendLine(" WHERE 1 = 0;");
+    }
+
+    private static bool HasZeroLimit(PageKeysetSpec.Query query)
+    {
+        foreach (var parameter in query.Plan.PageParametersInOrder)
+        {
+            if (parameter.Role is not QuerySqlParameterRole.Limit)
+            {
+                continue;
+            }
+
+            return query.ParameterValues.TryGetValue(parameter.ParameterName, out var limitValue)
+                && IsZeroLimitValue(limitValue);
+        }
+
+        return false;
+    }
+
+    private static bool IsZeroLimitValue(object? value)
+    {
+        return value switch
+        {
+            byte typedValue => typedValue == 0,
+            sbyte typedValue => typedValue == 0,
+            short typedValue => typedValue == 0,
+            ushort typedValue => typedValue == 0,
+            int typedValue => typedValue == 0,
+            uint typedValue => typedValue == 0,
+            long typedValue => typedValue == 0,
+            ulong typedValue => typedValue == 0,
+            _ => false,
+        };
     }
 
     private static void AddQueryParameters(DbCommand command, PageKeysetSpec.Query query)

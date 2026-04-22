@@ -81,6 +81,10 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 resourceContext.ResourceSchema,
                 resourceKey
             );
+            var queryFieldMappings = QueryFieldMappingsExtractor.ExtractQueryFieldMappings(
+                resourceContext.ResourceSchema,
+                resourceKey
+            );
 
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(
@@ -90,6 +94,7 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 )
                 {
                     SecurableElements = securableElements,
+                    QueryFieldMappingsByQueryField = queryFieldMappings,
                 }
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);

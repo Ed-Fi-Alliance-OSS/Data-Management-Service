@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -35,17 +38,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             requestInfo.FrontendRequest.TraceId,
             r => IsRetryableResult(r),
             r => r is QuerySuccess,
-            async ct =>
-                await queryHandler.QueryDocuments(
-                    new QueryRequest(
-                        ResourceInfo: requestInfo.ResourceInfo,
-                        QueryElements: requestInfo.QueryElements,
-                        AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
-                        AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
-                        PaginationParameters: requestInfo.PaginationParameters,
-                        TraceId: requestInfo.FrontendRequest.TraceId
-                    )
-                ),
+            async ct => await queryHandler.QueryDocuments(CreateQueryRequest(requestInfo)),
             requestInfo
         );
         _logger.LogDebug(
@@ -56,13 +49,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
 
         requestInfo.FrontendResponse = queryResult switch
         {
-            QuerySuccess success => new FrontendResponse(
-                StatusCode: 200,
-                Body: success.EdfiDocs,
-                Headers: requestInfo.PaginationParameters.TotalCount
-                    ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
-                    : []
-            ),
+            QuerySuccess success => CreateSuccessResponse(requestInfo, success),
             QueryFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -87,5 +74,69 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Headers: []
             ),
         };
+    }
+
+    private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, QuerySuccess success)
+    {
+        var contentType =
+            requestInfo.MappingSet is not null
+            && requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
+                ? ProfileHeaderParser.BuildProfileContentType(
+                    requestInfo.ResourceSchema.ResourceName.Value,
+                    requestInfo.ProfileContext.ProfileName,
+                    ProfileUsageType.Readable
+                )
+                : "application/json";
+
+        return new FrontendResponse(
+            StatusCode: 200,
+            Body: success.EdfiDocs,
+            Headers: requestInfo.PaginationParameters.TotalCount
+                ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
+                : [],
+            ContentType: contentType
+        );
+    }
+
+    private static ReadableProfileProjectionContext? CreateReadableProfileProjectionContext(
+        RequestInfo requestInfo
+    )
+    {
+        var readContentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType;
+
+        if (readContentType is null)
+        {
+            return null;
+        }
+
+        return new ReadableProfileProjectionContext(
+            readContentType,
+            IReadableProfileProjector.ExtractIdentityPropertyNames(
+                requestInfo.ResourceSchema.IdentityJsonPaths
+            )
+        );
+    }
+
+    private static IQueryRequest CreateQueryRequest(RequestInfo requestInfo)
+    {
+        return requestInfo.MappingSet is not null
+            ? new RelationalQueryRequest(
+                ResourceInfo: requestInfo.ResourceInfo,
+                MappingSet: requestInfo.MappingSet,
+                QueryElements: requestInfo.QueryElements,
+                AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
+                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
+                PaginationParameters: requestInfo.PaginationParameters,
+                TraceId: requestInfo.FrontendRequest.TraceId,
+                ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo)
+            )
+            : new QueryRequest(
+                ResourceInfo: requestInfo.ResourceInfo,
+                QueryElements: requestInfo.QueryElements,
+                AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
+                AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
+                PaginationParameters: requestInfo.PaginationParameters,
+                TraceId: requestInfo.FrontendRequest.TraceId
+            );
     }
 }

@@ -19,9 +19,19 @@ public sealed record RelationalReadMaterializationRequest(
     RelationalGetRequestReadMode ReadMode
 );
 
+public sealed record RelationalReadPageMaterializationRequest(
+    ResourceReadPlan ReadPlan,
+    HydratedPage HydratedPage,
+    RelationalGetRequestReadMode ReadMode
+);
+
+public sealed record MaterializedDocument(DocumentMetadataRow DocumentMetadata, JsonNode Document);
+
 public interface IRelationalReadMaterializer
 {
     JsonNode Materialize(RelationalReadMaterializationRequest request);
+
+    IReadOnlyList<MaterializedDocument> MaterializePage(RelationalReadPageMaterializationRequest request);
 }
 
 internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
@@ -35,26 +45,77 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var descriptorUriLookup = BuildDescriptorUriLookup(request.DescriptorRowsInPlanOrder);
-
-        var materializedDocument = DocumentReconstituter.Reconstitute(
-            request.DocumentMetadata.DocumentId,
-            request.TableRowsInDependencyOrder,
-            request.ReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder,
-            request.ReadPlan.Model.DescriptorEdgeSources,
-            descriptorUriLookup
+        var materializedDocuments = MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                request.ReadPlan,
+                new HydratedPage(
+                    TotalCount: null,
+                    DocumentMetadata: [request.DocumentMetadata],
+                    TableRowsInDependencyOrder: request.TableRowsInDependencyOrder,
+                    DescriptorRowsInPlanOrder: request.DescriptorRowsInPlanOrder
+                ),
+                request.ReadMode
+            )
         );
 
-        return request.ReadMode switch
+        if (materializedDocuments.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Relational read materialization expected exactly 1 document for DocumentId {request.DocumentMetadata.DocumentId}, "
+                    + $"but materialized {materializedDocuments.Count}."
+            );
+        }
+
+        return materializedDocuments[0].Document;
+    }
+
+    public IReadOnlyList<MaterializedDocument> MaterializePage(
+        RelationalReadPageMaterializationRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var reconstitutedDocuments = DocumentReconstituter.ReconstitutePage(
+            request.ReadPlan,
+            request.HydratedPage
+        );
+
+        if (reconstitutedDocuments.Count != request.HydratedPage.DocumentMetadata.Count)
+        {
+            throw new InvalidOperationException(
+                $"Relational page materialization expected {request.HydratedPage.DocumentMetadata.Count} documents, "
+                    + $"but reconstituted {reconstitutedDocuments.Count}."
+            );
+        }
+
+        return
+        [
+            .. request.HydratedPage.DocumentMetadata.Select(
+                (documentMetadata, index) =>
+                    new MaterializedDocument(
+                        documentMetadata,
+                        ApplyReadMode(reconstitutedDocuments[index], documentMetadata, request.ReadMode)
+                    )
+            ),
+        ];
+    }
+
+    private static JsonNode ApplyReadMode(
+        JsonNode materializedDocument,
+        DocumentMetadataRow documentMetadata,
+        RelationalGetRequestReadMode readMode
+    )
+    {
+        return readMode switch
         {
             RelationalGetRequestReadMode.StoredDocument => materializedDocument,
             RelationalGetRequestReadMode.ExternalResponse => InjectApiMetadata(
                 materializedDocument,
-                request.DocumentMetadata
+                documentMetadata
             ),
             _ => throw new ArgumentOutOfRangeException(
-                nameof(request),
-                request.ReadMode,
+                nameof(readMode),
+                readMode,
                 "Unsupported relational read materialization mode."
             ),
         };
@@ -82,31 +143,5 @@ internal sealed class RelationalReadMaterializer : IRelationalReadMaterializer
             .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
         return documentObject;
-    }
-
-    private static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
-        IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
-    )
-    {
-        ArgumentNullException.ThrowIfNull(descriptorRowsInPlanOrder);
-
-        if (descriptorRowsInPlanOrder.Count == 0)
-        {
-            return new Dictionary<long, string>();
-        }
-
-        Dictionary<long, string> lookup = [];
-
-        foreach (var descriptorRows in descriptorRowsInPlanOrder)
-        {
-            ArgumentNullException.ThrowIfNull(descriptorRows);
-
-            foreach (var row in descriptorRows.Rows)
-            {
-                lookup.TryAdd(row.DescriptorId, row.Uri);
-            }
-        }
-
-        return lookup;
     }
 }

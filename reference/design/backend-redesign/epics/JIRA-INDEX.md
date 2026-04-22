@@ -139,6 +139,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1023` — Cross-Engine Parity Tests and Shared Fixtures — `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md`
   - `DMS-1024` — Update Developer Docs and Runbooks — `reference/design/backend-redesign/epics/13-test-migration/03-developer-docs.md`
   - `DMS-1025` — Descriptor Integration Coverage (Writes, Queries, Seeding) — `reference/design/backend-redesign/epics/13-test-migration/04-descriptor-tests.md`
+  - `DMS-1135` — Parallelize Legacy/Relational E2E Lanes and Harden Script-Output Assertions — `reference/design/backend-redesign/epics/13-test-migration/05-parallel-e2e-lanes-and-harness-hardening.md`
 
 - `DMS-1029` — Authorization Design Spike (Relational Primary Store) — `reference/design/backend-redesign/epics/14-authorization/EPIC.md`
   - `DMS-1026` — Authorization Design Spike (Relational Primary Store) — `reference/design/backend-redesign/epics/14-authorization/00-auth-placeholder.md`

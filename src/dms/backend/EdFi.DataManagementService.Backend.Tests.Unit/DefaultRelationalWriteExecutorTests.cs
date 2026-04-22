@@ -3260,6 +3260,21 @@ public class Given_Default_Relational_Write_Executor
             CapturedRequest = request;
             return ResultToReturn;
         }
+
+        public IReadOnlyList<MaterializedDocument> MaterializePage(
+            RelationalReadPageMaterializationRequest request
+        )
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            return
+            [
+                .. request.HydratedPage.DocumentMetadata.Select(documentMetadata => new MaterializedDocument(
+                    documentMetadata,
+                    ResultToReturn.DeepClone()
+                )),
+            ];
+        }
     }
 
     private sealed class StubDbException(string message) : DbException(message);

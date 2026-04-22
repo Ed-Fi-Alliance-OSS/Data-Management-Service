@@ -137,7 +137,7 @@ Authorization is out of scope for this story, but the query execution SQL should
      EdFi.DataManagementService.Core.External/Model/QueryElement.cs:8 can stay, but I checked the authoritative 5.2 fixture and found no queryFieldMapping entries with more than one path,
      so full OR-group compilation is unnecessary complexity now.
 
-  Refactor Notes
+#### Refactor Notes
 
   - Introduce a backend-local relational query request, mirroring the GET seam in src/dms/core/EdFi.DataManagementService.Core/Backend/GetRequest.cs:22, instead of widening public
     IQueryRequest.
@@ -162,5 +162,24 @@ Authorization is out of scope for this story, but the query execution SQL should
   row-level auth filtering is needed, and backend integration tests first with broader E2E migration deferred.
 
 
+  ## Reviewer Notes: Intentional Adjacent Changes
 
-  Review these, kind of lightweight    codex resume 019d8f17-4a1b-7293-a4e5-a621b406fc35
+  This story includes a few adjacent changes outside the pure relational query execution path. They are intentional and should be reviewed as support work for safely exercising this story.
+
+  1. **Route semantics middleware**
+     - POST/PUT/DELETE route-shape validation was moved into `ValidateRouteSemanticsMiddleware`.
+     - `ParsePathMiddleware` now records whether the request path contained an id segment via `HasDocumentUuidSegment`.
+     - This keeps route parsing focused on path interpretation and lets method/route validation run after endpoint validation.
+     - Expected behavior should remain equivalent for write/delete routes; the change is included here because query-path work touched route parsing and pipeline ordering tests.
+
+  2. **Relational E2E database reset support**
+     - Relational query E2E scenarios need isolated data because query results, paging, and total counts are sensitive to leftover rows.
+     - The `@reset-data-before-scenario` tag and relational reset path truncate relational test data while preserving schema metadata.
+     - This is test harness support for deterministic query E2E coverage, not a product behavior change.
+
+  3. **DMS restart after relational reprovisioning**
+     - `build-dms.ps1` restarts the DMS container after relational reprovisioning.
+     - The restart discards cached database pools/runtime state that may point at a freshly reprovisioned relational database.
+     - This prevents false E2E failures when running relational-backend tests after setup.
+
+  These changes are intentionally bundled with DMS-993 so the PostgreSQL and SQL Server query execution tests can run repeatably in the local/CI E2E environment.

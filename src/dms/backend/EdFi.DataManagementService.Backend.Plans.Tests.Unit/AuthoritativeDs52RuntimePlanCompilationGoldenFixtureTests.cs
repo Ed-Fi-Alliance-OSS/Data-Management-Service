@@ -139,6 +139,35 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
     }
 
     [Test]
+    public void It_should_emit_reference_identity_alias_query_capabilities_for_authoritative_resources()
+    {
+        AuthoritativeManifestQueryCapabilityAssertions.AssertRootColumnFields(
+            _manifest,
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "Section",
+                "schoolId",
+                "$.courseOfferingReference.schoolId",
+                "CourseOffering_SchoolReferenceSchoolId"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "SurveySectionResponseEducationOrganizationTargetAssociation",
+                "namespace",
+                "$.surveySectionResponseReference.namespace",
+                "SurveySectionResponse_SurveyResponseReferenceNamespace"
+            ),
+            AuthoritativeManifestQueryCapabilityAssertions.RootColumnField(
+                "Ed-Fi",
+                "SurveySectionResponseEducationOrganizationTargetAssociation",
+                "surveyIdentifier",
+                "$.surveySectionResponseReference.surveyIdentifier",
+                "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier"
+            )
+        );
+    }
+
+    [Test]
     public void It_should_emit_projection_metadata_for_assessment()
     {
         foreach (var mappingSet in ParseMappingSets(_manifest))

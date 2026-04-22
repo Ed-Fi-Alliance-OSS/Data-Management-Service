@@ -147,6 +147,41 @@ public class ValidateEndpointMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Request_Missing_The_Data_Model_Name_But_Including_An_Id_Like_Segment
+        : ValidateEndpointMiddlewareTests
+    {
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.ApiSchemaDocuments = SchemaDocuments();
+            _requestInfo.PathComponents = new(
+                ProjectEndpointName: new("schools"),
+                EndpointName: new("00000000-0000-4000-a000-000000000000"),
+                DocumentUuid: No.DocumentUuid
+            );
+            await Middleware().Execute(_requestInfo, Next());
+        }
+
+        [Test]
+        public void It_returns_status_404()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+        }
+
+        [Test]
+        public void It_returns_message_body()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The specified data could not be found.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Project_Namespace_And_Valid_Endpoint : ValidateEndpointMiddlewareTests
     {
         private readonly RequestInfo _requestInfo = No.RequestInfo();

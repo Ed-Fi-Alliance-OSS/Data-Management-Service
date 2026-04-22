@@ -720,6 +720,8 @@ function Initialize-RelationalE2EDatabase {
             Pop-Location
         }
     }
+
+    Restart-DmsContainer -Reason "discard cached PostgreSQL pools after relational reprovisioning"
 }
 
 function E2ETests {
@@ -800,7 +802,12 @@ function Wait-ForConfigServiceAndClientRegistration {
 }
 
 function Restart-DmsContainer {
-    Write-Host "Restarting DMS container to ensure it can authenticate properly..." -ForegroundColor Cyan
+    param(
+        [string]
+        $Reason = "refresh runtime state"
+    )
+
+    Write-Host "Restarting DMS container to $Reason..." -ForegroundColor Cyan
 
     # Determine the container name based on docker compose project
     $containerName = "dms-local-dms-1"

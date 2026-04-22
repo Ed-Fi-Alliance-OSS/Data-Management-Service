@@ -7,6 +7,7 @@ using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -150,6 +151,84 @@ public class Given_MappingSetLookupExtensions
                 "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
                     + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans. "
                     + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+            );
+    }
+
+    [Test]
+    public void It_should_return_query_capability_when_present_and_supported()
+    {
+        var actualCapability = _mappingSet.GetQueryCapabilityOrThrow(_keyUnificationResource);
+
+        actualCapability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+        actualCapability
+            .SupportedFieldsByQueryField["id"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.DocumentUuid());
+        actualCapability
+            .SupportedFieldsByQueryField["schoolYear"]
+            .Target.Should()
+            .Be(new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolYear")));
+    }
+
+    [Test]
+    public void It_should_throw_actionable_descriptor_message_for_omitted_query_capability()
+    {
+        var act = () => _mappingSet.GetQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Relational query capability for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
+                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_actionable_unsupported_query_message_for_omitted_query_capability()
+    {
+        var act = () => _mappingSet.GetQueryCapabilityOrThrow(_nonRootOnlyResource);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Relational query capability for resource 'Ed-Fi.StudentAddress' was intentionally omitted: "
+                    + "queryFieldMapping contains unsupported relational GET-many fields: "
+                    + "streetNumberName: crosses an array scope and cannot compile to a root-table predicate."
+            );
+    }
+
+    [Test]
+    public void It_should_treat_missing_descriptor_query_capability_metadata_as_internal_bug()
+    {
+        var mappingSet = ReplaceQueryCapability(_mappingSet, _descriptorResource, queryCapability: null);
+
+        var act = () => mappingSet.GetQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Relational query capability lookup failed for resource '{FormatResource(_descriptorResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.SharedDescriptorTable}' should always have compiled relational GET-many capability metadata, "
+                    + "including intentional omission state when applicable, but no entry was found. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
+    public void It_should_throw_a_catchable_missing_query_capability_guard_rail_exception()
+    {
+        var mappingSet = ReplaceQueryCapability(_mappingSet, _descriptorResource, queryCapability: null);
+
+        var act = () => mappingSet.GetQueryCapabilityOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<MissingQueryCapabilityLookupGuardRailException>()
+            .WithMessage(
+                $"Relational query capability lookup failed for resource '{FormatResource(_descriptorResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.SharedDescriptorTable}' should always have compiled relational GET-many capability metadata, "
+                    + "including intentional omission state when applicable, but no entry was found. This indicates an internal compilation/selection bug."
             );
     }
 
@@ -550,7 +629,18 @@ public class Given_MappingSetLookupExtensions
                     QualifiedResourceName,
                     IReadOnlyList<ResolvedSecurableElementPath>
                 >()
-            ),
+            )
+            {
+                QueryCapabilitiesByResource = CreateQueryCapabilitiesByResource(
+                    supportedResource,
+                    descriptorResource,
+                    descriptorEdgeResource,
+                    multiDescriptorProjectionResource,
+                    nonRootOnlyResource,
+                    keyUnificationResource,
+                    projectionMetadataResource
+                ),
+            },
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,
             DescriptorEdgeResource: descriptorEdgeResource,
@@ -595,6 +685,155 @@ public class Given_MappingSetLookupExtensions
         return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
     }
 
+    private static IReadOnlyDictionary<
+        QualifiedResourceName,
+        RelationalQueryCapability
+    > CreateQueryCapabilitiesByResource(
+        QualifiedResourceName supportedResource,
+        QualifiedResourceName descriptorResource,
+        QualifiedResourceName descriptorEdgeResource,
+        QualifiedResourceName multiDescriptorProjectionResource,
+        QualifiedResourceName nonRootOnlyResource,
+        QualifiedResourceName keyUnificationResource,
+        QualifiedResourceName projectionMetadataResource
+    )
+    {
+        return new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+        {
+            [supportedResource] = CreateSupportedQueryCapability([
+                CreateSupportedQueryField(
+                    "schoolYear",
+                    "$.schoolYear",
+                    "integer",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolYear"))
+                ),
+            ]),
+            [descriptorResource] = CreateOmittedQueryCapability(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.DescriptorResource,
+                    "storage kind 'SharedDescriptorTable' uses the descriptor endpoint query path instead of compiled relational GET-many support. "
+                        + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+                )
+            ),
+            [descriptorEdgeResource] = CreateSupportedQueryCapability([
+                CreateSupportedQueryField(
+                    "academicSubjectDescriptor",
+                    "$.academicSubjectDescriptor",
+                    "string",
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        new DbColumnName("AcademicSubjectDescriptorId"),
+                        descriptorResource
+                    )
+                ),
+            ]),
+            [multiDescriptorProjectionResource] = CreateSupportedQueryCapability([
+                CreateSupportedQueryField(
+                    "academicSubjectDescriptor",
+                    "$.academicSubjectDescriptor",
+                    "string",
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        new DbColumnName("AcademicSubjectDescriptorId"),
+                        descriptorResource
+                    )
+                ),
+                CreateSupportedQueryField(
+                    "gradeLevelDescriptor",
+                    "$.gradeLevelDescriptor",
+                    "string",
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        new DbColumnName("GradeLevelDescriptorId"),
+                        new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+                    )
+                ),
+            ]),
+            [nonRootOnlyResource] = CreateOmittedQueryCapability(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "queryFieldMapping contains unsupported relational GET-many fields: "
+                        + "streetNumberName: crosses an array scope and cannot compile to a root-table predicate."
+                ),
+                CreateUnsupportedQueryField(
+                    "streetNumberName",
+                    [CreateQueryFieldPath("$.addresses[*].streetNumberName", "string")],
+                    RelationalQueryFieldFailureKind.ArrayCrossing
+                )
+            ),
+            [keyUnificationResource] = CreateSupportedQueryCapability([
+                CreateSupportedQueryField(
+                    "id",
+                    "$.id",
+                    "string",
+                    new RelationalQueryFieldTarget.DocumentUuid()
+                ),
+                CreateSupportedQueryField(
+                    "schoolYear",
+                    "$.schoolYear",
+                    "integer",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolYear"))
+                ),
+            ]),
+            [projectionMetadataResource] = CreateSupportedQueryCapability([
+                CreateSupportedQueryField(
+                    "schoolId",
+                    "$.schoolReference.schoolId",
+                    "integer",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("School_RefSchoolId"))
+                ),
+            ]),
+        }.ToFrozenDictionary();
+    }
+
+    private static RelationalQueryCapability CreateSupportedQueryCapability(
+        IReadOnlyList<SupportedRelationalQueryField> supportedFields
+    )
+    {
+        return new RelationalQueryCapability(
+            new RelationalQuerySupport.Supported(),
+            supportedFields.ToFrozenDictionary(static field => field.QueryFieldName, StringComparer.Ordinal),
+            new Dictionary<string, UnsupportedRelationalQueryField>(
+                StringComparer.Ordinal
+            ).ToFrozenDictionary(StringComparer.Ordinal)
+        );
+    }
+
+    private static RelationalQueryCapability CreateOmittedQueryCapability(
+        RelationalQueryCapabilityOmission omission,
+        params UnsupportedRelationalQueryField[] unsupportedFields
+    )
+    {
+        return new RelationalQueryCapability(
+            new RelationalQuerySupport.Omitted(omission),
+            new Dictionary<string, SupportedRelationalQueryField>(StringComparer.Ordinal).ToFrozenDictionary(
+                StringComparer.Ordinal
+            ),
+            unsupportedFields.ToFrozenDictionary(static field => field.QueryFieldName, StringComparer.Ordinal)
+        );
+    }
+
+    private static SupportedRelationalQueryField CreateSupportedQueryField(
+        string queryFieldName,
+        string path,
+        string type,
+        RelationalQueryFieldTarget target
+    )
+    {
+        return new SupportedRelationalQueryField(queryFieldName, CreateQueryFieldPath(path, type), target);
+    }
+
+    private static UnsupportedRelationalQueryField CreateUnsupportedQueryField(
+        string queryFieldName,
+        IReadOnlyList<RelationalQueryFieldPath> paths,
+        RelationalQueryFieldFailureKind failureKind
+    )
+    {
+        return new UnsupportedRelationalQueryField(queryFieldName, paths, failureKind);
+    }
+
+    private static RelationalQueryFieldPath CreateQueryFieldPath(string path, string type)
+    {
+        return new RelationalQueryFieldPath(JsonPathExpressionCompiler.Compile(path), type);
+    }
+
     private static ResourceReadPlan CreateSplitDescriptorProjectionReadPlan(RelationalResourceModel model)
     {
         var compiledReadPlan = CreateReadPlan(model);
@@ -635,6 +874,32 @@ public class Given_MappingSetLookupExtensions
         return mappingSet with
         {
             ReadPlansByResource = readPlansByResource.ToFrozenDictionary(),
+        };
+    }
+
+    private static MappingSet ReplaceQueryCapability(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        RelationalQueryCapability? queryCapability
+    )
+    {
+        var queryCapabilitiesByResource = mappingSet.QueryCapabilitiesByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+
+        if (queryCapability is null)
+        {
+            queryCapabilitiesByResource.Remove(resource);
+        }
+        else
+        {
+            queryCapabilitiesByResource[resource] = queryCapability;
+        }
+
+        return mappingSet with
+        {
+            QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
         };
     }
 

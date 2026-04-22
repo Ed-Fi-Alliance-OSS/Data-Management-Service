@@ -50,6 +50,15 @@ public sealed record MappingSet(
         "reference/design/backend-redesign/epics/05-mpack-generation/05-pack-loader-validation.md";
 
     /// <summary>
+    /// Compiled relational GET-many query capability or omission metadata keyed by qualified resource name.
+    /// </summary>
+    public IReadOnlyDictionary<
+        QualifiedResourceName,
+        RelationalQueryCapability
+    > QueryCapabilitiesByResource { get; init; } =
+        new Dictionary<QualifiedResourceName, RelationalQueryCapability>();
+
+    /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.
     /// </summary>
     /// <param name="payload">The decoded mapping-pack payload.</param>

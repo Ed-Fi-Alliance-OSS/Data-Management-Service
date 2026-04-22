@@ -10,7 +10,9 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
+using JsonArray = System.Text.Json.Nodes.JsonArray;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -19,6 +21,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationalWriteExecutor writeExecutor,
     IRelationalWriteTargetLookupService targetLookupService,
     IDescriptorWriteHandler descriptorWriteHandler,
+    IReferenceResolver referenceResolver,
     IDocumentHydrator documentHydrator,
     IRelationalReadTargetLookupService readTargetLookupService,
     IRelationalReadMaterializer readMaterializer,
@@ -33,6 +36,8 @@ public sealed class RelationalDocumentStoreRepository(
         targetLookupService ?? throw new ArgumentNullException(nameof(targetLookupService));
     private readonly IDescriptorWriteHandler _descriptorWriteHandler =
         descriptorWriteHandler ?? throw new ArgumentNullException(nameof(descriptorWriteHandler));
+    private readonly IReferenceResolver _referenceResolver =
+        referenceResolver ?? throw new ArgumentNullException(nameof(referenceResolver));
     private readonly IDocumentHydrator _documentHydrator =
         documentHydrator ?? throw new ArgumentNullException(nameof(documentHydrator));
     private readonly IRelationalReadTargetLookupService _readTargetLookupService =
@@ -134,7 +139,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            readPlan = GetReadPlanOrThrow(mappingSet, resource);
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
         }
         catch (NotSupportedException ex)
         {
@@ -237,20 +242,140 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
-    public Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+    public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
+        var relationalQueryRequest = RequireRelationalRequest<IRelationalQueryRequest>(
+            queryRequest,
+            nameof(queryRequest)
+        );
+        var mappingSet = relationalQueryRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(relationalQueryRequest.ResourceInfo);
 
         _logger.LogDebug(
             "Entering RelationalDocumentStoreRepository.QueryDocuments - {TraceId}",
-            queryRequest.TraceId.Value
+            relationalQueryRequest.TraceId.Value
         );
 
-        return Task.FromResult<QueryResult>(
-            new QueryResult.QueryFailureNotImplemented(
-                $"Relational query handling is not implemented for resource '{FormatResource(RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo))}'."
+        RelationalQueryCapability queryCapability;
+
+        try
+        {
+            queryCapability = relationalQueryRequest.MappingSet.GetQueryCapabilityOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new QueryResult.QueryFailureNotImplemented(ex.Message);
+        }
+        catch (MissingQueryCapabilityLookupGuardRailException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        if (!HasNoOpGetManyAuthorization(relationalQueryRequest.AuthorizationStrategyEvaluators))
+        {
+            return new QueryResult.QueryFailureNotImplemented(
+                BuildQueryAuthorizationNotImplementedMessage(
+                    resource,
+                    relationalQueryRequest.AuthorizationStrategyEvaluators
+                )
+            );
+        }
+
+        RelationalQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = await RelationalQueryRequestPreprocessor
+                .PreprocessAsync(
+                    mappingSet,
+                    resource,
+                    relationalQueryRequest.QueryElements,
+                    queryCapability,
+                    _referenceResolver
+                )
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            return new QueryResult.QuerySuccess(
+                [],
+                relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+            );
+        }
+
+        ResourceReadPlan readPlan;
+
+        try
+        {
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        PageKeysetSpec.Query? plannedQuery;
+
+        try
+        {
+            var planner = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect);
+
+            if (
+                !planner.TryPlan(
+                    readPlan.Model.Root,
+                    preprocessingResult,
+                    relationalQueryRequest.PaginationParameters,
+                    out plannedQuery,
+                    out _
+                ) || plannedQuery is null
             )
-        );
+            {
+                return new QueryResult.QuerySuccess(
+                    [],
+                    relationalQueryRequest.PaginationParameters.TotalCount ? 0 : null
+                );
+            }
+        }
+        catch (NotSupportedException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
+
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(readPlan, plannedQuery, default)
+            .ConfigureAwait(false);
+
+        return BuildQuerySuccess(relationalQueryRequest, resource, readPlan, hydratedPage);
     }
 
     private async Task<TResult> ExecuteWriteGuardRails<TResult>(
@@ -407,7 +532,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            return new ExistingDocumentReadPlanPreparation(GetReadPlanOrThrow(mappingSet, resource), null);
+            return new ExistingDocumentReadPlanPreparation(mappingSet.GetReadPlanOrThrow(resource), null);
         }
         catch (NotSupportedException ex)
         {
@@ -417,50 +542,6 @@ public sealed class RelationalDocumentStoreRepository(
         {
             return new ExistingDocumentReadPlanPreparation(null, ex.Message);
         }
-    }
-
-    private static ResourceReadPlan GetReadPlanOrThrow(MappingSet mappingSet, QualifiedResourceName resource)
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
-        {
-            return readPlan;
-        }
-
-        var concreteResourceModel =
-            mappingSet.Model.ConcreteResourcesInNameOrder.SingleOrDefault(model =>
-                model.RelationalModel.Resource == resource
-            )
-            ?? throw new KeyNotFoundException(
-                $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}' does not contain resource "
-                    + $"'{RelationalWriteSupport.FormatResource(resource)}' in ConcreteResourcesInNameOrder."
-            );
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
-        {
-            throw new NotSupportedException(
-                $"Read plan for resource '{RelationalWriteSupport.FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
-                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
-            );
-        }
-
-        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
-        {
-            throw new InvalidOperationException(
-                $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
-                    + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
-                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
-                    + "was found. This indicates an internal compilation/selection bug."
-            );
-        }
-
-        throw new InvalidOperationException(
-            $"Read plan lookup failed for resource '{RelationalWriteSupport.FormatResource(resource)}' in mapping set "
-                + $"'{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
-                + "is not recognized."
-        );
     }
 
     private sealed record ExistingDocumentReadPlanPreparation(
@@ -576,9 +657,114 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
+    private static bool HasNoOpGetManyAuthorization(
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        return authorizationStrategyEvaluators.All(static evaluator =>
+            string.Equals(
+                evaluator.AuthorizationStrategyName,
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                StringComparison.Ordinal
+            )
+        );
+    }
+
+    private static string BuildQueryAuthorizationNotImplementedMessage(
+        QualifiedResourceName resource,
+        IReadOnlyList<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators
+    )
+    {
+        ArgumentNullException.ThrowIfNull(authorizationStrategyEvaluators);
+
+        var strategyNames = authorizationStrategyEvaluators
+            .Select(static evaluator => evaluator.AuthorizationStrategyName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .Select(static name => $"'{name}'");
+
+        return $"Relational query authorization is not implemented for resource '{FormatResource(resource)}' "
+            + "when effective GET-many authorization requires filtering. Effective strategies: "
+            + $"[{string.Join(", ", strategyNames)}]. Only requests with no authorization strategies or only "
+            + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported.";
+    }
+
     private static bool ShouldApplyReadableProfileProjection(IRelationalGetRequest relationalGetRequest) =>
         relationalGetRequest.ReadMode == RelationalGetRequestReadMode.ExternalResponse
         && relationalGetRequest.ReadableProfileProjectionContext is not null;
+
+    private QueryResult BuildQuerySuccess(
+        IRelationalQueryRequest relationalQueryRequest,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan,
+        HydratedPage hydratedPage
+    )
+    {
+        ArgumentNullException.ThrowIfNull(relationalQueryRequest);
+        ArgumentNullException.ThrowIfNull(readPlan);
+        ArgumentNullException.ThrowIfNull(hydratedPage);
+
+        JsonArray edfiDocs = [];
+        var projectionContext = relationalQueryRequest.ReadableProfileProjectionContext;
+        var materializedDocuments = _readMaterializer.MaterializePage(
+            new RelationalReadPageMaterializationRequest(
+                readPlan,
+                hydratedPage,
+                RelationalGetRequestReadMode.ExternalResponse
+            )
+        );
+
+        foreach (
+            var edfiDoc in materializedDocuments.Select(static materializedDocument =>
+                materializedDocument.Document
+            )
+        )
+        {
+            var projectedOrUnchangedDocument = edfiDoc;
+
+            if (projectionContext is not null)
+            {
+                projectedOrUnchangedDocument = _readableProfileProjector.Project(
+                    projectedOrUnchangedDocument,
+                    projectionContext.ContentTypeDefinition,
+                    projectionContext.IdentityPropertyNames
+                );
+                RelationalApiMetadataFormatter.RefreshEtag(projectedOrUnchangedDocument);
+            }
+
+            edfiDocs.Add(projectedOrUnchangedDocument);
+        }
+
+        return new QueryResult.QuerySuccess(
+            edfiDocs,
+            relationalQueryRequest.PaginationParameters.TotalCount
+                ? ConvertTotalCountOrThrow(resource, hydratedPage.TotalCount)
+                : null
+        );
+    }
+
+    private static int ConvertTotalCountOrThrow(QualifiedResourceName resource, long? hydratedTotalCount)
+    {
+        if (hydratedTotalCount is null)
+        {
+            throw new InvalidOperationException(
+                $"Relational query hydration for resource '{FormatResource(resource)}' did not return a total count "
+                    + "even though the request asked for totalCount=true."
+            );
+        }
+
+        if (hydratedTotalCount < 0 || hydratedTotalCount > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Relational query hydration returned total count {hydratedTotalCount.Value} for resource "
+                    + $"'{FormatResource(resource)}', but only values in the range [0, {int.MaxValue}] are supported."
+            );
+        }
+
+        return (int)hydratedTotalCount.Value;
+    }
 
     private static TRelationalRequest RequireRelationalRequest<TRelationalRequest>(
         object request,

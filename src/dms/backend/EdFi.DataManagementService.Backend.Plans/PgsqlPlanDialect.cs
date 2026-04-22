@@ -59,4 +59,28 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
 
         DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
     }
+
+    /// <inheritdoc />
+    public void AppendComparisonSql(
+        SqlWriter writer,
+        string tableAlias,
+        DbColumnName column,
+        string operatorToken,
+        string parameterName,
+        ScalarKind? scalarKind
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(tableAlias);
+        ArgumentNullException.ThrowIfNull(operatorToken);
+        ArgumentNullException.ThrowIfNull(parameterName);
+
+        writer
+            .Append($"{tableAlias}.")
+            .AppendQuoted(column.Value)
+            .Append(" ")
+            .Append(operatorToken)
+            .Append(" ")
+            .AppendParameter(parameterName);
+    }
 }

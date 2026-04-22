@@ -100,57 +100,16 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        // Verify method allowed with/without documentUuid
-        if (requestInfo.Method == RequestMethod.DELETE && pathInfo.DocumentUuid == null)
-        {
-            RespondMissingDocumentUuid(
-                "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
-            );
-            return;
-        }
-        if (requestInfo.Method == RequestMethod.PUT && pathInfo.DocumentUuid == null)
-        {
-            RespondMissingDocumentUuid(
-                "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
-            );
-            return;
-        }
-        if (requestInfo.Method == RequestMethod.POST && pathInfo.DocumentUuid != null)
-        {
-            RespondMissingDocumentUuid(
-                "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
-            );
-            return;
-        }
-
         DocumentUuid documentUuid =
             pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
         requestInfo.PathComponents = new(
             ProjectEndpointName: new(pathInfo.ProjectEndpointName),
             EndpointName: new(pathInfo.EndpointName),
-            DocumentUuid: documentUuid
+            DocumentUuid: documentUuid,
+            HasDocumentUuidSegment: pathInfo.DocumentUuid is not null
         );
 
         await next();
-        return;
-
-        void RespondMissingDocumentUuid(string error)
-        {
-            _logger.LogDebug(
-                "ParsePathMiddleware: Missing document UUID on request method {Method} - {TraceId}",
-                requestInfo.Method,
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 405,
-                Body: FailureResponse.ForMethodNotAllowed(
-                    [error],
-                    traceId: requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: [],
-                ContentType: "application/json; charset=utf-8"
-            );
-        }
     }
 }

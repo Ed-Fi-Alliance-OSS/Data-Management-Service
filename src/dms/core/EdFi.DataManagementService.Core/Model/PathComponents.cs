@@ -23,7 +23,12 @@ internal record PathComponents(
     /// <summary>
     /// The optional resource identifier, which is a document uuid
     /// </summary>
-    DocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid,
+    /// <summary>
+    /// Indicates whether the request path included a third route segment for the item id.
+    /// This preserves route shape information even when the document UUID value is Guid.Empty.
+    /// </summary>
+    bool HasDocumentUuidSegment = false
 )
 {
     /// <summary>

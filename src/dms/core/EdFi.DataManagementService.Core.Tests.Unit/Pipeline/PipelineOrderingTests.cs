@@ -255,6 +255,131 @@ public class PipelineOrderingTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_The_Write_Pipelines : PipelineOrderingTests
+    {
+        private static List<Type> GetWritePipelineStepTypes(string factoryMethodName)
+        {
+            var services = new ServiceCollection();
+
+            services.Configure<JwtAuthenticationOptions>(options => { });
+            services.AddTransient<JwtAuthenticationMiddleware>();
+            services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
+            services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+                NullLogger<JwtAuthenticationMiddleware>.Instance
+            );
+
+            services.AddTransient<ResolveDmsInstanceMiddleware>();
+            services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
+            services.AddSingleton<IDmsInstanceProvider>(A.Fake<IDmsInstanceProvider>());
+            services.AddSingleton<IDmsInstanceSelection>(A.Fake<IDmsInstanceSelection>());
+            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+                NullLogger<ResolveDmsInstanceMiddleware>.Instance
+            );
+
+            var appSettingsOptions = Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+            );
+            services.AddSingleton(appSettingsOptions);
+            services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+            services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+                NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+            );
+
+            TestHelper.AddResourceKeyValidationServices(services);
+            TestHelper.AddMappingSetResolutionServices(services);
+
+            services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
+            services.AddTransient<ProfileResolutionMiddleware>();
+            services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+                NullLogger<ProfileResolutionMiddleware>.Instance
+            );
+
+            services.AddTransient<ProfileFilteringMiddleware>();
+            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
+            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
+                NullLogger<ProfileFilteringMiddleware>.Instance
+            );
+
+            services.AddSingleton<IProfileCreatabilityValidator>(A.Fake<IProfileCreatabilityValidator>());
+            services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
+            services.AddTransient<ProfileWriteValidationMiddleware>();
+            services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
+                NullLogger<ProfileWriteValidationMiddleware>.Instance
+            );
+            services.AddTransient<ProfileWritePipelineMiddleware>();
+            services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
+                NullLogger<ProfileWritePipelineMiddleware>.Instance
+            );
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            var apiService = new ApiService(
+                A.Fake<IApiSchemaProvider>(),
+                A.Fake<IEffectiveApiSchemaProvider>(),
+                A.Fake<IClaimSetProvider>(),
+                A.Fake<IDocumentValidator>(),
+                A.Fake<IMatchingDocumentUuidsValidator>(),
+                A.Fake<IEqualityConstraintValidator>(),
+                A.Fake<IDecimalValidator>(),
+                NullLogger<ApiService>.Instance,
+                appSettingsOptions,
+                A.Fake<IAuthorizationServiceFactory>(),
+                ResiliencePipeline.Empty,
+                A.Fake<ResourceLoadOrderCalculator>(),
+                serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
+                A.Fake<CachedClaimSetProvider>(),
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                A.Fake<IProfileService>()
+            );
+
+            return GetStepTypes(apiService, factoryMethodName);
+        }
+
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_places_validate_route_semantics_after_validate_endpoint(string factoryMethodName)
+        {
+            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var validateEndpointIndex = stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
+            var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
+
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateRouteSemanticsIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateRouteSemanticsIndex
+                .Should()
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "ValidateRouteSemanticsMiddleware must run after ValidateEndpointMiddleware"
+                );
+        }
+
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        public void It_places_validate_route_semantics_before_body_parsing_on_body_write_pipelines(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetWritePipelineStepTypes(factoryMethodName);
+            var validateRouteSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
+            var parseBodyIndex = stepTypes.IndexOf(typeof(ParseBodyMiddleware));
+
+            validateRouteSemanticsIndex.Should().BeGreaterThanOrEqualTo(0);
+            parseBodyIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateRouteSemanticsIndex
+                .Should()
+                .BeLessThan(
+                    parseBodyIndex,
+                    "ValidateRouteSemanticsMiddleware must reject invalid write route semantics before request body parsing"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_The_Get_Token_Info_Pipeline : PipelineOrderingTests
     {
         private List<Type> _stepTypes = [];

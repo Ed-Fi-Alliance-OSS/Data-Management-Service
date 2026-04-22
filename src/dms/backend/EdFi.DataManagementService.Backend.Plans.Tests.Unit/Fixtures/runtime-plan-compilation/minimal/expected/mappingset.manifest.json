@@ -13,7 +13,16 @@
             "resource_name": "AcademicSubjectDescriptor"
           },
           "write_plan": null,
-          "read_plan": null
+          "read_plan": null,
+          "query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "descriptor_resource",
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
+          }
         },
         {
           "resource": {
@@ -137,6 +146,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -218,6 +236,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -385,6 +412,15 @@
                 ]
               }
             ]
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -555,6 +591,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         }
       ]
@@ -572,7 +617,16 @@
             "resource_name": "AcademicSubjectDescriptor"
           },
           "write_plan": null,
-          "read_plan": null
+          "read_plan": null,
+          "query_capability": {
+            "support": {
+              "kind": "omitted",
+              "omission_kind": "descriptor_resource",
+              "reason": "storage kind \u0027SharedDescriptorTable\u0027 uses the descriptor endpoint query path instead of compiled relational GET-many support. Next story: E08-S05 (05-descriptor-endpoints.md)."
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
+          }
         },
         {
           "resource": {
@@ -696,6 +750,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -777,6 +840,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -944,6 +1016,15 @@
                 ]
               }
             ]
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         },
         {
@@ -1114,6 +1195,15 @@
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": []
+          },
+          "query_capability": {
+            "support": {
+              "kind": "supported",
+              "omission_kind": null,
+              "reason": null
+            },
+            "supported_fields_in_query_field_order": [],
+            "unsupported_fields_in_query_field_order": []
           }
         }
       ]

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External.Plans;
+
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
@@ -92,6 +94,15 @@ public sealed record ConcreteResourceModel(
     /// Securable element metadata extracted from ApiSchema.json for authorization path resolution.
     /// </summary>
     public ResourceSecurableElements SecurableElements { get; init; } = ResourceSecurableElements.Empty;
+
+    /// <summary>
+    /// Query-field metadata extracted from ApiSchema.json for relational GET-many compilation.
+    /// </summary>
+    public IReadOnlyDictionary<
+        string,
+        RelationalQueryFieldMapping
+    > QueryFieldMappingsByQueryField { get; init; } =
+        new Dictionary<string, RelationalQueryFieldMapping>(StringComparer.Ordinal);
 }
 
 /// <summary>

@@ -100,11 +100,17 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
     )
     {
         QueryField? matchingQueryField = possibleQueryFields.FirstOrDefault(
-            queryField => queryField?.QueryFieldName.ToLower() == clientQueryTerm.Key.ToLower(),
+            queryField =>
+                queryField is not null
+                && string.Equals(
+                    queryField.QueryFieldName,
+                    clientQueryTerm.Key,
+                    StringComparison.OrdinalIgnoreCase
+                ),
             null
         );
 
-        if (matchingQueryField == null)
+        if (matchingQueryField is null)
         {
             return null;
         }
