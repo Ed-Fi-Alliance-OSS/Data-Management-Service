@@ -520,15 +520,16 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution.
-Readable-profile projection and routed-prefix assembly happen after cache retrieval.
+The cached `DocumentJson` is the caller-agnostic pre-profile document emitted by reconstitution,
+with `link` subtrees already present when link injection is compiled into the read plan.
+Readable-profile projection runs after cache retrieval; the `DataManagement:ResourceLinks:Enabled`
+strip pass runs on the projected document immediately before serialization (see
+[link-injection.md](link-injection.md#cache-and-etag)).
 
 Update tracking note: `dms.DocumentCache` stores cached `ContentVersion` plus the materialized
 `_etag/_lastModifiedDate`, and cache reads validate freshness by comparing cached
 `ContentVersion`/`LastModifiedAt` to the current
-`dms.Document.ContentVersion`/`ContentLastModifiedAt`. When `dms.DocumentCache` is provisioned,
-startup plan-shape invalidation is handled via the singleton
-`dms.DocumentCachePlanFingerprint` table below; see [link-injection.md](link-injection.md#cache-and-etag-interaction).
+`dms.Document.ContentVersion`/`ContentLastModifiedAt`.
 
 Denormalized resource naming:
 
@@ -587,35 +588,6 @@ Uses:
 
 - Faster GET/query responses (skip reconstitution)
 - Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
-
-##### 5a) `dms.DocumentCachePlanFingerprint` (singleton metadata)
-
-Singleton metadata table used by startup plan-shape reconciliation for `dms.DocumentCache`.
-Processes compare their current plan fingerprint against this row and truncate/reseed the cache on
-mismatch before serving traffic. See [link-injection.md](link-injection.md#cache-and-etag-interaction).
-
-**PostgreSQL**
-
-```sql
-CREATE TABLE dms.DocumentCachePlanFingerprint (
-  Id smallint NOT NULL PRIMARY KEY,
-  Fingerprint varchar(64) NOT NULL,
-  UpdatedAt timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT CK_DocumentCachePlanFingerprint_Singleton CHECK (Id = 1)
-);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.DocumentCachePlanFingerprint (
-  Id smallint NOT NULL,
-  Fingerprint nvarchar(64) NOT NULL,
-  UpdatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCachePlanFingerprint_UpdatedAt DEFAULT (sysutcdatetime()),
-  CONSTRAINT PK_DocumentCachePlanFingerprint PRIMARY KEY CLUSTERED (Id),
-  CONSTRAINT CK_DocumentCachePlanFingerprint_Singleton CHECK (Id = 1)
-);
-```
 
 ### Authorization companion objects (schema: `auth`)
 

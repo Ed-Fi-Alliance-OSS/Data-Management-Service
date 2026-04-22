@@ -148,7 +148,6 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.Descriptor`
 - Optional projections:
   - `dms.DocumentCache`
-  - `dms.DocumentCachePlanFingerprint`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
@@ -237,12 +236,12 @@ The DDL generator must emit document-reference columns and constraints that enab
 
 **Link injection and DDL (V1 note)**
 
-V1 link injection adds no per-reference DDL. It reuses the existing `..._DocumentId` columns and
-the `Discriminator` already provisioned on `{schema}.{AbstractResource}Identity`. When
-`dms.DocumentCache` is provisioned, also provision the singleton
-`dms.DocumentCachePlanFingerprint` table for startup plan-shape reconciliation; see
-[data-model.md](data-model.md) §`dms.DocumentCachePlanFingerprint` and
-[link-injection.md](link-injection.md#cache-and-etag-interaction).
+V1 link injection adds no per-reference DDL and no new metadata tables. It reuses the existing
+`..._DocumentId` columns for reference target resolution; concrete target type is resolved at
+read time from `dms.Document.ResourceKeyId` using the runtime's validated
+`MappingSet.ResourceKeyById` lookup plus the already-loaded project schema. No read-path join to
+`dms.ResourceKey` is required. See
+[link-injection.md](link-injection.md).
 
 **Descriptor foreign keys (required)**
 

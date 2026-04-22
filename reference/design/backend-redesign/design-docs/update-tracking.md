@@ -80,11 +80,6 @@ A document’s served representation changes when any of the following occur:
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
-Rare exception: a startup-bound plan-shape input can alter the hashed caller-agnostic document
-without mutating persisted source rows. These cases require an owning feature document and an
-alternate invalidation mechanism. V1 link injection's `DataManagement:ResourceLinks:Enabled` flag is
-such a carve-out; see [link-injection.md](link-injection.md#cache-and-etag-interaction).
-
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
 case, `ContentVersion`, `ContentLastModifiedAt`, and `dms.DocumentChangeEvent` MUST remain unchanged.
 
@@ -139,18 +134,18 @@ For a document `P`:
 
 - `_lastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
-- `_etag(P)` is a deterministic hash of the canonical JSON form of the caller-agnostic cached document:
+- `_etag(P)` is a deterministic hash of the canonical JSON form of the served document:
   - remove `id`, `_etag`, and `_lastModifiedDate`, recursively canonicalize object properties using ordinal string ordering while preserving array order, serialize the canonical form as minified UTF-8, compute `SHA-256` over those bytes, and encode the hash as base64.
-  - `link.href` values in the hashed document carry the canonical suffix form; routed-prefix assembly is a transport concern and does not participate in the hash.
-  - readable-profile responses recompute `_etag` from the projected document using the same rule, still before routed-prefix assembly.
+  - readable-profile responses recompute `_etag` from the projected document using the same rule.
+  - when `DataManagement:ResourceLinks:Enabled` is `false`, `link` subtrees are stripped before hashing, so `_etag` reflects the link-free form.
 
-This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the canonical cached document rather than exact transport serializer bytes.
+This design does not compute metadata from dependency scans at read time. Representation changes are still tracked by stored `ContentVersion`/`ContentLastModifiedAt`, while `_etag` is computed from the canonical served document rather than exact transport serializer bytes. When the served body matches the cached intermediate shape, implementations may reuse the cached `_etag`; otherwise read-time shaping recomputes `_etag` from the served document using the same rule.
 
 Interaction with `dms.DocumentCache` (when enabled): the cache stores the caller-agnostic pre-profile
 document and its `_etag`/`_lastModifiedDate` for that intermediate shape. Profile-scoped reads apply
-readable-profile projection after cache retrieval and recompute `_etag` from the projected document.
-For cache freshness inputs and the startup plan-shape invalidation that covers flag flips, see
-[link-injection.md](link-injection.md#cache-and-etag-interaction).
+readable-profile projection after cache retrieval and recompute `_etag` from the projected document. When
+`DataManagement:ResourceLinks:Enabled` is `false`, the strip pass likewise recomputes `_etag` from the
+link-free served document.
 
 ## Journaling for Change Queries
 
