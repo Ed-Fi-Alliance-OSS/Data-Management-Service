@@ -156,30 +156,35 @@ prefix-free, consistent with ODS's emitted form.
 
 ### Auxiliary Lookup
 
-After the main hydration materializes a page of rows with their `..._DocumentId` FK columns, the
-read plan issues one logical auxiliary lookup per page against `dms.Document`:
+The read plan issues one logical auxiliary lookup per page against `dms.Document`. The lookup is
+sourced SQL-side by joining each `DocumentReferenceBinding`'s source table to the already-
+materialized page keyset, UNION-ing FK values across reference sites, and joining `dms.Document`
+to that projection:
 
 ```sql
-SELECT DocumentId, DocumentUuid, ResourceKeyId
-FROM dms.Document
-WHERE DocumentId IN (<distinct FK values from the page>)
+SELECT d.DocumentId, d.DocumentUuid, d.ResourceKeyId
+FROM (
+  SELECT t1.<FkColumn_1> AS DocumentId
+  FROM <source_table_1> t1
+  INNER JOIN <keyset> ks ON t1.DocumentId = ks.DocumentId
+  WHERE t1.<FkColumn_1> IS NOT NULL
+  UNION
+  -- one branch per DocumentReferenceBinding FK column
+) p
+INNER JOIN dms.Document d ON d.DocumentId = p.DocumentId;
 ```
 
-This reuses the multi-result-command pattern already used for descriptor URI projection
-([compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6). The auxiliary runs under the
-same ADO.NET command and ambient transaction as the main hydration; no second round-trip or
-separate transaction is opened.
+This mirrors the descriptor URI projection pattern
+([compiled-mapping-set.md](compiled-mapping-set.md) §4.3 step 6;
+`DescriptorProjectionPlanCompiler.EmitSelectByKeysetSql`). The filter predicate is the keyset
+join — not a parameterized IN-list of FK values — so the auxiliary runs under the same ADO.NET
+command and ambient transaction as the main hydration with no client-side FK collection, no
+second round-trip, and no parameter-cap sub-batching.
 
-**Boundary conditions.**
-
-- **Empty set.** If no row on the page carries a reference (all FKs null), the auxiliary is
-  skipped; the `DocumentId → (DocumentUuid, ResourceKeyId)` map is empty; every reference-writer
-  lookup misses; `link` is suppressed via the gate in [Link Shape](#link-shape).
-- **Large set.** The parameter count is the deduplicated count of distinct FK values on the page.
-  When it exceeds the dialect-specific limit (SQL Server's 2,100-parameter cap is the practical
-  bound), the plan partitions the FK set into sub-batches and issues one auxiliary result set per
-  sub-batch within the same multi-result command. Reconstitution union-merges sub-batches into a
-  single map before reference writing.
+**Boundary condition.** If every `..._DocumentId` FK on every page row is null, the inner UNION
+returns zero rows, the outer join returns zero rows, and the
+`DocumentId → (DocumentUuid, ResourceKeyId)` map is empty. Every reference-writer lookup misses
+and `link` is suppressed via the gate in [Link Shape](#link-shape).
 
 **Isolation.** Snapshot consistency matches the descriptor-URI auxiliary: a referenced document
 deleted between main hydration and the auxiliary lookup within the same command produces a lookup
@@ -197,8 +202,6 @@ story. Instead, the read-path compiler / hydration-command builder appends a fea
 URI projection. The lookup is keyed on the union of `..._DocumentId` FK columns from the
 resource's `DocumentReferenceBinding`s and returns `(DocumentId, DocumentUuid, ResourceKeyId)`.
 This remains a fixed-shape feature-local lookup rather than a new shared plan primitive. When the
-distinct FK count exceeds the dialect threshold, the feature emits multiple contiguous result sets
-for the same logical lookup and reconstitution union-merges them before reference writing. When the
 feature flag is off at deployment, the lookup phase is still emitted — see
 [Feature Flag](#feature-flag).
 
@@ -257,6 +260,13 @@ expected to be used as a rare opt-out rather than a performance lever, that cost
 If link-emission cost ever becomes a deployment concern, it is a separate design change, not a
 V1 feature-flag concern.
 
+**ODS divergence.** ODS ships `ResourceLinks` enabled by default and gates it at the query layer:
+when disabled, `GetEntitiesBase` switches between `_aggregateHqlStatementsWithReferenceData` and
+`_aggregateHqlStatements` so reference-data joins are never issued. DMS preserves response-shape
+parity and default value (both default `true`) but not operational semantics — deployments that
+currently disable the ODS flag as a performance lever will see unchanged DB cost on DMS. DMS's
+flag is a response filter, not a query gate.
+
 Configuration contract:
 
 ```csharp
@@ -271,6 +281,13 @@ services.Configure<ResourceLinksOptions>(
 
 The flag is consumed on the response-serialization boundary, not in the plan compiler or
 reconstitution engine. No per-resource, per-request, or per-reference override is provided.
+
+`ResourceLinksOptions` is bound as `IOptions<ResourceLinksOptions>`. A flag flip takes effect at
+the next process restart, consistent with the flag-flip-across-restart case in
+[Testing Strategy](#testing-strategy); hot-reload via `IOptionsMonitor<T>` is not a V1 requirement.
+The flag governs GET response serialization only — write endpoints (POST/PUT/DELETE) do not emit
+`link` and are unaffected. The strip pass removes exactly the `link` subtree on reference objects;
+other server-generated fields (`_etag`, `_lastModifiedDate`) are untouched.
 
 ---
 
@@ -336,9 +353,8 @@ parallel to `_etag` and `_lastModifiedDate` preservation; profiles cannot suppre
 
 GET-many behavior is identical to GET-by-id on a per-item basis. Because reconstitution is
 page-batched and the auxiliary lookup is page-scoped, link emission adds no asymptotic overhead
-to collection reads. There is no N+1 risk: the auxiliary is one logical lookup per page (one
-result set in the common case, multiple only when sub-batching is required), not per reference or
-per item.
+to collection reads. There is no N+1 risk: the auxiliary is one logical lookup per page — a
+single result set — not per reference or per item.
 
 ---
 
@@ -376,8 +392,6 @@ the `DocumentUuid`-stamping decision in particular has been made.
 - GUID formatting → `href` contains 32 lowercase hex characters, no hyphens.
 - Page with multiple references to the same target document → single auxiliary-map entry, both
   references resolve.
-- SQL Server sub-batching boundary → a page that pushes the distinct FK count above 2,100
-  partitions correctly and reconstitution union-merges sub-batch maps.
 
 **Feature-flag tests:**
 

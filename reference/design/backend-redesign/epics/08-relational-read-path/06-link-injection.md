@@ -79,13 +79,12 @@ Soft dependency:
   `ResourceKeyById` miss is a deployment invariant violation, not a runtime data condition, and
   no read-path recovery branch is specced.
 - Link emission adds no per-reference or per-item round-trips. Reference identity comes from
-  row-level hydration; one per-page logical auxiliary lookup
-  `SELECT DocumentId, DocumentUuid, ResourceKeyId FROM dms.Document WHERE DocumentId IN (...)`
-  issues inside the existing hydration command and ambient transaction. Distinct FK values are
-  deduplicated per page before lookup, the lookup is skipped when the set is empty, and sub-batching
-  is dialect-aware so SQL Server never crosses its 2,100-parameter ceiling. Reconstitution
-  union-merges sub-batch maps into a single `DocumentId → (DocumentUuid, ResourceKeyId)` map before
-  reference writing.
+  row-level hydration; one per-page logical auxiliary lookup against `dms.Document` issues inside
+  the existing hydration command and ambient transaction. The lookup is sourced SQL-side by
+  joining each `DocumentReferenceBinding`'s source table to the page keyset and UNION-ing FK
+  values across reference sites, then joining `dms.Document` — the filter predicate is the keyset
+  join, not a parameterized IN-list of FK values. Reconstitution builds a single
+  `DocumentId → (DocumentUuid, ResourceKeyId)` map from that result set before reference writing.
 - V1 adds no per-reference DDL, no new metadata tables, no abstract-identity LEFT JOINs in
   hydration SQL, no discriminator column binding, no startup trigger-existence validation, and no
   backfill for reference-target `DocumentUuid`.
@@ -136,9 +135,7 @@ Soft dependency:
   auxiliary-lookup miss (no link); abstract reference with fully-defined FK (concrete `rel` and
   `href` via `ResourceKeyId`, no discriminator parsing); abstract reference with auxiliary-lookup
   miss (no link); GUID formatting (`N`-format, 32 lowercase hex, no hyphens); page with multiple
-  references to the same target document (single auxiliary-map entry, both references resolve);
-  SQL Server sub-batching boundary (distinct FK count above 2,100 partitions correctly and
-  reconstitution union-merges sub-batch maps).
+  references to the same target document (single auxiliary-map entry, both references resolve).
 - Feature-flag tests cover: flag on with fully-defined references (body carries `link`); flag off
   (body has no `link` on any reference and `_etag` reflects the link-free form); flag flip across
   a process restart (existing cached rows remain valid for freshness-check purposes, and `_etag`
@@ -173,15 +170,15 @@ Soft dependency:
    `projectSchema.projectEndpointName` and
    `ProjectSchema.GetEndpointNameFromResourceName(...)` on the already-loaded project schema.
    Do not add fields to `ResourceKeyEntry` or build a new startup dictionary.
-3. Lookup-phase execution: collect distinct per-page `..._DocumentId` FK values, deduplicate
-   before lookup, skip the lookup when the set is empty, partition large sets with a
-   dialect-aware threshold (SQL Server's 2,100-parameter cap is the hard upper bound), and issue
-   one logical feature-local lookup phase per sub-batch within the same multi-result command.
-   Reconstitution union-merges sub-batch maps into a single
-   `DocumentId → (DocumentUuid, ResourceKeyId)` map before reference writing. Reuses the
-   multi-result-command pattern from the descriptor-URI auxiliary
-   (`design-docs/compiled-mapping-set.md` §4.3 step 6) without requiring a shared plan-shape
-   change for this story.
+3. Lookup-phase execution: emit the `dms.Document` auxiliary as a single SQL statement over the
+   page keyset — join each `DocumentReferenceBinding`'s source table to the keyset, UNION FK
+   values across reference sites, and join `dms.Document` to that projection. The filter
+   predicate is the keyset join, not a parameterized IN-list, so there is no client-side FK
+   collection and no parameter-cap sub-batching. Reconstitution consumes the single result set
+   into a `DocumentId → (DocumentUuid, ResourceKeyId)` map before reference writing. Mirrors the
+   descriptor-URI auxiliary pattern (`design-docs/compiled-mapping-set.md` §4.3 step 6;
+   `DescriptorProjectionPlanCompiler.EmitSelectByKeysetSql`) without requiring a shared
+   plan-shape change for this story.
 4. Reconstitution reference-writer: for each reference site, write the reference's identity fields
    from the local propagated binding columns (unchanged from the pre-link-injection path); read
    the `..._DocumentId` FK value; if null, skip link. Otherwise look up the FK in the page-level
@@ -192,13 +189,16 @@ Soft dependency:
    `ResourceKeyById` map miss is a deployment invariant violation and is not handled as a
    runtime suppression path.
 5. Config plumbing: introduce `ResourceLinksOptions { bool Enabled = true }` bound from the
-   `DataManagement:ResourceLinks` configuration section. The options type is consumed only at the
-   response-serialization boundary, not in the plan compiler or reconstitution engine.
+   `DataManagement:ResourceLinks` configuration section as `IOptions<ResourceLinksOptions>`
+   (flag flips take effect at next process restart; hot-reload via `IOptionsMonitor<T>` is not a
+   V1 requirement). The options type is consumed only at the response-serialization boundary, not
+   in the plan compiler or reconstitution engine.
 6. Response serializer: apply the `ResourceLinks:Enabled` strip pass to the projected document
-   immediately before serialization, after readable-profile projection. Use the cached
-   materialized `_etag` when the served body equals the cached intermediate (flag on, no readable
-   profile reshaping); otherwise recompute `_etag` from the served body per
-   `design-docs/update-tracking.md` §Serving API metadata.
+   immediately before serialization, after readable-profile projection. The strip removes exactly
+   the `link` subtree on reference objects; other server-generated fields (`_etag`,
+   `_lastModifiedDate`) are untouched. Use the cached materialized `_etag` when the served body
+   equals the cached intermediate (flag on, no readable profile reshaping); otherwise recompute
+   `_etag` from the served body per `design-docs/update-tracking.md` §Serving API metadata.
 7. Readable-profile projector: preserve `link` subtrees on reference objects as server-generated
   fields. This story treats `link` preservation as a feature-local rule parallel to `_etag` and
   `_lastModifiedDate` preservation. Profiles must not be able to suppress `link` via
@@ -212,9 +212,9 @@ Soft dependency:
    and no `ResourceLinksFlag` column are introduced. Flag flips are handled implicitly through
    `_etag` derivation from the served body.
 9. Tests: add unit, fixture, integration, and contract tests per the acceptance criteria. Include
-   feature-flag-on and flag-off coverage; a flag-flip-across-restart regression; SQL Server
-   sub-batching boundary coverage; source-readable / target-denied authorization coverage; the
-   caller-agnostic cache test; and an ODS baseline parity check scoped to document references.
+   feature-flag-on and flag-off coverage; a flag-flip-across-restart regression; source-readable
+   / target-denied authorization coverage; the caller-agnostic cache test; and an ODS baseline
+   parity check scoped to document references.
 
 ## Deferred Follow-On Work
 
