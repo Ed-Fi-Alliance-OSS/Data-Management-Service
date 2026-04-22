@@ -252,7 +252,35 @@ internal sealed class DefaultRelationalWriteExecutor(
                         topologyIndex
                     );
 
-                if (requiredFamily != RequiredSliceFamily.RootTableOnly)
+                // Slice 3 widens the fence for root-attached separate-table scopes
+                // (e.g. $._ext.sample on School). Collection-aligned separate-table scopes
+                // (DbTableKind.CollectionExtensionScope) remain fenced for slice 5 because
+                // ScopeTopologyIndex classifies both root-attached and collection-aligned
+                // separate-table scopes under the same SeparateTableNonCollection family.
+                // The fence inspects the scopes actually exercised by the current profiled
+                // request — not the whole write plan — so mixed plans that carry an unused
+                // collection-aligned table alongside a supported root-attached scope are
+                // allowed through as long as the request itself touches only supported
+                // scopes. This preserves the Task 5 "mixed plan, unused collection scope"
+                // contract without splitting the topology / family enums.
+                bool fencePassed = requiredFamily switch
+                {
+                    RequiredSliceFamily.RootTableOnly => true,
+                    RequiredSliceFamily.SeparateTableNonCollection =>
+                        !RequestExercisesCollectionAlignedSeparateTableScope(
+                            request.WritePlan,
+                            profileWriteContext.Request,
+                            profileAppliedWriteContext
+                        ),
+                    RequiredSliceFamily.TopLevelCollection => false,
+                    RequiredSliceFamily.NestedAndExtensionCollections => false,
+                    _ => throw new InvalidOperationException(
+                        $"Unhandled RequiredSliceFamily '{requiredFamily}' at the slice-3 fence gate. "
+                            + "A new family was added without updating the executor's fence switch."
+                    ),
+                };
+
+                if (!fencePassed)
                 {
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return BuildSliceFenceResult(request.OperationKind, requiredFamily);
@@ -635,6 +663,73 @@ internal sealed class DefaultRelationalWriteExecutor(
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the current profiled request exercises at least one scope
+    /// whose owner table is a <see cref="DbTableKind.CollectionExtensionScope"/> — a
+    /// separate-table non-collection scope aligned to a collection row. Slice 3 keeps these
+    /// fenced; slice 5 will lift the fence. Inspecting the exercised scopes (request/stored
+    /// scope states + visible collection items/rows) rather than the whole write plan keeps
+    /// mixed plans that carry an unused collection-aligned table alongside a supported
+    /// root-attached scope passable — the Task 5 synthesizer contract already permits those
+    /// mixed plans so long as the current request does not touch the collection-aligned
+    /// scope. Ownership is resolved via
+    /// <see cref="ProfileBindingClassificationCore.ResolveOwnerTablePlan"/> so the fence
+    /// uses identical prefix semantics to per-table binding classification.
+    /// </summary>
+    private static bool RequestExercisesCollectionAlignedSeparateTableScope(
+        ResourceWritePlan writePlan,
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext
+    )
+    {
+        foreach (var scopeState in profileRequest.RequestScopeStates)
+        {
+            if (scopeState.Visibility == ProfileVisibilityKind.Hidden)
+            {
+                // Mirrors ProfileSliceFenceClassifier.ClassifyForCreateNew: hidden
+                // request-side scopes are preserve-only and do not escalate slice family,
+                // so they must not count as "exercised" for the collection-aligned fence.
+                // Stored-side hidden scopes still participate below (the classifier's
+                // existing rule: hidden stored scopes still require the owning slice to
+                // preserve them correctly).
+                continue;
+            }
+            if (IsCollectionAlignedOwner(scopeState.Address.JsonScope, writePlan))
+            {
+                return true;
+            }
+        }
+        if (
+            profileRequest.VisibleRequestCollectionItems.Any(item =>
+                IsCollectionAlignedOwner(item.Address.JsonScope, writePlan)
+            )
+        )
+        {
+            return true;
+        }
+        if (profileAppliedContext is null)
+        {
+            return false;
+        }
+        if (
+            profileAppliedContext.StoredScopeStates.Any(state =>
+                IsCollectionAlignedOwner(state.Address.JsonScope, writePlan)
+            )
+        )
+        {
+            return true;
+        }
+        return profileAppliedContext.VisibleStoredCollectionRows.Any(row =>
+            IsCollectionAlignedOwner(row.Address.JsonScope, writePlan)
+        );
+    }
+
+    private static bool IsCollectionAlignedOwner(string scopeAddress, ResourceWritePlan writePlan)
+    {
+        var owner = ProfileBindingClassificationCore.ResolveOwnerTablePlan(scopeAddress, writePlan);
+        return owner?.TableModel.IdentityMetadata.TableKind is DbTableKind.CollectionExtensionScope;
     }
 
     private async Task<InSessionTargetResolution> ResolveCreateVsExistingPostTargetAsync(

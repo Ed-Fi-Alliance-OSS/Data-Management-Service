@@ -393,6 +393,33 @@ internal static class ProfileBindingClassificationCore
         );
 
     /// <summary>
+    /// Finds the <see cref="TableWritePlan"/> that owns <paramref name="scopeAddress"/> by
+    /// longest table-backed JSON-scope prefix with segment-boundary semantics. Returns
+    /// <c>null</c> if no table-backed ancestor exists (e.g., the scope itself is not under
+    /// any table-backed scope canonical). Shares prefix semantics with
+    /// <see cref="ResolveOwnerTableScope"/> so fence-gate ownership lookups and
+    /// per-table classification ownership resolution use identical rules.
+    /// </summary>
+    internal static TableWritePlan? ResolveOwnerTablePlan(string scopeAddress, ResourceWritePlan writePlan)
+    {
+        ArgumentNullException.ThrowIfNull(scopeAddress);
+        ArgumentNullException.ThrowIfNull(writePlan);
+
+        TableWritePlan? owner = null;
+        var ownerLength = -1;
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            var tableScope = tablePlan.TableModel.JsonScope.Canonical;
+            if (IsEqualOrSegmentPrefix(tableScope, scopeAddress) && tableScope.Length > ownerLength)
+            {
+                owner = tablePlan;
+                ownerLength = tableScope.Length;
+            }
+        }
+        return owner;
+    }
+
+    /// <summary>
     /// Returns <c>true</c> when <paramref name="maybePrefix"/> is equal to
     /// <paramref name="scopeAddress"/>, or is a segment-boundary prefix (i.e., followed by
     /// a <c>.</c> separator). Mirrors the segment-boundary rule used by
